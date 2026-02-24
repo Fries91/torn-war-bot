@@ -10,7 +10,6 @@ async def torn_get(session: aiohttp.ClientSession, path: str, params: dict):
         return data
 
 async def get_faction_overview(session, faction_id: str, faction_key: str):
-    # basic gives members/status/last_action; chain gives chain; rankedwars gives war schedule
     return await torn_get(session, f"/faction/{faction_id}", {
         "selections": "basic,chain,rankedwars",
         "key": faction_key
