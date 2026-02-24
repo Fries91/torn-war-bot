@@ -81,3 +81,49 @@ async def get_key_for_torn_id(torn_id: int):
 async def get_key(torn_id: int):
     # compatibility alias (prevents old builds from crashing)
     return await get_key_for_torn_id(torn_id)
+
+async def init_db():
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("""
+        CREATE TABLE IF NOT EXISTS member_settings (
+            discord_id INTEGER PRIMARY KEY,
+            torn_id INTEGER,
+            torn_name TEXT,
+            timezone TEXT DEFAULT 'UTC',
+            avail_start TEXT DEFAULT '18:00',
+            avail_end   TEXT DEFAULT '23:59',
+            enabled INTEGER DEFAULT 1
+        )
+        """)
+        await db.execute("""
+        CREATE TABLE IF NOT EXISTS user_keys (
+            torn_id INTEGER PRIMARY KEY,
+            api_key TEXT NOT NULL
+        )
+        """)
+        # NEW: store the live sheet message to edit
+        await db.execute("""
+        CREATE TABLE IF NOT EXISTS live_sheet_message (
+            id INTEGER PRIMARY KEY CHECK (id=1),
+            channel_id INTEGER,
+            message_id INTEGER
+        )
+        """)
+        await db.commit()
+
+async def set_live_sheet_message(channel_id: int, message_id: int):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("""
+        INSERT INTO live_sheet_message (id, channel_id, message_id)
+        VALUES (1, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET channel_id=excluded.channel_id, message_id=excluded.message_id
+        """, (channel_id, message_id))
+        await db.commit()
+
+async def get_live_sheet_message():
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute("SELECT channel_id, message_id FROM live_sheet_message WHERE id=1")
+        row = await cur.fetchone()
+        if not row:
+            return None
+        return {"channel_id": row[0], "message_id": row[1]}
