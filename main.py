@@ -1,4 +1,5 @@
 import os
+import io
 import asyncio
 import threading
 from datetime import datetime, time as dtime
@@ -9,6 +10,8 @@ import discord
 from discord import app_commands
 from discord.ext import tasks
 from dotenv import load_dotenv
+
+from playwright.async_api import async_playwright
 
 from db import (
     init_db, upsert_member, set_timezone, set_availability, set_enabled,
@@ -37,9 +40,9 @@ def env_int(name: str, default: int = 0) -> int:
 
 ALERT_CHANNEL_ID = env_int("ALERT_CHANNEL_ID", 0)
 ALERT_ROLE_ID = env_int("ALERT_ROLE_ID", 0)
-
-# ✅ The channel you want the live sheet in (#war-availability)
 LIVE_SHEET_CHANNEL_ID = env_int("LIVE_SHEET_CHANNEL_ID", 0)
+
+SCREENSHOT_INTERVAL = env_int("SCREENSHOT_INTERVAL", 60)  # seconds
 
 def parse_hhmm(s: str) -> dtime:
     hh, mm = s.split(":")
@@ -121,7 +124,7 @@ def build_sheet_embed() -> discord.Embed:
         more = f"\n… +{len(not_avail)-NOT_MAX} more" if len(not_avail) > NOT_MAX else ""
         embed.add_field(name=f"❌ Not Available ({len(not_avail)})", value="\n".join(lines) + more, inline=False)
 
-    embed.set_footer(text=f"Updated: {web_panel.STATE.get('updated_at','—')} • Auto-updates every 60s")
+    embed.set_footer(text=f"Updated: {web_panel.STATE.get('updated_at','—')} • Image refresh: {SCREENSHOT_INTERVAL}s")
     return embed
 
 class TornWarBot(discord.Client):
@@ -131,11 +134,39 @@ class TornWarBot(discord.Client):
         self.http_session: aiohttp.ClientSession | None = None
         self.last_pinged_at_utc: float | None = None
 
+        # Playwright stuff
+        self.pw = None
+        self.browser = None
+        self._last_screen_utc = 0.0
+
     async def setup_hook(self):
         await init_db()
         await self.tree.sync()
         self.http_session = aiohttp.ClientSession()
+
+        # Start Playwright browser
+        self.pw = await async_playwright().start()
+        self.browser = await self.pw.chromium.launch(args=["--no-sandbox"])
+
         refresh_loop.start()
+
+    async def close(self):
+        try:
+            if self.http_session:
+                await self.http_session.close()
+        except Exception:
+            pass
+        try:
+            if self.browser:
+                await self.browser.close()
+        except Exception:
+            pass
+        try:
+            if self.pw:
+                await self.pw.stop()
+        except Exception:
+            pass
+        await super().close()
 
 bot = TornWarBot()
 
@@ -150,14 +181,8 @@ async def linkkey_cmd(interaction: discord.Interaction, torn_id: int, api_key: s
     await upsert_member(interaction.user.id, torn_id, interaction.user.display_name)
     await interaction.response.send_message("✅ Linked. Your energy can now show on the sheet.", ephemeral=True)
 
-@bot.tree.command(name="unlinkkey", description="Unlink your Torn API key.")
-@app_commands.describe(torn_id="Your Torn ID")
-async def unlinkkey_cmd(interaction: discord.Interaction, torn_id: int):
-    await unlink_key(torn_id)
-    await interaction.response.send_message("✅ Unlinked.", ephemeral=True)
-
 @bot.tree.command(name="timezone", description="Set your timezone (example: America/Toronto).")
-@app_commands.describe(tz="IANA timezone like America/Toronto, Europe/London, etc.")
+@app_commands.describe(tz="IANA timezone like America/Toronto")
 async def timezone_cmd(interaction: discord.Interaction, tz: str):
     try:
         pytz.timezone(tz)
@@ -184,11 +209,46 @@ async def opt_cmd(interaction: discord.Interaction, enabled: bool):
     await set_enabled(interaction.user.id, 1 if enabled else 0)
     await interaction.response.send_message(f"✅ Enabled = {enabled}", ephemeral=True)
 
+async def capture_dashboard_png() -> bytes | None:
+    if not bot.browser:
+        return None
+    try:
+        page = await bot.browser.new_page(viewport={"width": 900, "height": 1400})
+        await page.goto(f"{PUBLIC_BASE_URL}/", wait_until="networkidle", timeout=45000)
+        # small extra wait so the JS refresh renders rows
+        await page.wait_for_timeout(1200)
+        png = await page.screenshot(full_page=True, type="png")
+        await page.close()
+        return png
+    except Exception as e:
+        print("Screenshot failed:", e)
+        return None
+
+async def post_or_update_image(channel: discord.TextChannel, embed: discord.Embed, png_bytes: bytes):
+    file = discord.File(fp=io.BytesIO(png_bytes), filename="war-availability.png")
+
+    saved = await get_live_sheet_message()
+    if saved:
+        ch = bot.get_channel(saved["channel_id"])
+        if ch and ch.id == channel.id:
+            try:
+                msg = await channel.fetch_message(saved["message_id"])
+                # Replace the attachment each time by editing
+                await msg.edit(content="🖼️ Live Screen (auto-refresh)", embed=embed, attachments=[file])
+                return
+            except Exception:
+                pass
+
+    # If no saved message or it was deleted, post a new one and save it
+    msg = await channel.send(content="🖼️ Live Screen (auto-refresh)", embed=embed, file=file)
+    await set_live_sheet_message(channel.id, msg.id)
+
 @tasks.loop(seconds=60)
 async def refresh_loop():
     if not bot.http_session:
         return
 
+    # --- Fetch faction ---
     try:
         faction_data = await get_faction_overview(bot.http_session, FACTION_ID, FACTION_API_KEY)
     except Exception as e:
@@ -197,6 +257,7 @@ async def refresh_loop():
 
     members = faction_data.get("members", {}) or {}
 
+    # chain
     chain = faction_data.get("chain") or {}
     web_panel.STATE["chain"] = {
         "current": chain.get("current"),
@@ -205,6 +266,7 @@ async def refresh_loop():
         "cooldown": chain.get("cooldown"),
     }
 
+    # next ranked war
     rankedwars = faction_data.get("rankedwars") or {}
     now_utc = int(datetime.utcnow().timestamp())
     next_rw = None
@@ -236,6 +298,7 @@ async def refresh_loop():
         }
     web_panel.STATE["war"] = war_state
 
+    # settings
     settings = await get_all_settings()
     settings_by_torn = {s["torn_id"]: s for s in settings if s.get("torn_id")}
 
@@ -256,6 +319,7 @@ async def refresh_loop():
         avail_start = s.get("avail_start") or "18:00"
         avail_end = s.get("avail_end") or "23:59"
 
+        # energy only if linked key
         energy_text = "—"
         key = await get_key_for_torn_id(torn_id)
         if key:
@@ -270,6 +334,7 @@ async def refresh_loop():
                 energy_text = "key err"
 
         available_now = False
+        # ✅ no jail filter; ✅ hospital filter ON
         if enabled and (not hospitalized) and status_is_online(status_desc):
             try:
                 local_dt = now_in_tz(tz)
@@ -295,37 +360,30 @@ async def refresh_loop():
     web_panel.STATE["available_count"] = available_count
     web_panel.STATE["updated_at"] = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
 
-    # ✅ Auto-post/update message in #war-availability
-    try:
-        saved = await get_live_sheet_message()
-
-        if saved:
-            ch = bot.get_channel(saved["channel_id"])
-            if ch:
-                try:
-                    msg = await ch.fetch_message(saved["message_id"])
-                    await msg.edit(embed=build_sheet_embed())
-                except Exception:
-                    saved = None
-
-        if not saved and LIVE_SHEET_CHANNEL_ID:
-            ch = bot.get_channel(LIVE_SHEET_CHANNEL_ID)
-            if ch:
-                msg = await ch.send(embed=build_sheet_embed())
-                await set_live_sheet_message(ch.id, msg.id)
-
-    except Exception as e:
-        print("Live sheet update failed:", e)
-
-    # ✅ 5+ ping with cooldown
+    # --- 5+ ping ---
     if available_count >= PING_THRESHOLD and ALERT_CHANNEL_ID and ALERT_ROLE_ID:
         now = datetime.utcnow().timestamp()
         can_ping = (bot.last_pinged_at_utc is None) or ((now - bot.last_pinged_at_utc) >= PING_COOLDOWN_SECONDS)
         if can_ping:
-            channel = bot.get_channel(ALERT_CHANNEL_ID)
-            if channel:
-                await channel.send(f"<@&{ALERT_ROLE_ID}> **{available_count} members available now** ✅  {PUBLIC_BASE_URL}/")
+            ch = bot.get_channel(ALERT_CHANNEL_ID)
+            if ch:
+                await ch.send(f"<@&{ALERT_ROLE_ID}> **{available_count} members available now** ✅  {PUBLIC_BASE_URL}/")
                 bot.last_pinged_at_utc = now
+
+    # --- Live image screen in #war-availability ---
+    try:
+        if LIVE_SHEET_CHANNEL_ID:
+            channel = bot.get_channel(LIVE_SHEET_CHANNEL_ID)
+            if isinstance(channel, discord.TextChannel):
+                now_ts = datetime.utcnow().timestamp()
+                if now_ts - bot._last_screen_utc >= SCREENSHOT_INTERVAL:
+                    png = await capture_dashboard_png()
+                    if png:
+                        embed = build_sheet_embed()
+                        await post_or_update_image(channel, embed, png)
+                        bot._last_screen_utc = now_ts
+    except Exception as e:
+        print("Live screen post failed:", e)
 
 def run_web():
     web_panel.app.run(host=WEB_HOST, port=WEB_PORT, debug=False, use_reloader=False)
