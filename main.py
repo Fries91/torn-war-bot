@@ -5,7 +5,10 @@ import discord
 import aiohttp
 from discord.ext import tasks
 from dotenv import load_dotenv
-from db import init_db, link_key, get_key
+from db import (
+    init_db, upsert_member, set_timezone, set_availability, set_enabled,
+    link_key, unlink_key, get_all_settings, get_key_for_torn_id
+)
 from torn_api import get_faction_overview, get_user_energy
 import web_panel
 
