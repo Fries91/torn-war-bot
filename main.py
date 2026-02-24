@@ -29,7 +29,7 @@ WEB_HOST = "0.0.0.0"
 WEB_PORT = int(os.getenv("PORT", os.getenv("WEB_PORT", "10000")))
 
 PING_THRESHOLD = 5
-PING_COOLDOWN_SECONDS = 600  # 10 min
+PING_COOLDOWN_SECONDS = 600
 
 def env_int(name: str, default: int = 0) -> int:
     v = (os.getenv(name) or "").strip()
@@ -37,6 +37,9 @@ def env_int(name: str, default: int = 0) -> int:
 
 ALERT_CHANNEL_ID = env_int("ALERT_CHANNEL_ID", 0)
 ALERT_ROLE_ID = env_int("ALERT_ROLE_ID", 0)
+
+# ✅ The channel you want the live sheet in (#war-availability)
+LIVE_SHEET_CHANNEL_ID = env_int("LIVE_SHEET_CHANNEL_ID", 0)
 
 def parse_hhmm(s: str) -> dtime:
     hh, mm = s.split(":")
@@ -51,7 +54,7 @@ def is_within_window(local_dt: datetime, start_str: str, end_str: str) -> bool:
     tnow = local_dt.time()
     if start_t <= end_t:
         return start_t <= tnow <= end_t
-    return (tnow >= start_t) or (tnow <= end_t)  # overnight
+    return (tnow >= start_t) or (tnow <= end_t)
 
 def status_is_online(desc: str) -> bool:
     s = (desc or "").lower()
@@ -86,7 +89,6 @@ def build_sheet_embed() -> discord.Embed:
         hosp = " 🏥" if r.get("hospitalized") else ""
         return f"• **{r.get('name','?')}** ({e}){hosp}"
 
-    # Limit lines to stay under Discord embed limits
     AVAIL_MAX = 20
     NOT_MAX = 20
 
@@ -99,11 +101,10 @@ def build_sheet_embed() -> discord.Embed:
         war_text = f"vs {war.get('opponent','Unknown')} • {fmt_countdown(war.get('start'))}"
 
     embed = discord.Embed(
-        title="Torn War Live Sheet",
+        title="War Availability (Live)",
         description=f"[Open full dashboard]({PUBLIC_BASE_URL}/)",
         colour=discord.Colour.blue()
     )
-
     embed.add_field(name="Chain", value=chain_text, inline=True)
     embed.add_field(name="Next Ranked War", value=war_text, inline=True)
     embed.add_field(name="Available Now", value=str(available_count), inline=True)
@@ -142,12 +143,6 @@ bot = TornWarBot()
 async def sheet_cmd(interaction: discord.Interaction):
     await interaction.response.send_message(f"Dashboard: {PUBLIC_BASE_URL}/", ephemeral=True)
 
-@bot.tree.command(name="postsheet", description="Post a live sheet message here (auto-updates).")
-async def postsheet_cmd(interaction: discord.Interaction):
-    msg = await interaction.channel.send(embed=build_sheet_embed())
-    await set_live_sheet_message(interaction.channel.id, msg.id)
-    await interaction.response.send_message("✅ Live sheet posted. I’ll keep updating this message.", ephemeral=True)
-
 @bot.tree.command(name="linkkey", description="Link your Torn API key so the bot can show YOUR energy.")
 @app_commands.describe(torn_id="Your Torn ID", api_key="Your Torn API key (limited key recommended)")
 async def linkkey_cmd(interaction: discord.Interaction, torn_id: int, api_key: str):
@@ -183,7 +178,7 @@ async def availability_cmd(interaction: discord.Interaction, start: str, end: st
     await set_availability(interaction.user.id, start, end)
     await interaction.response.send_message(f"✅ Availability set: {start} → {end}", ephemeral=True)
 
-@bot.tree.command(name="opt", description="Opt in/out of being counted for 'available' pings.")
+@bot.tree.command(name="opt", description="Opt in/out of being counted for availability.")
 @app_commands.describe(enabled="true = opt-in, false = opt-out")
 async def opt_cmd(interaction: discord.Interaction, enabled: bool):
     await set_enabled(interaction.user.id, 1 if enabled else 0)
@@ -202,7 +197,6 @@ async def refresh_loop():
 
     members = faction_data.get("members", {}) or {}
 
-    # chain
     chain = faction_data.get("chain") or {}
     web_panel.STATE["chain"] = {
         "current": chain.get("current"),
@@ -211,7 +205,6 @@ async def refresh_loop():
         "cooldown": chain.get("cooldown"),
     }
 
-    # next ranked war (soonest upcoming)
     rankedwars = faction_data.get("rankedwars") or {}
     now_utc = int(datetime.utcnow().timestamp())
     next_rw = None
@@ -243,7 +236,6 @@ async def refresh_loop():
         }
     web_panel.STATE["war"] = war_state
 
-    # settings
     settings = await get_all_settings()
     settings_by_torn = {s["torn_id"]: s for s in settings if s.get("torn_id")}
 
@@ -264,7 +256,6 @@ async def refresh_loop():
         avail_start = s.get("avail_start") or "18:00"
         avail_end = s.get("avail_end") or "23:59"
 
-        # energy only if linked key
         energy_text = "—"
         key = await get_key_for_torn_id(torn_id)
         if key:
@@ -279,7 +270,6 @@ async def refresh_loop():
                 energy_text = "key err"
 
         available_now = False
-        # ✅ no jail filter; ✅ hospital filter ON
         if enabled and (not hospitalized) and status_is_online(status_desc):
             try:
                 local_dt = now_in_tz(tz)
@@ -305,21 +295,29 @@ async def refresh_loop():
     web_panel.STATE["available_count"] = available_count
     web_panel.STATE["updated_at"] = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
 
-    # Update the live Discord sheet message (if set)
+    # ✅ Auto-post/update message in #war-availability
     try:
         saved = await get_live_sheet_message()
+
         if saved:
             ch = bot.get_channel(saved["channel_id"])
             if ch:
                 try:
                     msg = await ch.fetch_message(saved["message_id"])
                     await msg.edit(embed=build_sheet_embed())
-                except Exception as e:
-                    print("Live sheet update failed:", e)
-    except Exception as e:
-        print("Live sheet lookup failed:", e)
+                except Exception:
+                    saved = None
 
-    # 5+ ping with cooldown
+        if not saved and LIVE_SHEET_CHANNEL_ID:
+            ch = bot.get_channel(LIVE_SHEET_CHANNEL_ID)
+            if ch:
+                msg = await ch.send(embed=build_sheet_embed())
+                await set_live_sheet_message(ch.id, msg.id)
+
+    except Exception as e:
+        print("Live sheet update failed:", e)
+
+    # ✅ 5+ ping with cooldown
     if available_count >= PING_THRESHOLD and ALERT_CHANNEL_ID and ALERT_ROLE_ID:
         now = datetime.utcnow().timestamp()
         can_ping = (bot.last_pinged_at_utc is None) or ((now - bot.last_pinged_at_utc) >= PING_COOLDOWN_SECONDS)
