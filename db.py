@@ -21,7 +21,6 @@ async def init_db():
             api_key TEXT NOT NULL
         )
         """)
-        # Store the one live Discord message we keep editing
         await db.execute("""
         CREATE TABLE IF NOT EXISTS live_sheet_message (
             id INTEGER PRIMARY KEY CHECK (id=1),
@@ -86,7 +85,6 @@ async def get_key_for_torn_id(torn_id: int):
         row = await cur.fetchone()
         return row[0] if row else None
 
-# Compatibility alias (prevents old builds from crashing)
 async def get_key(torn_id: int):
     return await get_key_for_torn_id(torn_id)
 
