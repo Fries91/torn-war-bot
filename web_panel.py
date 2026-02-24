@@ -61,25 +61,7 @@ HTML = """
         <th>Last Action</th>
       </tr>
     </thead>
-    <tbody id="tbody">
-      {% for r in rows %}
-      <tr>
-        <td>{{r["name"]}} <span class="muted">[{{r["torn_id"]}}]</span></td>
-        <td>{{r["status"]}}</td>
-        <td>{{"YES" if r["hospitalized"] else "NO"}}</td>
-        <td>{{r["timezone"]}}</td>
-        <td>
-          {% if r["available_now"] %}
-            <span class="tag ok">YES</span>
-          {% else %}
-            <span class="tag no">NO</span>
-          {% endif %}
-        </td>
-        <td>{{r["energy_text"]}}</td>
-        <td>{{r["last_action_text"]}}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
+    <tbody id="tbody"></tbody>
   </table>
 
 <script>
@@ -88,7 +70,6 @@ function fmtUTC(epoch) {
   return new Date(epoch * 1000).toUTCString();
 }
 function fmtCountdown(seconds) {
-  if (!seconds && seconds !== 0) return "—";
   if (seconds <= 0) return "LIVE / STARTED";
   const d = Math.floor(seconds / 86400); seconds %= 86400;
   const h = Math.floor(seconds / 3600); seconds %= 3600;
@@ -104,18 +85,12 @@ async function refresh() {
   document.getElementById("ts").textContent = data.updated_at || "—";
   document.getElementById("availCount").textContent = data.available_count ?? "—";
 
-  // chain
   if (data.chain && data.chain.current != null) {
     document.getElementById("chainText").textContent = `${data.chain.current} / ${data.chain.max ?? "—"}`;
     document.getElementById("chainTimeout").textContent = fmtUTC(data.chain.timeout);
     document.getElementById("chainCooldown").textContent = fmtUTC(data.chain.cooldown);
-  } else {
-    document.getElementById("chainText").textContent = "—";
-    document.getElementById("chainTimeout").textContent = "—";
-    document.getElementById("chainCooldown").textContent = "—";
   }
 
-  // war
   if (data.war && data.war.start) {
     const opp = data.war.opponent || "Unknown";
     document.getElementById("warText").textContent = `vs ${opp} • Starts: ${fmtUTC(data.war.start)}`;
@@ -126,7 +101,6 @@ async function refresh() {
     document.getElementById("warCountdown").textContent = "—";
   }
 
-  // table
   const tbody = document.getElementById("tbody");
   tbody.innerHTML = "";
   for (const r of (data.rows || [])) {
@@ -156,7 +130,6 @@ setInterval(refresh, 20000);
 def index():
     return render_template_string(
         HTML,
-        rows=STATE["rows"],
         updated_at=STATE["updated_at"] or "—",
         available_count=STATE.get("available_count", 0),
     )
