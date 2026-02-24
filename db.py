@@ -77,3 +77,7 @@ async def get_key_for_torn_id(torn_id: int):
         cur = await db.execute("SELECT api_key FROM user_keys WHERE torn_id=?", (torn_id,))
         row = await cur.fetchone()
         return row[0] if row else None
+
+async def get_key(torn_id: int):
+    # compatibility alias (prevents old builds from crashing)
+    return await get_key_for_torn_id(torn_id)
