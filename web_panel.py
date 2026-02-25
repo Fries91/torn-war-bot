@@ -23,7 +23,12 @@ HTML = """
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Torn War Dashboard</title>
   <style>
-    body { font-family: -apple-system, system-ui, Arial; padding: 12px; }
+    body {
+  font-family: -apple-system, system-ui, Arial;
+  padding: 12px;
+  background: #0f172a;
+  color: #ffffff;
+}
     .meta { opacity: 0.9; font-size: 14px; margin-bottom: 10px; }
     .card { border: 1px solid #e6e6e6; border-radius: 12px; padding: 10px; margin: 10px 0; }
     .big { font-size: 16px; font-weight: 700; }
