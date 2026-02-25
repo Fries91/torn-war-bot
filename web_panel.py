@@ -2,6 +2,12 @@ from flask import Flask, jsonify, render_template_string
 
 app = Flask(__name__)
 
+@app.after_request
+def allow_iframe(resp):
+    resp.headers["X-Frame-Options"] = "ALLOWALL"
+    resp.headers["Content-Security-Policy"] = "frame-ancestors *"
+    return resp
+    
 STATE = {
     "rows": [],
     "updated_at": None,
@@ -137,3 +143,29 @@ def index():
 @app.get("/api/sheet")
 def api_sheet():
     return jsonify(STATE)
+
+@app.get("/api/status")
+def api_status():
+    rows = STATE.get("rows") or []
+
+    # Count online members
+    online = 0
+    for r in rows:
+        # If you store a boolean online field
+        if r.get("online") is True:
+            online += 1
+        else:
+            # Otherwise detect from status text
+            s = str(r.get("status", "")).lower()
+            if "online" in s or "idle" in s:
+                online += 1
+
+    available = sum(1 for r in rows if r.get("available_now") is True)
+    not_available = max(len(rows) - available, 0)
+
+    return jsonify({
+        "online": online,
+        "available": available,
+        "notAvailable": not_available,
+        "updated_at": STATE.get("updated_at")
+    })
