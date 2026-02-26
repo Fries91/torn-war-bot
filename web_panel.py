@@ -188,28 +188,9 @@ function clearErr(){
   el.textContent = "";
 }
 
-/*
-  Rules:
-   - ONLINE if status contains "online"
-   - OFFLINE if status contains "offline"
-   - IDLE otherwise
-*/
-function bucketStatus(row){
-  const s = String(row.status || "").toLowerCase();
-  if (s.includes("online")) return 0;   // ONLINE
-  if (s.includes("offline")) return 2;  // OFFLINE
-  return 1;                             // IDLE (everything else)
-}
-
-function statusLabel(row){
-  const b = bucketStatus(row);
-  if (b === 0) return { text: "ONLINE", cls: "tag tag-online" };
-  if (b === 2) return { text: "OFFLINE", cls: "tag tag-offline" };
-  return { text: "IDLE", cls: "tag tag-idle" };
-}
-
 function lastActionMinutes(text){
   const t = String(text || "").toLowerCase().trim();
+  // Examples: "3 minutes ago", "1 hour ago", "1 day ago"
   const m = t.match(/(\\d+)\\s*(minute|minutes|hour|hours|day|days)\\s*ago/);
   if (!m) return 999999;
   const n = parseInt(m[1], 10);
@@ -218,6 +199,29 @@ function lastActionMinutes(text){
   if (unit.startsWith("hour")) return n * 60;
   if (unit.startsWith("day")) return n * 1440;
   return 999999;
+}
+
+/*
+  Torn-like Online/Idle/Offline using LAST ACTION time:
+   - ONLINE  <= 15 minutes
+   - IDLE    <= 60 minutes
+   - OFFLINE >  60 minutes (or unknown)
+*/
+const ONLINE_MAX_MIN = 15;
+const IDLE_MAX_MIN   = 60;
+
+function bucketStatus(row){
+  const mins = lastActionMinutes(row.last_action_text);
+  if (mins <= ONLINE_MAX_MIN) return 0; // ONLINE
+  if (mins <= IDLE_MAX_MIN)   return 1; // IDLE
+  return 2;                              // OFFLINE
+}
+
+function statusLabel(row){
+  const b = bucketStatus(row);
+  if (b === 0) return { text: "ONLINE", cls: "tag tag-online" };
+  if (b === 1) return { text: "IDLE", cls: "tag tag-idle" };
+  return { text: "OFFLINE", cls: "tag tag-offline" };
 }
 
 async function refresh() {
@@ -262,7 +266,7 @@ async function refresh() {
     document.getElementById("idleCount").textContent = idle;
     document.getElementById("offlineCount").textContent = offline;
 
-    // Sort: Online, Idle, Offline
+    // Sort: Online, Idle, Offline (then most recent action, then name)
     rows.sort((a,b) => {
       const pa = bucketStatus(a);
       const pb = bucketStatus(b);
@@ -321,19 +325,45 @@ def api_sheet():
 
 @app.route("/api/status", methods=["GET", "OPTIONS"])
 def api_status():
+    """
+    Status counts based on LAST ACTION time (same as the dashboard UI):
+     - ONLINE  <= 15 minutes
+     - IDLE    <= 60 minutes
+     - OFFLINE >  60 minutes (or unknown)
+    """
     if request.method == "OPTIONS":
         return ("", 204)
 
     rows = STATE.get("rows") or []
-    online = 0
-    for r in rows:
-        s = str(r.get("status", "")).lower()
-        if "online" in s:
-            online += 1
 
-    # Using the same rule set for counts:
-    offline = sum(1 for r in rows if "offline" in str(r.get("status","")).lower())
-    idle = max(len(rows) - online - offline, 0)
+    def last_action_minutes(text):
+        t = str(text or "").lower().strip()
+        import re
+        m = re.search(r"(\\d+)\\s*(minute|minutes|hour|hours|day|days)\\s*ago", t)
+        if not m:
+            return 999999
+        n = int(m.group(1))
+        unit = m.group(2)
+        if unit.startswith("minute"):
+            return n
+        if unit.startswith("hour"):
+            return n * 60
+        if unit.startswith("day"):
+            return n * 1440
+        return 999999
+
+    ONLINE_MAX_MIN = 15
+    IDLE_MAX_MIN = 60
+
+    online = idle = offline = 0
+    for r in rows:
+        mins = last_action_minutes(r.get("last_action_text"))
+        if mins <= ONLINE_MAX_MIN:
+            online += 1
+        elif mins <= IDLE_MAX_MIN:
+            idle += 1
+        else:
+            offline += 1
 
     return jsonify({
         "updated_at": STATE.get("updated_at"),
