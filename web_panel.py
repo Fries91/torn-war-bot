@@ -91,24 +91,23 @@ HTML = """
     }
     .chip-online{ border-color: rgba(34,197,94,0.7); background: rgba(34,197,94,0.12); }
     .chip-idle{ border-color: rgba(234,179,8,0.7); background: rgba(234,179,8,0.12); }
-    .chip-offline{ border-color: rgba(148,163,184,0.7); background: rgba(148,163,184,0.12); }
+    .chip-offline{ border-color: rgba(220,38,38,0.7); background: rgba(220,38,38,0.12); }
 
-    /* Row status tags (Online/Idle/Offline/Other) */
+    /* Online column tags (ONLY 3 STATES) */
     .tag{
-      padding: 2px 8px;
+      padding: 4px 10px;
       border-radius: 999px;
       font-size: 12px;
       display: inline-block;
-      color: #ffffff !important;
-      font-weight: 800;
-      border: 1px solid rgba(51,65,85,1);
-      background: rgba(255,255,255,0.06);
+      font-weight: 900;
       white-space: nowrap;
+      min-width: 76px;
+      text-align: center;
+      border: 1px solid rgba(51,65,85,1);
     }
-    .tag-online{ border-color: rgba(34,197,94,0.7); background: rgba(34,197,94,0.18); }
-    .tag-idle{ border-color: rgba(234,179,8,0.7); background: rgba(234,179,8,0.18); }
-    .tag-offline{ border-color: rgba(148,163,184,0.7); background: rgba(148,163,184,0.18); }
-    .tag-other{ border-color: rgba(59,130,246,0.7); background: rgba(59,130,246,0.14); } /* traveling / etc */
+    .tag-online{ background: #16a34a; color: #ffffff !important; } /* GREEN */
+    .tag-idle{ background: #eab308; color: #000000 !important; }   /* YELLOW */
+    .tag-offline{ background: #dc2626; color: #ffffff !important; }/* RED */
 
     #err {
       display:none;
@@ -190,31 +189,36 @@ function clearErr(){
 }
 
 /*
-  Buckets for sorting:
-   0 = Online
-   1 = Idle
-   2 = Offline
-   3 = Other (traveling, okay, hospital, etc.)
+  3 buckets:
+   0 = Online (green)
+   1 = Idle (yellow)  <-- includes traveling / returning / in-country
+   2 = Offline (red)
 */
 function bucketStatus(row){
   const s = String(row.status || "").toLowerCase();
+
   if (s.includes("online")) return 0;
-  if (s.includes("idle")) return 1;
-  if (s.includes("offline")) return 2;
-  return 3;
+
+  if (
+    s.includes("idle") ||
+    s.includes("travel") ||
+    s.includes("returning") ||
+    s.startsWith("in ")
+  ) return 1;
+
+  return 2;
 }
 
 function statusLabel(row){
   const b = bucketStatus(row);
   if (b === 0) return { text: "ONLINE", cls: "tag tag-online" };
   if (b === 1) return { text: "IDLE", cls: "tag tag-idle" };
-  if (b === 2) return { text: "OFFLINE", cls: "tag tag-offline" };
-  return { text: "OTHER", cls: "tag tag-other" };
+  return { text: "OFFLINE", cls: "tag tag-offline" };
 }
 
 function lastActionMinutes(text){
   const t = String(text || "").toLowerCase().trim();
-  const m = t.match(/(\d+)\s*(minute|minutes|hour|hours|day|days)\s*ago/);
+  const m = t.match(/(\\d+)\\s*(minute|minutes|hour|hours|day|days)\\s*ago/);
   if (!m) return 999999;
   const n = parseInt(m[1], 10);
   const unit = m[2];
@@ -260,17 +264,16 @@ async function refresh() {
       const b = bucketStatus(r);
       if (b === 0) online++;
       else if (b === 1) idle++;
-      else if (b === 2) offline++;
+      else offline++;
     }
     document.getElementById("onlineCount").textContent = online;
     document.getElementById("idleCount").textContent = idle;
     document.getElementById("offlineCount").textContent = offline;
 
-    // Sort: Online, Idle, Other, Offline
+    // Sort: Online, Idle, Offline
     rows.sort((a,b) => {
-      const map = {0:0, 1:1, 3:2, 2:3};
-      const pa = map[bucketStatus(a)] ?? 99;
-      const pb = map[bucketStatus(b)] ?? 99;
+      const pa = bucketStatus(a);
+      const pb = bucketStatus(b);
       if (pa !== pb) return pa - pb;
 
       const la = lastActionMinutes(a.last_action_text);
