@@ -1,3 +1,4 @@
+# web_panel.py
 from flask import Flask, jsonify, render_template_string
 
 app = Flask(__name__)
@@ -7,7 +8,7 @@ def allow_iframe(resp):
     resp.headers["X-Frame-Options"] = "ALLOWALL"
     resp.headers["Content-Security-Policy"] = "frame-ancestors *"
     return resp
-    
+
 STATE = {
     "rows": [],
     "updated_at": None,
@@ -22,27 +23,66 @@ HTML = """
 <head>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Torn War Dashboard</title>
+
   <style>
+    /* ===== Shield Dark Mode + White Font (screenshot readable) ===== */
     body {
-  font-family: -apple-system, system-ui, Arial;
-  padding: 12px;
-  background: #0f172a;
-  color: #ffffff;
-}
-    .meta { opacity: 0.9; font-size: 14px; margin-bottom: 10px; }
-    .card { border: 1px solid #e6e6e6; border-radius: 12px; padding: 10px; margin: 10px 0; }
-    .big { font-size: 16px; font-weight: 700; }
-    table { border-collapse: collapse; width: 100%; }
-    th, td { border-bottom: 1px solid #eee; padding: 10px 8px; text-align: left; vertical-align: top; }
-    th { position: sticky; top: 0; background: #f7f7f7; }
-    .tag { padding: 2px 8px; border-radius: 999px; font-size: 12px; display:inline-block; }
-    .ok { background: #e8f5e9; }
-    .no { background: #ffebee; }
-    .muted { opacity: .75; }
+      font-family: -apple-system, system-ui, Arial;
+      padding: 12px;
+      background: #0f172a;
+      color: #ffffff;
+    }
+
+    .meta { opacity: 0.95; font-size: 14px; margin-bottom: 10px; color: #ffffff; }
+    .big { font-size: 16px; font-weight: 800; color: #ffffff; }
+    .muted { opacity: .80; color: #ffffff; }
+
+    .card {
+      border: 1px solid #334155;
+      background: #1e293b;
+      border-radius: 12px;
+      padding: 10px;
+      margin: 10px 0;
+      color: #ffffff;
+    }
+
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      color: #ffffff;
+    }
+
+    th, td {
+      border-bottom: 1px solid #334155;
+      padding: 10px 8px;
+      text-align: left;
+      vertical-align: top;
+      color: #ffffff !important;  /* FORCE WHITE */
+    }
+
+    th {
+      position: sticky;
+      top: 0;
+      background: #111827;        /* DARK HEADER */
+      color: #ffffff !important;
+      z-index: 2;
+    }
+
+    .tag {
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      display: inline-block;
+      color: #ffffff !important;
+      font-weight: 700;
+    }
+
+    .ok { background: #16a34a; }  /* green */
+    .no { background: #dc2626; }  /* red */
   </style>
 </head>
-<body>
 
+<body>
   <div class="meta">
     <div class="big">Torn War Dashboard</div>
     <div>Last update: <span id="ts">{{updated_at}}</span></div>
@@ -80,6 +120,7 @@ function fmtUTC(epoch) {
   if (!epoch) return "—";
   return new Date(epoch * 1000).toUTCString();
 }
+
 function fmtCountdown(seconds) {
   if (seconds <= 0) return "LIVE / STARTED";
   const d = Math.floor(seconds / 86400); seconds %= 86400;
@@ -94,12 +135,16 @@ async function refresh() {
   const data = await res.json();
 
   document.getElementById("ts").textContent = data.updated_at || "—";
-  document.getElementById("availCount").textContent = data.available_count ?? "—";
+  document.getElementById("availCount").textContent = (data.available_count ?? "—");
 
   if (data.chain && data.chain.current != null) {
-    document.getElementById("chainText").textContent = `${data.chain.current} / ${data.chain.max ?? "—"}`;
+    document.getElementById("chainText").textContent = `${data.chain.current} / ${(data.chain.max ?? "—")}`;
     document.getElementById("chainTimeout").textContent = fmtUTC(data.chain.timeout);
     document.getElementById("chainCooldown").textContent = fmtUTC(data.chain.cooldown);
+  } else {
+    document.getElementById("chainText").textContent = "—";
+    document.getElementById("chainTimeout").textContent = "—";
+    document.getElementById("chainCooldown").textContent = "—";
   }
 
   if (data.war && data.war.start) {
@@ -114,16 +159,17 @@ async function refresh() {
 
   const tbody = document.getElementById("tbody");
   tbody.innerHTML = "";
+
   for (const r of (data.rows || [])) {
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td>${r.name} <span class="muted">[${r.torn_id}]</span></td>
-      <td>${r.status}</td>
+      <td>${r.status || ""}</td>
       <td>${r.hospitalized ? "YES" : "NO"}</td>
-      <td>${r.timezone}</td>
+      <td>${r.timezone || "—"}</td>
       <td>${r.available_now ? '<span class="tag ok">YES</span>' : '<span class="tag no">NO</span>'}</td>
-      <td>${r.energy_text}</td>
-      <td>${r.last_action_text}</td>
+      <td>${r.energy_text || "—"}</td>
+      <td>${r.last_action_text || ""}</td>
     `;
     tbody.appendChild(tr);
   }
@@ -141,36 +187,41 @@ setInterval(refresh, 20000);
 def index():
     return render_template_string(
         HTML,
-        updated_at=STATE["updated_at"] or "—",
+        updated_at=STATE.get("updated_at") or "—",
         available_count=STATE.get("available_count", 0),
     )
 
 @app.get("/api/sheet")
 def api_sheet():
+    # Full live data for the dashboard (used by JS + screenshot)
     return jsonify(STATE)
 
 @app.get("/api/status")
 def api_status():
+    """
+    Lightweight status endpoint (optional).
+    Counts online + available + not available based on current STATE rows.
+    """
     rows = STATE.get("rows") or []
 
-    # Count online members
     online = 0
     for r in rows:
-        # If you store a boolean online field
+        # if you ever store an explicit boolean
         if r.get("online") is True:
             online += 1
         else:
-            # Otherwise detect from status text
             s = str(r.get("status", "")).lower()
-            if "online" in s or "idle" in s:
+            if ("online" in s) or ("idle" in s):
                 online += 1
 
     available = sum(1 for r in rows if r.get("available_now") is True)
     not_available = max(len(rows) - available, 0)
 
     return jsonify({
+        "updated_at": STATE.get("updated_at"),
         "online": online,
         "available": available,
-        "notAvailable": not_available,
-        "updated_at": STATE.get("updated_at")
+        "not_available": not_available,
+        "chain": STATE.get("chain") or {},
+        "war": STATE.get("war") or {},
     })
