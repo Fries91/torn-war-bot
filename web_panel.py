@@ -93,7 +93,7 @@ HTML = """
     .chip-idle{ border-color: rgba(234,179,8,0.7); background: rgba(234,179,8,0.12); }
     .chip-offline{ border-color: rgba(220,38,38,0.7); background: rgba(220,38,38,0.12); }
 
-    /* Online column tags (ONLY 3 STATES) */
+    /* Online column tags */
     .tag{
       padding: 4px 10px;
       border-radius: 999px;
@@ -189,32 +189,23 @@ function clearErr(){
 }
 
 /*
-  3 buckets:
-   0 = Online (green)
-   1 = Idle (yellow)  <-- includes idle/okay + traveling/returning/in-country
-   2 = Offline (red)
+  Rules:
+   - ONLINE if status contains "online"
+   - OFFLINE if status contains "offline"
+   - IDLE otherwise
 */
 function bucketStatus(row){
   const s = String(row.status || "").toLowerCase();
-
-  if (s.includes("online")) return 0;
-
-  if (
-    s.includes("idle") ||
-    s.includes("okay") ||          // ✅ ADDED: treat "Okay" as IDLE
-    s.includes("travel") ||
-    s.includes("returning") ||
-    s.startsWith("in ")
-  ) return 1;
-
-  return 2;
+  if (s.includes("online")) return 0;   // ONLINE
+  if (s.includes("offline")) return 2;  // OFFLINE
+  return 1;                             // IDLE (everything else)
 }
 
 function statusLabel(row){
   const b = bucketStatus(row);
   if (b === 0) return { text: "ONLINE", cls: "tag tag-online" };
-  if (b === 1) return { text: "IDLE", cls: "tag tag-idle" };
-  return { text: "OFFLINE", cls: "tag tag-offline" };
+  if (b === 2) return { text: "OFFLINE", cls: "tag tag-offline" };
+  return { text: "IDLE", cls: "tag tag-idle" };
 }
 
 function lastActionMinutes(text){
@@ -334,24 +325,21 @@ def api_status():
         return ("", 204)
 
     rows = STATE.get("rows") or []
-
     online = 0
     for r in rows:
-        if r.get("online") is True:
+        s = str(r.get("status", "")).lower()
+        if "online" in s:
             online += 1
-        else:
-            s = str(r.get("status", "")).lower()
-            if ("online" in s) or ("idle" in s):
-                online += 1
 
-    available = sum(1 for r in rows if r.get("available_now") is True)
-    not_available = max(len(rows) - available, 0)
+    # Using the same rule set for counts:
+    offline = sum(1 for r in rows if "offline" in str(r.get("status","")).lower())
+    idle = max(len(rows) - online - offline, 0)
 
     return jsonify({
         "updated_at": STATE.get("updated_at"),
         "online": online,
-        "available": available,
-        "not_available": not_available,
+        "idle": idle,
+        "offline": offline,
         "chain": STATE.get("chain") or {},
         "war": STATE.get("war") or {},
     })
