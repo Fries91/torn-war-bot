@@ -3,41 +3,27 @@ from flask import Flask, jsonify, render_template_string, request
 
 app = Flask(__name__)
 
-# -----------------------------
-# Security + Embed + CORS Headers
-# -----------------------------
 @app.after_request
 def headers(resp):
-    # ---- Allow embedding in iframes (Torn / PDA overlays) ----
-    # Remove any existing X-Frame-Options that could block embedding
     resp.headers.pop("X-Frame-Options", None)
-
-    # Modern browsers use CSP frame-ancestors for iframe rules
     resp.headers["Content-Security-Policy"] = (
         "frame-ancestors https://www.torn.com https://torn.com *"
     )
 
-    # ---- CORS: allow Torn.com pages (Tampermonkey fetch) to call /api/* ----
     origin = request.headers.get("Origin", "")
     allowed = {"https://www.torn.com", "https://torn.com"}
-
     if origin in allowed:
         resp.headers["Access-Control-Allow-Origin"] = origin
         resp.headers["Vary"] = "Origin"
     else:
-        # Optional: allow direct/no-origin requests & other clients
         resp.headers["Access-Control-Allow-Origin"] = "*"
 
     resp.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
     resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
     resp.headers["Access-Control-Max-Age"] = "86400"
-
     return resp
 
 
-# -----------------------------
-# In-memory state (your bot updates this elsewhere)
-# -----------------------------
 STATE = {
     "rows": [],
     "updated_at": None,
@@ -46,10 +32,6 @@ STATE = {
     "available_count": 0,
 }
 
-
-# -----------------------------
-# Dashboard Page (renders table via JS calling /api/sheet)
-# -----------------------------
 HTML = """
 <!doctype html>
 <html>
@@ -78,12 +60,7 @@ HTML = """
       color: #ffffff;
     }
 
-    table {
-      border-collapse: collapse;
-      width: 100%;
-      color: #ffffff;
-    }
-
+    table { border-collapse: collapse; width: 100%; color: #ffffff; }
     th, td {
       border-bottom: 1px solid #334155;
       padding: 10px 8px;
@@ -100,17 +77,38 @@ HTML = """
       z-index: 2;
     }
 
-    .tag {
+    /* Status chips at top */
+    .chip{
+      display:inline-block;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 800;
+      border: 1px solid #334155;
+      background: rgba(255,255,255,0.06);
+      margin-right: 6px;
+      white-space: nowrap;
+    }
+    .chip-online{ border-color: rgba(34,197,94,0.7); background: rgba(34,197,94,0.12); }
+    .chip-idle{ border-color: rgba(234,179,8,0.7); background: rgba(234,179,8,0.12); }
+    .chip-offline{ border-color: rgba(148,163,184,0.7); background: rgba(148,163,184,0.12); }
+
+    /* Row status tags (Online/Idle/Offline/Other) */
+    .tag{
       padding: 2px 8px;
       border-radius: 999px;
       font-size: 12px;
       display: inline-block;
       color: #ffffff !important;
-      font-weight: 700;
+      font-weight: 800;
+      border: 1px solid rgba(51,65,85,1);
+      background: rgba(255,255,255,0.06);
+      white-space: nowrap;
     }
-
-    .ok { background: #16a34a; }
-    .no { background: #dc2626; }
+    .tag-online{ border-color: rgba(34,197,94,0.7); background: rgba(34,197,94,0.18); }
+    .tag-idle{ border-color: rgba(234,179,8,0.7); background: rgba(234,179,8,0.18); }
+    .tag-offline{ border-color: rgba(148,163,184,0.7); background: rgba(148,163,184,0.18); }
+    .tag-other{ border-color: rgba(59,130,246,0.7); background: rgba(59,130,246,0.14); } /* traveling / etc */
 
     #err {
       display:none;
@@ -130,7 +128,7 @@ HTML = """
   <div class="meta">
     <div class="big">Torn War Dashboard</div>
     <div>Last update: <span id="ts">{{updated_at}}</span></div>
-    <div class="muted">Auto-refresh every 20s (PDA-friendly).</div>
+    <div class="muted">Auto-refresh every 25s (PDA-friendly).</div>
   </div>
 
   <div class="card">
@@ -141,7 +139,11 @@ HTML = """
   <div class="card">
     <div><b>Next Ranked War</b>: <span id="warText">—</span></div>
     <div><b>Countdown</b>: <span id="warCountdown">—</span></div>
-    <div class="muted">Available now: <span id="availCount">{{available_count}}</span></div>
+    <div class="muted">
+      <span class="chip chip-online">Online: <span id="onlineCount">0</span></span>
+      <span class="chip chip-idle">Idle: <span id="idleCount">0</span></span>
+      <span class="chip chip-offline">Offline: <span id="offlineCount">0</span></span>
+    </div>
   </div>
 
   <div id="err"></div>
@@ -150,10 +152,10 @@ HTML = """
     <thead>
       <tr>
         <th>Member</th>
+        <th>Online</th>
         <th>Status</th>
         <th>Hosp</th>
         <th>Timezone</th>
-        <th>Avail Now</th>
         <th>Energy</th>
         <th>Last Action</th>
       </tr>
@@ -187,6 +189,41 @@ function clearErr(){
   el.textContent = "";
 }
 
+/*
+  Buckets for sorting:
+   0 = Online
+   1 = Idle
+   2 = Offline
+   3 = Other (traveling, okay, hospital, etc.)
+*/
+function bucketStatus(row){
+  const s = String(row.status || "").toLowerCase();
+  if (s.includes("online")) return 0;
+  if (s.includes("idle")) return 1;
+  if (s.includes("offline")) return 2;
+  return 3;
+}
+
+function statusLabel(row){
+  const b = bucketStatus(row);
+  if (b === 0) return { text: "ONLINE", cls: "tag tag-online" };
+  if (b === 1) return { text: "IDLE", cls: "tag tag-idle" };
+  if (b === 2) return { text: "OFFLINE", cls: "tag tag-offline" };
+  return { text: "OTHER", cls: "tag tag-other" };
+}
+
+function lastActionMinutes(text){
+  const t = String(text || "").toLowerCase().trim();
+  const m = t.match(/(\d+)\s*(minute|minutes|hour|hours|day|days)\s*ago/);
+  if (!m) return 999999;
+  const n = parseInt(m[1], 10);
+  const unit = m[2];
+  if (unit.startsWith("minute")) return n;
+  if (unit.startsWith("hour")) return n * 60;
+  if (unit.startsWith("day")) return n * 1440;
+  return 999999;
+}
+
 async function refresh() {
   try{
     const res = await fetch("/api/sheet", { cache: "no-store" });
@@ -195,7 +232,6 @@ async function refresh() {
     clearErr();
 
     document.getElementById("ts").textContent = data.updated_at || "—";
-    document.getElementById("availCount").textContent = (data.available_count ?? "—");
 
     if (data.chain && data.chain.current != null) {
       document.getElementById("chainText").textContent = `${data.chain.current} / ${(data.chain.max ?? "—")}`;
@@ -217,17 +253,46 @@ async function refresh() {
       document.getElementById("warCountdown").textContent = "—";
     }
 
+    const rows = Array.isArray(data.rows) ? data.rows.slice() : [];
+
+    let online = 0, idle = 0, offline = 0;
+    for (const r of rows){
+      const b = bucketStatus(r);
+      if (b === 0) online++;
+      else if (b === 1) idle++;
+      else if (b === 2) offline++;
+    }
+    document.getElementById("onlineCount").textContent = online;
+    document.getElementById("idleCount").textContent = idle;
+    document.getElementById("offlineCount").textContent = offline;
+
+    // Sort: Online, Idle, Other, Offline
+    rows.sort((a,b) => {
+      const map = {0:0, 1:1, 3:2, 2:3};
+      const pa = map[bucketStatus(a)] ?? 99;
+      const pb = map[bucketStatus(b)] ?? 99;
+      if (pa !== pb) return pa - pb;
+
+      const la = lastActionMinutes(a.last_action_text);
+      const lb = lastActionMinutes(b.last_action_text);
+      if (la !== lb) return la - lb;
+
+      return String(a.name || "").localeCompare(String(b.name || ""));
+    });
+
     const tbody = document.getElementById("tbody");
     tbody.innerHTML = "";
 
-    for (const r of (data.rows || [])) {
+    for (const r of rows) {
       const tr = document.createElement("tr");
+      const st = statusLabel(r);
+
       tr.innerHTML = `
         <td>${r.name || ""} <span class="muted">[${r.torn_id ?? ""}]</span></td>
+        <td><span class="${st.cls}">${st.text}</span></td>
         <td>${r.status || ""}</td>
         <td>${r.hospitalized ? "YES" : "NO"}</td>
         <td>${r.timezone || "—"}</td>
-        <td>${r.available_now ? '<span class="tag ok">YES</span>' : '<span class="tag no">NO</span>'}</td>
         <td>${r.energy_text || "—"}</td>
         <td>${r.last_action_text || ""}</td>
       `;
@@ -239,38 +304,28 @@ async function refresh() {
 }
 
 refresh();
-setInterval(refresh, 20000);
+setInterval(refresh, 25000);
 </script>
 
 </body>
 </html>
 """
 
-
-# -----------------------------
-# Routes
-# -----------------------------
 @app.get("/")
 def index():
     return render_template_string(
         HTML,
         updated_at=STATE.get("updated_at") or "—",
-        available_count=STATE.get("available_count", 0),
     )
-
 
 @app.route("/api/sheet", methods=["GET", "OPTIONS"])
 def api_sheet():
-    # Handle CORS preflight
     if request.method == "OPTIONS":
         return ("", 204)
-    # Full live data for the dashboard + Tampermonkey overlay
     return jsonify(STATE)
-
 
 @app.route("/api/status", methods=["GET", "OPTIONS"])
 def api_status():
-    # Handle CORS preflight
     if request.method == "OPTIONS":
         return ("", 204)
 
@@ -297,7 +352,5 @@ def api_status():
         "war": STATE.get("war") or {},
     })
 
-
-# Optional local run (Render can ignore this if using gunicorn)
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
