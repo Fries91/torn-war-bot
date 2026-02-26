@@ -191,7 +191,7 @@ function clearErr(){
 /*
   3 buckets:
    0 = Online (green)
-   1 = Idle (yellow)  <-- includes traveling / returning / in-country
+   1 = Idle (yellow)  <-- includes idle/okay + traveling/returning/in-country
    2 = Offline (red)
 */
 function bucketStatus(row){
@@ -201,6 +201,7 @@ function bucketStatus(row){
 
   if (
     s.includes("idle") ||
+    s.includes("okay") ||          // ✅ ADDED: treat "Okay" as IDLE
     s.includes("travel") ||
     s.includes("returning") ||
     s.startsWith("in ")
