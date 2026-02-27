@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: torn-war-bot
+    env: python
+    startCommand: python web_panel.py
+    buildCommand: |
+      pip install -r requirements.txt
+  - type: worker
+    name: torn-war-worker
+    env: python
+    startCommand: python worker_bot.py
+    buildCommand: |
+      pip install -r requirements.txt
+      python -m playwright install chromium
