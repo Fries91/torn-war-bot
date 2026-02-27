@@ -198,11 +198,7 @@ async def timezone_cmd(interaction: discord.Interaction, tz: str):
     await set_timezone(interaction.user.id, tz)
     await interaction.response.send_message(f"✅ Timezone set to {tz}", ephemeral=True)
 
-# ✅ /availability now replaces /opt
-# Rule:
-#  - if end == "00:00" (or start/end both "00:00") => opt-out (enabled=0)
-#  - otherwise => opt-in (enabled=1)
-@bot.tree.command(name="availability", description="Set your availability window (auto opt-in/out).")
+@bot.tree.command(name="availability", description="Set your availability window (YOUR local HH:MM).")
 @app_commands.describe(start="Start HH:MM", end="End HH:MM")
 async def availability_cmd(interaction: discord.Interaction, start: str, end: str):
     try:
@@ -210,27 +206,14 @@ async def availability_cmd(interaction: discord.Interaction, start: str, end: st
     except Exception:
         await interaction.response.send_message("❌ Use HH:MM format, e.g. 18:00 23:30", ephemeral=True)
         return
-
     await set_availability(interaction.user.id, start, end)
+    await interaction.response.send_message(f"✅ Availability set: {start} → {end}", ephemeral=True)
 
-    if end == "00:00":
-        await set_enabled(interaction.user.id, 0)  # opt-out
-        await interaction.response.send_message(
-            f"✅ Availability set: {start} → {end} (opted-out)",
-            ephemeral=True
-        )
-    else:
-        await set_enabled(interaction.user.id, 1)  # opt-in
-        await interaction.response.send_message(
-            f"✅ Availability set: {start} → {end} (opted-in)",
-            ephemeral=True
-        )
-
-@bot.tree.command(name="clearavailability", description="Clear availability (00:00 → 00:00) and opt-out.")
-async def clearavailability_cmd(interaction: discord.Interaction):
-    await set_availability(interaction.user.id, "00:00", "00:00")
-    await set_enabled(interaction.user.id, 0)
-    await interaction.response.send_message("✅ Availability cleared and opted-out.", ephemeral=True)
+@bot.tree.command(name="opt", description="Opt in/out of being counted for availability.")
+@app_commands.describe(enabled="true = opt-in, false = opt-out")
+async def opt_cmd(interaction: discord.Interaction, enabled: bool):
+    await set_enabled(interaction.user.id, 1 if enabled else 0)
+    await interaction.response.send_message(f"✅ Enabled = {enabled}", ephemeral=True)
 
 async def capture_dashboard_png() -> bytes | None:
     if not bot.browser:
@@ -238,7 +221,7 @@ async def capture_dashboard_png() -> bytes | None:
     try:
         page = await bot.browser.new_page(viewport={"width": 980, "height": 1600})
         await page.goto(f"{PUBLIC_BASE_URL}/", wait_until="domcontentloaded", timeout=45000)
-        await page.wait_for_timeout(2500)
+        await page.wait_for_timeout(2500)  # let JS populate table
         png = await page.screenshot(full_page=True, type="png")
         await page.close()
         return png
@@ -266,6 +249,7 @@ async def refresh_loop():
     if not bot.http_session:
         return
 
+    # --- Fetch faction data ---
     try:
         faction_data = await get_faction_overview(bot.http_session, FACTION_ID, FACTION_API_KEY)
     except Exception as e:
@@ -274,6 +258,7 @@ async def refresh_loop():
 
     members = faction_data.get("members", {}) or {}
 
+    # chain
     chain = faction_data.get("chain") or {}
     web_panel.STATE["chain"] = {
         "current": chain.get("current"),
@@ -282,6 +267,7 @@ async def refresh_loop():
         "cooldown": chain.get("cooldown"),
     }
 
+    # next ranked war
     rankedwars = faction_data.get("rankedwars") or {}
     now_utc = int(datetime.utcnow().timestamp())
     next_rw = None
@@ -333,6 +319,7 @@ async def refresh_loop():
         avail_start = s.get("avail_start") or "18:00"
         avail_end = s.get("avail_end") or "23:59"
 
+        # energy only if linked key
         energy_text = "—"
         key = await get_key_for_torn_id(torn_id)
         if key:
@@ -372,15 +359,17 @@ async def refresh_loop():
     web_panel.STATE["available_count"] = available_count
     web_panel.STATE["updated_at"] = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
 
+    # 5+ ping with cooldown
     if available_count >= PING_THRESHOLD and ALERT_CHANNEL_ID and ALERT_ROLE_ID:
         now = datetime.utcnow().timestamp()
         can_ping = (bot.last_pinged_at_utc is None) or ((now - bot.last_pinged_at_utc) >= PING_COOLDOWN_SECONDS)
         if can_ping:
             ch = bot.get_channel(ALERT_CHANNEL_ID)
             if ch:
-                await ch.send(f"<@&{ALERT_ROLE_ID}> **{available_count} members available now** ✅ {PUBLIC_BASE_URL}/")
+                await ch.send(f"<@&{ALERT_ROLE_ID}> **{available_count} members available now** ✅  {PUBLIC_BASE_URL}/")
                 bot.last_pinged_at_utc = now
 
+    # Live image screen in #war-availability
     try:
         if LIVE_SHEET_CHANNEL_ID:
             channel = bot.get_channel(LIVE_SHEET_CHANNEL_ID)
