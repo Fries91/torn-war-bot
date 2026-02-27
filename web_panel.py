@@ -1,7 +1,11 @@
 # web_panel.py
+import os
 from flask import Flask, jsonify, render_template_string, request
 
 app = Flask(__name__)
+
+# ✅ Shared secret for worker -> web push (set as env var on BOTH services)
+WEB_SHARED_SECRET = (os.getenv("WEB_SHARED_SECRET") or "").strip()
 
 @app.after_request
 def headers(resp):
@@ -190,7 +194,6 @@ function clearErr(){
 
 function lastActionMinutes(text){
   const t = String(text || "").toLowerCase().trim();
-  // Examples: "3 minutes ago", "1 hour ago", "1 day ago"
   const m = t.match(/(\\d+)\\s*(minute|minutes|hour|hours|day|days)\\s*ago/);
   if (!m) return 999999;
   const n = parseInt(m[1], 10);
@@ -201,20 +204,14 @@ function lastActionMinutes(text){
   return 999999;
 }
 
-/*
-  Torn-like Online/Idle/Offline using LAST ACTION time:
-   - ONLINE  <= 15 minutes
-   - IDLE    <= 60 minutes
-   - OFFLINE >  60 minutes (or unknown)
-*/
 const ONLINE_MAX_MIN = 15;
 const IDLE_MAX_MIN   = 60;
 
 function bucketStatus(row){
   const mins = lastActionMinutes(row.last_action_text);
-  if (mins <= ONLINE_MAX_MIN) return 0; // ONLINE
-  if (mins <= IDLE_MAX_MIN)   return 1; // IDLE
-  return 2;                              // OFFLINE
+  if (mins <= ONLINE_MAX_MIN) return 0;
+  if (mins <= IDLE_MAX_MIN)   return 1;
+  return 2;
 }
 
 function statusLabel(row){
@@ -266,16 +263,13 @@ async function refresh() {
     document.getElementById("idleCount").textContent = idle;
     document.getElementById("offlineCount").textContent = offline;
 
-    // Sort: Online, Idle, Offline (then most recent action, then name)
     rows.sort((a,b) => {
       const pa = bucketStatus(a);
       const pb = bucketStatus(b);
       if (pa !== pb) return pa - pb;
-
       const la = lastActionMinutes(a.last_action_text);
       const lb = lastActionMinutes(b.last_action_text);
       if (la !== lb) return la - lb;
-
       return String(a.name || "").localeCompare(String(b.name || ""));
     });
 
@@ -317,6 +311,26 @@ def index():
         updated_at=STATE.get("updated_at") or "—",
     )
 
+# ✅ NEW: Worker pushes live state here
+@app.route("/api/push_state", methods=["POST", "OPTIONS"])
+def push_state():
+    if request.method == "OPTIONS":
+        return ("", 204)
+
+    secret = request.headers.get("X-STATE-SECRET", "")
+    if not WEB_SHARED_SECRET or secret != WEB_SHARED_SECRET:
+        return ("forbidden", 403)
+
+    data = request.get_json(silent=True) or {}
+
+    STATE["rows"] = data.get("rows", []) or []
+    STATE["updated_at"] = data.get("updated_at")
+    STATE["chain"] = data.get("chain") or STATE["chain"]
+    STATE["war"] = data.get("war") or STATE["war"]
+    STATE["available_count"] = int(data.get("available_count", 0) or 0)
+
+    return jsonify({"ok": True})
+
 @app.route("/api/sheet", methods=["GET", "OPTIONS"])
 def api_sheet():
     if request.method == "OPTIONS":
@@ -325,12 +339,6 @@ def api_sheet():
 
 @app.route("/api/status", methods=["GET", "OPTIONS"])
 def api_status():
-    """
-    Status counts based on LAST ACTION time (same as the dashboard UI):
-     - ONLINE  <= 15 minutes
-     - IDLE    <= 60 minutes
-     - OFFLINE >  60 minutes (or unknown)
-    """
     if request.method == "OPTIONS":
         return ("", 204)
 
@@ -373,9 +381,6 @@ def api_status():
         "chain": STATE.get("chain") or {},
         "war": STATE.get("war") or {},
     })
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "10000"))
