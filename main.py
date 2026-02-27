@@ -45,6 +45,9 @@ ALERT_ROLE_ID = env_int("ALERT_ROLE_ID", 0)
 LIVE_SHEET_CHANNEL_ID = env_int("LIVE_SHEET_CHANNEL_ID", 0)
 SCREENSHOT_INTERVAL = env_int("SCREENSHOT_INTERVAL", 60)
 
+# ✅ Option B toggle (Render-safe): screenshots off by default
+ENABLE_SCREENSHOTS = os.getenv("ENABLE_SCREENSHOTS", "0") == "1"
+
 # Torn-like online rules using LAST ACTION
 ONLINE_MAX_MIN = 15  # <= 15 min = ONLINE (counts for availability)
 
@@ -142,7 +145,12 @@ def build_sheet_embed() -> discord.Embed:
         more = f"\n… +{len(not_avail)-NOT_MAX} more" if len(not_avail) > NOT_MAX else ""
         embed.add_field(name=f"❌ Not Available ({len(not_avail)})", value="\n".join(lines) + more, inline=False)
 
-    embed.set_footer(text=f"Updated: {web_panel.STATE.get('updated_at','—')} • Image refresh: {SCREENSHOT_INTERVAL}s")
+    footer_bits = [f"Updated: {web_panel.STATE.get('updated_at','—')}"]
+    if ENABLE_SCREENSHOTS:
+        footer_bits.append(f"Image refresh: {SCREENSHOT_INTERVAL}s")
+    else:
+        footer_bits.append("Images: OFF")
+    embed.set_footer(text=" • ".join(footer_bits))
     return embed
 
 class TornWarBot(discord.Client):
@@ -159,25 +167,31 @@ class TornWarBot(discord.Client):
     async def setup_hook(self):
         await init_db()
 
-        # ✅ Guild-only sync (prevents 429 spam on Render restarts)
-        if GUILD_ID:
-            guild = discord.Object(id=GUILD_ID)
-            self.tree.copy_global_to(guild=guild)
-            try:
-                await self.tree.sync(guild=guild)
-                print(f"✅ Synced commands to guild {GUILD_ID}")
-            except discord.HTTPException as e:
-                print("⚠️ Guild sync failed:", e)
-        else:
-            print("⚠️ No GUILD_ID set; skipping sync to avoid rate limits.")
+        # Keep your current behavior (you can change later)
+        # NOTE: global sync can rate-limit if you restart a lot
+        try:
+            await self.tree.sync()
+        except discord.HTTPException as e:
+            print("⚠️ Command sync failed:", e)
 
         self.http_session = aiohttp.ClientSession()
 
-        # Playwright (Render-safe)
-        self.pw = await async_playwright().start()
-        self.browser = await self.pw.chromium.launch(
-            args=["--no-sandbox", "--disable-dev-shm-usage"]
-        )
+        # ✅ Option B: Safe Playwright (will NOT crash Render)
+        if ENABLE_SCREENSHOTS:
+            try:
+                self.pw = await async_playwright().start()
+                self.browser = await self.pw.chromium.launch(
+                    args=["--no-sandbox", "--disable-dev-shm-usage"]
+                )
+                print("✅ Playwright ready")
+            except Exception as e:
+                self.pw = None
+                self.browser = None
+                print("⚠️ Playwright failed, disabled:", e)
+        else:
+            self.pw = None
+            self.browser = None
+            print("ℹ️ Screenshots disabled (ENABLE_SCREENSHOTS=0)")
 
         refresh_loop.start()
 
@@ -358,7 +372,6 @@ async def refresh_loop():
             except Exception:
                 energy_text = "key err"
 
-        # ✅ Time-window availability (NO /opt)
         available_now = False
         if (not hospitalized) and is_online_now(last_action_text):
             try:
@@ -394,18 +407,20 @@ async def refresh_loop():
                 await ch.send(f"<@&{ALERT_ROLE_ID}> **{available_count} members available now** ✅  {PUBLIC_BASE_URL}/")
                 bot.last_pinged_at_utc = now
 
-    try:
-        if LIVE_SHEET_CHANNEL_ID:
-            channel = bot.get_channel(LIVE_SHEET_CHANNEL_ID)
-            if isinstance(channel, discord.TextChannel):
-                now_ts = datetime.utcnow().timestamp()
-                if now_ts - bot._last_screen_utc >= SCREENSHOT_INTERVAL:
-                    png = await capture_dashboard_png()
-                    if png:
-                        await post_or_update_image(channel, build_sheet_embed(), png)
-                        bot._last_screen_utc = now_ts
-    except Exception as e:
-        print("Live screen post failed:", e)
+    # ✅ Only do live screenshots when enabled
+    if ENABLE_SCREENSHOTS:
+        try:
+            if LIVE_SHEET_CHANNEL_ID:
+                channel = bot.get_channel(LIVE_SHEET_CHANNEL_ID)
+                if isinstance(channel, discord.TextChannel):
+                    now_ts = datetime.utcnow().timestamp()
+                    if now_ts - bot._last_screen_utc >= SCREENSHOT_INTERVAL:
+                        png = await capture_dashboard_png()
+                        if png:
+                            await post_or_update_image(channel, build_sheet_embed(), png)
+                            bot._last_screen_utc = now_ts
+        except Exception as e:
+            print("Live screen post failed:", e)
 
 def run_web():
     web_panel.app.run(host=WEB_HOST, port=WEB_PORT, debug=False, use_reloader=False)
