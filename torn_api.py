@@ -2,30 +2,23 @@ import aiohttp
 
 BASE = "https://api.torn.com"
 
-# One shared timeout object (more reliable than a bare int)
-TIMEOUT = aiohttp.ClientTimeout(total=45)
-
 async def torn_get(session: aiohttp.ClientSession, path: str, params: dict):
-    url = f"{BASE}{path}"
-    async with session.get(url, params=params, timeout=TIMEOUT) as r:
-        # If Torn or a proxy returns HTML, this avoids crashing with JSON decode errors
-        ctype = (r.headers.get("Content-Type") or "").lower()
-        if r.status != 200:
+    async with session.get(f"{BASE}{path}", params=params, timeout=aiohttp.ClientTimeout(total=20)) as r:
+        # Torn sometimes returns non-json on errors; guard it.
+        ct = (r.headers.get("Content-Type") or "").lower()
+        if "application/json" not in ct:
             text = await r.text()
-            raise RuntimeError(f"Torn HTTP {r.status} for {path}: {text[:200]}")
-
-        if "application/json" in ctype:
-            data = await r.json()
-        else:
-            text = await r.text()
-            raise RuntimeError(f"Non-JSON response from Torn for {path}: {text[:200]}")
+            raise RuntimeError(f"Torn API non-JSON response (HTTP {r.status}): {text[:250]}")
+        data = await r.json()
 
         if isinstance(data, dict) and "error" in data:
+            # Torn error object is usually {error: {code, error}}
             raise RuntimeError(f"Torn API error: {data['error']}")
+
         return data
 
 async def get_faction_overview(session: aiohttp.ClientSession, faction_id: str, faction_key: str):
-    # ✅ IMPORTANT: include "members" so your dashboard can show faction members
+    # ✅ IMPORTANT: include 'members' or you will get rows=[]
     return await torn_get(session, f"/faction/{faction_id}", {
         "selections": "basic,members,chain,rankedwars",
         "key": faction_key
