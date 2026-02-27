@@ -1,13 +1,9 @@
-# worker_bot.py  ✅ Render Background Worker entrypoint (COMPLETE)
-# - Pulls Torn faction data on an interval
-# - Computes availability + (optional) energy (if user linked key)
-# - Pushes live STATE to your Web Service:  POST {WEB_BASE_URL}/api/push_state  with header X-STATE-SECRET
-# - Optional Discord posts: /sheet command, 5+ ping, live screenshot message (Playwright)
-
+# worker_bot.py  ✅ Background Worker entrypoint (Render)
 import os
 import io
 import asyncio
 from datetime import datetime, time as dtime
+from typing import Optional
 
 import pytz
 import aiohttp
@@ -26,28 +22,25 @@ from torn_api import get_faction_overview, get_user_energy
 
 load_dotenv()
 
-# ===== ENV =====
+# ---------- ENV ----------
 DISCORD_TOKEN = (os.getenv("DISCORD_TOKEN") or "").strip()
 FACTION_ID = (os.getenv("FACTION_ID") or "").strip()
 FACTION_API_KEY = (os.getenv("FACTION_API_KEY") or "").strip()
 
-# Web Service URL (the Flask dashboard service)
-WEB_BASE_URL = (os.getenv("WEB_BASE_URL") or "").strip().rstrip("/")  # e.g. https://torn-war-bot.onrender.com
+# Web service base URL (THIS is what your error was about)
+WEB_BASE_URL = (os.getenv("WEB_BASE_URL") or "").strip().rstrip("/")
 
-# Secret must match web service WEB_SHARED_SECRET
+# Shared secret for worker -> web state push (set on BOTH services)
 WEB_SHARED_SECRET = (os.getenv("WEB_SHARED_SECRET") or "").strip()
 
-# For /sheet command + screenshot navigation (usually same as WEB_BASE_URL)
-PUBLIC_BASE_URL = (os.getenv("PUBLIC_BASE_URL") or WEB_BASE_URL or "").strip().rstrip("/")
+REFRESH_INTERVAL = int(os.getenv("REFRESH_INTERVAL", "60"))
+SCREENSHOT_INTERVAL = int(os.getenv("SCREENSHOT_INTERVAL", "600"))          # 10 min default
+DISCORD_BACKOFF_SECONDS = int(os.getenv("DISCORD_BACKOFF_SECONDS", "3600")) # 1 hour backoff
 
-# Intervals
-REFRESH_INTERVAL = int(os.getenv("REFRESH_INTERVAL", "60"))          # Torn fetch interval
-SCREENSHOT_INTERVAL = int(os.getenv("SCREENSHOT_INTERVAL", "600"))   # Screenshot post interval
-DISCORD_BACKOFF_SECONDS = int(os.getenv("DISCORD_BACKOFF_SECONDS", "3600"))
-
-# Ping rules
 PING_THRESHOLD = int(os.getenv("PING_THRESHOLD", "5"))
 PING_COOLDOWN_SECONDS = int(os.getenv("PING_COOLDOWN_SECONDS", "600"))
+
+DISABLE_DISCORD_POSTS = (os.getenv("DISABLE_DISCORD_POSTS") or "").strip() == "1"
 
 def env_int(name: str, default: int = 0) -> int:
     v = (os.getenv(name) or "").strip()
@@ -57,9 +50,7 @@ ALERT_CHANNEL_ID = env_int("ALERT_CHANNEL_ID", 0)
 ALERT_ROLE_ID = env_int("ALERT_ROLE_ID", 0)
 LIVE_SHEET_CHANNEL_ID = env_int("LIVE_SHEET_CHANNEL_ID", 0)
 
-DISABLE_DISCORD_POSTS = (os.getenv("DISABLE_DISCORD_POSTS") or "").strip() == "1"
-
-# ===== Worker-local STATE (also pushed to web service) =====
+# ---------- STATE ----------
 STATE = {
     "rows": [],
     "updated_at": None,
@@ -68,7 +59,7 @@ STATE = {
     "available_count": 0,
 }
 
-# ===== Helpers =====
+# ---------- HELPERS ----------
 def parse_hhmm(s: str) -> dtime:
     hh, mm = s.split(":")
     return dtime(hour=int(hh), minute=int(mm))
@@ -91,16 +82,19 @@ def status_is_online(desc: str) -> bool:
 def status_is_hospital(desc: str) -> bool:
     return "hospital" in (desc or "").lower()
 
-def fmt_countdown(epoch_start: int | None) -> str:
+def fmt_countdown(epoch_start: Optional[int]) -> str:
     if not epoch_start:
         return "—"
     now = int(datetime.utcnow().timestamp())
     diff = epoch_start - now
     if diff <= 0:
         return "LIVE / STARTED"
-    d = diff // 86400; diff %= 86400
-    h = diff // 3600; diff %= 3600
-    m = diff // 60; s = diff % 60
+    d = diff // 86400
+    diff %= 86400
+    h = diff // 3600
+    diff %= 3600
+    m = diff // 60
+    s = diff % 60
     return (f"{d}d " if d else "") + f"{h}h {m}m {s}s"
 
 def build_sheet_embed() -> discord.Embed:
@@ -130,7 +124,7 @@ def build_sheet_embed() -> discord.Embed:
 
     embed = discord.Embed(
         title="War Availability (Live Screen)",
-        description=(f"[Open full dashboard]({PUBLIC_BASE_URL}/)" if PUBLIC_BASE_URL else "Dashboard link not set"),
+        description=(f"[Open full dashboard]({WEB_BASE_URL}/)" if WEB_BASE_URL else "Dashboard link not set"),
         colour=discord.Colour.blue()
     )
     embed.add_field(name="Chain", value=chain_text, inline=True)
@@ -152,48 +146,21 @@ def build_sheet_embed() -> discord.Embed:
     embed.set_footer(text=f"Updated: {STATE.get('updated_at','—')} • Image every {SCREENSHOT_INTERVAL}s")
     return embed
 
-# ===== Worker -> Web push =====
-async def push_state_to_web(bot_http: aiohttp.ClientSession):
-    if not WEB_BASE_URL or not WEB_SHARED_SECRET:
-        # Don’t spam logs if user hasn’t set it yet
-        return
-
-    try:
-        resp = await bot_http.post(
-            f"{WEB_BASE_URL}/api/push_state",
-            json={
-                "rows": STATE["rows"],
-                "updated_at": STATE["updated_at"],
-                "chain": STATE["chain"],
-                "war": STATE["war"],
-                "available_count": STATE["available_count"],
-            },
-            headers={"X-STATE-SECRET": WEB_SHARED_SECRET},
-            timeout=aiohttp.ClientTimeout(total=20),
-        )
-        if resp.status != 200:
-            txt = await resp.text()
-            print("❌ Push failed:", resp.status, txt[:250])
-        else:
-            # Helpful while debugging; if you want quieter logs, comment this line.
-            print("✅ Push OK:", STATE.get("updated_at"), "rows:", len(STATE.get("rows") or []))
-    except Exception as e:
-        print("❌ Push exception:", e)
-
-# ===== Bot =====
+# ---------- BOT ----------
 class TornWarBot(discord.Client):
     def __init__(self):
         super().__init__(intents=discord.Intents.default())
         self.tree = app_commands.CommandTree(self)
+        self.http_session: Optional[aiohttp.ClientSession] = None
 
-        self.http_session: aiohttp.ClientSession | None = None
-        self.last_pinged_at_utc: float | None = None
+        self.last_pinged_at_utc: Optional[float] = None
 
-        # Playwright for screenshots (optional)
+        # Playwright
         self.pw = None
         self.browser = None
         self.page = None
 
+        # Throttles
         self._last_screen_utc = 0.0
         self._discord_backoff_until = 0.0
 
@@ -204,9 +171,8 @@ class TornWarBot(discord.Client):
         timeout = aiohttp.ClientTimeout(total=45)
         self.http_session = aiohttp.ClientSession(timeout=timeout)
 
-        # Playwright (only if you want screenshots)
-        # If you want to disable screenshots entirely, set SCREENSHOT_INTERVAL very large
-        # or set DISABLE_DISCORD_POSTS=1 or LIVE_SHEET_CHANNEL_ID=0.
+        # ✅ Playwright expects browsers installed at BUILD time on Render:
+        # Build command should run: python -m playwright install chromium
         self.pw = await async_playwright().start()
         self.browser = await self.pw.chromium.launch(args=["--no-sandbox", "--disable-dev-shm-usage"])
         self.page = await self.browser.new_page(viewport={"width": 980, "height": 1600})
@@ -238,12 +204,10 @@ class TornWarBot(discord.Client):
 
 bot = TornWarBot()
 
-# ===== Slash commands =====
+# ---------- COMMANDS ----------
 @bot.tree.command(name="sheet", description="Get the dashboard link.")
 async def sheet_cmd(interaction: discord.Interaction):
-    # fast + always respond (prevents "application did not respond")
-    url = PUBLIC_BASE_URL or WEB_BASE_URL or "Not set"
-    await interaction.response.send_message(f"Dashboard: {url}/", ephemeral=True)
+    await interaction.response.send_message(f"Dashboard: {WEB_BASE_URL}/", ephemeral=True)
 
 @bot.tree.command(name="linkkey", description="Link your Torn API key so the bot can show YOUR energy.")
 @app_commands.describe(torn_id="Your Torn ID", api_key="Your Torn API key (limited key recommended)")
@@ -275,7 +239,7 @@ async def availability_cmd(interaction: discord.Interaction, start: str, end: st
     try:
         parse_hhmm(start); parse_hhmm(end)
     except Exception:
-        await interaction.response.send_message("❌ Use HH:MM format, e.g. 18:00 23:30", ephemeral=True)
+        await interaction.response.send_message("❌ Use HH:MM format.", ephemeral=True)
         return
     await set_availability(interaction.user.id, start, end)
     await interaction.response.send_message(f"✅ Availability set: {start} → {end}", ephemeral=True)
@@ -286,12 +250,34 @@ async def opt_cmd(interaction: discord.Interaction, enabled: bool):
     await set_enabled(interaction.user.id, 1 if enabled else 0)
     await interaction.response.send_message(f"✅ Enabled = {enabled}", ephemeral=True)
 
-# ===== Screenshot helpers =====
-async def capture_dashboard_png() -> bytes | None:
-    if not bot.page or not PUBLIC_BASE_URL:
+# ---------- WORKER -> WEB PUSH ----------
+async def push_state_to_web():
+    if not bot.http_session:
+        return
+    if not WEB_BASE_URL or not WEB_SHARED_SECRET:
+        return
+    try:
+        await bot.http_session.post(
+            f"{WEB_BASE_URL}/api/push_state",
+            json={
+                "rows": STATE["rows"],
+                "updated_at": STATE["updated_at"],
+                "chain": STATE["chain"],
+                "war": STATE["war"],
+                "available_count": STATE["available_count"],
+            },
+            headers={"X-STATE-SECRET": WEB_SHARED_SECRET},
+            timeout=20
+        )
+    except Exception as e:
+        print("Push to web failed:", e)
+
+# ---------- SCREENSHOT ----------
+async def capture_dashboard_png() -> Optional[bytes]:
+    if not bot.page or not WEB_BASE_URL:
         return None
     try:
-        await bot.page.goto(f"{PUBLIC_BASE_URL}/", wait_until="domcontentloaded", timeout=45000)
+        await bot.page.goto(f"{WEB_BASE_URL}/", wait_until="domcontentloaded", timeout=45000)
         await bot.page.wait_for_selector("#tbody", timeout=15000)
         await bot.page.wait_for_timeout(800)
         return await bot.page.screenshot(full_page=True, type="png")
@@ -311,13 +297,13 @@ async def post_or_update_image(channel: discord.TextChannel, embed: discord.Embe
     msg = await channel.send(content="🖼️ Live Screen (auto-refresh)", embed=embed, file=file)
     await set_live_sheet_message(channel.id, msg.id)
 
-# ===== Main refresh loop =====
+# ---------- MAIN LOOP ----------
 @tasks.loop(seconds=REFRESH_INTERVAL)
 async def refresh_loop():
     if not bot.http_session:
         return
 
-    # 1) Torn fetch
+    # Torn fetch
     try:
         faction_data = await get_faction_overview(bot.http_session, FACTION_ID, FACTION_API_KEY)
     except Exception as e:
@@ -326,7 +312,6 @@ async def refresh_loop():
 
     members = faction_data.get("members", {}) or {}
 
-    # Chain
     chain = faction_data.get("chain") or {}
     STATE["chain"] = {
         "current": chain.get("current"),
@@ -335,11 +320,9 @@ async def refresh_loop():
         "cooldown": chain.get("cooldown"),
     }
 
-    # Next ranked war
     rankedwars = faction_data.get("rankedwars") or {}
     now_utc = int(datetime.utcnow().timestamp())
     next_rw = None
-
     for _, rw in rankedwars.items():
         war = (rw or {}).get("war") or {}
         start = war.get("start")
@@ -368,20 +351,14 @@ async def refresh_loop():
         }
     STATE["war"] = war_state
 
-    # Settings from DB
     settings = await get_all_settings()
     settings_by_torn = {s["torn_id"]: s for s in settings if s.get("torn_id")}
 
     rows = []
     available_count = 0
 
-    # 2) Build rows
     for torn_id_str, m in members.items():
-        try:
-            torn_id = int(torn_id_str)
-        except Exception:
-            continue
-
+        torn_id = int(torn_id_str)
         name = m.get("name", f"#{torn_id}")
         status_desc = (m.get("status") or {}).get("description") or ""
         last_action_text = ((m.get("last_action") or {}).get("relative")) or ""
@@ -394,7 +371,6 @@ async def refresh_loop():
         avail_start = s.get("avail_start") or "18:00"
         avail_end = s.get("avail_end") or "23:59"
 
-        # Energy if user linked key
         energy_text = "—"
         key = await get_key_for_torn_id(torn_id)
         if key:
@@ -433,29 +409,28 @@ async def refresh_loop():
     STATE["available_count"] = available_count
     STATE["updated_at"] = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
 
-    # 3) Push to Web Service so /api/sheet shows members
-    await push_state_to_web(bot.http_session)
+    # ✅ push live state to your Web Service dashboard
+    await push_state_to_web()
 
-    # 4) Discord posting (optional)
-    if DISABLE_DISCORD_POSTS:
-        return
-
-    # Ping role when available_count >= threshold (cooldown)
-    if available_count >= PING_THRESHOLD and ALERT_CHANNEL_ID and ALERT_ROLE_ID:
+    # Discord: ping
+    if (not DISABLE_DISCORD_POSTS) and available_count >= PING_THRESHOLD and ALERT_CHANNEL_ID and ALERT_ROLE_ID:
         now = datetime.utcnow().timestamp()
         can_ping = (bot.last_pinged_at_utc is None) or ((now - bot.last_pinged_at_utc) >= PING_COOLDOWN_SECONDS)
         if can_ping:
             ch = bot.get_channel(ALERT_CHANNEL_ID)
             if ch:
                 try:
-                    await ch.send(f"<@&{ALERT_ROLE_ID}> **{available_count} members available now** ✅  {PUBLIC_BASE_URL}/")
+                    await ch.send(f"<@&{ALERT_ROLE_ID}> **{available_count} members available now** ✅  {WEB_BASE_URL}/")
                     bot.last_pinged_at_utc = now
                 except discord.HTTPException as e:
                     print("Ping send failed:", e)
 
-    # Live screenshot post
+    # Discord: live screen (throttled + backoff)
+    if DISABLE_DISCORD_POSTS:
+        return
     if not LIVE_SHEET_CHANNEL_ID:
         return
+
     now_ts = datetime.utcnow().timestamp()
     if now_ts < bot._discord_backoff_until:
         return
@@ -480,22 +455,17 @@ async def refresh_loop():
         print("Live screen post failed:", e)
         bot._discord_backoff_until = now_ts + DISCORD_BACKOFF_SECONDS
 
-# ===== Entrypoint =====
 async def main():
-    # Hard fails so you immediately see missing env
     if not DISCORD_TOKEN:
         raise RuntimeError("DISCORD_TOKEN missing")
     if not FACTION_ID:
         raise RuntimeError("FACTION_ID missing")
     if not FACTION_API_KEY:
         raise RuntimeError("FACTION_API_KEY missing")
-
-    # These are required if you want the web dashboard to show members
     if not WEB_BASE_URL:
         raise RuntimeError("WEB_BASE_URL missing (must be your Web Service URL, e.g. https://torn-war-bot.onrender.com)")
     if not WEB_SHARED_SECRET:
-        raise RuntimeError("WEB_SHARED_SECRET missing (must match Web Service WEB_SHARED_SECRET)")
-
+        raise RuntimeError("WEB_SHARED_SECRET missing (must match your Web Service env)")
     await bot.start(DISCORD_TOKEN)
 
 if __name__ == "__main__":
