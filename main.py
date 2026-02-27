@@ -2,6 +2,7 @@ import os
 import io
 import asyncio
 import threading
+import re
 from datetime import datetime, time as dtime
 
 import pytz
@@ -14,7 +15,7 @@ from dotenv import load_dotenv
 from playwright.async_api import async_playwright
 
 from db import (
-    init_db, upsert_member, set_timezone, set_availability, set_enabled,
+    init_db, upsert_member, set_timezone, set_availability,
     link_key, unlink_key, get_all_settings, get_key_for_torn_id,
     set_live_sheet_message, get_live_sheet_message
 )
@@ -43,6 +44,10 @@ ALERT_ROLE_ID = env_int("ALERT_ROLE_ID", 0)
 LIVE_SHEET_CHANNEL_ID = env_int("LIVE_SHEET_CHANNEL_ID", 0)
 SCREENSHOT_INTERVAL = env_int("SCREENSHOT_INTERVAL", 60)
 
+# Torn-like online rules using LAST ACTION
+ONLINE_MAX_MIN = 15  # <= 15 min = ONLINE (counts for availability)
+IDLE_MAX_MIN = 60    # used only if you later want idle/offline ordering
+
 def parse_hhmm(s: str) -> dtime:
     hh, mm = s.split(":")
     return dtime(hour=int(hh), minute=int(mm))
@@ -58,12 +63,26 @@ def is_within_window(local_dt: datetime, start_str: str, end_str: str) -> bool:
         return start_t <= tnow <= end_t
     return (tnow >= start_t) or (tnow <= end_t)
 
-def status_is_online(desc: str) -> bool:
-    s = (desc or "").lower()
-    return ("online" in s) or ("idle" in s)
-
 def status_is_hospital(desc: str) -> bool:
     return "hospital" in (desc or "").lower()
+
+def last_action_minutes(text: str) -> int:
+    t = (text or "").lower().strip()
+    m = re.search(r"(\d+)\s*(minute|minutes|hour|hours|day|days)\s*ago", t)
+    if not m:
+        return 999999
+    n = int(m.group(1))
+    unit = m.group(2)
+    if unit.startswith("minute"):
+        return n
+    if unit.startswith("hour"):
+        return n * 60
+    if unit.startswith("day"):
+        return n * 1440
+    return 999999
+
+def is_online_now(last_action_text: str) -> bool:
+    return last_action_minutes(last_action_text) <= ONLINE_MAX_MIN
 
 def fmt_countdown(epoch_start: int | None) -> str:
     if not epoch_start:
@@ -209,11 +228,10 @@ async def availability_cmd(interaction: discord.Interaction, start: str, end: st
     await set_availability(interaction.user.id, start, end)
     await interaction.response.send_message(f"✅ Availability set: {start} → {end}", ephemeral=True)
 
-@bot.tree.command(name="opt", description="Opt in/out of being counted for availability.")
-@app_commands.describe(enabled="true = opt-in, false = opt-out")
-async def opt_cmd(interaction: discord.Interaction, enabled: bool):
-    await set_enabled(interaction.user.id, 1 if enabled else 0)
-    await interaction.response.send_message(f"✅ Enabled = {enabled}", ephemeral=True)
+@bot.tree.command(name="clearavailability", description="Clear your availability window (sets 00:00 → 00:00).")
+async def clearavailability_cmd(interaction: discord.Interaction):
+    await set_availability(interaction.user.id, "00:00", "00:00")
+    await interaction.response.send_message("✅ Availability cleared (00:00 → 00:00).", ephemeral=True)
 
 async def capture_dashboard_png() -> bytes | None:
     if not bot.browser:
@@ -315,7 +333,6 @@ async def refresh_loop():
 
         s = settings_by_torn.get(torn_id) or {}
         tz = s.get("timezone") or "UTC"
-        enabled = (s.get("enabled", 1) == 1)
         avail_start = s.get("avail_start") or "18:00"
         avail_end = s.get("avail_end") or "23:59"
 
@@ -333,8 +350,13 @@ async def refresh_loop():
             except Exception:
                 energy_text = "key err"
 
+        # ✅ Time-window availability (NO /opt)
+        # Count as "available now" only when:
+        #  - not hospitalized
+        #  - ONLINE now (last action <= 15m)
+        #  - within user's availability time window (their timezone)
         available_now = False
-        if enabled and (not hospitalized) and status_is_online(status_desc):
+        if (not hospitalized) and is_online_now(last_action_text):
             try:
                 local_dt = now_in_tz(tz)
                 available_now = is_within_window(local_dt, avail_start, avail_end)
@@ -355,7 +377,8 @@ async def refresh_loop():
             "last_action_text": last_action_text,
         })
 
-    web_panel.STATE["rows"] = sorted(rows, key=lambda r: (not r["available_now"], r["name"].lower()))
+    # Available first, then alphabetical
+    web_panel.STATE["rows"] = sorted(rows, key=lambda r: (not r["available_now"], (r["name"] or "").lower()))
     web_panel.STATE["available_count"] = available_count
     web_panel.STATE["updated_at"] = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
 
