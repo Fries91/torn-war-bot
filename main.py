@@ -25,6 +25,7 @@ import web_panel
 load_dotenv()
 
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
+GUILD_ID = int(os.getenv("GUILD_ID", "0"))
 FACTION_ID = os.getenv("FACTION_ID")
 FACTION_API_KEY = os.getenv("FACTION_API_KEY")
 
@@ -158,7 +159,16 @@ class TornWarBot(discord.Client):
 
     async def setup_hook(self):
         await init_db()
-        await self.tree.sync()
+        if GUILD_ID:
+    guild = discord.Object(id=GUILD_ID)
+    self.tree.copy_global_to(guild=guild)
+    try:
+        await self.tree.sync(guild=guild)
+        print(f"✅ Synced commands to guild {GUILD_ID}")
+    except discord.HTTPException as e:
+        print("⚠️ Guild sync failed:", e)
+else:
+    print("⚠️ No GUILD_ID set; skipping sync to avoid rate limits.")
         self.http_session = aiohttp.ClientSession()
 
         # Playwright (Render-safe)
