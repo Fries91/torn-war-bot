@@ -47,7 +47,6 @@ SCREENSHOT_INTERVAL = env_int("SCREENSHOT_INTERVAL", 60)
 
 # Torn-like online rules using LAST ACTION
 ONLINE_MAX_MIN = 15  # <= 15 min = ONLINE (counts for availability)
-IDLE_MAX_MIN = 60    # used only if you later want idle/offline ordering
 
 def parse_hhmm(s: str) -> dtime:
     hh, mm = s.split(":")
@@ -159,16 +158,19 @@ class TornWarBot(discord.Client):
 
     async def setup_hook(self):
         await init_db()
+
+        # ✅ Guild-only sync (prevents 429 spam on Render restarts)
         if GUILD_ID:
-    guild = discord.Object(id=GUILD_ID)
-    self.tree.copy_global_to(guild=guild)
-    try:
-        await self.tree.sync(guild=guild)
-        print(f"✅ Synced commands to guild {GUILD_ID}")
-    except discord.HTTPException as e:
-        print("⚠️ Guild sync failed:", e)
-else:
-    print("⚠️ No GUILD_ID set; skipping sync to avoid rate limits.")
+            guild = discord.Object(id=GUILD_ID)
+            self.tree.copy_global_to(guild=guild)
+            try:
+                await self.tree.sync(guild=guild)
+                print(f"✅ Synced commands to guild {GUILD_ID}")
+            except discord.HTTPException as e:
+                print("⚠️ Guild sync failed:", e)
+        else:
+            print("⚠️ No GUILD_ID set; skipping sync to avoid rate limits.")
+
         self.http_session = aiohttp.ClientSession()
 
         # Playwright (Render-safe)
@@ -249,7 +251,7 @@ async def capture_dashboard_png() -> bytes | None:
     try:
         page = await bot.browser.new_page(viewport={"width": 980, "height": 1600})
         await page.goto(f"{PUBLIC_BASE_URL}/", wait_until="domcontentloaded", timeout=45000)
-        await page.wait_for_timeout(2500)  # let JS populate table
+        await page.wait_for_timeout(2500)
         png = await page.screenshot(full_page=True, type="png")
         await page.close()
         return png
@@ -277,7 +279,6 @@ async def refresh_loop():
     if not bot.http_session:
         return
 
-    # --- Fetch faction data ---
     try:
         faction_data = await get_faction_overview(bot.http_session, FACTION_ID, FACTION_API_KEY)
     except Exception as e:
@@ -286,7 +287,6 @@ async def refresh_loop():
 
     members = faction_data.get("members", {}) or {}
 
-    # chain
     chain = faction_data.get("chain") or {}
     web_panel.STATE["chain"] = {
         "current": chain.get("current"),
@@ -295,7 +295,6 @@ async def refresh_loop():
         "cooldown": chain.get("cooldown"),
     }
 
-    # next ranked war
     rankedwars = faction_data.get("rankedwars") or {}
     now_utc = int(datetime.utcnow().timestamp())
     next_rw = None
@@ -346,7 +345,6 @@ async def refresh_loop():
         avail_start = s.get("avail_start") or "18:00"
         avail_end = s.get("avail_end") or "23:59"
 
-        # energy only if linked key
         energy_text = "—"
         key = await get_key_for_torn_id(torn_id)
         if key:
@@ -361,10 +359,6 @@ async def refresh_loop():
                 energy_text = "key err"
 
         # ✅ Time-window availability (NO /opt)
-        # Count as "available now" only when:
-        #  - not hospitalized
-        #  - ONLINE now (last action <= 15m)
-        #  - within user's availability time window (their timezone)
         available_now = False
         if (not hospitalized) and is_online_now(last_action_text):
             try:
@@ -387,12 +381,10 @@ async def refresh_loop():
             "last_action_text": last_action_text,
         })
 
-    # Available first, then alphabetical
     web_panel.STATE["rows"] = sorted(rows, key=lambda r: (not r["available_now"], (r["name"] or "").lower()))
     web_panel.STATE["available_count"] = available_count
     web_panel.STATE["updated_at"] = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
 
-    # 5+ ping with cooldown
     if available_count >= PING_THRESHOLD and ALERT_CHANNEL_ID and ALERT_ROLE_ID:
         now = datetime.utcnow().timestamp()
         can_ping = (bot.last_pinged_at_utc is None) or ((now - bot.last_pinged_at_utc) >= PING_COOLDOWN_SECONDS)
@@ -402,7 +394,6 @@ async def refresh_loop():
                 await ch.send(f"<@&{ALERT_ROLE_ID}> **{available_count} members available now** ✅  {PUBLIC_BASE_URL}/")
                 bot.last_pinged_at_utc = now
 
-    # Live image screen in #war-availability
     try:
         if LIVE_SHEET_CHANNEL_ID:
             channel = bot.get_channel(LIVE_SHEET_CHANNEL_ID)
