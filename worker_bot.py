@@ -18,6 +18,7 @@ from torn_api import get_faction_overview, get_user_energy
 
 load_dotenv()
 
+# ===== ENV =====
 DISCORD_TOKEN = (os.getenv("DISCORD_TOKEN") or "").strip()
 FACTION_ID = (os.getenv("FACTION_ID") or "").strip()
 FACTION_API_KEY = (os.getenv("FACTION_API_KEY") or "").strip()
@@ -30,6 +31,8 @@ REFRESH_INTERVAL = int(os.getenv("REFRESH_INTERVAL", "60"))
 
 PING_THRESHOLD = int(os.getenv("PING_THRESHOLD", "5"))
 PING_COOLDOWN_SECONDS = int(os.getenv("PING_COOLDOWN_SECONDS", "600"))
+
+DEBUG = (os.getenv("DEBUG") or "").strip() == "1"
 
 def env_int(name: str, default: int = 0) -> int:
     v = (os.getenv(name) or "").strip()
@@ -73,10 +76,14 @@ def status_is_hospital(desc: str) -> bool:
 
 async def push_state_to_web(session: aiohttp.ClientSession):
     if not WEB_BASE_URL or not WEB_SHARED_SECRET:
+        if DEBUG:
+            print("DEBUG: push skipped (missing WEB_BASE_URL or WEB_SHARED_SECRET)")
         return
+
+    url = f"{WEB_BASE_URL}/api/push_state"
     try:
         async with session.post(
-            f"{WEB_BASE_URL}/api/push_state",
+            url,
             json={
                 "rows": STATE["rows"],
                 "updated_at": STATE["updated_at"],
@@ -85,10 +92,11 @@ async def push_state_to_web(session: aiohttp.ClientSession):
                 "available_count": STATE["available_count"],
             },
             headers={"X-STATE-SECRET": WEB_SHARED_SECRET},
-            timeout=20,
+            timeout=aiohttp.ClientTimeout(total=20),
         ) as r:
-            # Consume body to avoid "Unclosed connector"
-            _ = await r.text()
+            body = await r.text()  # consume body to avoid "Unclosed connector"
+            if DEBUG:
+                print(f"DEBUG: push -> {url} status={r.status} body={body[:200]}")
     except Exception as e:
         print("Push to web failed:", e)
 
@@ -101,12 +109,23 @@ class TornWarBot(discord.Client):
 
     async def setup_hook(self):
         await init_db()
-        await self.tree.sync()
+
+        # Sync slash commands
+        try:
+            await self.tree.sync()
+            if DEBUG:
+                print("DEBUG: slash commands synced")
+        except Exception as e:
+            print("Slash command sync failed:", e)
 
         timeout = aiohttp.ClientTimeout(total=45)
         self.http_session = aiohttp.ClientSession(timeout=timeout)
 
         refresh_loop.start()
+
+    async def on_ready(self):
+        if DEBUG:
+            print(f"DEBUG: bot ready as {self.user} (guilds={len(self.guilds)})")
 
     async def close(self):
         try:
@@ -117,8 +136,10 @@ class TornWarBot(discord.Client):
 
 bot = TornWarBot()
 
+# ===== SLASH COMMANDS =====
 @bot.tree.command(name="sheet", description="Get the dashboard link.")
 async def sheet_cmd(interaction: discord.Interaction):
+    # Always respond quickly to avoid "application did not respond"
     if not WEB_BASE_URL:
         await interaction.response.send_message("WEB_BASE_URL not set on worker.", ephemeral=True)
         return
@@ -165,6 +186,7 @@ async def opt_cmd(interaction: discord.Interaction, enabled: bool):
     await set_enabled(interaction.user.id, 1 if enabled else 0)
     await interaction.response.send_message(f"✅ Enabled = {enabled}", ephemeral=True)
 
+# ===== MAIN LOOP =====
 @tasks.loop(seconds=REFRESH_INTERVAL)
 async def refresh_loop():
     if not bot.http_session:
@@ -178,6 +200,8 @@ async def refresh_loop():
         return
 
     members = faction_data.get("members", {}) or {}
+    if DEBUG:
+        print("DEBUG: members_count =", len(members))
 
     chain = faction_data.get("chain") or {}
     STATE["chain"] = {
@@ -225,7 +249,11 @@ async def refresh_loop():
     available_count = 0
 
     for torn_id_str, m in members.items():
-        torn_id = int(torn_id_str)
+        try:
+            torn_id = int(torn_id_str)
+        except Exception:
+            continue
+
         name = m.get("name", f"#{torn_id}")
         status_desc = (m.get("status") or {}).get("description") or ""
         last_action_text = ((m.get("last_action") or {}).get("relative")) or ""
@@ -305,6 +333,12 @@ async def main():
         raise RuntimeError("WEB_BASE_URL missing (must be your Web Service URL, e.g. https://torn-war-bot.onrender.com)")
     if not WEB_SHARED_SECRET:
         raise RuntimeError("WEB_SHARED_SECRET missing (must match your Web Service env)")
+
+    if DEBUG:
+        print("DEBUG: WEB_BASE_URL =", WEB_BASE_URL)
+        print("DEBUG: REFRESH_INTERVAL =", REFRESH_INTERVAL)
+        print("DEBUG: DISABLE_DISCORD_POSTS =", DISABLE_DISCORD_POSTS)
+
     await bot.start(DISCORD_TOKEN)
 
 if __name__ == "__main__":
