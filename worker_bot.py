@@ -27,6 +27,9 @@ FACTION_ID = (os.getenv("FACTION_ID") or "").strip()
 FACTION_API_KEY = (os.getenv("FACTION_API_KEY") or "").strip()
 PUBLIC_BASE_URL = (os.getenv("PUBLIC_BASE_URL") or "").strip().rstrip("/")
 
+# ✅ MUST match web_panel.py env on the Web Service
+WEB_SHARED_SECRET = (os.getenv("WEB_SHARED_SECRET") or "").strip()
+
 REFRESH_INTERVAL = int(os.getenv("REFRESH_INTERVAL", "60"))
 SCREENSHOT_INTERVAL = int(os.getenv("SCREENSHOT_INTERVAL", "600"))          # 10 min default
 DISCORD_BACKOFF_SECONDS = int(os.getenv("DISCORD_BACKOFF_SECONDS", "3600")) # 1 hour backoff
@@ -135,6 +138,28 @@ def build_sheet_embed() -> discord.Embed:
 
     embed.set_footer(text=f"Updated: {STATE.get('updated_at','—')} • Image every {SCREENSHOT_INTERVAL}s")
     return embed
+
+# ✅ NEW: worker -> web push
+async def push_state_to_web():
+    if not bot.http_session:
+        return
+    if not PUBLIC_BASE_URL or not WEB_SHARED_SECRET:
+        return
+    try:
+        await bot.http_session.post(
+            f"{PUBLIC_BASE_URL}/api/push_state",
+            json={
+                "rows": STATE["rows"],
+                "updated_at": STATE["updated_at"],
+                "chain": STATE["chain"],
+                "war": STATE["war"],
+                "available_count": STATE["available_count"],
+            },
+            headers={"X-STATE-SECRET": WEB_SHARED_SECRET},
+            timeout=20
+        )
+    except Exception as e:
+        print("Push to web failed:", e)
 
 class TornWarBot(discord.Client):
     def __init__(self):
@@ -369,6 +394,9 @@ async def refresh_loop():
     STATE["available_count"] = available_count
     STATE["updated_at"] = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
 
+    # ✅ NEW: push live state to your Web Service dashboard
+    await push_state_to_web()
+
     # Discord: ping
     if (not DISABLE_DISCORD_POSTS) and available_count >= PING_THRESHOLD and ALERT_CHANNEL_ID and ALERT_ROLE_ID:
         now = datetime.utcnow().timestamp()
@@ -421,6 +449,8 @@ async def main():
         raise RuntimeError("FACTION_API_KEY missing")
     if not PUBLIC_BASE_URL:
         raise RuntimeError("PUBLIC_BASE_URL missing (must point to your Web Service URL)")
+    if not WEB_SHARED_SECRET:
+        raise RuntimeError("WEB_SHARED_SECRET missing (must match your Web Service env)")
     await bot.start(DISCORD_TOKEN)
 
 if __name__ == "__main__":
