@@ -1,3 +1,5 @@
+# bot_main.py  (replace your current bot script with this)
+
 import os
 import io
 import asyncio
@@ -23,16 +25,26 @@ import web_panel
 
 load_dotenv()
 
-DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
-FACTION_ID = os.getenv("FACTION_ID")
-FACTION_API_KEY = os.getenv("FACTION_API_KEY")
+DISCORD_TOKEN = (os.getenv("DISCORD_TOKEN") or "").strip()
+FACTION_ID = (os.getenv("FACTION_ID") or "").strip()
+FACTION_API_KEY = (os.getenv("FACTION_API_KEY") or "").strip()
 
-PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "")
+PUBLIC_BASE_URL = (os.getenv("PUBLIC_BASE_URL") or "").strip().rstrip("/")
 WEB_HOST = "0.0.0.0"
 WEB_PORT = int(os.getenv("PORT", os.getenv("WEB_PORT", "10000")))
 
-PING_THRESHOLD = 5
-PING_COOLDOWN_SECONDS = 600
+# Torn polling (safe)
+REFRESH_INTERVAL = int(os.getenv("REFRESH_INTERVAL", "60"))
+
+# Discord posting (VERY IMPORTANT for avoiding 1015)
+# Default 10 minutes. You can set to 300 (5m) if you want faster.
+SCREENSHOT_INTERVAL = int(os.getenv("SCREENSHOT_INTERVAL", "600"))
+
+# If Discord gets angry, pause live screen posting
+DISCORD_BACKOFF_SECONDS = int(os.getenv("DISCORD_BACKOFF_SECONDS", "900"))  # 15 min
+
+PING_THRESHOLD = int(os.getenv("PING_THRESHOLD", "5"))
+PING_COOLDOWN_SECONDS = int(os.getenv("PING_COOLDOWN_SECONDS", "600"))
 
 def env_int(name: str, default: int = 0) -> int:
     v = (os.getenv(name) or "").strip()
@@ -41,7 +53,6 @@ def env_int(name: str, default: int = 0) -> int:
 ALERT_CHANNEL_ID = env_int("ALERT_CHANNEL_ID", 0)
 ALERT_ROLE_ID = env_int("ALERT_ROLE_ID", 0)
 LIVE_SHEET_CHANNEL_ID = env_int("LIVE_SHEET_CHANNEL_ID", 0)
-SCREENSHOT_INTERVAL = env_int("SCREENSHOT_INTERVAL", 60)
 
 def parse_hhmm(s: str) -> dtime:
     hh, mm = s.split(":")
@@ -104,7 +115,7 @@ def build_sheet_embed() -> discord.Embed:
 
     embed = discord.Embed(
         title="War Availability (Live Screen)",
-        description=f"[Open full dashboard]({PUBLIC_BASE_URL}/)",
+        description=(f"[Open full dashboard]({PUBLIC_BASE_URL}/)" if PUBLIC_BASE_URL else "Dashboard link not set"),
         colour=discord.Colour.blue()
     )
     embed.add_field(name="Chain", value=chain_text, inline=True)
@@ -123,34 +134,46 @@ def build_sheet_embed() -> discord.Embed:
         more = f"\n… +{len(not_avail)-NOT_MAX} more" if len(not_avail) > NOT_MAX else ""
         embed.add_field(name=f"❌ Not Available ({len(not_avail)})", value="\n".join(lines) + more, inline=False)
 
-    embed.set_footer(text=f"Updated: {web_panel.STATE.get('updated_at','—')} • Image refresh: {SCREENSHOT_INTERVAL}s")
+    embed.set_footer(text=f"Updated: {web_panel.STATE.get('updated_at','—')} • Discord image every {SCREENSHOT_INTERVAL}s")
     return embed
 
 class TornWarBot(discord.Client):
     def __init__(self):
         super().__init__(intents=discord.Intents.default())
         self.tree = app_commands.CommandTree(self)
+
         self.http_session: aiohttp.ClientSession | None = None
         self.last_pinged_at_utc: float | None = None
 
+        # Playwright
         self.pw = None
         self.browser = None
+        self.page = None
+
+        # Discord live screen throttling
         self._last_screen_utc = 0.0
+        self._discord_backoff_until = 0.0
 
     async def setup_hook(self):
         await init_db()
         await self.tree.sync()
-        self.http_session = aiohttp.ClientSession()
+
+        timeout = aiohttp.ClientTimeout(total=45)
+        self.http_session = aiohttp.ClientSession(timeout=timeout)
 
         # Playwright (Render-safe)
         self.pw = await async_playwright().start()
-        self.browser = await self.pw.chromium.launch(
-            args=["--no-sandbox", "--disable-dev-shm-usage"]
-        )
+        self.browser = await self.pw.chromium.launch(args=["--no-sandbox", "--disable-dev-shm-usage"])
+        self.page = await self.browser.new_page(viewport={"width": 980, "height": 1600})
 
         refresh_loop.start()
 
     async def close(self):
+        try:
+            if self.page:
+                await self.page.close()
+        except Exception:
+            pass
         try:
             if self.http_session:
                 await self.http_session.close()
@@ -170,8 +193,13 @@ class TornWarBot(discord.Client):
 
 bot = TornWarBot()
 
+# ---- Commands ----
+
 @bot.tree.command(name="sheet", description="Get the PDA-friendly dashboard link.")
 async def sheet_cmd(interaction: discord.Interaction):
+    if not PUBLIC_BASE_URL:
+        await interaction.response.send_message("PUBLIC_BASE_URL is not set in Render env vars.", ephemeral=True)
+        return
     await interaction.response.send_message(f"Dashboard: {PUBLIC_BASE_URL}/", ephemeral=True)
 
 @bot.tree.command(name="linkkey", description="Link your Torn API key so the bot can show YOUR energy.")
@@ -215,41 +243,43 @@ async def opt_cmd(interaction: discord.Interaction, enabled: bool):
     await set_enabled(interaction.user.id, 1 if enabled else 0)
     await interaction.response.send_message(f"✅ Enabled = {enabled}", ephemeral=True)
 
+# ---- Live screen helpers ----
+
 async def capture_dashboard_png() -> bytes | None:
-    if not bot.browser:
+    if not bot.page or not PUBLIC_BASE_URL:
         return None
     try:
-        page = await bot.browser.new_page(viewport={"width": 980, "height": 1600})
-        await page.goto(f"{PUBLIC_BASE_URL}/", wait_until="domcontentloaded", timeout=45000)
-        await page.wait_for_timeout(2500)  # let JS populate table
-        png = await page.screenshot(full_page=True, type="png")
-        await page.close()
-        return png
+        # networkidle reduces “half-rendered” captures
+        await bot.page.goto(f"{PUBLIC_BASE_URL}/", wait_until="networkidle", timeout=45000)
+        await bot.page.wait_for_timeout(1200)
+        return await bot.page.screenshot(full_page=True, type="png")
     except Exception as e:
         print("Screenshot failed:", e)
         return None
 
 async def post_or_update_image(channel: discord.TextChannel, embed: discord.Embed, png_bytes: bytes):
+    """
+    BEST OPTION:
+      - Use partial message edit (NO fetch_message)
+      - Edit a single message instead of spamming new ones
+    """
     file = discord.File(fp=io.BytesIO(png_bytes), filename="war-availability.png")
     saved = await get_live_sheet_message()
 
-    if saved and saved["channel_id"] == channel.id:
-        try:
-            msg = await channel.fetch_message(saved["message_id"])
-            await msg.edit(content="🖼️ Live Screen (auto-refresh)", embed=embed, attachments=[file])
-            return
-        except Exception:
-            pass
+    if saved and saved.get("channel_id") == channel.id and saved.get("message_id"):
+        msg = channel.get_partial_message(int(saved["message_id"]))  # ✅ no API fetch
+        await msg.edit(content="🖼️ Live Screen (auto-refresh)", embed=embed, attachments=[file])
+        return
 
     msg = await channel.send(content="🖼️ Live Screen (auto-refresh)", embed=embed, file=file)
     await set_live_sheet_message(channel.id, msg.id)
 
-@tasks.loop(seconds=60)
+@tasks.loop(seconds=REFRESH_INTERVAL)
 async def refresh_loop():
     if not bot.http_session:
         return
 
-    # --- Fetch faction data ---
+    # --- Torn pull ---
     try:
         faction_data = await get_faction_overview(bot.http_session, FACTION_ID, FACTION_API_KEY)
     except Exception as e:
@@ -319,7 +349,6 @@ async def refresh_loop():
         avail_start = s.get("avail_start") or "18:00"
         avail_end = s.get("avail_end") or "23:59"
 
-        # energy only if linked key
         energy_text = "—"
         key = await get_key_for_torn_id(torn_id)
         if key:
@@ -359,35 +388,56 @@ async def refresh_loop():
     web_panel.STATE["available_count"] = available_count
     web_panel.STATE["updated_at"] = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
 
-    # 5+ ping with cooldown
+    # --- Ping (Discord) ---
     if available_count >= PING_THRESHOLD and ALERT_CHANNEL_ID and ALERT_ROLE_ID:
         now = datetime.utcnow().timestamp()
         can_ping = (bot.last_pinged_at_utc is None) or ((now - bot.last_pinged_at_utc) >= PING_COOLDOWN_SECONDS)
         if can_ping:
             ch = bot.get_channel(ALERT_CHANNEL_ID)
             if ch:
-                await ch.send(f"<@&{ALERT_ROLE_ID}> **{available_count} members available now** ✅  {PUBLIC_BASE_URL}/")
-                bot.last_pinged_at_utc = now
+                try:
+                    await ch.send(f"<@&{ALERT_ROLE_ID}> **{available_count} members available now** ✅  {PUBLIC_BASE_URL}/")
+                    bot.last_pinged_at_utc = now
+                except discord.HTTPException as e:
+                    print("Ping send failed:", e)
 
-    # Live image screen in #war-availability
+    # --- Live Screen (Discord) ---
+    if not LIVE_SHEET_CHANNEL_ID:
+        return
+
+    now_ts = datetime.utcnow().timestamp()
+    if now_ts < bot._discord_backoff_until:
+        return
+
+    if now_ts - bot._last_screen_utc < SCREENSHOT_INTERVAL:
+        return
+
+    channel = bot.get_channel(LIVE_SHEET_CHANNEL_ID)
+    if not isinstance(channel, discord.TextChannel):
+        return
+
+    png = await capture_dashboard_png()
+    if not png:
+        return
+
     try:
-        if LIVE_SHEET_CHANNEL_ID:
-            channel = bot.get_channel(LIVE_SHEET_CHANNEL_ID)
-            if isinstance(channel, discord.TextChannel):
-                now_ts = datetime.utcnow().timestamp()
-                if now_ts - bot._last_screen_utc >= SCREENSHOT_INTERVAL:
-                    png = await capture_dashboard_png()
-                    if png:
-                        await post_or_update_image(channel, build_sheet_embed(), png)
-                        bot._last_screen_utc = now_ts
+        await post_or_update_image(channel, build_sheet_embed(), png)
+        bot._last_screen_utc = now_ts
+    except discord.HTTPException as e:
+        # Back off hard so Cloudflare/Discord stops banning the IP
+        print("Live screen post failed (Discord):", e)
+        bot._discord_backoff_until = now_ts + DISCORD_BACKOFF_SECONDS
     except Exception as e:
         print("Live screen post failed:", e)
+        bot._discord_backoff_until = now_ts + DISCORD_BACKOFF_SECONDS
 
 def run_web():
     web_panel.app.run(host=WEB_HOST, port=WEB_PORT, debug=False, use_reloader=False)
 
 async def main():
     threading.Thread(target=run_web, daemon=True).start()
+    if not DISCORD_TOKEN:
+        raise RuntimeError("DISCORD_TOKEN is missing")
     await bot.start(DISCORD_TOKEN)
 
 if __name__ == "__main__":
