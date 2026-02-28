@@ -265,9 +265,12 @@ def parse_ranked_war_entry(war_data: dict):
     return pick[0]
 
 
-def compute_war_phase(start_ts, end_ts, now_ts):
+def compute_war_timers(start_ts, end_ts, now_ts):
+    """
+    NO 'phase' returned.
+    We only return timer fields, and the UI infers upcoming/active/ended.
+    """
     starts_in = started_ago = ends_in = ended_ago = None
-    phase = "unknown"
 
     try:
         s = int(start_ts) if start_ts is not None else None
@@ -281,27 +284,23 @@ def compute_war_phase(start_ts, end_ts, now_ts):
     n = int(now_ts)
 
     if s is None:
-        return phase, None, None, None, None
+        return None, None, None, None
 
     if s > n:
-        phase = "upcoming"
         starts_in = s - n
-        return phase, starts_in, None, None, None
+        return starts_in, None, None, None
 
     started_ago = n - s
 
     if e is None or e == 0:
-        phase = "active"
-        return phase, None, started_ago, None, None
+        return None, started_ago, None, None
 
     if e > n:
-        phase = "active"
         ends_in = e - n
-        return phase, None, started_ago, ends_in, None
+        return None, started_ago, ends_in, None
 
-    phase = "ended"
     ended_ago = n - e
-    return phase, None, started_ago, None, ended_ago
+    return None, started_ago, None, ended_ago
 
 
 def ranked_war_to_state(entry: dict):
@@ -322,7 +321,6 @@ def ranked_war_to_state(entry: dict):
         "started_ago": None,
         "ends_in": None,
         "ended_ago": None,
-        "phase": None,
     }
     if not isinstance(entry, dict):
         return out
@@ -364,8 +362,7 @@ def ranked_war_to_state(entry: dict):
         out["opp_score"] = opp.get("score")
         out["opp_chain"] = opp.get("chain")
 
-    phase, starts_in, started_ago, ends_in, ended_ago = compute_war_phase(out["start"], out["end"], out["server_now"])
-    out["phase"] = phase
+    starts_in, started_ago, ends_in, ended_ago = compute_war_timers(out["start"], out["end"], out["server_now"])
     out["starts_in"] = starts_in
     out["started_ago"] = started_ago
     out["ends_in"] = ends_in
@@ -385,7 +382,7 @@ def ensure_state_shape():
     for k in (
         "opponent", "opponent_id", "start", "end", "target", "active",
         "our_score", "opp_score", "our_chain", "opp_chain", "war_id",
-        "server_now", "starts_in", "started_ago", "ends_in", "ended_ago", "phase",
+        "server_now", "starts_in", "started_ago", "ends_in", "ended_ago",
     ):
         STATE["war"].setdefault(k, None)
 
@@ -425,7 +422,6 @@ STATE = {
         "started_ago": None,
         "ends_in": None,
         "ended_ago": None,
-        "phase": None,
     },
 
     "online_count": 0,
@@ -503,14 +499,13 @@ async def poll_loop():
                         "cooldown": chain.get("cooldown"),
                     }
 
-                    # ranked war (with scores + live timers)
+                    # ranked war (scores + timers; NO phase)
                     war_data = await get_ranked_war_best_effort(FACTION_ID, FACTION_API_KEY)
                     STATE["war_debug"] = war_data
                     entry = parse_ranked_war_entry(war_data)
                     if entry:
                         STATE["war"] = ranked_war_to_state(entry)
                     else:
-                        # keep shape but clear values
                         STATE["war"] = {
                             "opponent": None, "opponent_id": None,
                             "start": None, "end": None, "target": None, "active": None,
@@ -519,7 +514,6 @@ async def poll_loop():
                             "war_id": None,
                             "server_now": unix_now(),
                             "starts_in": None, "started_ago": None, "ends_in": None, "ended_ago": None,
-                            "phase": None,
                         }
 
                     STATE["updated_at"] = now_iso()
@@ -549,12 +543,15 @@ async def poll_loop():
             else:
                 c = STATE.get("chain") or {}
                 w = STATE.get("war") or {}
+
                 score = f"{w.get('our_score') or '—'}–{w.get('opp_score') or '—'}"
+                target = w.get("target") or "—"
+
                 text = (
                     "🛡️ **War-Bot Update**\n"
                     f"Faction: {faction_label()}\n"
                     f"Chain: {c.get('current')}/{c.get('max')} (timeout {c.get('timeout')}s)\n"
-                    f"War: {w.get('opponent') or '—'} | Score: {score} | Target: {w.get('target') or '—'} | Phase: {w.get('phase') or '—'}\n"
+                    f"War: {w.get('opponent') or '—'} | Score: {score} | Target: {target}\n"
                     f"Online(0–20m): {STATE.get('online_count')} | Idle(21–30m): {STATE.get('idle_count')} | Offline(31m+): {STATE.get('offline_count')}\n"
                     f"Panel: {panel_url()}\n"
                     f"Updated: {STATE.get('updated_at') or '—'}"
@@ -632,13 +629,8 @@ def allow_iframe(resp):
     CRITICAL: Fixes Torn "Ask the owner" iframe block.
     Remove X-Frame-Options completely and allow torn.com via CSP frame-ancestors.
     """
-    # Remove any X-Frame-Options injected by platform/proxy or defaults
     resp.headers.pop("X-Frame-Options", None)
-
-    # Allow Torn to embed
     resp.headers["Content-Security-Policy"] = "frame-ancestors https://*.torn.com https://torn.com;"
-
-    # Avoid caching glitches
     resp.headers["Cache-Control"] = "no-store"
     return resp
 
@@ -721,6 +713,8 @@ HTML = """<!doctype html>
       <div class="pill" id="chain">Chain: —</div>
       <div class="pill" id="war">War: —</div>
       <div class="pill" id="war_score">Score: —</div>
+      <div class="pill" id="war_target">Target: —</div>
+      <div class="pill" id="war_progress">Progress: —</div>
       <div class="pill" id="war_time">Time: —</div>
       <div class="pill" id="p_on">🟢 Online: —</div>
       <div class="pill" id="p_idle">🟡 Idle: —</div>
@@ -785,43 +779,63 @@ function bucketFromMinutes(mins){
   return 'offline';
 }
 
-// ===== LIVE war timer state =====
-let warPhase = null;
+// ===== LIVE war timer state (NO phase) =====
 let warStartsIn = null;
 let warStartedAgo = null;
 let warEndsIn = null;
 let warEndedAgo = null;
 
+function warKind(){
+  // Infer upcoming/active/ended based on which timers exist
+  if (warStartsIn != null) return "upcoming";
+  if (warEndedAgo != null) return "ended";
+  // default: active (even if unknown)
+  return "active";
+}
+
 function renderWarTime(){
   let t = "Time: —";
-  if (warPhase === "upcoming" && warStartsIn != null) {
+  const kind = warKind();
+
+  if (kind === "upcoming" && warStartsIn != null) {
     t = `Time: starts in ${fmtDur(warStartsIn)}`;
-  } else if (warPhase === "active") {
+  } else if (kind === "active") {
     const started = (warStartedAgo != null) ? `started ${fmtDur(warStartedAgo)} ago` : "started";
     const ends = (warEndsIn != null) ? ` | ends in ${fmtDur(warEndsIn)}` : "";
     t = `Time: ${started}${ends}`;
-  } else if (warPhase === "ended" && warEndedAgo != null) {
+  } else if (kind === "ended" && warEndedAgo != null) {
     t = `Time: ended ${fmtDur(warEndedAgo)} ago`;
   }
+
   document.getElementById('war_time').textContent = t;
 }
 
 function tickWarTime(){
-  if (warPhase === "upcoming") {
+  const kind = warKind();
+
+  if (kind === "upcoming") {
     if (warStartsIn != null) {
       warStartsIn = Math.max(0, warStartsIn - 1);
-      if (warStartsIn === 0) { warPhase = "active"; warStartedAgo = 0; }
+      if (warStartsIn === 0) { warStartsIn = null; warStartedAgo = 0; }
     }
-  } else if (warPhase === "active") {
+  } else if (kind === "active") {
     if (warStartedAgo != null) warStartedAgo += 1;
     if (warEndsIn != null) {
       warEndsIn = Math.max(0, warEndsIn - 1);
-      if (warEndsIn === 0) { warPhase = "ended"; warEndedAgo = 0; warEndsIn = null; }
+      if (warEndsIn === 0) { warEndsIn = null; warEndedAgo = 0; }
     }
-  } else if (warPhase === "ended") {
+  } else if (kind === "ended") {
     if (warEndedAgo != null) warEndedAgo += 1;
   }
+
   renderWarTime();
+}
+
+function pct(n, d){
+  n = Number(n); d = Number(d);
+  if (!isFinite(n) || !isFinite(d) || d <= 0) return null;
+  const p = Math.max(0, Math.min(100, (n / d) * 100));
+  return Math.round(p);
 }
 
 // ===== LIVE members =====
@@ -922,14 +936,32 @@ async function refresh(){
 
   const w = s.war || {};
   const opp = (w.opponent || '—');
-  const phase = (w.phase || '—');
   document.getElementById('war').textContent =
-    `War: ${opp} | Target: ${(w.target ?? '—')} | Phase: ${phase}`;
+    `War: ${opp}`;
+
+  // score + chains
+  const ourScore = (w.our_score ?? null);
+  const oppScore = (w.opp_score ?? null);
+  const ourChain = (w.our_chain ?? '—');
+  const oppChain = (w.opp_chain ?? '—');
 
   document.getElementById('war_score').textContent =
-    `Score: ${(w.our_score ?? '—')}–${(w.opp_score ?? '—')} | Chains: ${(w.our_chain ?? '—')}–${(w.opp_chain ?? '—')}`;
+    `Score: ${(ourScore ?? '—')}–${(oppScore ?? '—')} | Chains: ${ourChain}–${oppChain}`;
 
-  warPhase = w.phase || null;
+  // target + progress vs target (LIVE via refresh)
+  const target = (w.target ?? null);
+  document.getElementById('war_target').textContent =
+    `Target: ${(target ?? '—')}`;
+
+  const pOur = pct(ourScore, target);
+  const pOpp = pct(oppScore, target);
+  const progText =
+    (pOur != null || pOpp != null)
+      ? `Progress: ${(ourScore ?? '—')}/${(target ?? '—')} (${pOur ?? '—'}%) vs ${(oppScore ?? '—')}/${(target ?? '—')} (${pOpp ?? '—'}%)`
+      : `Progress: —`;
+  document.getElementById('war_progress').textContent = progText;
+
+  // timers (NO phase)
   warStartsIn = (w.starts_in != null) ? Math.max(0, Math.floor(w.starts_in)) : null;
   warStartedAgo = (w.started_ago != null) ? Math.max(0, Math.floor(w.started_ago)) : null;
   warEndsIn = (w.ends_in != null) ? Math.max(0, Math.floor(w.ends_in)) : null;
