@@ -37,10 +37,8 @@ CHAIN_TIMEOUT_COOLDOWN_SECONDS = int(os.getenv("CHAIN_TIMEOUT_COOLDOWN_SECONDS",
 
 WAR_ALERT_COOLDOWN_SECONDS = int(os.getenv("WAR_ALERT_COOLDOWN_SECONDS", "600"))
 
-# Optional: require token for availability posting
 AVAIL_TOKEN = (os.getenv("AVAIL_TOKEN") or "").strip()
 
-# Chain sitters allowlist (ONLY these Torn IDs can opt in/out)
 CHAIN_SITTER_IDS_RAW = (os.getenv("CHAIN_SITTER_IDS") or "1234").strip()
 
 
@@ -85,7 +83,6 @@ STATE = {
 
     "chain": {"current": None, "max": None, "timeout": None, "cooldown": None},
 
-    # always present
     "war": {
         "opponent": None,
         "opponent_id": None,
@@ -100,7 +97,6 @@ STATE = {
         "opp_chain": None,
         "war_id": None,
 
-        # computed from server clock
         "server_now": None,
         "starts_in": None,
         "started_ago": None,
@@ -109,13 +105,11 @@ STATE = {
         "phase": None,  # "upcoming" | "active" | "ended" | "unknown"
     },
 
-    # debug raw
     "war_debug": None,
 
     "online_count": 0,
     "idle_count": 0,
     "offline_count": 0,
-
     "available_count": 0,
     "opted_in_count": 0,
 
@@ -192,7 +186,6 @@ def last_action_minutes(last_action_text: str) -> int:
 
 
 def last_action_bucket_from_minutes(minutes: int) -> str:
-    # Online = 0–20, Idle = 21–30, Offline = 31+
     if minutes <= 20:
         return "online"
     if 20 < minutes <= 30:
@@ -240,12 +233,8 @@ def safe_member_rows(data: dict):
     return rows
 
 
-# ========= Ranked war parsing (YOUR SHAPE) =========
+# ========= Ranked war parsing =========
 def parse_ranked_war_entry(war_data: dict):
-    """
-    war_data["rankedwars"] = [ {id,start,end,target,factions:[{id,name,score,chain}, ...]}, ... ]
-    Pick active first (end==0), else newest by start.
-    """
     if not isinstance(war_data, dict) or not war_data or war_data.get("error"):
         return None
 
@@ -275,10 +264,6 @@ def parse_ranked_war_entry(war_data: dict):
 
 
 def compute_war_phase(start_ts, end_ts, now_ts):
-    """
-    Returns (phase, starts_in, started_ago, ends_in, ended_ago)
-    Values are seconds (ints) or None.
-    """
     starts_in = started_ago = ends_in = ended_ago = None
     phase = "unknown"
 
@@ -290,6 +275,7 @@ def compute_war_phase(start_ts, end_ts, now_ts):
         e = int(end_ts) if end_ts is not None else None
     except Exception:
         e = None
+
     n = int(now_ts)
 
     if s is None:
@@ -300,10 +286,9 @@ def compute_war_phase(start_ts, end_ts, now_ts):
         starts_in = s - n
         return phase, starts_in, None, None, None
 
-    # started already
     started_ago = n - s
 
-    # NOTE: in your active war, end==0 (unknown/ongoing)
+    # end==0 means active with no known end
     if e is None or e == 0:
         phase = "active"
         return phase, None, started_ago, None, None
@@ -313,7 +298,6 @@ def compute_war_phase(start_ts, end_ts, now_ts):
         ends_in = e - n
         return phase, None, started_ago, ends_in, None
 
-    # ended
     phase = "ended"
     ended_ago = n - e
     return phase, None, started_ago, None, ended_ago
@@ -339,14 +323,12 @@ def ranked_war_to_state(entry: dict):
     out["end"] = entry.get("end")
     out["target"] = entry.get("target")
 
-    # active if end == 0 OR (end in future)
     try:
         e = int(entry.get("end", 0))
         out["active"] = (e == 0) or (e > out["server_now"])
     except Exception:
         out["active"] = None
 
-    # factions list
     factions = entry.get("factions")
     our = None
     opp = None
@@ -361,10 +343,8 @@ def ranked_war_to_state(entry: dict):
             if str(fid) == str(FACTION_ID):
                 our = f
             else:
-                # the "other" is opponent
                 opp = f
 
-    # fill scoreboard
     if our:
         out["our_score"] = our.get("score")
         out["our_chain"] = our.get("chain")
@@ -374,7 +354,6 @@ def ranked_war_to_state(entry: dict):
         out["opp_score"] = opp.get("score")
         out["opp_chain"] = opp.get("chain")
 
-    # timing
     phase, starts_in, started_ago, ends_in, ended_ago = compute_war_phase(out["start"], out["end"], out["server_now"])
     out["phase"] = phase
     out["starts_in"] = starts_in
@@ -386,7 +365,6 @@ def ranked_war_to_state(entry: dict):
 
 
 def war_from_core_fallback(core: dict):
-    # basic fallback if rankedwars fails
     out = {
         "opponent": None, "opponent_id": None,
         "start": None, "end": None, "target": None, "active": None,
@@ -538,7 +516,7 @@ async def poll_loop():
                         "cooldown": chain.get("cooldown"),
                     }
 
-                    # WAR baseline always
+                    # reset war
                     STATE["war"] = {
                         "opponent": None, "opponent_id": None,
                         "start": None, "end": None, "target": None, "active": None,
@@ -569,7 +547,7 @@ async def poll_loop():
                 STATE["last_error"] = {"code": -2, "error": f"Torn request failed: {repr(e)}"}
                 STATE["updated_at"] = now_iso()
 
-        # webhook update (throttled)
+        # webhook post throttled
         try:
             last_post = get_setting("LAST_POST_TS", "0")
             last_post_f = float(last_post) if last_post else 0.0
@@ -594,26 +572,17 @@ async def poll_loop():
                 if w.get("opponent"):
                     score_line = (
                         f"Score: {w.get('our_score') if w.get('our_score') is not None else '—'}"
-                        f" vs {w.get('opp_score') if w.get('opp_score') is not None else '—'}"
+                        f"–{w.get('opp_score') if w.get('opp_score') is not None else '—'}"
                         f" | Chains: {w.get('our_chain') if w.get('our_chain') is not None else '—'}"
-                        f" vs {w.get('opp_chain') if w.get('opp_chain') is not None else '—'}"
+                        f"–{w.get('opp_chain') if w.get('opp_chain') is not None else '—'}"
                     )
-
-                timing = ""
-                if w.get("phase") == "upcoming" and w.get("starts_in") is not None:
-                    timing = f"Starts in: ~{int(w['starts_in'])}s"
-                elif w.get("phase") == "active" and w.get("started_ago") is not None:
-                    timing = f"Started: ~{int(w['started_ago'])}s ago"
-                elif w.get("phase") == "ended" and w.get("ended_ago") is not None:
-                    timing = f"Ended: ~{int(w['ended_ago'])}s ago"
 
                 text = (
                     "🛡️ **War-Bot Update**\n"
                     f"Faction: {faction_label()}\n"
                     f"Chain: {c.get('current')}/{c.get('max')} (timeout {c.get('timeout')}s)\n"
-                    f"War: {w.get('opponent') or '—'}\n"
+                    f"War: {w.get('opponent') or '—'} | Target: {w.get('target') or '—'} | Phase: {w.get('phase') or '—'}\n"
                     f"{score_line}\n"
-                    f"{timing}\n"
                     f"Chain sitter opted-in: {STATE.get('opted_in_count')}\n"
                     f"Last action → Online(0–20m): {STATE.get('online_count')} | Idle(21–30m): {STATE.get('idle_count')} | Offline(31m+): {STATE.get('offline_count')}\n"
                     f"Panel: {panel_url()}\n"
@@ -847,14 +816,55 @@ function fmtDur(sec){
   if (d) parts.push(d + "d");
   if (h) parts.push(h + "h");
   if (m) parts.push(m + "m");
-  if (!parts.length) parts.push(sec + "s");
+  parts.push(sec + "s");
   return parts.join(" ");
 }
 
-function fmtUnix(ts){
-  if (!ts) return "—";
-  const d = new Date(ts * 1000);
-  return d.toLocaleString();
+// LIVE TIMER STATE (ticks every 1s)
+let warPhase = null;
+let warStartsIn = null;
+let warStartedAgo = null;
+let warEndsIn = null;
+let warEndedAgo = null;
+
+function renderWarTime(){
+  let t = "Time: —";
+  if (warPhase === "upcoming" && warStartsIn != null) {
+    t = `Time: starts in ${fmtDur(warStartsIn)}`;
+  } else if (warPhase === "active") {
+    const started = (warStartedAgo != null) ? `started ${fmtDur(warStartedAgo)} ago` : "started";
+    const ends = (warEndsIn != null) ? ` | ends in ${fmtDur(warEndsIn)}` : " | end: —";
+    t = `Time: ${started}${ends}`;
+  } else if (warPhase === "ended" && warEndedAgo != null) {
+    t = `Time: ended ${fmtDur(warEndedAgo)} ago`;
+  }
+  document.getElementById('war_time').textContent = t;
+}
+
+function tickWarTime(){
+  if (warPhase === "upcoming") {
+    if (warStartsIn != null) {
+      warStartsIn = Math.max(0, warStartsIn - 1);
+      if (warStartsIn === 0) {
+        // flip to active, best effort
+        warPhase = "active";
+        warStartedAgo = 0;
+      }
+    }
+  } else if (warPhase === "active") {
+    if (warStartedAgo != null) warStartedAgo += 1;
+    if (warEndsIn != null) {
+      warEndsIn = Math.max(0, warEndsIn - 1);
+      if (warEndsIn === 0) {
+        warPhase = "ended";
+        warEndedAgo = 0;
+        warEndsIn = null;
+      }
+    }
+  } else if (warPhase === "ended") {
+    if (warEndedAgo != null) warEndedAgo += 1;
+  }
+  renderWarTime();
 }
 
 async function refresh(){
@@ -873,9 +883,8 @@ async function refresh(){
 
   const w = s.war || {};
   const opp = (w.opponent || '—');
-  const activeTxt = (w.phase === 'active') ? ' (active)' : (w.phase === 'upcoming' ? ' (upcoming)' : (w.phase === 'ended' ? ' (ended)' : ''));
-  document.getElementById('war').textContent =
-    `War: ${opp}${activeTxt} | Target: ${(w.target ?? '—')} | Start: ${fmtUnix(w.start)} | End: ${fmtUnix(w.end && w.end !== 0 ? w.end : null)}`;
+  const phase = (w.phase || '—');
+  document.getElementById('war').textContent = `War: ${opp} | Target: ${(w.target ?? '—')} | Phase: ${phase}`;
 
   const ourScore = (w.our_score ?? '—');
   const oppScore = (w.opp_score ?? '—');
@@ -884,17 +893,13 @@ async function refresh(){
   document.getElementById('war_score').textContent =
     `Score: ${ourScore}–${oppScore} | Chains: ${ourChain}–${oppChain}`;
 
-  let t = "Time: —";
-  if (w.phase === "upcoming" && w.starts_in != null) {
-    t = `Time: starts in ${fmtDur(w.starts_in)}`;
-  } else if (w.phase === "active") {
-    const started = (w.started_ago != null) ? `started ${fmtDur(w.started_ago)} ago` : "started";
-    const ends = (w.ends_in != null) ? ` | ends in ${fmtDur(w.ends_in)}` : " | end: —";
-    t = `Time: ${started}${ends}`;
-  } else if (w.phase === "ended" && w.ended_ago != null) {
-    t = `Time: ended ${fmtDur(w.ended_ago)} ago`;
-  }
-  document.getElementById('war_time').textContent = t;
+  // set LIVE counters from server values
+  warPhase = w.phase || null;
+  warStartsIn = (w.starts_in != null) ? Math.max(0, Math.floor(w.starts_in)) : null;
+  warStartedAgo = (w.started_ago != null) ? Math.max(0, Math.floor(w.started_ago)) : null;
+  warEndsIn = (w.ends_in != null) ? Math.max(0, Math.floor(w.ends_in)) : null;
+  warEndedAgo = (w.ended_ago != null) ? Math.max(0, Math.floor(w.ended_ago)) : null;
+  renderWarTime();
 
   document.getElementById('p_on').textContent   = `🟢 Online: ${s.online_count ?? 0}`;
   document.getElementById('p_idle').textContent = `🟡 Idle: ${s.idle_count ?? 0}`;
@@ -925,8 +930,11 @@ async function refresh(){
   fill('rows_idle', s.idle_rows || []);
   fill('rows_off', s.offline_rows || []);
 }
+
+// initial + periodic fetch (live tick runs separately)
 refresh();
-setInterval(refresh, 15000);
+setInterval(refresh, 10000);     // pull fresh state every 10s
+setInterval(tickWarTime, 1000);  // live ticking every 1s
 </script>
 </body>
 </html>
