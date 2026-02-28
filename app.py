@@ -13,10 +13,9 @@ from torn_api import get_faction_full
 
 load_dotenv()
 
-# ========= ENV =========
 FACTION_ID = (os.getenv("FACTION_ID") or "").strip()
 FACTION_API_KEY = (os.getenv("FACTION_API_KEY") or "").strip()
-PUBLIC_BASE_URL = (os.getenv("PUBLIC_BASE_URL") or "").strip()  # https://torn-war-bot.onrender.com
+PUBLIC_BASE_URL = (os.getenv("PUBLIC_BASE_URL") or "").strip()
 DISCORD_WEBHOOK_URL = (os.getenv("DISCORD_WEBHOOK_URL") or "").strip()
 
 POST_INTERVAL_SECONDS = int(os.getenv("POST_INTERVAL_SECONDS", "120"))
@@ -31,7 +30,7 @@ STATE = {
     "available_count": 0,
     "faction": {"name": None, "tag": None, "respect": None},
     "last_error": None,
-    "used_selections": None,  # debug
+    "used_selections": "basic,members,chain",
 }
 
 def now_iso():
@@ -51,9 +50,6 @@ def safe_member_rows(faction_json: dict):
     return rows
 
 def update_state_from_faction(data: dict):
-    # record which selections worked
-    STATE["used_selections"] = (data or {}).get("_used_selections")
-
     if isinstance(data, dict) and data.get("error"):
         STATE["updated_at"] = now_iso()
         STATE["last_error"] = data["error"]
@@ -77,7 +73,6 @@ def update_state_from_faction(data: dict):
         "cooldown": chain.get("cooldown"),
     }
 
-    # war stays blank (we’re not using v2-only ranked war selections here)
     STATE["war"] = {"opponent": None, "start": None, "end": None, "target": None}
 
     STATE["available_count"] = sum(
@@ -99,7 +94,6 @@ def build_update_text() -> str:
     f = STATE.get("faction") or {}
     c = STATE.get("chain") or {}
     err = STATE.get("last_error")
-    used = STATE.get("used_selections") or "?"
 
     tag = f.get("tag")
     name = f.get("name") or "—"
@@ -112,7 +106,6 @@ def build_update_text() -> str:
             "🛡️ **War-Bot Update (ERROR)**\n"
             f"Faction: {faction_label}\n"
             f"Error: `{err}`\n"
-            f"Used selections: `{used}`\n"
             f"Panel: {panel_url}\n"
             f"Updated: {STATE.get('updated_at') or '—'}"
         )
@@ -122,7 +115,6 @@ def build_update_text() -> str:
         f"Faction: {faction_label}\n"
         f"Chain: {c.get('current')}/{c.get('max')}\n"
         f"Online-ish: {STATE.get('available_count')}\n"
-        f"Used selections: `{used}`\n"
         f"Panel: {panel_url}\n"
         f"Updated: {STATE.get('updated_at') or '—'}"
     )
@@ -162,7 +154,6 @@ def start_poll_thread():
         asyncio.run(poll_loop())
     threading.Thread(target=runner, daemon=True).start()
 
-# ========= FLASK =========
 app = Flask(__name__)
 
 @app.after_request
@@ -191,7 +182,6 @@ HTML = """<!doctype html>
   <div class="card">
     <div id="title" style="font-weight:700; font-size:16px;">7DS War-Bot</div>
     <div class="muted" id="updated">Loading…</div>
-    <div class="muted" id="used"></div>
     <div class="muted" id="err"></div>
   </div>
 
@@ -222,7 +212,6 @@ async function refresh(){
   const f = s.faction || {};
   document.getElementById('title').textContent = (f.tag ? `[${f.tag}] ` : '') + (f.name || '7DS War-Bot');
   document.getElementById('updated').textContent = 'Updated: ' + (s.updated_at || '—');
-  document.getElementById('used').textContent = 'Used selections: ' + (s.used_selections || '—');
 
   const err = s.last_error ? ('Error: ' + JSON.stringify(s.last_error)) : '';
   document.getElementById('err').textContent = err;
