@@ -29,47 +29,77 @@ PORT = int(os.getenv("PORT", "10000"))
 POLL_INTERVAL_SECONDS = int(os.getenv("POLL_INTERVAL_SECONDS", "30"))
 POST_INTERVAL_SECONDS = int(os.getenv("POST_INTERVAL_SECONDS", "120"))
 
-# Smart ping (>= N online-ish)
+# Smart ping (>= N online+idle)
 SMART_PING_MIN_ONLINE = int(os.getenv("SMART_PING_MIN_ONLINE", "5"))
 SMART_PING_MENTION = (os.getenv("SMART_PING_MENTION") or "@here").strip()
 SMART_PING_COOLDOWN_SECONDS = int(os.getenv("SMART_PING_COOLDOWN_SECONDS", "600"))
 
-# Chain timeout alert (NOT threshold; time-based)
-CHAIN_TIMEOUT_ALERT_SECONDS = int(os.getenv("CHAIN_TIMEOUT_ALERT_SECONDS", "600"))  # 10 mins
+# Chain timeout alert (time-based, NOT threshold)
+CHAIN_TIMEOUT_ALERT_SECONDS = int(os.getenv("CHAIN_TIMEOUT_ALERT_SECONDS", "600"))
 CHAIN_TIMEOUT_COOLDOWN_SECONDS = int(os.getenv("CHAIN_TIMEOUT_COOLDOWN_SECONDS", "600"))
 
 # Ranked war alert cooldown
 WAR_ALERT_COOLDOWN_SECONDS = int(os.getenv("WAR_ALERT_COOLDOWN_SECONDS", "600"))
 
-# Simple shared secret to stop randoms posting availability
+# Optional: require token for availability posting
 AVAIL_TOKEN = (os.getenv("AVAIL_TOKEN") or "").strip()
+
 
 def now_iso():
     return datetime.utcnow().isoformat() + "Z"
 
+
 def unix_now() -> int:
     return int(time.time())
+
+
+def panel_url():
+    return (PUBLIC_BASE_URL.rstrip("/") + "/") if PUBLIC_BASE_URL else "(set PUBLIC_BASE_URL)"
+
 
 STATE = {
     "rows": [],
     "available_rows": [],
     "unavailable_rows": [],
     "updated_at": None,
+
     "chain": {"current": None, "max": None, "timeout": None, "cooldown": None},
     "war": {"opponent": None, "start": None, "end": None, "target": None, "active": None},
-    "available_count": 0,        # online-ish count
-    "opted_in_count": 0,         # availability true count
+
+    # online/idle/offline (match colors)
+    "online_count": 0,
+    "idle_count": 0,
+    "offline_count": 0,
+
+    # online+idle (green+yellow)
+    "available_count": 0,
+
+    # opted-in via PDA script
+    "opted_in_count": 0,
+
     "faction": {"name": None, "tag": None, "respect": None},
     "last_error": None,
 }
 
-# ========= Torn parsing helpers =========
 
+# ========= Status bucketing (matches panel colors) =========
+def status_bucket(status_text: str) -> str:
+    s = (status_text or "").lower()
+
+    # Online
+    if "online" in s:
+        return "online"
+
+    # Idle (yellow): idle/away/traveling
+    if ("idle" in s) or ("away" in s) or ("travel" in s) or ("traveling" in s):
+        return "idle"
+
+    # Everything else -> Offline (red): offline, hospital, jail, etc.
+    return "offline"
+
+
+# ========= Torn parsing =========
 def safe_member_rows(data: dict):
-    """
-    v2 members is usually a list.
-    We normalize to rows with torn_id/name/level/last_action/status.
-    """
     members = (data or {}).get("members")
     rows = []
 
@@ -96,41 +126,28 @@ def safe_member_rows(data: dict):
                 "last_action": last_action if isinstance(last_action, str) else (str(last_action) if last_action is not None else ""),
                 "status": status if isinstance(status, str) else (str(status) if status is not None else ""),
             })
-        return rows
 
-    # fallback
     return rows
 
+
 def parse_ranked_war(war_data: dict):
-    """
-    Best-effort: return a normalized war object or None.
-    We try to find something that looks like an active ranked war.
-    """
     if not isinstance(war_data, dict) or not war_data or war_data.get("error"):
         return None
 
-    # Common pattern: { "rankedwars": {...} } OR direct list/dict.
     candidate = war_data.get("rankedwars", war_data)
 
-    # If dict of wars:
     if isinstance(candidate, dict):
         for _, w in candidate.items():
             if isinstance(w, dict):
                 return w
 
-    # If list of wars:
-    if isinstance(candidate, list) and candidate:
-        if isinstance(candidate[0], dict):
-            return candidate[0]
+    if isinstance(candidate, list) and candidate and isinstance(candidate[0], dict):
+        return candidate[0]
 
     return None
 
+
 def merge_availability(rows):
-    """
-    Adds:
-      - opted_in (bool)
-      - opted_updated_at
-    """
     avail_map = get_availability_map()
     out = []
     for r in rows:
@@ -142,8 +159,8 @@ def merge_availability(rows):
         out.append(r2)
     return out
 
-# ========= Discord webhook =========
 
+# ========= Discord webhook =========
 async def send_webhook_message(content: str):
     if not DISCORD_WEBHOOK_URL:
         return
@@ -151,11 +168,8 @@ async def send_webhook_message(content: str):
     async with aiohttp.ClientSession(timeout=timeout) as session:
         await session.post(DISCORD_WEBHOOK_URL, json={"content": content})
 
-def panel_url():
-    return (PUBLIC_BASE_URL.rstrip("/") + "/") if PUBLIC_BASE_URL else "(set PUBLIC_BASE_URL)"
 
-# ========= Alerts (throttled) =========
-
+# ========= Alert throttling =========
 def should_fire(key: str, cooldown_seconds: int) -> bool:
     last = get_alert_state(key, "0")
     try:
@@ -164,20 +178,19 @@ def should_fire(key: str, cooldown_seconds: int) -> bool:
         last_i = 0
     return (unix_now() - last_i) >= cooldown_seconds
 
+
 def mark_fired(key: str):
     set_alert_state(key, str(unix_now()))
 
-def build_status_line():
+
+def faction_label():
     f = STATE.get("faction") or {}
-    c = STATE.get("chain") or {}
-    w = STATE.get("war") or {}
     tag = f.get("tag")
     name = f.get("name") or "—"
-    faction_label = f"[{tag}] {name}" if tag else name
-    return faction_label, c, w
+    return f"[{tag}] {name}" if tag else name
+
 
 # ========= Main poll loop =========
-
 async def poll_loop():
     while True:
         # 1) Pull Torn data
@@ -187,6 +200,7 @@ async def poll_loop():
         else:
             try:
                 core = await get_faction_core(FACTION_ID, FACTION_API_KEY)
+
                 if isinstance(core, dict) and core.get("error"):
                     STATE["last_error"] = core["error"]
                     STATE["updated_at"] = now_iso()
@@ -203,14 +217,15 @@ async def poll_loop():
                     rows = safe_member_rows(core or {})
                     rows = merge_availability(rows)
 
-                    # Split
                     available_rows = [r for r in rows if r.get("opted_in")]
                     unavailable_rows = [r for r in rows if not r.get("opted_in")]
 
                     STATE["rows"] = rows
                     STATE["available_rows"] = available_rows
                     STATE["unavailable_rows"] = unavailable_rows
+                    STATE["opted_in_count"] = len(available_rows)
 
+                    # Chain
                     STATE["chain"] = {
                         "current": chain.get("current"),
                         "max": chain.get("max"),
@@ -218,11 +233,25 @@ async def poll_loop():
                         "cooldown": chain.get("cooldown"),
                     }
 
-                    # Online-ish count (based on status text)
-                    STATE["available_count"] = sum(
-                        1 for r in rows if "online" in (r.get("status") or "").lower()
-                    )
-                    STATE["opted_in_count"] = len(available_rows)
+                    # Status counts (match panel colors)
+                    online_c = 0
+                    idle_c = 0
+                    offline_c = 0
+                    for r in rows:
+                        b = status_bucket(r.get("status") or "")
+                        if b == "online":
+                            online_c += 1
+                        elif b == "idle":
+                            idle_c += 1
+                        else:
+                            offline_c += 1
+
+                    STATE["online_count"] = online_c
+                    STATE["idle_count"] = idle_c
+                    STATE["offline_count"] = offline_c
+
+                    # available_count = green+yellow
+                    STATE["available_count"] = online_c + idle_c
 
                     STATE["updated_at"] = now_iso()
                     STATE["last_error"] = None
@@ -231,7 +260,6 @@ async def poll_loop():
                     war_data = await get_ranked_war_best_effort(FACTION_ID, FACTION_API_KEY)
                     w = parse_ranked_war(war_data)
                     if isinstance(w, dict):
-                        # normalize opponent name if present
                         opp = None
                         if isinstance(w.get("opponent"), dict):
                             opp = w["opponent"].get("name")
@@ -251,7 +279,7 @@ async def poll_loop():
                 STATE["last_error"] = {"code": -2, "error": f"Torn request failed: {repr(e)}"}
                 STATE["updated_at"] = now_iso()
 
-        # 3) Throttled status post
+        # 3) Throttled webhook post
         try:
             last_post = get_setting("LAST_POST_TS", "0")
             last_post_f = float(last_post) if last_post else 0.0
@@ -259,25 +287,26 @@ async def poll_loop():
             last_post_f = 0.0
 
         if DISCORD_WEBHOOK_URL and (time.time() - last_post_f) >= POST_INTERVAL_SECONDS:
-            faction_label, c, w = build_status_line()
             err = STATE.get("last_error")
 
             if err:
                 text = (
                     "🛡️ **War-Bot (ERROR)**\n"
-                    f"Faction: {faction_label}\n"
+                    f"Faction: {faction_label()}\n"
                     f"Error: `{err}`\n"
                     f"Panel: {panel_url()}\n"
                     f"Updated: {STATE.get('updated_at') or '—'}"
                 )
             else:
+                c = STATE.get("chain") or {}
+                w = STATE.get("war") or {}
                 text = (
                     "🛡️ **War-Bot Update**\n"
-                    f"Faction: {faction_label}\n"
+                    f"Faction: {faction_label()}\n"
                     f"Chain: {c.get('current')}/{c.get('max')}\n"
                     f"War: {w.get('opponent') or '—'}\n"
                     f"Opted-in: {STATE.get('opted_in_count')}\n"
-                    f"Online-ish: {STATE.get('available_count')}\n"
+                    f"Online: {STATE.get('online_count')} | Idle: {STATE.get('idle_count')} | Offline: {STATE.get('offline_count')}\n"
                     f"Panel: {panel_url()}\n"
                     f"Updated: {STATE.get('updated_at') or '—'}"
                 )
@@ -289,32 +318,30 @@ async def poll_loop():
                 STATE["last_error"] = {"code": -3, "error": f"Webhook failed: {repr(e)}"}
                 STATE["updated_at"] = now_iso()
 
-        # 4) Smart ping (>= N online-ish) — throttled
+        # 4) Smart ping (>= N online+idle) — throttled
         try:
             if DISCORD_WEBHOOK_URL and STATE.get("last_error") is None:
                 onlineish = int(STATE.get("available_count") or 0)
                 if onlineish >= SMART_PING_MIN_ONLINE and should_fire("SMART_PING", SMART_PING_COOLDOWN_SECONDS):
-                    faction_label, _, _ = build_status_line()
                     await send_webhook_message(
-                        f"{SMART_PING_MENTION} 🟢 **Smart Ping**: {onlineish} members online-ish.\n"
-                        f"Faction: {faction_label}\n"
+                        f"{SMART_PING_MENTION} 🟢 **Smart Ping**: {onlineish} members online/idle.\n"
+                        f"Faction: {faction_label()}\n"
                         f"Panel: {panel_url()}"
                     )
                     mark_fired("SMART_PING")
         except Exception:
             pass
 
-        # 5) Chain timeout alert (time-based, not threshold) — throttled
+        # 5) Chain timeout alert (time-based) — throttled
         try:
             if DISCORD_WEBHOOK_URL and STATE.get("last_error") is None:
                 timeout = STATE.get("chain", {}).get("timeout")
-                # timeout sometimes int seconds remaining, or timestamp; we treat int-ish as seconds remaining
                 if isinstance(timeout, (int, float)) and timeout > 0 and timeout <= CHAIN_TIMEOUT_ALERT_SECONDS:
                     if should_fire("CHAIN_TIMEOUT", CHAIN_TIMEOUT_COOLDOWN_SECONDS):
-                        faction_label, c, _ = build_status_line()
+                        c = STATE.get("chain") or {}
                         await send_webhook_message(
                             f"⏳ **Chain Timeout Soon**: ~{int(timeout)}s remaining.\n"
-                            f"Faction: {faction_label}\n"
+                            f"Faction: {faction_label()}\n"
                             f"Chain: {c.get('current')}/{c.get('max')}\n"
                             f"Panel: {panel_url()}"
                         )
@@ -322,16 +349,15 @@ async def poll_loop():
         except Exception:
             pass
 
-        # 6) War alert if opponent appears / changes — throttled
+        # 6) War alert if opponent appears/changes — throttled
         try:
             if DISCORD_WEBHOOK_URL and STATE.get("last_error") is None:
                 opp = (STATE.get("war") or {}).get("opponent") or ""
                 prev = get_alert_state("WAR_OPPONENT", "")
                 if opp and opp != prev and should_fire("WAR_CHANGE", WAR_ALERT_COOLDOWN_SECONDS):
-                    faction_label, _, _ = build_status_line()
                     await send_webhook_message(
                         f"⚔️ **Ranked War Update**: Opponent = **{opp}**\n"
-                        f"Faction: {faction_label}\n"
+                        f"Faction: {faction_label()}\n"
                         f"Panel: {panel_url()}"
                     )
                     set_alert_state("WAR_OPPONENT", opp)
@@ -341,13 +367,16 @@ async def poll_loop():
 
         await asyncio.sleep(POLL_INTERVAL_SECONDS)
 
+
 def start_poll_thread():
     def runner():
         asyncio.run(poll_loop())
     threading.Thread(target=runner, daemon=True).start()
 
+
 # ========= Flask =========
 app = Flask(__name__)
+
 
 @app.after_request
 def allow_iframe(resp):
@@ -355,18 +384,19 @@ def allow_iframe(resp):
     resp.headers["Content-Security-Policy"] = "frame-ancestors *"
     return resp
 
+
 @app.get("/state")
 def state():
     return jsonify(STATE)
+
 
 @app.get("/health")
 def health():
     return jsonify({"ok": True, "time": now_iso()})
 
-# ---- Availability API (PDA/Tampermonkey posts here) ----
+
 @app.post("/api/availability")
 def api_availability():
-    # Optional: require a token
     if AVAIL_TOKEN:
         tok = (request.headers.get("X-Avail-Token") or "").strip()
         if tok != AVAIL_TOKEN:
@@ -374,8 +404,9 @@ def api_availability():
 
     data = request.get_json(silent=True) or {}
     torn_id = data.get("torn_id")
-    name = data.get("name") or ""
+    name = (data.get("name") or "")[:64]
     available = bool(data.get("available"))
+
     if torn_id is None:
         return jsonify({"ok": False, "error": "missing torn_id"}), 400
 
@@ -384,10 +415,10 @@ def api_availability():
     except Exception:
         return jsonify({"ok": False, "error": "invalid torn_id"}), 400
 
-    upsert_availability(torn_id=torn_id, name=name[:64], available=available, updated_at=now_iso())
+    upsert_availability(torn_id=torn_id, name=name, available=available, updated_at=now_iso())
     return jsonify({"ok": True})
 
-# ---- Panel HTML ----
+
 HTML = """<!doctype html>
 <html>
 <head>
@@ -398,12 +429,17 @@ HTML = """<!doctype html>
   .card { background:#151521; border:1px solid #2a2a3a; border-radius:12px; padding:12px; margin-bottom:10px; }
   .muted { opacity:0.75; font-size: 12px; }
   table { width:100%; border-collapse: collapse; }
-  th, td { text-align:left; padding:8px; border-bottom:1px solid #2a2a3a; font-size: 13px; }
+  th, td { text-align:left; padding:8px; border-bottom:1px solid #2a2a3a; font-size: 13px; vertical-align: middle; }
   th { opacity:0.85; }
   .pill { display:inline-block; padding:2px 10px; border:1px solid #2a2a3a; border-radius:999px; font-size:12px; opacity:0.95; }
   .err { color:#ffb4b4; }
   .gold { color:#ffd86a; }
   .grid { display:flex; gap:10px; flex-wrap:wrap; }
+  .dot { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:8px; }
+  .g { background:#3dff86; box-shadow: 0 0 10px rgba(61,255,134,0.35); }
+  .y { background:#ffd86a; box-shadow: 0 0 10px rgba(255,216,106,0.28); }
+  .r { background:#ff4b4b; box-shadow: 0 0 10px rgba(255,75,75,0.28); }
+  .namecell { display:flex; align-items:center; }
 </style>
 </head>
 <body>
@@ -419,7 +455,9 @@ HTML = """<!doctype html>
     <div class="grid">
       <div class="pill" id="chain">Chain: —</div>
       <div class="pill" id="war">War: —</div>
-      <div class="pill" id="online">Online-ish: —</div>
+      <div class="pill" id="online">🟢 Online: —</div>
+      <div class="pill" id="idle">🟡 Idle: —</div>
+      <div class="pill" id="offline">🔴 Offline: —</div>
       <div class="pill" id="opted">Opted-in: —</div>
     </div>
   </div>
@@ -428,7 +466,7 @@ HTML = """<!doctype html>
     <div style="font-weight:800; margin-bottom:8px;" class="gold">Available (Opted-in)</div>
     <div style="overflow:auto;">
       <table>
-        <thead><tr><th>Name</th><th>Lvl</th><th>Last action</th><th>Status</th><th>Opt</th></tr></thead>
+        <thead><tr><th>Member</th><th>Lvl</th><th>Last action</th><th>Status</th><th>Opt</th></tr></thead>
         <tbody id="rows_avail"></tbody>
       </table>
     </div>
@@ -438,13 +476,25 @@ HTML = """<!doctype html>
     <div style="font-weight:800; margin-bottom:8px;">Not Available</div>
     <div style="overflow:auto;">
       <table>
-        <thead><tr><th>Name</th><th>Lvl</th><th>Last action</th><th>Status</th><th>Opt</th></tr></thead>
+        <thead><tr><th>Member</th><th>Lvl</th><th>Last action</th><th>Status</th><th>Opt</th></tr></thead>
         <tbody id="rows_unavail"></tbody>
       </table>
     </div>
   </div>
 
 <script>
+function classify(statusText){
+  const s = (statusText || '').toLowerCase();
+  if (s.includes('online')) return 'online';
+  if (s.includes('idle') || s.includes('away') || s.includes('travel')) return 'idle';
+  return 'offline';
+}
+function dotClass(kind){
+  if (kind === 'online') return 'dot g';
+  if (kind === 'idle') return 'dot y';
+  return 'dot r';
+}
+
 async function refresh(){
   const r = await fetch('/state');
   const s = await r.json();
@@ -464,16 +514,25 @@ async function refresh(){
   const w = s.war || {};
   document.getElementById('war').textContent = `War: ${w.opponent || '—'}`;
 
-  document.getElementById('online').textContent = `Online-ish: ${s.available_count ?? '—'}`;
-  document.getElementById('opted').textContent = `Opted-in: ${s.opted_in_count ?? '—'}`;
+  document.getElementById('online').textContent  = `🟢 Online: ${s.online_count ?? 0}`;
+  document.getElementById('idle').textContent    = `🟡 Idle: ${s.idle_count ?? 0}`;
+  document.getElementById('offline').textContent = `🔴 Offline: ${s.offline_count ?? 0}`;
+  document.getElementById('opted').textContent   = `Opted-in: ${s.opted_in_count ?? 0}`;
 
   const fill = (id, arr) => {
     const tb = document.getElementById(id);
     tb.innerHTML = '';
     (arr || []).slice(0, 250).forEach(x=>{
-      const tr = document.createElement('tr');
       const opt = x.opted_in ? '✅' : '—';
-      tr.innerHTML = `<td>${x.name||''}</td><td>${x.level??''}</td><td>${x.last_action||''}</td><td>${x.status||''}</td><td>${opt}</td>`;
+      const kind = classify(x.status);
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td><div class="namecell"><span class="${dotClass(kind)}"></span><span>${x.name||''}</span></div></td>
+        <td>${x.level??''}</td>
+        <td>${x.last_action||''}</td>
+        <td>${x.status||''}</td>
+        <td>${opt}</td>
+      `;
       tb.appendChild(tr);
     });
   };
@@ -488,9 +547,11 @@ setInterval(refresh, 15000);
 </html>
 """
 
+
 @app.get("/")
 def home():
     return Response(HTML, mimetype="text/html")
+
 
 if __name__ == "__main__":
     init_db()
