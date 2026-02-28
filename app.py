@@ -2,6 +2,7 @@ import os
 import time
 import threading
 import asyncio
+import re
 from datetime import datetime
 
 from flask import Flask, jsonify, Response, request
@@ -42,6 +43,7 @@ AVAIL_TOKEN = (os.getenv("AVAIL_TOKEN") or "").strip()
 # Chain sitters allowlist (ONLY these Torn IDs can opt in/out)
 CHAIN_SITTER_IDS_RAW = (os.getenv("CHAIN_SITTER_IDS") or "1234").strip()
 
+
 def _parse_id_set(csv: str) -> set[int]:
     out = set()
     for part in (csv or "").split(","):
@@ -54,19 +56,25 @@ def _parse_id_set(csv: str) -> set[int]:
             pass
     return out
 
+
 CHAIN_SITTER_IDS = _parse_id_set(CHAIN_SITTER_IDS_RAW)
+
 
 def is_chain_sitter(torn_id: int) -> bool:
     return torn_id in CHAIN_SITTER_IDS
 
+
 def now_iso():
     return datetime.utcnow().isoformat() + "Z"
+
 
 def unix_now() -> int:
     return int(time.time())
 
+
 def panel_url():
     return (PUBLIC_BASE_URL.rstrip("/") + "/") if PUBLIC_BASE_URL else "(set PUBLIC_BASE_URL)"
+
 
 STATE = {
     "rows": [],
@@ -82,21 +90,67 @@ STATE = {
     "idle_count": 0,
     "offline_count": 0,
 
-    "available_count": 0,   # online+idle
-    "opted_in_count": 0,    # chain sitters opted-in only
+    # online + idle (from last action)
+    "available_count": 0,
+
+    # chain sitters opted-in only
+    "opted_in_count": 0,
 
     "faction": {"name": None, "tag": None, "respect": None},
     "last_error": None,
 }
 
-def status_bucket(status_text: str) -> str:
-    s = (status_text or "").lower()
-    if "online" in s:
+
+# ========= LAST ACTION -> minutes + bucket =========
+_RE_LAST_ACTION = re.compile(r"(\d+)\s*(second|minute|hour|day|week|month|year)s?\s*ago", re.I)
+
+def last_action_minutes(last_action_text: str) -> int:
+    """
+    Returns minutes since last action.
+    Unknown/unparseable -> very large number (sorts to bottom).
+    """
+    s = (last_action_text or "").strip().lower()
+    if not s:
+        return 10**9
+    if "just now" in s or s == "now":
+        return 0
+
+    m = _RE_LAST_ACTION.search(s)
+    if not m:
+        return 10**9
+
+    qty = int(m.group(1))
+    unit = m.group(2).lower()
+
+    if unit == "second":
+        return 0
+    if unit == "minute":
+        return qty
+    if unit == "hour":
+        return qty * 60
+    if unit == "day":
+        return qty * 1440
+    if unit == "week":
+        return qty * 10080
+    if unit == "month":
+        return qty * 43200
+    if unit == "year":
+        return qty * 525600
+
+    return 10**9
+
+
+def last_action_bucket_from_minutes(minutes: int) -> str:
+    # Your rules:
+    # Online = 0–20, Idle = 21–30, Offline = 31+
+    if minutes <= 20:
         return "online"
-    if ("idle" in s) or ("away" in s) or ("travel" in s) or ("traveling" in s):
+    if 20 < minutes <= 30:
         return "idle"
     return "offline"
 
+
+# ========= Torn parsing =========
 def safe_member_rows(data: dict):
     members = (data or {}).get("members")
     rows = []
@@ -125,6 +179,7 @@ def safe_member_rows(data: dict):
             })
     return rows
 
+
 def parse_ranked_war(war_data: dict):
     if not isinstance(war_data, dict) or not war_data or war_data.get("error"):
         return None
@@ -137,6 +192,7 @@ def parse_ranked_war(war_data: dict):
         return candidate[0]
     return None
 
+
 def merge_availability(rows):
     avail_map = get_availability_map()
     out = []
@@ -145,6 +201,7 @@ def merge_availability(rows):
         a = avail_map.get(int(tid)) if tid is not None and str(tid).isdigit() else None
 
         r2 = dict(r)
+
         chain_sitter = False
         if tid is not None and str(tid).isdigit():
             chain_sitter = is_chain_sitter(int(tid))
@@ -152,8 +209,14 @@ def merge_availability(rows):
         r2["is_chain_sitter"] = chain_sitter
         r2["opted_in"] = (bool(a["available"]) if a else False) if chain_sitter else False
         r2["opted_updated_at"] = (a["updated_at"] if a else None) if chain_sitter else None
+
+        mins = last_action_minutes(r2.get("last_action") or "")
+        r2["last_action_minutes"] = mins
+        r2["activity_bucket"] = last_action_bucket_from_minutes(mins)
+
         out.append(r2)
     return out
+
 
 async def send_webhook_message(content: str):
     if not DISCORD_WEBHOOK_URL:
@@ -161,6 +224,7 @@ async def send_webhook_message(content: str):
     timeout = aiohttp.ClientTimeout(total=15)
     async with aiohttp.ClientSession(timeout=timeout) as session:
         await session.post(DISCORD_WEBHOOK_URL, json={"content": content})
+
 
 def should_fire(key: str, cooldown_seconds: int) -> bool:
     last = get_alert_state(key, "0")
@@ -170,14 +234,17 @@ def should_fire(key: str, cooldown_seconds: int) -> bool:
         last_i = 0
     return (unix_now() - last_i) >= cooldown_seconds
 
+
 def mark_fired(key: str):
     set_alert_state(key, str(unix_now()))
+
 
 def faction_label():
     f = STATE.get("faction") or {}
     tag = f.get("tag")
     name = f.get("name") or "—"
     return f"[{tag}] {name}" if tag else name
+
 
 async def poll_loop():
     while True:
@@ -206,15 +273,21 @@ async def poll_loop():
                     # Chain sitters only
                     STATE["opted_in_count"] = sum(1 for r in rows if r.get("is_chain_sitter") and r.get("opted_in"))
 
+                    # split by activity bucket (based on last action minutes)
                     online_rows, idle_rows, offline_rows = [], [], []
                     for r in rows:
-                        b = status_bucket(r.get("status") or "")
+                        b = r.get("activity_bucket") or "offline"
                         if b == "online":
                             online_rows.append(r)
                         elif b == "idle":
                             idle_rows.append(r)
                         else:
                             offline_rows.append(r)
+
+                    # ✅ SORT MOST RECENT FIRST (smallest minutes first)
+                    online_rows.sort(key=lambda x: x.get("last_action_minutes", 10**9))
+                    idle_rows.sort(key=lambda x: x.get("last_action_minutes", 10**9))
+                    offline_rows.sort(key=lambda x: x.get("last_action_minutes", 10**9))
 
                     STATE["rows"] = rows
                     STATE["online_rows"] = online_rows
@@ -224,6 +297,7 @@ async def poll_loop():
                     STATE["online_count"] = len(online_rows)
                     STATE["idle_count"] = len(idle_rows)
                     STATE["offline_count"] = len(offline_rows)
+
                     STATE["available_count"] = STATE["online_count"] + STATE["idle_count"]
 
                     STATE["chain"] = {
@@ -283,11 +357,10 @@ async def poll_loop():
                     f"Chain: {c.get('current')}/{c.get('max')}\n"
                     f"War: {w.get('opponent') or '—'}\n"
                     f"Chain sitter opted-in: {STATE.get('opted_in_count')}\n"
-                    f"Online: {STATE.get('online_count')} | Idle: {STATE.get('idle_count')} | Offline: {STATE.get('offline_count')}\n"
+                    f"Last action → Online(0–20m): {STATE.get('online_count')} | Idle(21–30m): {STATE.get('idle_count')} | Offline(31m+): {STATE.get('offline_count')}\n"
                     f"Panel: {panel_url()}\n"
                     f"Updated: {STATE.get('updated_at') or '—'}"
                 )
-
             try:
                 await send_webhook_message(text)
                 set_setting("LAST_POST_TS", str(time.time()))
@@ -295,13 +368,13 @@ async def poll_loop():
                 STATE["last_error"] = {"code": -3, "error": f"Webhook failed: {repr(e)}"}
                 STATE["updated_at"] = now_iso()
 
-        # smart ping (online+idle)
+        # smart ping (online+idle) throttled
         try:
             if DISCORD_WEBHOOK_URL and STATE.get("last_error") is None:
                 onlineish = int(STATE.get("available_count") or 0)
                 if onlineish >= SMART_PING_MIN_ONLINE and should_fire("SMART_PING", SMART_PING_COOLDOWN_SECONDS):
                     await send_webhook_message(
-                        f"{SMART_PING_MENTION} 🟢 **Smart Ping**: {onlineish} members online/idle.\n"
+                        f"{SMART_PING_MENTION} 🟢 **Smart Ping**: {onlineish} active (online/idle by last action).\n"
                         f"Faction: {faction_label()}\n"
                         f"Panel: {panel_url()}"
                     )
@@ -344,12 +417,15 @@ async def poll_loop():
 
         await asyncio.sleep(POLL_INTERVAL_SECONDS)
 
+
 def start_poll_thread():
     def runner():
         asyncio.run(poll_loop())
     threading.Thread(target=runner, daemon=True).start()
 
+
 app = Flask(__name__)
+
 
 @app.after_request
 def allow_iframe(resp):
@@ -357,13 +433,16 @@ def allow_iframe(resp):
     resp.headers["Content-Security-Policy"] = "frame-ancestors *"
     return resp
 
+
 @app.get("/state")
 def state():
     return jsonify(STATE)
 
+
 @app.get("/health")
 def health():
     return jsonify({"ok": True, "time": now_iso()})
+
 
 @app.post("/api/availability")
 def api_availability():
@@ -391,6 +470,7 @@ def api_availability():
 
     upsert_availability(torn_id=torn_id, name=name, available=available, updated_at=now_iso())
     return jsonify({"ok": True})
+
 
 HTML = """<!doctype html>
 <html>
@@ -437,7 +517,7 @@ HTML = """<!doctype html>
   </div>
 
   <div class="card">
-    <div style="font-weight:800; margin-bottom:8px;" class="gold">🟢 Online</div>
+    <div style="font-weight:800; margin-bottom:8px;" class="gold">🟢 Online (0–20m, sorted newest)</div>
     <div style="overflow:auto;">
       <table>
         <thead><tr><th>Member</th><th>Lvl</th><th>Last action</th><th>Status</th><th>Opt</th></tr></thead>
@@ -447,7 +527,7 @@ HTML = """<!doctype html>
   </div>
 
   <div class="card">
-    <div style="font-weight:800; margin-bottom:8px;" class="gold">🟡 Idle</div>
+    <div style="font-weight:800; margin-bottom:8px;" class="gold">🟡 Idle (21–30m, sorted newest)</div>
     <div style="overflow:auto;">
       <table>
         <thead><tr><th>Member</th><th>Lvl</th><th>Last action</th><th>Status</th><th>Opt</th></tr></thead>
@@ -457,7 +537,7 @@ HTML = """<!doctype html>
   </div>
 
   <div class="card">
-    <div style="font-weight:800; margin-bottom:8px;">🔴 Offline</div>
+    <div style="font-weight:800; margin-bottom:8px;">🔴 Offline (31m+, sorted newest)</div>
     <div style="overflow:auto;">
       <table>
         <thead><tr><th>Member</th><th>Lvl</th><th>Last action</th><th>Status</th><th>Opt</th></tr></thead>
@@ -467,12 +547,30 @@ HTML = """<!doctype html>
   </div>
 
 <script>
-function classify(statusText){
-  const s = (statusText || '').toLowerCase();
-  if (s.includes('online')) return 'online';
-  if (s.includes('idle') || s.includes('away') || s.includes('travel')) return 'idle';
+function minutesFromLastAction(lastAction){
+  const s = (lastAction || '').toLowerCase().trim();
+  if (!s) return 1000000000;
+  if (s.includes('just now') || s === 'now') return 0;
+  const m = s.match(/(\\d+)\\s*(second|minute|hour|day|week|month|year)s?\\s*ago/i);
+  if (!m) return 1000000000;
+  const qty = parseInt(m[1], 10);
+  const unit = (m[2] || '').toLowerCase();
+  if (unit === 'second') return 0;
+  if (unit === 'minute') return qty;
+  if (unit === 'hour') return qty * 60;
+  if (unit === 'day') return qty * 1440;
+  if (unit === 'week') return qty * 10080;
+  if (unit === 'month') return qty * 43200;
+  if (unit === 'year') return qty * 525600;
+  return 1000000000;
+}
+
+function bucketFromMinutes(mins){
+  if (mins <= 20) return 'online';
+  if (mins > 20 && mins <= 30) return 'idle';
   return 'offline';
 }
+
 function dotClass(kind){
   if (kind === 'online') return 'dot g';
   if (kind === 'idle') return 'dot y';
@@ -506,9 +604,10 @@ async function refresh(){
     tb.innerHTML = '';
     (arr || []).slice(0, 350).forEach(x=>{
       const opt = (x.is_chain_sitter && x.opted_in) ? '✅' : '—';
-      const kind = classify(x.status);
-      const tr = document.createElement('tr');
+      const mins = minutesFromLastAction(x.last_action);
+      const kind = bucketFromMinutes(mins);
       const sitterTag = x.is_chain_sitter ? '<span class="tag">CS</span>' : '';
+      const tr = document.createElement('tr');
       tr.innerHTML = `
         <td><div class="namecell"><span class="${dotClass(kind)}"></span><span>${x.name||''}</span>${sitterTag}</div></td>
         <td>${x.level??''}</td>
@@ -534,6 +633,13 @@ setInterval(refresh, 15000);
 @app.get("/")
 def home():
     return Response(HTML, mimetype="text/html")
+
+
+def start_poll_thread():
+    def runner():
+        asyncio.run(poll_loop())
+    threading.Thread(target=runner, daemon=True).start()
+
 
 if __name__ == "__main__":
     init_db()
