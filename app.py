@@ -786,10 +786,8 @@ let warEndsIn = null;
 let warEndedAgo = null;
 
 function warKind(){
-  // Infer upcoming/active/ended based on which timers exist
   if (warStartsIn != null) return "upcoming";
   if (warEndedAgo != null) return "ended";
-  // default: active (even if unknown)
   return "active";
 }
 
@@ -864,6 +862,11 @@ function liveLastActionText(minsFloat){
   return `${m}m ${s}s ago`;
 }
 
+function isHospital(r){
+  const s = (r.status || "").toLowerCase();
+  return s.includes("hospital");
+}
+
 function renderMemberTables(){
   const online = [];
   const idle = [];
@@ -882,7 +885,17 @@ function renderMemberTables(){
     else off.push(rr);
   }
 
-  const sortFn = (a,b)=> (a._live_mins || 1e9) - (b._live_mins || 1e9);
+  // ✅ Sort: non-hospital first, hospital bottom. Within those: most recent first.
+  const sortFn = (a,b)=>{
+    const ah = isHospital(a) ? 1 : 0;
+    const bh = isHospital(b) ? 1 : 0;
+    if (ah !== bh) return ah - bh;
+
+    const am = (a._live_mins || 1e9);
+    const bm = (b._live_mins || 1e9);
+    return am - bm;
+  };
+
   online.sort(sortFn);
   idle.sort(sortFn);
   off.sort(sortFn);
@@ -936,10 +949,8 @@ async function refresh(){
 
   const w = s.war || {};
   const opp = (w.opponent || '—');
-  document.getElementById('war').textContent =
-    `War: ${opp}`;
+  document.getElementById('war').textContent = `War: ${opp}`;
 
-  // score + chains
   const ourScore = (w.our_score ?? null);
   const oppScore = (w.opp_score ?? null);
   const ourChain = (w.our_chain ?? '—');
@@ -948,10 +959,8 @@ async function refresh(){
   document.getElementById('war_score').textContent =
     `Score: ${(ourScore ?? '—')}–${(oppScore ?? '—')} | Chains: ${ourChain}–${oppChain}`;
 
-  // target + progress vs target (LIVE via refresh)
   const target = (w.target ?? null);
-  document.getElementById('war_target').textContent =
-    `Target: ${(target ?? '—')}`;
+  document.getElementById('war_target').textContent = `Target: ${(target ?? '—')}`;
 
   const pOur = pct(ourScore, target);
   const pOpp = pct(oppScore, target);
@@ -961,7 +970,6 @@ async function refresh(){
       : `Progress: —`;
   document.getElementById('war_progress').textContent = progText;
 
-  // timers (NO phase)
   warStartsIn = (w.starts_in != null) ? Math.max(0, Math.floor(w.starts_in)) : null;
   warStartedAgo = (w.started_ago != null) ? Math.max(0, Math.floor(w.started_ago)) : null;
   warEndsIn = (w.ends_in != null) ? Math.max(0, Math.floor(w.ends_in)) : null;
