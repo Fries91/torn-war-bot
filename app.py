@@ -88,6 +88,9 @@ STATE = {
     # ✅ ALWAYS PRESENT
     "war": {"opponent": None, "start": None, "end": None, "target": None, "active": None},
 
+    # ✅ DEBUG so you can see what API returns
+    "war_debug": None,
+
     "online_count": 0,
     "idle_count": 0,
     "offline_count": 0,
@@ -105,10 +108,6 @@ STATE = {
 
 def ensure_state_shape():
     """Guarantee all expected keys exist before /state or UI reads them."""
-    if not isinstance(STATE, dict):
-        # shouldn't happen, but be defensive
-        return
-
     STATE.setdefault("rows", [])
     STATE.setdefault("online_rows", [])
     STATE.setdefault("idle_rows", [])
@@ -122,11 +121,12 @@ def ensure_state_shape():
     for k in ("current", "max", "timeout", "cooldown"):
         STATE["chain"].setdefault(k, None)
 
-    # ✅ war ALWAYS exists
     if not isinstance(STATE.get("war"), dict):
         STATE["war"] = {"opponent": None, "start": None, "end": None, "target": None, "active": None}
     for k in ("opponent", "start", "end", "target", "active"):
         STATE["war"].setdefault(k, None)
+
+    STATE.setdefault("war_debug", None)
 
     STATE.setdefault("online_count", 0)
     STATE.setdefault("idle_count", 0)
@@ -145,10 +145,6 @@ def ensure_state_shape():
 _RE_LAST_ACTION = re.compile(r"(\d+)\s*(second|minute|hour|day|week|month|year)s?\s*ago", re.I)
 
 def last_action_minutes(last_action_text: str) -> int:
-    """
-    Returns minutes since last action.
-    Unknown/unparseable -> very large number (sorts to bottom).
-    """
     s = (last_action_text or "").strip().lower()
     if not s:
         return 10**9
@@ -176,12 +172,10 @@ def last_action_minutes(last_action_text: str) -> int:
         return qty * 43200
     if unit == "year":
         return qty * 525600
-
     return 10**9
 
 
 def last_action_bucket_from_minutes(minutes: int) -> str:
-    # Online = 0–20, Idle = 21–30, Offline = 31+
     if minutes <= 20:
         return "online"
     if 20 < minutes <= 30:
@@ -234,15 +228,12 @@ def safe_member_rows(data: dict):
     return rows
 
 
-def parse_ranked_war(war_data: dict):
+def parse_ranked_war_entry(war_data: dict):
     """
     Return ONE ranked war entry dict.
     Common shape:
       {"rankedwars": {"123": {"war": {...}, "factions": {...}}, ...}}
-
-    Preference:
-      1) any active war (if detectable)
-      2) newest by war.start
+    Prefer active if detectable else newest.
     """
     if not isinstance(war_data, dict) or not war_data or war_data.get("error"):
         return None
@@ -269,18 +260,14 @@ def parse_ranked_war(war_data: dict):
             return 0
 
     def is_active(entry):
-        # Some wrappers expose "active"
         if "active" in entry:
             return bool(entry.get("active"))
-
         war = entry.get("war") if isinstance(entry.get("war"), dict) else {}
         end = war.get("end")
         try:
             end_i = int(end) if end is not None else None
         except Exception:
             end_i = None
-
-        # Often active war has end missing/0
         return end_i in (0, None)
 
     active = [w for w in wars_list if is_active(w)]
@@ -289,11 +276,7 @@ def parse_ranked_war(war_data: dict):
     return pick[0]
 
 
-def war_to_state(entry: dict):
-    """
-    Build STATE['war'] from ranked war entry.
-    Opponent: derived from factions (pick faction != FACTION_ID).
-    """
+def ranked_war_to_state(entry: dict):
     out = {"opponent": None, "start": None, "end": None, "target": None, "active": None}
     if not isinstance(entry, dict):
         return out
@@ -302,19 +285,9 @@ def war_to_state(entry: dict):
     out["start"] = war.get("start") or entry.get("start") or entry.get("start_time")
     out["end"] = war.get("end") or entry.get("end") or entry.get("end_time")
     out["target"] = war.get("target") or entry.get("target")
+    out["active"] = entry.get("active") if "active" in entry else None
 
-    if "active" in entry:
-        out["active"] = entry.get("active")
-    else:
-        # infer active
-        try:
-            end_i = int(out["end"]) if out["end"] is not None else None
-        except Exception:
-            end_i = None
-        if out["start"] and end_i in (0, None):
-            out["active"] = True
-
-    # ✅ best opponent extraction via factions
+    # ✅ opponent via factions
     factions = entry.get("factions") if isinstance(entry.get("factions"), dict) else None
     if factions and FACTION_ID:
         for fid, fobj in factions.items():
@@ -332,6 +305,47 @@ def war_to_state(entry: dict):
         if isinstance(opp, dict):
             out["opponent"] = opp.get("name") or opp.get("tag") or opp.get("id")
         out["opponent"] = out["opponent"] or entry.get("opponent_name") or entry.get("enemy") or entry.get("opponent")
+
+    return out
+
+
+def war_from_core_fallback(core: dict):
+    """
+    If ranked war isn't available, try common faction payload areas.
+    """
+    out = {"opponent": None, "start": None, "end": None, "target": None, "active": None}
+    if not isinstance(core, dict):
+        return out
+
+    warfare = core.get("warfare")
+    if isinstance(warfare, dict) and warfare:
+        out["start"] = warfare.get("start") or (warfare.get("war") or {}).get("start")
+        out["end"] = warfare.get("end") or (warfare.get("war") or {}).get("end")
+        out["target"] = warfare.get("target") or (warfare.get("war") or {}).get("target") or warfare.get("war_id") or warfare.get("id")
+
+        opp = warfare.get("opponent")
+        if isinstance(opp, dict):
+            out["opponent"] = opp.get("name") or opp.get("tag") or opp.get("id")
+        out["opponent"] = out["opponent"] or warfare.get("opponent_name") or warfare.get("enemy") or warfare.get("opponent")
+
+        if out["start"] or out["end"] or out["target"] or out["opponent"]:
+            return out
+
+    wars = core.get("wars")
+    if isinstance(wars, dict) and wars:
+        w = list(wars.values())[0]
+        if isinstance(w, dict):
+            out["start"] = w.get("start")
+            out["end"] = w.get("end")
+            out["target"] = w.get("target") or w.get("war_id") or w.get("id")
+
+            opp = w.get("opponent")
+            if isinstance(opp, dict):
+                out["opponent"] = opp.get("name") or opp.get("tag") or opp.get("id")
+            out["opponent"] = out["opponent"] or w.get("opponent_name") or w.get("opponent")
+
+            if out["start"] or out["end"] or out["target"] or out["opponent"]:
+                return out
 
     return out
 
@@ -398,8 +412,6 @@ async def poll_loop():
         if not FACTION_ID or not FACTION_API_KEY:
             STATE["last_error"] = {"code": -1, "error": "Missing FACTION_ID or FACTION_API_KEY"}
             STATE["updated_at"] = now_iso()
-            # keep war present
-            ensure_state_shape()
         else:
             try:
                 core = await get_faction_core(FACTION_ID, FACTION_API_KEY)
@@ -419,7 +431,6 @@ async def poll_loop():
 
                     rows = merge_availability(safe_member_rows(core or {}))
 
-                    # Chain sitters only
                     STATE["opted_in_count"] = sum(1 for r in rows if r.get("is_chain_sitter") and r.get("opted_in"))
 
                     online_rows, idle_rows, offline_rows = [], [], []
@@ -432,7 +443,6 @@ async def poll_loop():
                         else:
                             offline_rows.append(r)
 
-                    # ✅ most recent first
                     online_rows.sort(key=lambda x: x.get("last_action_minutes", 10**9))
                     idle_rows.sort(key=lambda x: x.get("last_action_minutes", 10**9))
                     offline_rows.sort(key=lambda x: x.get("last_action_minutes", 10**9))
@@ -454,13 +464,22 @@ async def poll_loop():
                         "cooldown": chain.get("cooldown"),
                     }
 
-                    # ✅ WAR (always set baseline then fill)
+                    # ✅ WAR baseline
                     STATE["war"] = {"opponent": None, "start": None, "end": None, "target": None, "active": None}
+                    STATE["war_debug"] = None
 
+                    # 1) ranked war best effort
                     war_data = await get_ranked_war_best_effort(FACTION_ID, FACTION_API_KEY)
-                    entry = parse_ranked_war(war_data)
+                    STATE["war_debug"] = war_data  # so /state shows what API returns
+
+                    entry = parse_ranked_war_entry(war_data)
                     if entry:
-                        STATE["war"] = war_to_state(entry)
+                        STATE["war"] = ranked_war_to_state(entry)
+                    else:
+                        # 2) fallback to anything core might have (warfare/wars)
+                        fb = war_from_core_fallback(core or {})
+                        if fb and (fb.get("opponent") or fb.get("start") or fb.get("end") or fb.get("target")):
+                            STATE["war"] = fb
 
                     STATE["updated_at"] = now_iso()
                     STATE["last_error"] = None
@@ -506,7 +525,7 @@ async def poll_loop():
                 STATE["last_error"] = {"code": -3, "error": f"Webhook failed: {repr(e)}"}
                 STATE["updated_at"] = now_iso()
 
-        # smart ping (online+idle) throttled
+        # smart ping
         try:
             if DISCORD_WEBHOOK_URL and STATE.get("last_error") is None:
                 onlineish = int(STATE.get("available_count") or 0)
@@ -544,7 +563,7 @@ async def poll_loop():
                 prev = get_alert_state("WAR_OPPONENT", "")
                 if opp and opp != prev and should_fire("WAR_CHANGE", WAR_ALERT_COOLDOWN_SECONDS):
                     await send_webhook_message(
-                        f"⚔️ **Ranked War Update**: Opponent = **{opp}**\n"
+                        f"⚔️ **War Update**: Opponent = **{opp}**\n"
                         f"Faction: {faction_label()}\n"
                         f"Panel: {panel_url()}"
                     )
@@ -574,7 +593,6 @@ def allow_iframe(resp):
 
 @app.get("/state")
 def state():
-    # ✅ guarantee war is never missing in output
     ensure_state_shape()
     return jsonify(STATE)
 
@@ -604,7 +622,6 @@ def api_availability():
     except Exception:
         return jsonify({"ok": False, "error": "invalid torn_id"}), 400
 
-    # Chain sitter gate
     if not is_chain_sitter(torn_id):
         return jsonify({"ok": False, "error": "not_chain_sitter"}), 403
 
@@ -732,7 +749,9 @@ async function refresh(){
   document.getElementById('chain').textContent = `Chain: ${c.current ?? '—'}/${c.max ?? '—'}`;
 
   const w = s.war || {};
-  document.getElementById('war').textContent = `War: ${w.opponent || '—'}`;
+  const activeTxt = (w.active === true) ? ' (active)' : '';
+  document.getElementById('war').textContent =
+    `War: ${(w.opponent || '—')}${activeTxt} | Start: ${(w.start ?? '—')} | End: ${(w.end ?? '—')}`;
 
   document.getElementById('p_on').textContent   = `🟢 Online: ${s.online_count ?? 0}`;
   document.getElementById('p_idle').textContent = `🟡 Idle: ${s.idle_count ?? 0}`;
@@ -773,6 +792,12 @@ setInterval(refresh, 15000);
 @app.get("/")
 def home():
     return Response(HTML, mimetype="text/html")
+
+
+def start_poll_thread():
+    def runner():
+        asyncio.run(poll_loop())
+    threading.Thread(target=runner, daemon=True).start()
 
 
 if __name__ == "__main__":
