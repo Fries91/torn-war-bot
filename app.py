@@ -19,18 +19,17 @@ FACTION_API_KEY = (os.getenv("FACTION_API_KEY") or "").strip()
 PUBLIC_BASE_URL = (os.getenv("PUBLIC_BASE_URL") or "").strip()  # https://torn-war-bot.onrender.com
 DISCORD_WEBHOOK_URL = (os.getenv("DISCORD_WEBHOOK_URL") or "").strip()
 
-# Posting behavior
-POST_INTERVAL_SECONDS = int(os.getenv("POST_INTERVAL_SECONDS", "120"))  # 2 min default
-POLL_INTERVAL_SECONDS = int(os.getenv("POLL_INTERVAL_SECONDS", "30"))   # 30 sec default
-
+# behavior tuning
+POST_INTERVAL_SECONDS = int(os.getenv("POST_INTERVAL_SECONDS", "120"))  # 2 min
+POLL_INTERVAL_SECONDS = int(os.getenv("POLL_INTERVAL_SECONDS", "30"))   # 30 sec
 PORT = int(os.getenv("PORT", "10000"))
 
-# ========= SHARED STATE (what the web panel shows) =========
+# ========= STATE =========
 STATE = {
     "rows": [],
     "updated_at": None,
     "chain": {"current": None, "max": None, "timeout": None, "cooldown": None},
-    "war": {"opponent": None, "start": None, "end": None, "target": None},
+    "war": {"opponent": None, "start": None, "end": None, "target": None},  # v2-only data removed for now
     "available_count": 0,
     "faction": {"name": None, "tag": None, "respect": None},
     "last_error": None,
@@ -43,20 +42,17 @@ def safe_member_rows(faction_json: dict):
     members = faction_json.get("members") or {}
     rows = []
     for torn_id, m in members.items():
-        name = m.get("name")
-        level = m.get("level")
-        last_action = (m.get("last_action") or {}).get("relative")
-        status = (m.get("status") or {}).get("description")
         rows.append({
             "torn_id": int(torn_id),
-            "name": name,
-            "level": level,
-            "last_action": last_action,
-            "status": status
+            "name": m.get("name"),
+            "level": m.get("level"),
+            "last_action": (m.get("last_action") or {}).get("relative"),
+            "status": (m.get("status") or {}).get("description"),
         })
     return rows
 
 def update_state_from_faction(data: dict):
+    # Torn error bubble
     if isinstance(data, dict) and data.get("error"):
         STATE["updated_at"] = now_iso()
         STATE["last_error"] = data["error"]
@@ -64,12 +60,11 @@ def update_state_from_faction(data: dict):
 
     basic = data.get("basic") or {}
     chain = data.get("chain") or {}
-    rankedwars = data.get("rankedwars") or {}
 
     STATE["faction"] = {
         "name": basic.get("name"),
         "tag": basic.get("tag"),
-        "respect": basic.get("respect")
+        "respect": basic.get("respect"),
     }
 
     STATE["rows"] = safe_member_rows(data)
@@ -81,21 +76,8 @@ def update_state_from_faction(data: dict):
         "cooldown": chain.get("cooldown"),
     }
 
-    war_obj = None
-    if isinstance(rankedwars, dict) and rankedwars:
-        for _, w in rankedwars.items():
-            war_obj = w
-            break
-
-    if war_obj:
-        STATE["war"] = {
-            "opponent": (war_obj.get("opponent") or {}).get("name"),
-            "start": war_obj.get("start"),
-            "end": war_obj.get("end"),
-            "target": war_obj.get("target"),
-        }
-    else:
-        STATE["war"] = {"opponent": None, "start": None, "end": None, "target": None}
+    # No rankedwars (API v2-only) so war stays blank for now
+    STATE["war"] = {"opponent": None, "start": None, "end": None, "target": None}
 
     STATE["available_count"] = sum(
         1 for r in STATE["rows"]
@@ -110,15 +92,11 @@ async def send_webhook_message(content: str):
         return
     timeout = aiohttp.ClientTimeout(total=15)
     async with aiohttp.ClientSession(timeout=timeout) as session:
-        await session.post(
-            DISCORD_WEBHOOK_URL,
-            json={"content": content},
-        )
+        await session.post(DISCORD_WEBHOOK_URL, json={"content": content})
 
 def build_update_text() -> str:
     f = STATE.get("faction") or {}
     c = STATE.get("chain") or {}
-    w = STATE.get("war") or {}
     err = STATE.get("last_error")
 
     tag = f.get("tag")
@@ -128,7 +106,6 @@ def build_update_text() -> str:
     panel_url = (PUBLIC_BASE_URL.rstrip("/") + "/") if PUBLIC_BASE_URL else "Set PUBLIC_BASE_URL"
 
     if err:
-        # show Torn errors clearly (incorrect key etc.)
         return (
             "🛡️ **War-Bot Update (ERROR)**\n"
             f"Faction: {faction_label}\n"
@@ -141,18 +118,14 @@ def build_update_text() -> str:
         "🛡️ **War-Bot Update**\n"
         f"Faction: {faction_label}\n"
         f"Chain: {c.get('current')}/{c.get('max')}\n"
-        f"War: {w.get('opponent') or '—'}\n"
         f"Online-ish: {STATE.get('available_count')}\n"
         f"Panel: {panel_url}\n"
         f"Updated: {STATE.get('updated_at') or '—'}"
     )
 
 async def poll_loop():
-    """
-    Poll Torn forever and occasionally post to Discord webhook.
-    """
     while True:
-        # Validate config
+        # Poll Torn
         if not FACTION_ID or not FACTION_API_KEY:
             STATE["last_error"] = {"code": -1, "error": "Missing FACTION_ID or FACTION_API_KEY"}
             STATE["updated_at"] = now_iso()
@@ -164,7 +137,7 @@ async def poll_loop():
                 STATE["last_error"] = {"code": -2, "error": f"Torn request failed: {repr(e)}"}
                 STATE["updated_at"] = now_iso()
 
-        # Post throttled
+        # Throttled webhook post
         try:
             last_post = get_setting("LAST_POST_TS", "0")
             last_post_f = float(last_post) if last_post else 0.0
@@ -176,7 +149,6 @@ async def poll_loop():
                 await send_webhook_message(build_update_text())
                 set_setting("LAST_POST_TS", str(time.time()))
             except Exception as e:
-                # Don’t crash poll loop if webhook errors
                 STATE["last_error"] = {"code": -3, "error": f"Webhook failed: {repr(e)}"}
                 STATE["updated_at"] = now_iso()
 
@@ -188,7 +160,7 @@ def start_poll_thread():
     t = threading.Thread(target=runner, daemon=True)
     t.start()
 
-# ========= FLASK WEB PANEL =========
+# ========= FLASK =========
 app = Flask(__name__)
 
 @app.after_request
@@ -223,7 +195,6 @@ HTML = """<!doctype html>
   <div class="card">
     <div style="display:flex; gap:10px; flex-wrap:wrap;">
       <div class="pill" id="chain">Chain: —</div>
-      <div class="pill" id="war">War: —</div>
       <div class="pill" id="avail">Online-ish: —</div>
     </div>
   </div>
@@ -255,10 +226,6 @@ async function refresh(){
 
   const c = s.chain || {};
   document.getElementById('chain').textContent = `Chain: ${c.current ?? '—'}/${c.max ?? '—'}`;
-
-  const w = s.war || {};
-  document.getElementById('war').textContent = `War: ${w.opponent || '—'}`;
-
   document.getElementById('avail').textContent = `Online-ish: ${s.available_count ?? '—'}`;
 
   const tb = document.getElementById('rows');
