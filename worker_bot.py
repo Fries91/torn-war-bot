@@ -1,6 +1,7 @@
 # worker_bot.py  ✅ Render Worker entrypoint (NO Playwright / NO screenshots)
 import os
 import asyncio
+import random
 from datetime import datetime, time as dtime
 
 import pytz
@@ -68,7 +69,6 @@ def is_within_window(local_dt: datetime, start_str: str, end_str: str) -> bool:
 
 def status_is_online(desc: str) -> bool:
     s = (desc or "").lower()
-    # Torn status description examples include "Online", "Idle", etc.
     return ("online" in s) or ("idle" in s)
 
 def status_is_hospital(desc: str) -> bool:
@@ -94,7 +94,7 @@ async def push_state_to_web(session: aiohttp.ClientSession):
             headers={"X-STATE-SECRET": WEB_SHARED_SECRET},
             timeout=aiohttp.ClientTimeout(total=20),
         ) as r:
-            body = await r.text()  # consume body to avoid "Unclosed connector"
+            body = await r.text()
             if DEBUG:
                 print(f"DEBUG: push -> {url} status={r.status} body={body[:200]}")
     except Exception as e:
@@ -139,7 +139,6 @@ bot = TornWarBot()
 # ===== SLASH COMMANDS =====
 @bot.tree.command(name="sheet", description="Get the dashboard link.")
 async def sheet_cmd(interaction: discord.Interaction):
-    # Always respond quickly to avoid "application did not respond"
     if not WEB_BASE_URL:
         await interaction.response.send_message("WEB_BASE_URL not set on worker.", ephemeral=True)
         return
@@ -322,6 +321,7 @@ async def refresh_loop():
                 except discord.HTTPException as e:
                     print("Ping send failed:", e)
 
+# ===== START (with 429 backoff so Render doesn't crash-loop) =====
 async def main():
     if not DISCORD_TOKEN:
         raise RuntimeError("DISCORD_TOKEN missing")
@@ -339,7 +339,26 @@ async def main():
         print("DEBUG: REFRESH_INTERVAL =", REFRESH_INTERVAL)
         print("DEBUG: DISABLE_DISCORD_POSTS =", DISABLE_DISCORD_POSTS)
 
-    await bot.start(DISCORD_TOKEN)
+    backoff = 30  # seconds
+    while True:
+        try:
+            await bot.start(DISCORD_TOKEN)
+            return  # normal exit (shouldn't happen unless you stop it)
+        except discord.HTTPException as e:
+            # Your current error: 429 global rate-limit/block
+            if getattr(e, "status", None) == 429:
+                sleep_s = min(1800, backoff) + random.randint(0, 10)
+                print(f"Discord 429 (global rate limit). Sleeping {sleep_s}s then retrying...")
+                await asyncio.sleep(sleep_s)
+                backoff = min(1800, backoff * 2)
+                continue
+            raise
+        except Exception as e:
+            # Avoid Render crash-loop on any other transient error
+            sleep_s = min(300, backoff) + random.randint(0, 5)
+            print(f"Bot start error: {e}. Sleeping {sleep_s}s then retrying...")
+            await asyncio.sleep(sleep_s)
+            backoff = min(300, backoff * 2)
 
 if __name__ == "__main__":
     asyncio.run(main())
