@@ -118,6 +118,7 @@ def faction_label():
 # ========= LAST ACTION -> minutes + bucket =========
 _RE_LAST_ACTION = re.compile(r"(\d+)\s*(second|minute|hour|day|week|month|year)s?\s*ago", re.I)
 
+
 def last_action_minutes(last_action_text: str) -> int:
     s = (last_action_text or "").strip().lower()
     if not s:
@@ -180,13 +181,15 @@ def safe_member_rows(data: dict):
         if isinstance(status, dict):
             status = status.get("description") or status.get("state") or str(status)
 
-        rows.append({
-            "torn_id": mid,
-            "name": m.get("name"),
-            "level": m.get("level"),
-            "last_action": last_action if isinstance(last_action, str) else (str(last_action) if last_action is not None else ""),
-            "status": status if isinstance(status, str) else (str(status) if status is not None else ""),
-        })
+        rows.append(
+            {
+                "torn_id": mid,
+                "name": m.get("name"),
+                "level": m.get("level"),
+                "last_action": last_action if isinstance(last_action, str) else (str(last_action) if last_action is not None else ""),
+                "status": status if isinstance(status, str) else (str(status) if status is not None else ""),
+            }
+        )
 
     if isinstance(members, list):
         for m in members:
@@ -356,16 +359,32 @@ def ranked_war_to_state(entry: dict):
 def ensure_state_shape():
     STATE.setdefault("rows", [])
     STATE.setdefault("updated_at", None)
+
     STATE.setdefault("chain", {"current": None, "max": None, "timeout": None, "cooldown": None})
     STATE.setdefault("war", {})
     for k in (
-        "opponent", "opponent_id", "start", "end", "target", "active",
-        "our_score", "opp_score", "our_chain", "opp_chain", "war_id",
-        "server_now", "starts_in", "started_ago", "ends_in", "ended_ago",
+        "opponent",
+        "opponent_id",
+        "start",
+        "end",
+        "target",
+        "active",
+        "our_score",
+        "opp_score",
+        "our_chain",
+        "opp_chain",
+        "war_id",
+        "server_now",
+        "starts_in",
+        "started_ago",
+        "ends_in",
+        "ended_ago",
     ):
         STATE["war"].setdefault(k, None)
+
     for k in ("online_count", "idle_count", "offline_count", "available_count", "opted_in_count"):
         STATE.setdefault(k, 0)
+
     STATE.setdefault("faction", {"name": None, "tag": None, "respect": None})
     STATE.setdefault("last_error", None)
     STATE.setdefault("war_debug", None)
@@ -465,13 +484,22 @@ async def poll_loop():
                         STATE["war"] = ranked_war_to_state(entry)
                     else:
                         STATE["war"] = {
-                            "opponent": None, "opponent_id": None,
-                            "start": None, "end": None, "target": None, "active": None,
-                            "our_score": None, "opp_score": None,
-                            "our_chain": None, "opp_chain": None,
+                            "opponent": None,
+                            "opponent_id": None,
+                            "start": None,
+                            "end": None,
+                            "target": None,
+                            "active": None,
+                            "our_score": None,
+                            "opp_score": None,
+                            "our_chain": None,
+                            "opp_chain": None,
                             "war_id": None,
                             "server_now": unix_now(),
-                            "starts_in": None, "started_ago": None, "ends_in": None, "ended_ago": None,
+                            "starts_in": None,
+                            "started_ago": None,
+                            "ends_in": None,
+                            "ended_ago": None,
                         }
 
                     STATE["updated_at"] = now_iso()
@@ -599,7 +627,7 @@ HTML = """<!doctype html>
         <div class="colTitle">✅ OK</div>
         <div style="overflow:auto;">
           <table>
-            <thead><tr><th>Member</th><th>Lvl</th><th>Last action</th><th>Status</th><th>Opt</th></tr></thead>
+            <thead><tr><th>Member</th><th>Lvl</th><th>Status</th><th>Opt</th></tr></thead>
             <tbody id="rows_on_ok"></tbody>
           </table>
         </div>
@@ -623,7 +651,7 @@ HTML = """<!doctype html>
         <div class="colTitle">✅ OK</div>
         <div style="overflow:auto;">
           <table>
-            <thead><tr><th>Member</th><th>Lvl</th><th>Last action</th><th>Status</th><th>Opt</th></tr></thead>
+            <thead><tr><th>Member</th><th>Lvl</th><th>Status</th><th>Opt</th></tr></thead>
             <tbody id="rows_idle_ok"></tbody>
           </table>
         </div>
@@ -647,7 +675,7 @@ HTML = """<!doctype html>
         <div class="colTitle">✅ OK</div>
         <div style="overflow:auto;">
           <table>
-            <thead><tr><th>Member</th><th>Lvl</th><th>Last action</th><th>Status</th><th>Opt</th></tr></thead>
+            <thead><tr><th>Member</th><th>Lvl</th><th>Status</th><th>Opt</th></tr></thead>
             <tbody id="rows_off_ok"></tbody>
           </table>
         </div>
@@ -764,67 +792,65 @@ function liveMinutes(baseMinutes){
   return v + inc;
 }
 
-function liveLastActionText(minsFloat){
-  if (minsFloat >= 1000000000) return "—";
-  const totalSec = Math.floor(minsFloat * 60);
-  const m = Math.floor(totalSec / 60);
-  const s = totalSec % 60;
-  if (m <= 0) return `${s}s ago`;
-  return `${m}m ${s}s ago`;
-}
-
 function isHospital(r){
   const s = (r.status || "").toLowerCase();
   return s.includes("hospital");
 }
 
-// ---- NEW: parse hospital remaining time (minutes) from status ----
+// ---- Parse hospital remaining time (minutes) from status ----
 function parseDurationMinutes(txt){
   txt = String(txt || "").toLowerCase();
-
   let total = 0;
-  const d = txt.match(/(\d+)\s*d/); if (d) total += parseInt(d[1],10) * 1440;
-  const h = txt.match(/(\d+)\s*h/); if (h) total += parseInt(h[1],10) * 60;
-  const m = txt.match(/(\d+)\s*m/); if (m) total += parseInt(m[1],10);
-  const s = txt.match(/(\d+)\s*s/); if (s && total === 0) total += 1;
-
+  const d = txt.match(/(\\d+)\\s*d/); if (d) total += parseInt(d[1],10) * 1440;
+  const h = txt.match(/(\\d+)\\s*h/); if (h) total += parseInt(h[1],10) * 60;
+  const m = txt.match(/(\\d+)\\s*m/); if (m) total += parseInt(m[1],10);
+  const s = txt.match(/(\\d+)\\s*s/); if (s && total === 0) total += 1;
   return total > 0 ? total : null;
 }
 
 function hospitalMinutes(r){
   const st = String(r.status || "").toLowerCase();
   if (!st.includes("hospital")) return null;
-
   const idx = st.indexOf("hospital");
   const tail = idx >= 0 ? st.slice(idx) : st;
-
   return parseDurationMinutes(tail) ?? parseDurationMinutes(st);
 }
 
 function hospitalTimeText(r){
   const mins = hospitalMinutes(r);
   if (mins == null) return "—";
-  const sec = mins * 60;
-  return fmtDur(sec);
+  return fmtDur(mins * 60);
 }
 
-function fillTable(tbodyId, arr, mode){
+function fillTableOK(tbodyId, arr){
   const tb = document.getElementById(tbodyId);
   tb.innerHTML = '';
   (arr || []).slice(0, 350).forEach(x=>{
     const opt = (x.is_chain_sitter && x.opted_in) ? '✅' : '—';
     const sitterTag = x.is_chain_sitter ? '<span class="tag">CS</span>' : '';
-
-    const thirdCol = (mode === "hosp") ? hospitalTimeText(x) : x._live_text;
-    const thirdTitle = (mode === "hosp")
-      ? (String(x.status || '').replace(/"/g,'&quot;'))
-      : (String(x.last_action || '').replace(/"/g,'&quot;'));
-
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td><div class="namecell"><span class="${dotClass(x._kind)}"></span><span>${x.name||''}</span>${sitterTag}</div></td>
       <td>${x.level??''}</td>
-      <td title="${thirdTitle}">${thirdCol}</td>
+      <td>${x.status||''}</td>
+      <td>${opt}</td>
+    `;
+    tb.appendChild(tr);
+  });
+}
+
+function fillTableHosp(tbodyId, arr){
+  const tb = document.getElementById(tbodyId);
+  tb.innerHTML = '';
+  (arr || []).slice(0, 350).forEach(x=>{
+    const opt = (x.is_chain_sitter && x.opted_in) ? '✅' : '—';
+    const sitterTag = x.is_chain_sitter ? '<span class="tag">CS</span>' : '';
+    const ht = hospitalTimeText(x);
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><div class="namecell"><span class="${dotClass(x._kind)}"></span><span>${x.name||''}</span>${sitterTag}</div></td>
+      <td>${x.level??''}</td>
+      <td title="${String(x.status||'').replace(/"/g,'&quot;')}">${ht}</td>
       <td>${x.status||''}</td>
       <td>${opt}</td>
     `;
@@ -840,34 +866,34 @@ function renderMemberTables(){
   for (const r of (latestRows || [])) {
     const mins = liveMinutes(r.last_action_minutes);
     const kind = bucketFromMinutes(mins);
-    const rr = Object.assign({}, r, {
-      _live_mins: mins,
-      _kind: kind,
-      _live_text: liveLastActionText(mins)
-    });
+    const rr = Object.assign({}, r, { _live_mins: mins, _kind: kind });
 
     const hosp = isHospital(rr);
-
     if (kind === "online")      (hosp ? on_h : on_ok).push(rr);
     else if (kind === "idle")   (hosp ? idle_h : idle_ok).push(rr);
     else                       (hosp ? off_h : off_ok).push(rr);
   }
 
+  // OK lists: most recent activity first (lowest mins first)
   const sortByRecent = (a,b)=> (a._live_mins || 1e9) - (b._live_mins || 1e9);
+  on_ok.sort(sortByRecent);
+  idle_ok.sort(sortByRecent);
+  off_ok.sort(sortByRecent);
 
-  // ✅ Hospital: lowest hospital time first (fallback to recent activity)
-  const sortByHospitalTime = (a,b)=>{
+  // ✅ Hospital lists: LOWEST hospital time first (so HIGHEST ends up at the bottom)
+  // Unknown timers go to the bottom of hospital column.
+  const sortByHospitalLowFirst = (a,b)=>{
     const am = hospitalMinutes(a);
     const bm = hospitalMinutes(b);
     const av = (am == null) ? 1e9 : am;
     const bv = (bm == null) ? 1e9 : bm;
-    if (av !== bv) return av - bv;
+    if (av !== bv) return av - bv;   // ASC
     return sortByRecent(a,b);
   };
 
-  on_ok.sort(sortByRecent);       on_h.sort(sortByHospitalTime);
-  idle_ok.sort(sortByRecent);     idle_h.sort(sortByHospitalTime);
-  off_ok.sort(sortByRecent);      off_h.sort(sortByHospitalTime);
+  on_h.sort(sortByHospitalLowFirst);
+  idle_h.sort(sortByHospitalLowFirst);
+  off_h.sort(sortByHospitalLowFirst);
 
   const onTotal = on_ok.length + on_h.length;
   const idleTotal = idle_ok.length + idle_h.length;
@@ -877,17 +903,14 @@ function renderMemberTables(){
   document.getElementById('p_idle').textContent = `🟡 Idle: ${idleTotal} (OK ${idle_ok.length} | 🏥 ${idle_h.length})`;
   document.getElementById('p_off').textContent  = `🔴 Offline: ${offTotal} (OK ${off_ok.length} | 🏥 ${off_h.length})`;
 
-  fillTable('rows_on_ok', on_ok, "ok");
-  fillTable('rows_on_hosp', on_h, "hosp");
-  fillTable('rows_idle_ok', idle_ok, "ok");
-  fillTable('rows_idle_hosp', idle_h, "hosp");
-  fillTable('rows_off_ok', off_ok, "ok");
-  fillTable('rows_off_hosp', off_h, "hosp");
-}
+  fillTableOK('rows_on_ok', on_ok);
+  fillTableHosp('rows_on_hosp', on_h);
 
-function tickMembers(){
-  if (!latestRows || latestRows.length === 0) return;
-  renderMemberTables();
+  fillTableOK('rows_idle_ok', idle_ok);
+  fillTableHosp('rows_idle_hosp', idle_h);
+
+  fillTableOK('rows_off_ok', off_ok);
+  fillTableHosp('rows_off_hosp', off_h);
 }
 
 async function refresh(){
@@ -941,10 +964,15 @@ async function refresh(){
   renderMemberTables();
 }
 
+function tick(){
+  if (!latestRows || latestRows.length === 0) return;
+  renderMemberTables();
+}
+
 refresh();
 setInterval(refresh, 10000);
 setInterval(tickWarTime, 1000);
-setInterval(tickMembers, 1000);
+setInterval(tick, 1000);
 </script>
 </body>
 </html>
