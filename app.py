@@ -36,20 +36,37 @@ CHAIN_TIMEOUT_COOLDOWN_SECONDS = int(os.getenv("CHAIN_TIMEOUT_COOLDOWN_SECONDS",
 
 WAR_ALERT_COOLDOWN_SECONDS = int(os.getenv("WAR_ALERT_COOLDOWN_SECONDS", "600"))
 
+# Optional: require token for availability posting
 AVAIL_TOKEN = (os.getenv("AVAIL_TOKEN") or "").strip()
 
+# Chain sitters allowlist (ONLY these Torn IDs can opt in/out)
+CHAIN_SITTER_IDS_RAW = (os.getenv("CHAIN_SITTER_IDS") or "1234").strip()
+
+def _parse_id_set(csv: str) -> set[int]:
+    out = set()
+    for part in (csv or "").split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            out.add(int(part))
+        except Exception:
+            pass
+    return out
+
+CHAIN_SITTER_IDS = _parse_id_set(CHAIN_SITTER_IDS_RAW)
+
+def is_chain_sitter(torn_id: int) -> bool:
+    return torn_id in CHAIN_SITTER_IDS
 
 def now_iso():
     return datetime.utcnow().isoformat() + "Z"
 
-
 def unix_now() -> int:
     return int(time.time())
 
-
 def panel_url():
     return (PUBLIC_BASE_URL.rstrip("/") + "/") if PUBLIC_BASE_URL else "(set PUBLIC_BASE_URL)"
-
 
 STATE = {
     "rows": [],
@@ -65,33 +82,24 @@ STATE = {
     "idle_count": 0,
     "offline_count": 0,
 
-    # green + yellow
-    "available_count": 0,
-
-    # opt-in count stays separate (not used for status)
-    "opted_in_count": 0,
+    "available_count": 0,   # online+idle
+    "opted_in_count": 0,    # chain sitters opted-in only
 
     "faction": {"name": None, "tag": None, "respect": None},
     "last_error": None,
 }
 
-
 def status_bucket(status_text: str) -> str:
     s = (status_text or "").lower()
-
     if "online" in s:
         return "online"
-
     if ("idle" in s) or ("away" in s) or ("travel" in s) or ("traveling" in s):
         return "idle"
-
     return "offline"
-
 
 def safe_member_rows(data: dict):
     members = (data or {}).get("members")
     rows = []
-
     if isinstance(members, list):
         for m in members:
             mid = m.get("id") or m.get("torn_id") or m.get("user_id")
@@ -115,26 +123,19 @@ def safe_member_rows(data: dict):
                 "last_action": last_action if isinstance(last_action, str) else (str(last_action) if last_action is not None else ""),
                 "status": status if isinstance(status, str) else (str(status) if status is not None else ""),
             })
-
     return rows
-
 
 def parse_ranked_war(war_data: dict):
     if not isinstance(war_data, dict) or not war_data or war_data.get("error"):
         return None
-
     candidate = war_data.get("rankedwars", war_data)
-
     if isinstance(candidate, dict):
         for _, w in candidate.items():
             if isinstance(w, dict):
                 return w
-
     if isinstance(candidate, list) and candidate and isinstance(candidate[0], dict):
         return candidate[0]
-
     return None
-
 
 def merge_availability(rows):
     avail_map = get_availability_map()
@@ -142,12 +143,17 @@ def merge_availability(rows):
     for r in rows:
         tid = r.get("torn_id")
         a = avail_map.get(int(tid)) if tid is not None and str(tid).isdigit() else None
+
         r2 = dict(r)
-        r2["opted_in"] = bool(a["available"]) if a else False
-        r2["opted_updated_at"] = a["updated_at"] if a else None
+        chain_sitter = False
+        if tid is not None and str(tid).isdigit():
+            chain_sitter = is_chain_sitter(int(tid))
+
+        r2["is_chain_sitter"] = chain_sitter
+        r2["opted_in"] = (bool(a["available"]) if a else False) if chain_sitter else False
+        r2["opted_updated_at"] = (a["updated_at"] if a else None) if chain_sitter else None
         out.append(r2)
     return out
-
 
 async def send_webhook_message(content: str):
     if not DISCORD_WEBHOOK_URL:
@@ -155,7 +161,6 @@ async def send_webhook_message(content: str):
     timeout = aiohttp.ClientTimeout(total=15)
     async with aiohttp.ClientSession(timeout=timeout) as session:
         await session.post(DISCORD_WEBHOOK_URL, json={"content": content})
-
 
 def should_fire(key: str, cooldown_seconds: int) -> bool:
     last = get_alert_state(key, "0")
@@ -165,17 +170,14 @@ def should_fire(key: str, cooldown_seconds: int) -> bool:
         last_i = 0
     return (unix_now() - last_i) >= cooldown_seconds
 
-
 def mark_fired(key: str):
     set_alert_state(key, str(unix_now()))
-
 
 def faction_label():
     f = STATE.get("faction") or {}
     tag = f.get("tag")
     name = f.get("name") or "—"
     return f"[{tag}] {name}" if tag else name
-
 
 async def poll_loop():
     while True:
@@ -199,17 +201,12 @@ async def poll_loop():
                         "respect": basic.get("respect"),
                     }
 
-                    rows = safe_member_rows(core or {})
-                    rows = merge_availability(rows)
+                    rows = merge_availability(safe_member_rows(core or {}))
 
-                    # opt-in count stays separate
-                    STATE["opted_in_count"] = sum(1 for r in rows if r.get("opted_in"))
+                    # Chain sitters only
+                    STATE["opted_in_count"] = sum(1 for r in rows if r.get("is_chain_sitter") and r.get("opted_in"))
 
-                    # split by Torn status (NOT opt-in)
-                    online_rows = []
-                    idle_rows = []
-                    offline_rows = []
-
+                    online_rows, idle_rows, offline_rows = [], [], []
                     for r in rows:
                         b = status_bucket(r.get("status") or "")
                         if b == "online":
@@ -227,8 +224,6 @@ async def poll_loop():
                     STATE["online_count"] = len(online_rows)
                     STATE["idle_count"] = len(idle_rows)
                     STATE["offline_count"] = len(offline_rows)
-
-                    # green + yellow
                     STATE["available_count"] = STATE["online_count"] + STATE["idle_count"]
 
                     STATE["chain"] = {
@@ -241,7 +236,6 @@ async def poll_loop():
                     STATE["updated_at"] = now_iso()
                     STATE["last_error"] = None
 
-                    # ranked war best-effort
                     war_data = await get_ranked_war_best_effort(FACTION_ID, FACTION_API_KEY)
                     w = parse_ranked_war(war_data)
                     if isinstance(w, dict):
@@ -249,7 +243,6 @@ async def poll_loop():
                         if isinstance(w.get("opponent"), dict):
                             opp = w["opponent"].get("name")
                         opp = opp or w.get("opponent_name") or w.get("opponent") or None
-
                         STATE["war"] = {
                             "opponent": opp,
                             "start": w.get("start") or w.get("start_time"),
@@ -273,7 +266,6 @@ async def poll_loop():
 
         if DISCORD_WEBHOOK_URL and (time.time() - last_post_f) >= POST_INTERVAL_SECONDS:
             err = STATE.get("last_error")
-
             if err:
                 text = (
                     "🛡️ **War-Bot (ERROR)**\n"
@@ -290,7 +282,7 @@ async def poll_loop():
                     f"Faction: {faction_label()}\n"
                     f"Chain: {c.get('current')}/{c.get('max')}\n"
                     f"War: {w.get('opponent') or '—'}\n"
-                    f"Opted-in: {STATE.get('opted_in_count')}\n"
+                    f"Chain sitter opted-in: {STATE.get('opted_in_count')}\n"
                     f"Online: {STATE.get('online_count')} | Idle: {STATE.get('idle_count')} | Offline: {STATE.get('offline_count')}\n"
                     f"Panel: {panel_url()}\n"
                     f"Updated: {STATE.get('updated_at') or '—'}"
@@ -303,7 +295,7 @@ async def poll_loop():
                 STATE["last_error"] = {"code": -3, "error": f"Webhook failed: {repr(e)}"}
                 STATE["updated_at"] = now_iso()
 
-        # smart ping (online+idle) throttled
+        # smart ping (online+idle)
         try:
             if DISCORD_WEBHOOK_URL and STATE.get("last_error") is None:
                 onlineish = int(STATE.get("available_count") or 0)
@@ -317,7 +309,7 @@ async def poll_loop():
         except Exception:
             pass
 
-        # chain timeout alert (time-based) throttled
+        # chain timeout alert
         try:
             if DISCORD_WEBHOOK_URL and STATE.get("last_error") is None:
                 timeout = STATE.get("chain", {}).get("timeout")
@@ -334,7 +326,7 @@ async def poll_loop():
         except Exception:
             pass
 
-        # war opponent change alert throttled
+        # war opponent change alert
         try:
             if DISCORD_WEBHOOK_URL and STATE.get("last_error") is None:
                 opp = (STATE.get("war") or {}).get("opponent") or ""
@@ -352,15 +344,12 @@ async def poll_loop():
 
         await asyncio.sleep(POLL_INTERVAL_SECONDS)
 
-
 def start_poll_thread():
     def runner():
         asyncio.run(poll_loop())
     threading.Thread(target=runner, daemon=True).start()
 
-
 app = Flask(__name__)
-
 
 @app.after_request
 def allow_iframe(resp):
@@ -368,16 +357,13 @@ def allow_iframe(resp):
     resp.headers["Content-Security-Policy"] = "frame-ancestors *"
     return resp
 
-
 @app.get("/state")
 def state():
     return jsonify(STATE)
 
-
 @app.get("/health")
 def health():
     return jsonify({"ok": True, "time": now_iso()})
-
 
 @app.post("/api/availability")
 def api_availability():
@@ -399,9 +385,12 @@ def api_availability():
     except Exception:
         return jsonify({"ok": False, "error": "invalid torn_id"}), 400
 
+    # Chain sitter gate
+    if not is_chain_sitter(torn_id):
+        return jsonify({"ok": False, "error": "not_chain_sitter"}), 403
+
     upsert_availability(torn_id=torn_id, name=name, available=available, updated_at=now_iso())
     return jsonify({"ok": True})
-
 
 HTML = """<!doctype html>
 <html>
@@ -424,6 +413,7 @@ HTML = """<!doctype html>
   .y { background:#ffd86a; box-shadow: 0 0 10px rgba(255,216,106,0.28); }
   .r { background:#ff4b4b; box-shadow: 0 0 10px rgba(255,75,75,0.28); }
   .namecell { display:flex; align-items:center; }
+  .tag { font-size: 11px; opacity: 0.75; margin-left: 8px; }
 </style>
 </head>
 <body>
@@ -442,7 +432,7 @@ HTML = """<!doctype html>
       <div class="pill" id="p_on">🟢 Online: —</div>
       <div class="pill" id="p_idle">🟡 Idle: —</div>
       <div class="pill" id="p_off">🔴 Offline: —</div>
-      <div class="pill" id="p_opt">Opted-in: —</div>
+      <div class="pill" id="p_opt">Chain sitter opted-in: —</div>
     </div>
   </div>
 
@@ -509,17 +499,18 @@ async function refresh(){
   document.getElementById('p_on').textContent   = `🟢 Online: ${s.online_count ?? 0}`;
   document.getElementById('p_idle').textContent = `🟡 Idle: ${s.idle_count ?? 0}`;
   document.getElementById('p_off').textContent  = `🔴 Offline: ${s.offline_count ?? 0}`;
-  document.getElementById('p_opt').textContent  = `Opted-in: ${s.opted_in_count ?? 0}`;
+  document.getElementById('p_opt').textContent  = `Chain sitter opted-in: ${s.opted_in_count ?? 0}`;
 
   const fill = (id, arr) => {
     const tb = document.getElementById(id);
     tb.innerHTML = '';
-    (arr || []).slice(0, 300).forEach(x=>{
-      const opt = x.opted_in ? '✅' : '—';
+    (arr || []).slice(0, 350).forEach(x=>{
+      const opt = (x.is_chain_sitter && x.opted_in) ? '✅' : '—';
       const kind = classify(x.status);
       const tr = document.createElement('tr');
+      const sitterTag = x.is_chain_sitter ? '<span class="tag">CS</span>' : '';
       tr.innerHTML = `
-        <td><div class="namecell"><span class="${dotClass(kind)}"></span><span>${x.name||''}</span></div></td>
+        <td><div class="namecell"><span class="${dotClass(kind)}"></span><span>${x.name||''}</span>${sitterTag}</div></td>
         <td>${x.level??''}</td>
         <td>${x.last_action||''}</td>
         <td>${x.status||''}</td>
@@ -540,11 +531,9 @@ setInterval(refresh, 15000);
 </html>
 """
 
-
 @app.get("/")
 def home():
     return Response(HTML, mimetype="text/html")
-
 
 if __name__ == "__main__":
     init_db()
