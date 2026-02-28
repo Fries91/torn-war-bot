@@ -37,8 +37,10 @@ CHAIN_TIMEOUT_COOLDOWN_SECONDS = int(os.getenv("CHAIN_TIMEOUT_COOLDOWN_SECONDS",
 
 WAR_ALERT_COOLDOWN_SECONDS = int(os.getenv("WAR_ALERT_COOLDOWN_SECONDS", "600"))
 
+# Optional: require token for availability posting
 AVAIL_TOKEN = (os.getenv("AVAIL_TOKEN") or "").strip()
 
+# Chain sitters allowlist (ONLY these Torn IDs can opt in/out)
 CHAIN_SITTER_IDS_RAW = (os.getenv("CHAIN_SITTER_IDS") or "1234").strip()
 
 
@@ -110,7 +112,11 @@ STATE = {
     "online_count": 0,
     "idle_count": 0,
     "offline_count": 0,
+
+    # online + idle (from last action)
     "available_count": 0,
+
+    # chain sitters opted-in only
     "opted_in_count": 0,
 
     "faction": {"name": None, "tag": None, "respect": None},
@@ -155,6 +161,10 @@ def ensure_state_shape():
 _RE_LAST_ACTION = re.compile(r"(\d+)\s*(second|minute|hour|day|week|month|year)s?\s*ago", re.I)
 
 def last_action_minutes(last_action_text: str) -> int:
+    """
+    Returns minutes since last action.
+    Unknown/unparseable -> very large number (sorts to bottom).
+    """
     s = (last_action_text or "").strip().lower()
     if not s:
         return 10**9
@@ -182,10 +192,13 @@ def last_action_minutes(last_action_text: str) -> int:
         return qty * 43200
     if unit == "year":
         return qty * 525600
+
     return 10**9
 
 
 def last_action_bucket_from_minutes(minutes: int) -> str:
+    # Your rules:
+    # Online = 0–20, Idle = 21–30, Offline = 31+
     if minutes <= 20:
         return "online"
     if 20 < minutes <= 30:
@@ -231,6 +244,31 @@ def safe_member_rows(data: dict):
             _add(m, uid_hint=uid)
 
     return rows
+
+
+def merge_availability(rows):
+    avail_map = get_availability_map()
+    out = []
+    for r in rows:
+        tid = r.get("torn_id")
+        a = avail_map.get(int(tid)) if tid is not None and str(tid).isdigit() else None
+
+        r2 = dict(r)
+
+        chain_sitter = False
+        if tid is not None and str(tid).isdigit():
+            chain_sitter = is_chain_sitter(int(tid))
+
+        r2["is_chain_sitter"] = chain_sitter
+        r2["opted_in"] = (bool(a["available"]) if a else False) if chain_sitter else False
+        r2["opted_updated_at"] = (a["updated_at"] if a else None) if chain_sitter else None
+
+        mins = last_action_minutes(r2.get("last_action") or "")
+        r2["last_action_minutes"] = mins
+        r2["activity_bucket"] = last_action_bucket_from_minutes(mins)
+
+        out.append(r2)
+    return out
 
 
 # ========= Ranked war parsing =========
@@ -364,70 +402,6 @@ def ranked_war_to_state(entry: dict):
     return out
 
 
-def war_from_core_fallback(core: dict):
-    out = {
-        "opponent": None, "opponent_id": None,
-        "start": None, "end": None, "target": None, "active": None,
-        "our_score": None, "opp_score": None,
-        "our_chain": None, "opp_chain": None,
-        "war_id": None,
-        "server_now": unix_now(),
-        "starts_in": None, "started_ago": None, "ends_in": None, "ended_ago": None,
-        "phase": None,
-    }
-    if not isinstance(core, dict):
-        return out
-
-    warfare = core.get("warfare")
-    if isinstance(warfare, dict) and warfare:
-        out["start"] = warfare.get("start")
-        out["end"] = warfare.get("end")
-        out["target"] = warfare.get("target") or warfare.get("war_id") or warfare.get("id")
-
-        opp = warfare.get("opponent")
-        if isinstance(opp, dict):
-            out["opponent"] = opp.get("name") or opp.get("tag") or str(opp.get("id"))
-            out["opponent_id"] = opp.get("id")
-        out["opponent"] = out["opponent"] or warfare.get("opponent_name") or warfare.get("enemy") or warfare.get("opponent")
-
-        phase, starts_in, started_ago, ends_in, ended_ago = compute_war_phase(out["start"], out["end"], out["server_now"])
-        out["phase"] = phase
-        out["starts_in"] = starts_in
-        out["started_ago"] = started_ago
-        out["ends_in"] = ends_in
-        out["ended_ago"] = ended_ago
-
-        if out["start"] or out["end"] or out["target"] or out["opponent"]:
-            return out
-
-    return out
-
-
-def merge_availability(rows):
-    avail_map = get_availability_map()
-    out = []
-    for r in rows:
-        tid = r.get("torn_id")
-        a = avail_map.get(int(tid)) if tid is not None and str(tid).isdigit() else None
-
-        r2 = dict(r)
-
-        chain_sitter = False
-        if tid is not None and str(tid).isdigit():
-            chain_sitter = is_chain_sitter(int(tid))
-
-        r2["is_chain_sitter"] = chain_sitter
-        r2["opted_in"] = (bool(a["available"]) if a else False) if chain_sitter else False
-        r2["opted_updated_at"] = (a["updated_at"] if a else None) if chain_sitter else None
-
-        mins = last_action_minutes(r2.get("last_action") or "")
-        r2["last_action_minutes"] = mins
-        r2["activity_bucket"] = last_action_bucket_from_minutes(mins)
-
-        out.append(r2)
-    return out
-
-
 async def send_webhook_message(content: str):
     if not DISCORD_WEBHOOK_URL:
         return
@@ -516,7 +490,8 @@ async def poll_loop():
                         "cooldown": chain.get("cooldown"),
                     }
 
-                    # reset war
+                    # war
+                    STATE["war_debug"] = None
                     STATE["war"] = {
                         "opponent": None, "opponent_id": None,
                         "start": None, "end": None, "target": None, "active": None,
@@ -527,7 +502,6 @@ async def poll_loop():
                         "starts_in": None, "started_ago": None, "ends_in": None, "ended_ago": None,
                         "phase": None,
                     }
-                    STATE["war_debug"] = None
 
                     war_data = await get_ranked_war_best_effort(FACTION_ID, FACTION_API_KEY)
                     STATE["war_debug"] = war_data
@@ -535,10 +509,6 @@ async def poll_loop():
                     entry = parse_ranked_war_entry(war_data)
                     if entry:
                         STATE["war"] = ranked_war_to_state(entry)
-                    else:
-                        fb = war_from_core_fallback(core or {})
-                        if fb and (fb.get("opponent") or fb.get("start") or fb.get("end") or fb.get("target")):
-                            STATE["war"] = fb
 
                     STATE["updated_at"] = now_iso()
                     STATE["last_error"] = None
@@ -546,102 +516,6 @@ async def poll_loop():
             except Exception as e:
                 STATE["last_error"] = {"code": -2, "error": f"Torn request failed: {repr(e)}"}
                 STATE["updated_at"] = now_iso()
-
-        # webhook post throttled
-        try:
-            last_post = get_setting("LAST_POST_TS", "0")
-            last_post_f = float(last_post) if last_post else 0.0
-        except Exception:
-            last_post_f = 0.0
-
-        if DISCORD_WEBHOOK_URL and (time.time() - last_post_f) >= POST_INTERVAL_SECONDS:
-            err = STATE.get("last_error")
-            if err:
-                text = (
-                    "🛡️ **War-Bot (ERROR)**\n"
-                    f"Faction: {faction_label()}\n"
-                    f"Error: `{err}`\n"
-                    f"Panel: {panel_url()}\n"
-                    f"Updated: {STATE.get('updated_at') or '—'}"
-                )
-            else:
-                c = STATE.get("chain") or {}
-                w = STATE.get("war") or {}
-
-                score_line = ""
-                if w.get("opponent"):
-                    score_line = (
-                        f"Score: {w.get('our_score') if w.get('our_score') is not None else '—'}"
-                        f"–{w.get('opp_score') if w.get('opp_score') is not None else '—'}"
-                        f" | Chains: {w.get('our_chain') if w.get('our_chain') is not None else '—'}"
-                        f"–{w.get('opp_chain') if w.get('opp_chain') is not None else '—'}"
-                    )
-
-                text = (
-                    "🛡️ **War-Bot Update**\n"
-                    f"Faction: {faction_label()}\n"
-                    f"Chain: {c.get('current')}/{c.get('max')} (timeout {c.get('timeout')}s)\n"
-                    f"War: {w.get('opponent') or '—'} | Target: {w.get('target') or '—'} | Phase: {w.get('phase') or '—'}\n"
-                    f"{score_line}\n"
-                    f"Chain sitter opted-in: {STATE.get('opted_in_count')}\n"
-                    f"Last action → Online(0–20m): {STATE.get('online_count')} | Idle(21–30m): {STATE.get('idle_count')} | Offline(31m+): {STATE.get('offline_count')}\n"
-                    f"Panel: {panel_url()}\n"
-                    f"Updated: {STATE.get('updated_at') or '—'}"
-                ).strip()
-
-            try:
-                await send_webhook_message(text)
-                set_setting("LAST_POST_TS", str(time.time()))
-            except Exception as e:
-                STATE["last_error"] = {"code": -3, "error": f"Webhook failed: {repr(e)}"}
-                STATE["updated_at"] = now_iso()
-
-        # smart ping
-        try:
-            if DISCORD_WEBHOOK_URL and STATE.get("last_error") is None:
-                onlineish = int(STATE.get("available_count") or 0)
-                if onlineish >= SMART_PING_MIN_ONLINE and should_fire("SMART_PING", SMART_PING_COOLDOWN_SECONDS):
-                    await send_webhook_message(
-                        f"{SMART_PING_MENTION} 🟢 **Smart Ping**: {onlineish} active (online/idle by last action).\n"
-                        f"Faction: {faction_label()}\n"
-                        f"Panel: {panel_url()}"
-                    )
-                    mark_fired("SMART_PING")
-        except Exception:
-            pass
-
-        # chain timeout alert
-        try:
-            if DISCORD_WEBHOOK_URL and STATE.get("last_error") is None:
-                timeout = STATE.get("chain", {}).get("timeout")
-                if isinstance(timeout, (int, float)) and timeout > 0 and timeout <= CHAIN_TIMEOUT_ALERT_SECONDS:
-                    if should_fire("CHAIN_TIMEOUT", CHAIN_TIMEOUT_COOLDOWN_SECONDS):
-                        c = STATE.get("chain") or {}
-                        await send_webhook_message(
-                            f"⏳ **Chain Timeout Soon**: ~{int(timeout)}s remaining.\n"
-                            f"Faction: {faction_label()}\n"
-                            f"Chain: {c.get('current')}/{c.get('max')}\n"
-                            f"Panel: {panel_url()}"
-                        )
-                        mark_fired("CHAIN_TIMEOUT")
-        except Exception:
-            pass
-
-        # war opponent change alert
-        try:
-            if DISCORD_WEBHOOK_URL and STATE.get("last_error") is None:
-                opp = (STATE.get("war") or {}).get("opponent") or ""
-                prev = get_alert_state("WAR_OPPONENT", "")
-                if opp and opp != prev and should_fire("WAR_CHANGE", WAR_ALERT_COOLDOWN_SECONDS):
-                    await send_webhook_message(
-                        f"⚔️ **Ranked War Update**: Opponent = **{opp}**\n"
-                        f"Faction: {faction_label()}\n"
-                        f"Panel: {panel_url()}"
-                    )
-                    set_alert_state("WAR_OPPONENT", opp)
-                    mark_fired("WAR_CHANGE")
-        except Exception:
-            pass
 
         await asyncio.sleep(POLL_INTERVAL_SECONDS)
 
@@ -693,6 +567,7 @@ def api_availability():
     except Exception:
         return jsonify({"ok": False, "error": "invalid torn_id"}), 400
 
+    # Chain sitter gate
     if not is_chain_sitter(torn_id):
         return jsonify({"ok": False, "error": "not_chain_sitter"}), 403
 
@@ -722,6 +597,14 @@ HTML = """<!doctype html>
   .r { background:#ff4b4b; box-shadow: 0 0 10px rgba(255,75,75,0.28); }
   .namecell { display:flex; align-items:center; }
   .tag { font-size: 11px; opacity: 0.75; margin-left: 8px; }
+
+  @keyframes popflash {
+    0%   { transform: scale(1);   filter: brightness(1); }
+    25%  { transform: scale(1.08); filter: brightness(1.5); }
+    60%  { transform: scale(1.03); filter: brightness(1.25); }
+    100% { transform: scale(1);   filter: brightness(1); }
+  }
+  .pop { animation: popflash 600ms ease-out; }
 </style>
 </head>
 <body>
@@ -820,12 +703,22 @@ function fmtDur(sec){
   return parts.join(" ");
 }
 
-// LIVE TIMER STATE (ticks every 1s)
+function pop(id){
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.classList.remove('pop');
+  void el.offsetWidth;
+  el.classList.add('pop');
+}
+
+// LIVE TIMER STATE
 let warPhase = null;
 let warStartsIn = null;
 let warStartedAgo = null;
 let warEndsIn = null;
 let warEndedAgo = null;
+
+let lastScoreKey = null;
 
 function renderWarTime(){
   let t = "Time: —";
@@ -846,7 +739,6 @@ function tickWarTime(){
     if (warStartsIn != null) {
       warStartsIn = Math.max(0, warStartsIn - 1);
       if (warStartsIn === 0) {
-        // flip to active, best effort
         warPhase = "active";
         warStartedAgo = 0;
       }
@@ -879,19 +771,28 @@ async function refresh(){
   document.getElementById('err').textContent = s.last_error ? ('Error: ' + JSON.stringify(s.last_error)) : '';
 
   const c = s.chain || {};
-  document.getElementById('chain').textContent = `Chain: ${c.current ?? '—'}/${c.max ?? '—'} (timeout: ${c.timeout ?? '—'}s)`;
+  document.getElementById('chain').textContent =
+    `Chain: ${c.current ?? '—'}/${c.max ?? '—'} (timeout: ${c.timeout ?? '—'}s)`;
 
   const w = s.war || {};
   const opp = (w.opponent || '—');
   const phase = (w.phase || '—');
-  document.getElementById('war').textContent = `War: ${opp} | Target: ${(w.target ?? '—')} | Phase: ${phase}`;
+  document.getElementById('war').textContent =
+    `War: ${opp} | Target: ${(w.target ?? '—')} | Phase: ${phase}`;
 
   const ourScore = (w.our_score ?? '—');
   const oppScore = (w.opp_score ?? '—');
   const ourChain = (w.our_chain ?? '—');
   const oppChain = (w.opp_chain ?? '—');
-  document.getElementById('war_score').textContent =
-    `Score: ${ourScore}–${oppScore} | Chains: ${ourChain}–${oppChain}`;
+
+  const scoreText = `Score: ${ourScore}–${oppScore} | Chains: ${ourChain}–${oppChain}`;
+  document.getElementById('war_score').textContent = scoreText;
+
+  const scoreKey = `${ourScore}|${oppScore}|${ourChain}|${oppChain}`;
+  if (lastScoreKey !== null && scoreKey !== lastScoreKey) {
+    pop('war_score');
+  }
+  lastScoreKey = scoreKey;
 
   // set LIVE counters from server values
   warPhase = w.phase || null;
@@ -931,10 +832,9 @@ async function refresh(){
   fill('rows_off', s.offline_rows || []);
 }
 
-// initial + periodic fetch (live tick runs separately)
 refresh();
-setInterval(refresh, 10000);     // pull fresh state every 10s
-setInterval(tickWarTime, 1000);  // live ticking every 1s
+setInterval(refresh, 10000);     // fetch state every 10s
+setInterval(tickWarTime, 1000);  // live tick every 1s
 </script>
 </body>
 </html>
