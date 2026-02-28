@@ -433,7 +433,6 @@ async def poll_loop():
 
                     STATE["opted_in_count"] = sum(1 for r in rows if r.get("is_chain_sitter") and r.get("opted_in"))
 
-                    # counts based on buckets
                     online_count = 0
                     idle_count = 0
                     offline_count = 0
@@ -482,7 +481,6 @@ async def poll_loop():
                 STATE["last_error"] = {"code": -2, "error": f"Torn request failed: {repr(e)}"}
                 STATE["updated_at"] = now_iso()
 
-        # (webhook + alerts unchanged from your version; kept minimal here)
         await asyncio.sleep(POLL_INTERVAL_SECONDS)
 
 
@@ -595,7 +593,7 @@ HTML = """<!doctype html>
   </div>
 
   <div class="card">
-    <div class="colTitle gold" id="hdr_on">🟢 Online (0–20m, LIVE)</div>
+    <div class="colTitle gold">🟢 Online (0–20m, LIVE)</div>
     <div class="twoCol">
       <div class="col">
         <div class="colTitle">✅ OK</div>
@@ -610,7 +608,7 @@ HTML = """<!doctype html>
         <div class="colTitle hospTitle">🏥 Hospital</div>
         <div style="overflow:auto;">
           <table>
-            <thead><tr><th>Member</th><th>Lvl</th><th>Last action</th><th>Status</th><th>Opt</th></tr></thead>
+            <thead><tr><th>Member</th><th>Lvl</th><th>Hosp time</th><th>Status</th><th>Opt</th></tr></thead>
             <tbody id="rows_on_hosp"></tbody>
           </table>
         </div>
@@ -619,7 +617,7 @@ HTML = """<!doctype html>
   </div>
 
   <div class="card">
-    <div class="colTitle gold" id="hdr_idle">🟡 Idle (21–30m, LIVE)</div>
+    <div class="colTitle gold">🟡 Idle (21–30m, LIVE)</div>
     <div class="twoCol">
       <div class="col">
         <div class="colTitle">✅ OK</div>
@@ -634,7 +632,7 @@ HTML = """<!doctype html>
         <div class="colTitle hospTitle">🏥 Hospital</div>
         <div style="overflow:auto;">
           <table>
-            <thead><tr><th>Member</th><th>Lvl</th><th>Last action</th><th>Status</th><th>Opt</th></tr></thead>
+            <thead><tr><th>Member</th><th>Lvl</th><th>Hosp time</th><th>Status</th><th>Opt</th></tr></thead>
             <tbody id="rows_idle_hosp"></tbody>
           </table>
         </div>
@@ -643,7 +641,7 @@ HTML = """<!doctype html>
   </div>
 
   <div class="card">
-    <div class="colTitle" id="hdr_off">🔴 Offline (31m+, LIVE)</div>
+    <div class="colTitle">🔴 Offline (31m+, LIVE)</div>
     <div class="twoCol">
       <div class="col">
         <div class="colTitle">✅ OK</div>
@@ -658,7 +656,7 @@ HTML = """<!doctype html>
         <div class="colTitle hospTitle">🏥 Hospital</div>
         <div style="overflow:auto;">
           <table>
-            <thead><tr><th>Member</th><th>Lvl</th><th>Last action</th><th>Status</th><th>Opt</th></tr></thead>
+            <thead><tr><th>Member</th><th>Lvl</th><th>Hosp time</th><th>Status</th><th>Opt</th></tr></thead>
             <tbody id="rows_off_hosp"></tbody>
           </table>
         </div>
@@ -780,17 +778,53 @@ function isHospital(r){
   return s.includes("hospital");
 }
 
-function fillTable(tbodyId, arr){
+// ---- NEW: parse hospital remaining time (minutes) from status ----
+function parseDurationMinutes(txt){
+  txt = String(txt || "").toLowerCase();
+
+  let total = 0;
+  const d = txt.match(/(\d+)\s*d/); if (d) total += parseInt(d[1],10) * 1440;
+  const h = txt.match(/(\d+)\s*h/); if (h) total += parseInt(h[1],10) * 60;
+  const m = txt.match(/(\d+)\s*m/); if (m) total += parseInt(m[1],10);
+  const s = txt.match(/(\d+)\s*s/); if (s && total === 0) total += 1;
+
+  return total > 0 ? total : null;
+}
+
+function hospitalMinutes(r){
+  const st = String(r.status || "").toLowerCase();
+  if (!st.includes("hospital")) return null;
+
+  const idx = st.indexOf("hospital");
+  const tail = idx >= 0 ? st.slice(idx) : st;
+
+  return parseDurationMinutes(tail) ?? parseDurationMinutes(st);
+}
+
+function hospitalTimeText(r){
+  const mins = hospitalMinutes(r);
+  if (mins == null) return "—";
+  const sec = mins * 60;
+  return fmtDur(sec);
+}
+
+function fillTable(tbodyId, arr, mode){
   const tb = document.getElementById(tbodyId);
   tb.innerHTML = '';
   (arr || []).slice(0, 350).forEach(x=>{
     const opt = (x.is_chain_sitter && x.opted_in) ? '✅' : '—';
     const sitterTag = x.is_chain_sitter ? '<span class="tag">CS</span>' : '';
+
+    const thirdCol = (mode === "hosp") ? hospitalTimeText(x) : x._live_text;
+    const thirdTitle = (mode === "hosp")
+      ? (String(x.status || '').replace(/"/g,'&quot;'))
+      : (String(x.last_action || '').replace(/"/g,'&quot;'));
+
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td><div class="namecell"><span class="${dotClass(x._kind)}"></span><span>${x.name||''}</span>${sitterTag}</div></td>
       <td>${x.level??''}</td>
-      <td title="${(x.last_action || '').replace(/"/g,'&quot;')}">${x._live_text}</td>
+      <td title="${thirdTitle}">${thirdCol}</td>
       <td>${x.status||''}</td>
       <td>${opt}</td>
     `;
@@ -814,19 +848,26 @@ function renderMemberTables(){
 
     const hosp = isHospital(rr);
 
-    if (kind === "online") {
-      (hosp ? on_h : on_ok).push(rr);
-    } else if (kind === "idle") {
-      (hosp ? idle_h : idle_ok).push(rr);
-    } else {
-      (hosp ? off_h : off_ok).push(rr);
-    }
+    if (kind === "online")      (hosp ? on_h : on_ok).push(rr);
+    else if (kind === "idle")   (hosp ? idle_h : idle_ok).push(rr);
+    else                       (hosp ? off_h : off_ok).push(rr);
   }
 
   const sortByRecent = (a,b)=> (a._live_mins || 1e9) - (b._live_mins || 1e9);
-  on_ok.sort(sortByRecent); on_h.sort(sortByRecent);
-  idle_ok.sort(sortByRecent); idle_h.sort(sortByRecent);
-  off_ok.sort(sortByRecent); off_h.sort(sortByRecent);
+
+  // ✅ Hospital: lowest hospital time first (fallback to recent activity)
+  const sortByHospitalTime = (a,b)=>{
+    const am = hospitalMinutes(a);
+    const bm = hospitalMinutes(b);
+    const av = (am == null) ? 1e9 : am;
+    const bv = (bm == null) ? 1e9 : bm;
+    if (av !== bv) return av - bv;
+    return sortByRecent(a,b);
+  };
+
+  on_ok.sort(sortByRecent);       on_h.sort(sortByHospitalTime);
+  idle_ok.sort(sortByRecent);     idle_h.sort(sortByHospitalTime);
+  off_ok.sort(sortByRecent);      off_h.sort(sortByHospitalTime);
 
   const onTotal = on_ok.length + on_h.length;
   const idleTotal = idle_ok.length + idle_h.length;
@@ -836,12 +877,12 @@ function renderMemberTables(){
   document.getElementById('p_idle').textContent = `🟡 Idle: ${idleTotal} (OK ${idle_ok.length} | 🏥 ${idle_h.length})`;
   document.getElementById('p_off').textContent  = `🔴 Offline: ${offTotal} (OK ${off_ok.length} | 🏥 ${off_h.length})`;
 
-  fillTable('rows_on_ok', on_ok);
-  fillTable('rows_on_hosp', on_h);
-  fillTable('rows_idle_ok', idle_ok);
-  fillTable('rows_idle_hosp', idle_h);
-  fillTable('rows_off_ok', off_ok);
-  fillTable('rows_off_hosp', off_h);
+  fillTable('rows_on_ok', on_ok, "ok");
+  fillTable('rows_on_hosp', on_h, "hosp");
+  fillTable('rows_idle_ok', idle_ok, "ok");
+  fillTable('rows_idle_hosp', idle_h, "hosp");
+  fillTable('rows_off_ok', off_ok, "ok");
+  fillTable('rows_off_hosp', off_h, "hosp");
 }
 
 function tickMembers(){
