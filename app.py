@@ -37,10 +37,7 @@ CHAIN_TIMEOUT_COOLDOWN_SECONDS = int(os.getenv("CHAIN_TIMEOUT_COOLDOWN_SECONDS",
 
 WAR_ALERT_COOLDOWN_SECONDS = int(os.getenv("WAR_ALERT_COOLDOWN_SECONDS", "600"))
 
-# Optional: require token for availability posting
 AVAIL_TOKEN = (os.getenv("AVAIL_TOKEN") or "").strip()
-
-# Chain sitters allowlist (ONLY these Torn IDs can opt in/out)
 CHAIN_SITTER_IDS_RAW = (os.getenv("CHAIN_SITTER_IDS") or "1234").strip()
 
 
@@ -104,7 +101,7 @@ STATE = {
         "started_ago": None,
         "ends_in": None,
         "ended_ago": None,
-        "phase": None,  # "upcoming" | "active" | "ended" | "unknown"
+        "phase": None,
     },
 
     "war_debug": None,
@@ -112,11 +109,7 @@ STATE = {
     "online_count": 0,
     "idle_count": 0,
     "offline_count": 0,
-
-    # online + idle (from last action)
     "available_count": 0,
-
-    # chain sitters opted-in only
     "opted_in_count": 0,
 
     "faction": {"name": None, "tag": None, "respect": None},
@@ -126,9 +119,6 @@ STATE = {
 
 def ensure_state_shape():
     STATE.setdefault("rows", [])
-    STATE.setdefault("online_rows", [])
-    STATE.setdefault("idle_rows", [])
-    STATE.setdefault("offline_rows", [])
     STATE.setdefault("updated_at", None)
     STATE.setdefault("last_error", None)
 
@@ -147,7 +137,6 @@ def ensure_state_shape():
         STATE["war"].setdefault(k, None)
 
     STATE.setdefault("war_debug", None)
-
     for k in ("online_count", "idle_count", "offline_count", "available_count", "opted_in_count"):
         STATE.setdefault(k, 0)
 
@@ -157,27 +146,19 @@ def ensure_state_shape():
         STATE["faction"].setdefault(k, None)
 
 
-# ========= LAST ACTION -> minutes + bucket =========
 _RE_LAST_ACTION = re.compile(r"(\d+)\s*(second|minute|hour|day|week|month|year)s?\s*ago", re.I)
 
 def last_action_minutes(last_action_text: str) -> int:
-    """
-    Returns minutes since last action.
-    Unknown/unparseable -> very large number (sorts to bottom).
-    """
     s = (last_action_text or "").strip().lower()
     if not s:
         return 10**9
     if "just now" in s or s == "now":
         return 0
-
     m = _RE_LAST_ACTION.search(s)
     if not m:
         return 10**9
-
     qty = int(m.group(1))
     unit = m.group(2).lower()
-
     if unit == "second":
         return 0
     if unit == "minute":
@@ -192,13 +173,10 @@ def last_action_minutes(last_action_text: str) -> int:
         return qty * 43200
     if unit == "year":
         return qty * 525600
-
     return 10**9
 
 
 def last_action_bucket_from_minutes(minutes: int) -> str:
-    # Your rules:
-    # Online = 0–20, Idle = 21–30, Offline = 31+
     if minutes <= 20:
         return "online"
     if 20 < minutes <= 30:
@@ -206,7 +184,6 @@ def last_action_bucket_from_minutes(minutes: int) -> str:
     return "offline"
 
 
-# ========= Torn parsing =========
 def safe_member_rows(data: dict):
     members = (data or {}).get("members")
     rows = []
@@ -254,7 +231,6 @@ def merge_availability(rows):
         a = avail_map.get(int(tid)) if tid is not None and str(tid).isdigit() else None
 
         r2 = dict(r)
-
         chain_sitter = False
         if tid is not None and str(tid).isdigit():
             chain_sitter = is_chain_sitter(int(tid))
@@ -266,16 +242,13 @@ def merge_availability(rows):
         mins = last_action_minutes(r2.get("last_action") or "")
         r2["last_action_minutes"] = mins
         r2["activity_bucket"] = last_action_bucket_from_minutes(mins)
-
         out.append(r2)
     return out
 
 
-# ========= Ranked war parsing =========
 def parse_ranked_war_entry(war_data: dict):
     if not isinstance(war_data, dict) or not war_data or war_data.get("error"):
         return None
-
     rankedwars = war_data.get("rankedwars")
     if not isinstance(rankedwars, list) or not rankedwars:
         return None
@@ -296,7 +269,6 @@ def parse_ranked_war_entry(war_data: dict):
     pick = active if active else [w for w in rankedwars if isinstance(w, dict)]
     if not pick:
         return None
-
     pick.sort(key=start_ts, reverse=True)
     return pick[0]
 
@@ -304,7 +276,6 @@ def parse_ranked_war_entry(war_data: dict):
 def compute_war_phase(start_ts, end_ts, now_ts):
     starts_in = started_ago = ends_in = ended_ago = None
     phase = "unknown"
-
     try:
         s = int(start_ts) if start_ts is not None else None
     except Exception:
@@ -315,7 +286,6 @@ def compute_war_phase(start_ts, end_ts, now_ts):
         e = None
 
     n = int(now_ts)
-
     if s is None:
         return phase, None, None, None, None
 
@@ -325,8 +295,6 @@ def compute_war_phase(start_ts, end_ts, now_ts):
         return phase, starts_in, None, None, None
 
     started_ago = n - s
-
-    # end==0 means active with no known end
     if e is None or e == 0:
         phase = "active"
         return phase, None, started_ago, None, None
@@ -352,7 +320,6 @@ def ranked_war_to_state(entry: dict):
         "starts_in": None, "started_ago": None, "ends_in": None, "ended_ago": None,
         "phase": None,
     }
-
     if not isinstance(entry, dict):
         return out
 
@@ -370,7 +337,6 @@ def ranked_war_to_state(entry: dict):
     factions = entry.get("factions")
     our = None
     opp = None
-
     if isinstance(factions, list) and FACTION_ID:
         for f in factions:
             if not isinstance(f, dict):
@@ -398,51 +364,19 @@ def ranked_war_to_state(entry: dict):
     out["started_ago"] = started_ago
     out["ends_in"] = ends_in
     out["ended_ago"] = ended_ago
-
     return out
-
-
-async def send_webhook_message(content: str):
-    if not DISCORD_WEBHOOK_URL:
-        return
-    timeout = aiohttp.ClientTimeout(total=15)
-    async with aiohttp.ClientSession(timeout=timeout) as session:
-        await session.post(DISCORD_WEBHOOK_URL, json={"content": content})
-
-
-def should_fire(key: str, cooldown_seconds: int) -> bool:
-    last = get_alert_state(key, "0")
-    try:
-        last_i = int(float(last))
-    except Exception:
-        last_i = 0
-    return (unix_now() - last_i) >= cooldown_seconds
-
-
-def mark_fired(key: str):
-    set_alert_state(key, str(unix_now()))
-
-
-def faction_label():
-    f = STATE.get("faction") or {}
-    tag = f.get("tag")
-    name = f.get("name") or "—"
-    return f"[{tag}] {name}" if tag else name
 
 
 async def poll_loop():
     ensure_state_shape()
-
     while True:
         ensure_state_shape()
-
         if not FACTION_ID or not FACTION_API_KEY:
             STATE["last_error"] = {"code": -1, "error": "Missing FACTION_ID or FACTION_API_KEY"}
             STATE["updated_at"] = now_iso()
         else:
             try:
                 core = await get_faction_core(FACTION_ID, FACTION_API_KEY)
-
                 if isinstance(core, dict) and core.get("error"):
                     STATE["last_error"] = core["error"]
                     STATE["updated_at"] = now_iso()
@@ -457,31 +391,18 @@ async def poll_loop():
                     }
 
                     rows = merge_availability(safe_member_rows(core or {}))
-                    STATE["opted_in_count"] = sum(1 for r in rows if r.get("is_chain_sitter") and r.get("opted_in"))
-
-                    online_rows, idle_rows, offline_rows = [], [], []
-                    for r in rows:
-                        b = r.get("activity_bucket") or "offline"
-                        if b == "online":
-                            online_rows.append(r)
-                        elif b == "idle":
-                            idle_rows.append(r)
-                        else:
-                            offline_rows.append(r)
-
-                    online_rows.sort(key=lambda x: x.get("last_action_minutes", 10**9))
-                    idle_rows.sort(key=lambda x: x.get("last_action_minutes", 10**9))
-                    offline_rows.sort(key=lambda x: x.get("last_action_minutes", 10**9))
-
                     STATE["rows"] = rows
-                    STATE["online_rows"] = online_rows
-                    STATE["idle_rows"] = idle_rows
-                    STATE["offline_rows"] = offline_rows
 
-                    STATE["online_count"] = len(online_rows)
-                    STATE["idle_count"] = len(idle_rows)
-                    STATE["offline_count"] = len(offline_rows)
-                    STATE["available_count"] = STATE["online_count"] + STATE["idle_count"]
+                    # counts based on last_action bucket at poll time (UI will tick live)
+                    online = sum(1 for r in rows if (r.get("activity_bucket") == "online"))
+                    idle = sum(1 for r in rows if (r.get("activity_bucket") == "idle"))
+                    off = len(rows) - online - idle
+
+                    STATE["online_count"] = online
+                    STATE["idle_count"] = idle
+                    STATE["offline_count"] = off
+                    STATE["available_count"] = online + idle
+                    STATE["opted_in_count"] = sum(1 for r in rows if r.get("is_chain_sitter") and r.get("opted_in"))
 
                     STATE["chain"] = {
                         "current": chain.get("current"),
@@ -490,7 +411,6 @@ async def poll_loop():
                         "cooldown": chain.get("cooldown"),
                     }
 
-                    # war
                     STATE["war_debug"] = None
                     STATE["war"] = {
                         "opponent": None, "opponent_id": None,
@@ -505,7 +425,6 @@ async def poll_loop():
 
                     war_data = await get_ranked_war_best_effort(FACTION_ID, FACTION_API_KEY)
                     STATE["war_debug"] = war_data
-
                     entry = parse_ranked_war_entry(war_data)
                     if entry:
                         STATE["war"] = ranked_war_to_state(entry)
@@ -567,7 +486,6 @@ def api_availability():
     except Exception:
         return jsonify({"ok": False, "error": "invalid torn_id"}), 400
 
-    # Chain sitter gate
     if not is_chain_sitter(torn_id):
         return jsonify({"ok": False, "error": "not_chain_sitter"}), 403
 
@@ -630,7 +548,7 @@ HTML = """<!doctype html>
   </div>
 
   <div class="card">
-    <div style="font-weight:800; margin-bottom:8px;" class="gold">🟢 Online (0–20m, sorted newest)</div>
+    <div style="font-weight:800; margin-bottom:8px;" class="gold">🟢 Online (0–20m, LIVE)</div>
     <div style="overflow:auto;">
       <table>
         <thead><tr><th>Member</th><th>Lvl</th><th>Last action</th><th>Status</th><th>Opt</th></tr></thead>
@@ -640,7 +558,7 @@ HTML = """<!doctype html>
   </div>
 
   <div class="card">
-    <div style="font-weight:800; margin-bottom:8px;" class="gold">🟡 Idle (21–30m, sorted newest)</div>
+    <div style="font-weight:800; margin-bottom:8px;" class="gold">🟡 Idle (21–30m, LIVE)</div>
     <div style="overflow:auto;">
       <table>
         <thead><tr><th>Member</th><th>Lvl</th><th>Last action</th><th>Status</th><th>Opt</th></tr></thead>
@@ -650,7 +568,7 @@ HTML = """<!doctype html>
   </div>
 
   <div class="card">
-    <div style="font-weight:800; margin-bottom:8px;">🔴 Offline (31m+, sorted newest)</div>
+    <div style="font-weight:800; margin-bottom:8px;">🔴 Offline (31m+, LIVE)</div>
     <div style="overflow:auto;">
       <table>
         <thead><tr><th>Member</th><th>Lvl</th><th>Last action</th><th>Status</th><th>Opt</th></tr></thead>
@@ -660,36 +578,6 @@ HTML = """<!doctype html>
   </div>
 
 <script>
-function minutesFromLastAction(lastAction){
-  const s = (lastAction || '').toLowerCase().trim();
-  if (!s) return 1000000000;
-  if (s.includes('just now') || s === 'now') return 0;
-  const m = s.match(/(\\d+)\\s*(second|minute|hour|day|week|month|year)s?\\s*ago/i);
-  if (!m) return 1000000000;
-  const qty = parseInt(m[1], 10);
-  const unit = (m[2] || '').toLowerCase();
-  if (unit === 'second') return 0;
-  if (unit === 'minute') return qty;
-  if (unit === 'hour') return qty * 60;
-  if (unit === 'day') return qty * 1440;
-  if (unit === 'week') return qty * 10080;
-  if (unit === 'month') return qty * 43200;
-  if (unit === 'year') return qty * 525600;
-  return 1000000000;
-}
-
-function bucketFromMinutes(mins){
-  if (mins <= 20) return 'online';
-  if (mins > 20 && mins <= 30) return 'idle';
-  return 'offline';
-}
-
-function dotClass(kind){
-  if (kind === 'online') return 'dot g';
-  if (kind === 'idle') return 'dot y';
-  return 'dot r';
-}
-
 function fmtDur(sec){
   sec = Math.max(0, Math.floor(sec || 0));
   const d = Math.floor(sec / 86400); sec %= 86400;
@@ -703,6 +591,18 @@ function fmtDur(sec){
   return parts.join(" ");
 }
 
+function dotClass(kind){
+  if (kind === 'online') return 'dot g';
+  if (kind === 'idle') return 'dot y';
+  return 'dot r';
+}
+
+function bucketFromMinutes(mins){
+  if (mins <= 20) return 'online';
+  if (mins > 20 && mins <= 30) return 'idle';
+  return 'offline';
+}
+
 function pop(id){
   const el = document.getElementById(id);
   if (!el) return;
@@ -711,14 +611,12 @@ function pop(id){
   el.classList.add('pop');
 }
 
-// LIVE TIMER STATE
+// =================== LIVE WAR TIMER ===================
 let warPhase = null;
 let warStartsIn = null;
 let warStartedAgo = null;
 let warEndsIn = null;
 let warEndedAgo = null;
-
-let lastScoreKey = null;
 
 function renderWarTime(){
   let t = "Time: —";
@@ -759,6 +657,94 @@ function tickWarTime(){
   renderWarTime();
 }
 
+// =================== LIVE MEMBERS ===================
+// We tick everyone locally so online/idle/offline is LIVE every second.
+let latestRows = [];
+let rowsFetchedAtMs = 0;
+let lastScoreKey = null;
+
+function elapsedSeconds(){
+  if (!rowsFetchedAtMs) return 0;
+  return Math.max(0, (Date.now() - rowsFetchedAtMs) / 1000);
+}
+
+function liveMinutes(baseMinutes){
+  const e = elapsedSeconds();
+  const inc = e / 60.0;
+  const v = (baseMinutes == null) ? 1000000000 : baseMinutes;
+  // if unknown, keep unknown
+  if (v >= 1000000000) return v;
+  return v + inc;
+}
+
+function liveLastActionText(minsFloat){
+  if (minsFloat >= 1000000000) return "—";
+  const totalSec = Math.floor(minsFloat * 60);
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  if (m <= 0) return `${s}s ago`;
+  return `${m}m ${s}s ago`;
+}
+
+function renderMemberTables(){
+  const online = [];
+  const idle = [];
+  const off = [];
+
+  for (const r of (latestRows || [])) {
+    const mins = liveMinutes(r.last_action_minutes);
+    const kind = bucketFromMinutes(mins);
+    const rr = Object.assign({}, r, {
+      _live_mins: mins,
+      _kind: kind,
+      _live_text: liveLastActionText(mins)
+    });
+    if (kind === "online") online.push(rr);
+    else if (kind === "idle") idle.push(rr);
+    else off.push(rr);
+  }
+
+  // sort most recent first
+  const sortFn = (a,b)=> (a._live_mins || 1e9) - (b._live_mins || 1e9);
+  online.sort(sortFn);
+  idle.sort(sortFn);
+  off.sort(sortFn);
+
+  // live counts
+  document.getElementById('p_on').textContent   = `🟢 Online: ${online.length}`;
+  document.getElementById('p_idle').textContent = `🟡 Idle: ${idle.length}`;
+  document.getElementById('p_off').textContent  = `🔴 Offline: ${off.length}`;
+
+  const fill = (id, arr) => {
+    const tb = document.getElementById(id);
+    tb.innerHTML = '';
+    (arr || []).slice(0, 350).forEach(x=>{
+      const opt = (x.is_chain_sitter && x.opted_in) ? '✅' : '—';
+      const sitterTag = x.is_chain_sitter ? '<span class="tag">CS</span>' : '';
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td><div class="namecell"><span class="${dotClass(x._kind)}"></span><span>${x.name||''}</span>${sitterTag}</div></td>
+        <td>${x.level??''}</td>
+        <td title="${(x.last_action || '').replace(/"/g,'&quot;')}">${x._live_text}</td>
+        <td>${x.status||''}</td>
+        <td>${opt}</td>
+      `;
+      tb.appendChild(tr);
+    });
+  };
+
+  fill('rows_on', online);
+  fill('rows_idle', idle);
+  fill('rows_off', off);
+}
+
+function tickMembers(){
+  // re-render everyone live every second
+  if (!latestRows || latestRows.length === 0) return;
+  renderMemberTables();
+}
+
+// =================== FETCH STATE ===================
 async function refresh(){
   const r = await fetch('/state');
   const s = await r.json();
@@ -785,16 +771,14 @@ async function refresh(){
   const ourChain = (w.our_chain ?? '—');
   const oppChain = (w.opp_chain ?? '—');
 
-  const scoreText = `Score: ${ourScore}–${oppScore} | Chains: ${ourChain}–${oppChain}`;
-  document.getElementById('war_score').textContent = scoreText;
+  document.getElementById('war_score').textContent =
+    `Score: ${ourScore}–${oppScore} | Chains: ${ourChain}–${oppChain}`;
 
   const scoreKey = `${ourScore}|${oppScore}|${ourChain}|${oppChain}`;
-  if (lastScoreKey !== null && scoreKey !== lastScoreKey) {
-    pop('war_score');
-  }
+  if (lastScoreKey !== null && scoreKey !== lastScoreKey) pop('war_score');
   lastScoreKey = scoreKey;
 
-  // set LIVE counters from server values
+  // war live counters
   warPhase = w.phase || null;
   warStartsIn = (w.starts_in != null) ? Math.max(0, Math.floor(w.starts_in)) : null;
   warStartedAgo = (w.started_ago != null) ? Math.max(0, Math.floor(w.started_ago)) : null;
@@ -802,39 +786,20 @@ async function refresh(){
   warEndedAgo = (w.ended_ago != null) ? Math.max(0, Math.floor(w.ended_ago)) : null;
   renderWarTime();
 
-  document.getElementById('p_on').textContent   = `🟢 Online: ${s.online_count ?? 0}`;
-  document.getElementById('p_idle').textContent = `🟡 Idle: ${s.idle_count ?? 0}`;
-  document.getElementById('p_off').textContent  = `🔴 Offline: ${s.offline_count ?? 0}`;
   document.getElementById('p_opt').textContent  = `Chain sitter opted-in: ${s.opted_in_count ?? 0}`;
 
-  const fill = (id, arr) => {
-    const tb = document.getElementById(id);
-    tb.innerHTML = '';
-    (arr || []).slice(0, 350).forEach(x=>{
-      const opt = (x.is_chain_sitter && x.opted_in) ? '✅' : '—';
-      const mins = minutesFromLastAction(x.last_action);
-      const kind = bucketFromMinutes(mins);
-      const sitterTag = x.is_chain_sitter ? '<span class="tag">CS</span>' : '';
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td><div class="namecell"><span class="${dotClass(kind)}"></span><span>${x.name||''}</span>${sitterTag}</div></td>
-        <td>${x.level??''}</td>
-        <td>${x.last_action||''}</td>
-        <td>${x.status||''}</td>
-        <td>${opt}</td>
-      `;
-      tb.appendChild(tr);
-    });
-  };
+  // MEMBER LIVE BASELINE
+  latestRows = (s.rows || []);
+  rowsFetchedAtMs = Date.now();
 
-  fill('rows_on', s.online_rows || []);
-  fill('rows_idle', s.idle_rows || []);
-  fill('rows_off', s.offline_rows || []);
+  // immediate render
+  renderMemberTables();
 }
 
 refresh();
-setInterval(refresh, 10000);     // fetch state every 10s
-setInterval(tickWarTime, 1000);  // live tick every 1s
+setInterval(refresh, 10000);       // fetch Torn state every 10s
+setInterval(tickWarTime, 1000);    // war timer ticks every 1s
+setInterval(tickMembers, 1000);    // member buckets/counts tick every 1s
 </script>
 </body>
 </html>
