@@ -18,7 +18,11 @@ def init_db():
 def set_setting(k: str, v: str):
     con = sqlite3.connect(DB_PATH)
     cur = con.cursor()
-    cur.execute("INSERT INTO settings(k,v) VALUES(?,?) ON CONFLICT(k) DO UPDATE SET v=excluded.v", (k, v))
+    cur.execute(
+        "INSERT INTO settings(k,v) VALUES(?,?) "
+        "ON CONFLICT(k) DO UPDATE SET v=excluded.v",
+        (k, v)
+    )
     con.commit()
     con.close()
 
