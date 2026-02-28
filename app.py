@@ -84,6 +84,8 @@ STATE = {
     "updated_at": None,
 
     "chain": {"current": None, "max": None, "timeout": None, "cooldown": None},
+
+    # ✅ always present
     "war": {"opponent": None, "start": None, "end": None, "target": None, "active": None},
 
     "online_count": 0,
@@ -99,6 +101,40 @@ STATE = {
     "faction": {"name": None, "tag": None, "respect": None},
     "last_error": None,
 }
+
+
+def ensure_state_shape():
+    # Guarantee keys always exist so /state + UI never breaks
+    STATE.setdefault("rows", [])
+    STATE.setdefault("online_rows", [])
+    STATE.setdefault("idle_rows", [])
+    STATE.setdefault("offline_rows", [])
+    STATE.setdefault("updated_at", None)
+    STATE.setdefault("last_error", None)
+
+    STATE.setdefault("chain", {"current": None, "max": None, "timeout": None, "cooldown": None})
+    if not isinstance(STATE.get("chain"), dict):
+        STATE["chain"] = {"current": None, "max": None, "timeout": None, "cooldown": None}
+    for k in ("current", "max", "timeout", "cooldown"):
+        STATE["chain"].setdefault(k, None)
+
+    STATE.setdefault("war", {"opponent": None, "start": None, "end": None, "target": None, "active": None})
+    if not isinstance(STATE.get("war"), dict):
+        STATE["war"] = {"opponent": None, "start": None, "end": None, "target": None, "active": None}
+    for k in ("opponent", "start", "end", "target", "active"):
+        STATE["war"].setdefault(k, None)
+
+    STATE.setdefault("online_count", 0)
+    STATE.setdefault("idle_count", 0)
+    STATE.setdefault("offline_count", 0)
+    STATE.setdefault("available_count", 0)
+    STATE.setdefault("opted_in_count", 0)
+
+    STATE.setdefault("faction", {"name": None, "tag": None, "respect": None})
+    if not isinstance(STATE.get("faction"), dict):
+        STATE["faction"] = {"name": None, "tag": None, "respect": None}
+    for k in ("name", "tag", "respect"):
+        STATE["faction"].setdefault(k, None)
 
 
 # ========= LAST ACTION -> minutes + bucket =========
@@ -152,45 +188,174 @@ def last_action_bucket_from_minutes(minutes: int) -> str:
 
 # ========= Torn parsing =========
 def safe_member_rows(data: dict):
+    """
+    Supports members returned as:
+      - list of dicts
+      - dict keyed by user_id -> dict
+    """
     members = (data or {}).get("members")
     rows = []
+
+    def _add_member(m, uid_hint=None):
+        if not isinstance(m, dict):
+            return
+        mid = m.get("id") or m.get("torn_id") or m.get("user_id") or uid_hint
+        try:
+            mid = int(mid) if mid is not None else None
+        except Exception:
+            mid = None
+
+        last_action = m.get("last_action")
+        if isinstance(last_action, dict):
+            last_action = last_action.get("relative") or str(last_action.get("timestamp") or "")
+
+        status = m.get("status")
+        if isinstance(status, dict):
+            status = status.get("description") or status.get("state") or str(status)
+
+        rows.append({
+            "torn_id": mid,
+            "name": m.get("name"),
+            "level": m.get("level"),
+            "last_action": last_action if isinstance(last_action, str) else (str(last_action) if last_action is not None else ""),
+            "status": status if isinstance(status, str) else (str(status) if status is not None else ""),
+        })
+
     if isinstance(members, list):
         for m in members:
-            mid = m.get("id") or m.get("torn_id") or m.get("user_id")
-            try:
-                mid = int(mid) if mid is not None else None
-            except Exception:
-                mid = None
+            _add_member(m)
+    elif isinstance(members, dict):
+        for uid, m in members.items():
+            _add_member(m, uid_hint=uid)
 
-            last_action = m.get("last_action")
-            if isinstance(last_action, dict):
-                last_action = last_action.get("relative") or str(last_action.get("timestamp") or "")
-
-            status = m.get("status")
-            if isinstance(status, dict):
-                status = status.get("description") or status.get("state") or str(status)
-
-            rows.append({
-                "torn_id": mid,
-                "name": m.get("name"),
-                "level": m.get("level"),
-                "last_action": last_action if isinstance(last_action, str) else (str(last_action) if last_action is not None else ""),
-                "status": status if isinstance(status, str) else (str(status) if status is not None else ""),
-            })
     return rows
 
 
-def parse_ranked_war(war_data: dict):
+def extract_ranked_war_entry(war_data: dict):
+    """
+    Returns ONE ranked war entry dict in the most common Torn shape:
+      rankedwars: { war_id: { war:{start,end,target,...}, factions:{fid:{name,...}}, ... }, ... }
+
+    Preference:
+      1) active war if detectable
+      2) newest by war.start
+    """
     if not isinstance(war_data, dict) or not war_data or war_data.get("error"):
         return None
-    candidate = war_data.get("rankedwars", war_data)
-    if isinstance(candidate, dict):
-        for _, w in candidate.items():
-            if isinstance(w, dict):
-                return w
-    if isinstance(candidate, list) and candidate and isinstance(candidate[0], dict):
-        return candidate[0]
+
+    rankedwars = war_data.get("rankedwars", war_data.get("ranked_wars", war_data))
+    if isinstance(rankedwars, dict):
+        wars_list = []
+        for _, entry in rankedwars.items():
+            if isinstance(entry, dict):
+                wars_list.append(entry)
+
+        if not wars_list:
+            return None
+
+        def _start(entry):
+            war = entry.get("war") if isinstance(entry.get("war"), dict) else {}
+            s = war.get("start")
+            try:
+                return int(s) if s is not None else 0
+            except Exception:
+                return 0
+
+        def _is_active(entry):
+            # Try multiple signals
+            if "active" in entry:
+                return bool(entry.get("active"))
+            war = entry.get("war") if isinstance(entry.get("war"), dict) else {}
+            end = war.get("end")
+            try:
+                end_i = int(end) if end is not None else None
+            except Exception:
+                end_i = None
+            # Common pattern: end == 0 or missing while active
+            if end_i in (0, None):
+                return True
+            return False
+
+        # Prefer any active entries
+        active = [w for w in wars_list if _is_active(w)]
+        pick_from = active if active else wars_list
+
+        pick_from.sort(key=_start, reverse=True)
+        return pick_from[0]
+
+    # Sometimes it can be a list of entries
+    if isinstance(rankedwars, list):
+        wars_list = [x for x in rankedwars if isinstance(x, dict)]
+        if not wars_list:
+            return None
+        # sort by start if possible
+        def _start2(entry):
+            war = entry.get("war") if isinstance(entry.get("war"), dict) else {}
+            s = war.get("start") or entry.get("start") or entry.get("start_time")
+            try:
+                return int(s) if s is not None else 0
+            except Exception:
+                return 0
+        wars_list.sort(key=_start2, reverse=True)
+        return wars_list[0]
+
     return None
+
+
+def parse_war_fields(entry: dict):
+    """
+    Convert ranked war entry -> STATE["war"] fields.
+    Opponent: derived from factions (pick faction id != our FACTION_ID).
+    """
+    if not isinstance(entry, dict):
+        return {"opponent": None, "start": None, "end": None, "target": None, "active": None}
+
+    # war block
+    war = entry.get("war") if isinstance(entry.get("war"), dict) else {}
+
+    start = war.get("start") or entry.get("start") or entry.get("start_time")
+    end = war.get("end") or entry.get("end") or entry.get("end_time")
+    target = war.get("target") or entry.get("target")
+
+    active = None
+    if "active" in entry:
+        active = entry.get("active")
+    else:
+        # Guess: if end is 0/None, assume active
+        try:
+            end_i = int(end) if end is not None else None
+        except Exception:
+            end_i = None
+        if end_i in (0, None) and start:
+            active = True
+
+    # factions block (best way to get opponent name)
+    opponent = None
+    factions = entry.get("factions") if isinstance(entry.get("factions"), dict) else None
+    if factions and FACTION_ID:
+        for fid, fobj in factions.items():
+            if str(fid) == str(FACTION_ID):
+                continue
+            if isinstance(fobj, dict):
+                opponent = fobj.get("name") or fobj.get("tag") or fobj.get("id") or str(fid)
+            else:
+                opponent = str(fid)
+            break
+
+    # fallback: some wrappers include opponent fields
+    if not opponent:
+        opp = entry.get("opponent")
+        if isinstance(opp, dict):
+            opponent = opp.get("name") or opp.get("tag") or opp.get("id")
+        opponent = opponent or entry.get("opponent_name") or entry.get("enemy") or entry.get("opponent")
+
+    return {
+        "opponent": opponent,
+        "start": start,
+        "end": end,
+        "target": target,
+        "active": active,
+    }
 
 
 def merge_availability(rows):
@@ -247,10 +412,17 @@ def faction_label():
 
 
 async def poll_loop():
+    ensure_state_shape()
+
     while True:
+        # Keep war key always present
+        ensure_state_shape()
+
         if not FACTION_ID or not FACTION_API_KEY:
             STATE["last_error"] = {"code": -1, "error": "Missing FACTION_ID or FACTION_API_KEY"}
             STATE["updated_at"] = now_iso()
+            # still keep war field
+            STATE["war"] = STATE.get("war") or {"opponent": None, "start": None, "end": None, "target": None, "active": None}
         else:
             try:
                 core = await get_faction_core(FACTION_ID, FACTION_API_KEY)
@@ -307,25 +479,18 @@ async def poll_loop():
                         "cooldown": chain.get("cooldown"),
                     }
 
-                    STATE["updated_at"] = now_iso()
-                    STATE["last_error"] = None
+                    # --- WAR ---
+                    # Always set baseline first, then fill if we can
+                    STATE["war"] = {"opponent": None, "start": None, "end": None, "target": None, "active": None}
 
                     war_data = await get_ranked_war_best_effort(FACTION_ID, FACTION_API_KEY)
-                    w = parse_ranked_war(war_data)
-                    if isinstance(w, dict):
-                        opp = None
-                        if isinstance(w.get("opponent"), dict):
-                            opp = w["opponent"].get("name")
-                        opp = opp or w.get("opponent_name") or w.get("opponent") or None
-                        STATE["war"] = {
-                            "opponent": opp,
-                            "start": w.get("start") or w.get("start_time"),
-                            "end": w.get("end") or w.get("end_time"),
-                            "target": w.get("target"),
-                            "active": w.get("active") if "active" in w else None,
-                        }
-                    else:
-                        STATE["war"] = {"opponent": None, "start": None, "end": None, "target": None, "active": None}
+
+                    entry = extract_ranked_war_entry(war_data)
+                    if entry:
+                        STATE["war"] = parse_war_fields(entry)
+
+                    STATE["updated_at"] = now_iso()
+                    STATE["last_error"] = None
 
             except Exception as e:
                 STATE["last_error"] = {"code": -2, "error": f"Torn request failed: {repr(e)}"}
@@ -436,6 +601,7 @@ def allow_iframe(resp):
 
 @app.get("/state")
 def state():
+    ensure_state_shape()
     return jsonify(STATE)
 
 
