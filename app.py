@@ -86,7 +86,29 @@ STATE = {
     "chain": {"current": None, "max": None, "timeout": None, "cooldown": None},
 
     # always present
-    "war": {"opponent": None, "start": None, "end": None, "target": None, "active": None},
+    "war": {
+        "opponent": None,
+        "opponent_id": None,
+        "start": None,
+        "end": None,
+        "target": None,
+        "active": None,
+
+        "our_score": None,
+        "opp_score": None,
+        "our_chain": None,
+        "opp_chain": None,
+        "war_id": None,
+
+        # computed from server clock
+        "server_now": None,
+        "starts_in": None,
+        "started_ago": None,
+        "ends_in": None,
+        "ended_ago": None,
+        "phase": None,  # "upcoming" | "active" | "ended" | "unknown"
+    },
+
     # debug raw
     "war_debug": None,
 
@@ -116,8 +138,12 @@ def ensure_state_shape():
         STATE["chain"].setdefault(k, None)
 
     if not isinstance(STATE.get("war"), dict):
-        STATE["war"] = {"opponent": None, "start": None, "end": None, "target": None, "active": None}
-    for k in ("opponent", "start", "end", "target", "active"):
+        STATE["war"] = {}
+    for k in (
+        "opponent", "opponent_id", "start", "end", "target", "active",
+        "our_score", "opp_score", "our_chain", "opp_chain", "war_id",
+        "server_now", "starts_in", "started_ago", "ends_in", "ended_ago", "phase",
+    ):
         STATE["war"].setdefault(k, None)
 
     STATE.setdefault("war_debug", None)
@@ -214,11 +240,10 @@ def safe_member_rows(data: dict):
     return rows
 
 
-# ========= Ranked war parsing (FIXED FOR YOUR SHAPE) =========
+# ========= Ranked war parsing (YOUR SHAPE) =========
 def parse_ranked_war_entry(war_data: dict):
     """
-    Your real shape:
-      war_data["rankedwars"] = [ {id,start,end,target,factions:[{id,name,...},{id,name,...}]}, ... ]
+    war_data["rankedwars"] = [ {id,start,end,target,factions:[{id,name,score,chain}, ...]}, ... ]
     Pick active first (end==0), else newest by start.
     """
     if not isinstance(war_data, dict) or not war_data or war_data.get("error"):
@@ -249,21 +274,83 @@ def parse_ranked_war_entry(war_data: dict):
     return pick[0]
 
 
+def compute_war_phase(start_ts, end_ts, now_ts):
+    """
+    Returns (phase, starts_in, started_ago, ends_in, ended_ago)
+    Values are seconds (ints) or None.
+    """
+    starts_in = started_ago = ends_in = ended_ago = None
+    phase = "unknown"
+
+    try:
+        s = int(start_ts) if start_ts is not None else None
+    except Exception:
+        s = None
+    try:
+        e = int(end_ts) if end_ts is not None else None
+    except Exception:
+        e = None
+    n = int(now_ts)
+
+    if s is None:
+        return phase, None, None, None, None
+
+    if s > n:
+        phase = "upcoming"
+        starts_in = s - n
+        return phase, starts_in, None, None, None
+
+    # started already
+    started_ago = n - s
+
+    # NOTE: in your active war, end==0 (unknown/ongoing)
+    if e is None or e == 0:
+        phase = "active"
+        return phase, None, started_ago, None, None
+
+    if e > n:
+        phase = "active"
+        ends_in = e - n
+        return phase, None, started_ago, ends_in, None
+
+    # ended
+    phase = "ended"
+    ended_ago = n - e
+    return phase, None, started_ago, None, ended_ago
+
+
 def ranked_war_to_state(entry: dict):
-    out = {"opponent": None, "start": None, "end": None, "target": None, "active": None}
+    out = {
+        "opponent": None, "opponent_id": None,
+        "start": None, "end": None, "target": None, "active": None,
+        "our_score": None, "opp_score": None,
+        "our_chain": None, "opp_chain": None,
+        "war_id": None,
+        "server_now": unix_now(),
+        "starts_in": None, "started_ago": None, "ends_in": None, "ended_ago": None,
+        "phase": None,
+    }
+
     if not isinstance(entry, dict):
         return out
 
+    out["war_id"] = entry.get("id")
     out["start"] = entry.get("start")
     out["end"] = entry.get("end")
     out["target"] = entry.get("target")
 
+    # active if end == 0 OR (end in future)
     try:
-        out["active"] = (int(entry.get("end", 0)) == 0)
+        e = int(entry.get("end", 0))
+        out["active"] = (e == 0) or (e > out["server_now"])
     except Exception:
         out["active"] = None
 
+    # factions list
     factions = entry.get("factions")
+    our = None
+    opp = None
+
     if isinstance(factions, list) and FACTION_ID:
         for f in factions:
             if not isinstance(f, dict):
@@ -271,47 +358,69 @@ def ranked_war_to_state(entry: dict):
             fid = f.get("id")
             if fid is None:
                 continue
-            if str(fid) != str(FACTION_ID):
-                out["opponent"] = f.get("name") or str(fid)
-                break
+            if str(fid) == str(FACTION_ID):
+                our = f
+            else:
+                # the "other" is opponent
+                opp = f
+
+    # fill scoreboard
+    if our:
+        out["our_score"] = our.get("score")
+        out["our_chain"] = our.get("chain")
+    if opp:
+        out["opponent"] = opp.get("name") or str(opp.get("id"))
+        out["opponent_id"] = opp.get("id")
+        out["opp_score"] = opp.get("score")
+        out["opp_chain"] = opp.get("chain")
+
+    # timing
+    phase, starts_in, started_ago, ends_in, ended_ago = compute_war_phase(out["start"], out["end"], out["server_now"])
+    out["phase"] = phase
+    out["starts_in"] = starts_in
+    out["started_ago"] = started_ago
+    out["ends_in"] = ends_in
+    out["ended_ago"] = ended_ago
 
     return out
 
 
 def war_from_core_fallback(core: dict):
-    out = {"opponent": None, "start": None, "end": None, "target": None, "active": None}
+    # basic fallback if rankedwars fails
+    out = {
+        "opponent": None, "opponent_id": None,
+        "start": None, "end": None, "target": None, "active": None,
+        "our_score": None, "opp_score": None,
+        "our_chain": None, "opp_chain": None,
+        "war_id": None,
+        "server_now": unix_now(),
+        "starts_in": None, "started_ago": None, "ends_in": None, "ended_ago": None,
+        "phase": None,
+    }
     if not isinstance(core, dict):
         return out
 
     warfare = core.get("warfare")
     if isinstance(warfare, dict) and warfare:
-        out["start"] = warfare.get("start") or (warfare.get("war") or {}).get("start")
-        out["end"] = warfare.get("end") or (warfare.get("war") or {}).get("end")
-        out["target"] = warfare.get("target") or (warfare.get("war") or {}).get("target") or warfare.get("war_id") or warfare.get("id")
+        out["start"] = warfare.get("start")
+        out["end"] = warfare.get("end")
+        out["target"] = warfare.get("target") or warfare.get("war_id") or warfare.get("id")
 
         opp = warfare.get("opponent")
         if isinstance(opp, dict):
-            out["opponent"] = opp.get("name") or opp.get("tag") or opp.get("id")
+            out["opponent"] = opp.get("name") or opp.get("tag") or str(opp.get("id"))
+            out["opponent_id"] = opp.get("id")
         out["opponent"] = out["opponent"] or warfare.get("opponent_name") or warfare.get("enemy") or warfare.get("opponent")
+
+        phase, starts_in, started_ago, ends_in, ended_ago = compute_war_phase(out["start"], out["end"], out["server_now"])
+        out["phase"] = phase
+        out["starts_in"] = starts_in
+        out["started_ago"] = started_ago
+        out["ends_in"] = ends_in
+        out["ended_ago"] = ended_ago
 
         if out["start"] or out["end"] or out["target"] or out["opponent"]:
             return out
-
-    wars = core.get("wars")
-    if isinstance(wars, dict) and wars:
-        w = list(wars.values())[0]
-        if isinstance(w, dict):
-            out["start"] = w.get("start")
-            out["end"] = w.get("end")
-            out["target"] = w.get("target") or w.get("war_id") or w.get("id")
-
-            opp = w.get("opponent")
-            if isinstance(opp, dict):
-                out["opponent"] = opp.get("name") or opp.get("tag") or opp.get("id")
-            out["opponent"] = out["opponent"] or w.get("opponent_name") or w.get("opponent")
-
-            if out["start"] or out["end"] or out["target"] or out["opponent"]:
-                return out
 
     return out
 
@@ -396,7 +505,6 @@ async def poll_loop():
                     }
 
                     rows = merge_availability(safe_member_rows(core or {}))
-
                     STATE["opted_in_count"] = sum(1 for r in rows if r.get("is_chain_sitter") and r.get("opted_in"))
 
                     online_rows, idle_rows, offline_rows = [], [], []
@@ -431,7 +539,16 @@ async def poll_loop():
                     }
 
                     # WAR baseline always
-                    STATE["war"] = {"opponent": None, "start": None, "end": None, "target": None, "active": None}
+                    STATE["war"] = {
+                        "opponent": None, "opponent_id": None,
+                        "start": None, "end": None, "target": None, "active": None,
+                        "our_score": None, "opp_score": None,
+                        "our_chain": None, "opp_chain": None,
+                        "war_id": None,
+                        "server_now": unix_now(),
+                        "starts_in": None, "started_ago": None, "ends_in": None, "ended_ago": None,
+                        "phase": None,
+                    }
                     STATE["war_debug"] = None
 
                     war_data = await get_ranked_war_best_effort(FACTION_ID, FACTION_API_KEY)
@@ -472,16 +589,37 @@ async def poll_loop():
             else:
                 c = STATE.get("chain") or {}
                 w = STATE.get("war") or {}
+
+                score_line = ""
+                if w.get("opponent"):
+                    score_line = (
+                        f"Score: {w.get('our_score') if w.get('our_score') is not None else '—'}"
+                        f" vs {w.get('opp_score') if w.get('opp_score') is not None else '—'}"
+                        f" | Chains: {w.get('our_chain') if w.get('our_chain') is not None else '—'}"
+                        f" vs {w.get('opp_chain') if w.get('opp_chain') is not None else '—'}"
+                    )
+
+                timing = ""
+                if w.get("phase") == "upcoming" and w.get("starts_in") is not None:
+                    timing = f"Starts in: ~{int(w['starts_in'])}s"
+                elif w.get("phase") == "active" and w.get("started_ago") is not None:
+                    timing = f"Started: ~{int(w['started_ago'])}s ago"
+                elif w.get("phase") == "ended" and w.get("ended_ago") is not None:
+                    timing = f"Ended: ~{int(w['ended_ago'])}s ago"
+
                 text = (
                     "🛡️ **War-Bot Update**\n"
                     f"Faction: {faction_label()}\n"
-                    f"Chain: {c.get('current')}/{c.get('max')}\n"
+                    f"Chain: {c.get('current')}/{c.get('max')} (timeout {c.get('timeout')}s)\n"
                     f"War: {w.get('opponent') or '—'}\n"
+                    f"{score_line}\n"
+                    f"{timing}\n"
                     f"Chain sitter opted-in: {STATE.get('opted_in_count')}\n"
                     f"Last action → Online(0–20m): {STATE.get('online_count')} | Idle(21–30m): {STATE.get('idle_count')} | Offline(31m+): {STATE.get('offline_count')}\n"
                     f"Panel: {panel_url()}\n"
                     f"Updated: {STATE.get('updated_at') or '—'}"
-                )
+                ).strip()
+
             try:
                 await send_webhook_message(text)
                 set_setting("LAST_POST_TS", str(time.time()))
@@ -630,6 +768,8 @@ HTML = """<!doctype html>
     <div class="grid">
       <div class="pill" id="chain">Chain: —</div>
       <div class="pill" id="war">War: —</div>
+      <div class="pill" id="war_score">Score: —</div>
+      <div class="pill" id="war_time">Time: —</div>
       <div class="pill" id="p_on">🟢 Online: —</div>
       <div class="pill" id="p_idle">🟡 Idle: —</div>
       <div class="pill" id="p_off">🔴 Offline: —</div>
@@ -698,6 +838,25 @@ function dotClass(kind){
   return 'dot r';
 }
 
+function fmtDur(sec){
+  sec = Math.max(0, Math.floor(sec || 0));
+  const d = Math.floor(sec / 86400); sec %= 86400;
+  const h = Math.floor(sec / 3600);  sec %= 3600;
+  const m = Math.floor(sec / 60);    sec %= 60;
+  const parts = [];
+  if (d) parts.push(d + "d");
+  if (h) parts.push(h + "h");
+  if (m) parts.push(m + "m");
+  if (!parts.length) parts.push(sec + "s");
+  return parts.join(" ");
+}
+
+function fmtUnix(ts){
+  if (!ts) return "—";
+  const d = new Date(ts * 1000);
+  return d.toLocaleString();
+}
+
 async function refresh(){
   const r = await fetch('/state');
   const s = await r.json();
@@ -713,9 +872,29 @@ async function refresh(){
   document.getElementById('chain').textContent = `Chain: ${c.current ?? '—'}/${c.max ?? '—'} (timeout: ${c.timeout ?? '—'}s)`;
 
   const w = s.war || {};
-  const activeTxt = (w.active === true) ? ' (active)' : '';
+  const opp = (w.opponent || '—');
+  const activeTxt = (w.phase === 'active') ? ' (active)' : (w.phase === 'upcoming' ? ' (upcoming)' : (w.phase === 'ended' ? ' (ended)' : ''));
   document.getElementById('war').textContent =
-    `War: ${(w.opponent || '—')}${activeTxt} | Start: ${(w.start ?? '—')} | End: ${(w.end ?? '—')} | Target: ${(w.target ?? '—')}`;
+    `War: ${opp}${activeTxt} | Target: ${(w.target ?? '—')} | Start: ${fmtUnix(w.start)} | End: ${fmtUnix(w.end && w.end !== 0 ? w.end : null)}`;
+
+  const ourScore = (w.our_score ?? '—');
+  const oppScore = (w.opp_score ?? '—');
+  const ourChain = (w.our_chain ?? '—');
+  const oppChain = (w.opp_chain ?? '—');
+  document.getElementById('war_score').textContent =
+    `Score: ${ourScore}–${oppScore} | Chains: ${ourChain}–${oppChain}`;
+
+  let t = "Time: —";
+  if (w.phase === "upcoming" && w.starts_in != null) {
+    t = `Time: starts in ${fmtDur(w.starts_in)}`;
+  } else if (w.phase === "active") {
+    const started = (w.started_ago != null) ? `started ${fmtDur(w.started_ago)} ago` : "started";
+    const ends = (w.ends_in != null) ? ` | ends in ${fmtDur(w.ends_in)}` : " | end: —";
+    t = `Time: ${started}${ends}`;
+  } else if (w.phase === "ended" && w.ended_ago != null) {
+    t = `Time: ended ${fmtDur(w.ended_ago)} ago`;
+  }
+  document.getElementById('war_time').textContent = t;
 
   document.getElementById('p_on').textContent   = `🟢 Online: ${s.online_count ?? 0}`;
   document.getElementById('p_idle').textContent = `🟡 Idle: ${s.idle_count ?? 0}`;
