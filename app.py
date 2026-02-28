@@ -5,7 +5,7 @@ import threading
 import asyncio
 from datetime import datetime
 
-from flask import Flask, jsonify, request, Response
+from flask import Flask, jsonify, Response
 from dotenv import load_dotenv
 
 import discord
@@ -21,10 +21,10 @@ load_dotenv()
 DISCORD_TOKEN = (os.getenv("DISCORD_TOKEN") or "").strip()
 FACTION_ID = (os.getenv("FACTION_ID") or "").strip()
 FACTION_API_KEY = (os.getenv("FACTION_API_KEY") or "").strip()
-PUBLIC_BASE_URL = (os.getenv("PUBLIC_BASE_URL") or "").strip()  # e.g. https://your-service.onrender.com
+PUBLIC_BASE_URL = (os.getenv("PUBLIC_BASE_URL") or "").strip()  # e.g. https://torn-war-bot.onrender.com
 PORT = int(os.getenv("PORT", "10000"))
 
-# Where to post updates (optional auto posting)
+# Optional auto post channel (if not set, use /setchannel)
 DEFAULT_CHANNEL_ID = (os.getenv("WAR_CHANNEL_ID") or "").strip()
 
 # ========= SHARED STATE (what the web panel shows) =========
@@ -34,14 +34,14 @@ STATE = {
     "chain": {"current": None, "max": None, "timeout": None, "cooldown": None},
     "war": {"opponent": None, "start": None, "end": None, "target": None},
     "available_count": 0,
-    "faction": {"name": None, "tag": None, "respect": None}
+    "faction": {"name": None, "tag": None, "respect": None},
+    "last_error": None,
 }
 
 def now_iso():
     return datetime.utcnow().isoformat() + "Z"
 
 def safe_member_rows(faction_json: dict):
-    # Build simple rows: [name, level, last_action, status] – you can expand later
     members = faction_json.get("members") or {}
     rows = []
     for torn_id, m in members.items():
@@ -56,13 +56,11 @@ def safe_member_rows(faction_json: dict):
             "last_action": last_action,
             "status": status
         })
-    # Sort: online-ish first (rough: last_action contains "seconds/minutes" etc)
     return rows
 
 def update_state_from_faction(data: dict):
-    # Error bubble
+    # Torn API error bubble
     if isinstance(data, dict) and data.get("error"):
-        # keep old state but track updated_at
         STATE["updated_at"] = now_iso()
         STATE["last_error"] = data["error"]
         return
@@ -86,12 +84,9 @@ def update_state_from_faction(data: dict):
         "cooldown": chain.get("cooldown"),
     }
 
-    # rankedwars format changes; keep basic keys if present
-    # If your war info isn't in rankedwars, we’ll adjust later.
-    # Here we store the first active war if available.
+    # rankedwars can be dict of wars; keep first one if present
     war_obj = None
     if isinstance(rankedwars, dict) and rankedwars:
-        # sometimes dict of wars
         for _, w in rankedwars.items():
             war_obj = w
             break
@@ -106,11 +101,14 @@ def update_state_from_faction(data: dict):
     else:
         STATE["war"] = {"opponent": None, "start": None, "end": None, "target": None}
 
-    # availability is for later (when you wire PDA script). For now show 0.
-    STATE["available_count"] = sum(1 for r in STATE["rows"] if (r.get("status") or "").lower().find("online") != -1)
+    # Rough "online-ish" (based on status text)
+    STATE["available_count"] = sum(
+        1 for r in STATE["rows"]
+        if "online" in (r.get("status") or "").lower()
+    )
 
     STATE["updated_at"] = now_iso()
-    STATE.pop("last_error", None)
+    STATE["last_error"] = None
 
 # ========= FLASK WEB PANEL =========
 app = Flask(__name__)
@@ -227,7 +225,10 @@ def channel_id_from_env_or_db():
 @app_commands.checks.has_permissions(administrator=True)
 async def setchannel(interaction: discord.Interaction):
     set_setting("WAR_CHANNEL_ID", str(interaction.channel_id))
-    await interaction.response.send_message(f"✅ War-Bot channel set to <#{interaction.channel_id}>", ephemeral=True)
+    await interaction.response.send_message(
+        f"✅ War-Bot channel set to <#{interaction.channel_id}>",
+        ephemeral=True
+    )
 
 @tree.command(name="panel", description="Get the War-Bot panel link.")
 async def panel(interaction: discord.Interaction):
@@ -243,14 +244,19 @@ async def status(interaction: discord.Interaction):
     w = STATE.get("war") or {}
     err = STATE.get("last_error")
 
+    tag = f.get("tag")
+    name = f.get("name") or "—"
+    faction_label = f"[{tag}] {name}" if tag else name
+
     msg = [
-        f"**Faction:** {(f.get('tag') and f'[{f.get('tag')}] ') or ''}{f.get('name') or '—'}",
+        f"**Faction:** {faction_label}",
         f"**Chain:** {c.get('current')}/{c.get('max')}",
         f"**War:** {w.get('opponent') or '—'}",
         f"**Updated:** {STATE.get('updated_at') or '—'}",
     ]
     if err:
         msg.append(f"**Error:** `{json.dumps(err)}`")
+
     await interaction.response.send_message("\n".join(msg), ephemeral=False)
 
 @client.event
@@ -265,7 +271,13 @@ async def poll_torn_and_post():
         STATE["updated_at"] = now_iso()
         return
 
-    data = await get_faction_full(FACTION_ID, FACTION_API_KEY)
+    try:
+        data = await get_faction_full(FACTION_ID, FACTION_API_KEY)
+    except Exception as e:
+        STATE["last_error"] = {"code": -2, "error": f"Torn request failed: {repr(e)}"}
+        STATE["updated_at"] = now_iso()
+        return
+
     update_state_from_faction(data)
 
     # Optional auto post: only if a channel was set
@@ -280,32 +292,81 @@ async def poll_torn_and_post():
 
     # Throttle: post only every 2 minutes
     last_post = get_setting("LAST_POST_TS", "0")
-    if time.time() - float(last_post) < 120:
+    try:
+        last_post_f = float(last_post)
+    except Exception:
+        last_post_f = 0.0
+
+    if time.time() - last_post_f < 120:
         return
 
     f = STATE.get("faction") or {}
     c = STATE.get("chain") or {}
     w = STATE.get("war") or {}
 
+    tag = f.get("tag")
+    name = f.get("name") or "—"
+    faction_label = f"[{tag}] {name}" if tag else name
+
+    panel_url = (PUBLIC_BASE_URL.rstrip("/") + "/") if PUBLIC_BASE_URL else "Set PUBLIC_BASE_URL"
+
     text = (
-        f"🛡️ **War-Bot Update**\n"
-        f"Faction: {(f.get('tag') and f'[{f.get('tag')}] ') or ''}{f.get('name') or '—'}\n"
+        "🛡️ **War-Bot Update**\n"
+        f"Faction: {faction_label}\n"
         f"Chain: {c.get('current')}/{c.get('max')}\n"
         f"War: {w.get('opponent') or '—'}\n"
-        f"Panel: {(PUBLIC_BASE_URL + '/') if PUBLIC_BASE_URL else 'Set PUBLIC_BASE_URL'}\n"
+        f"Panel: {panel_url}\n"
         f"Updated: {STATE.get('updated_at') or '—'}"
     )
-    await channel.send(text)
-    set_setting("LAST_POST_TS", str(time.time()))
+
+    try:
+        await channel.send(text)
+        set_setting("LAST_POST_TS", str(time.time()))
+    except Exception:
+        # if posting fails, don't crash the loop
+        return
 
 @poll_torn_and_post.before_loop
 async def before_poll():
     await client.wait_until_ready()
 
 def run_discord():
+    """
+    Discord runs in a background thread.
+    If Discord temporarily blocks you (429), we back off and retry automatically.
+    This prevents you from redeploy/restarting repeatedly (which makes 429 worse).
+    """
     async def runner():
-        poll_torn_and_post.start()
-        await client.start(DISCORD_TOKEN)
+        # Start the poll task once.
+        if not poll_torn_and_post.is_running():
+            poll_torn_and_post.start()
+
+        backoff = 15  # seconds (will grow on repeated failures)
+        while True:
+            try:
+                if not DISCORD_TOKEN:
+                    print("❌ DISCORD_TOKEN missing")
+                    await asyncio.sleep(60)
+                    continue
+
+                await client.start(DISCORD_TOKEN)  # returns only when stopped
+            except discord.HTTPException as e:
+                # 429 or other HTTP issues
+                print("Discord HTTPException:", repr(e))
+                # If blocked, increase backoff up to 10 minutes
+                backoff = min(backoff * 2, 600)
+                await asyncio.sleep(backoff)
+            except Exception as e:
+                print("Discord start error:", repr(e))
+                backoff = min(backoff * 2, 600)
+                await asyncio.sleep(backoff)
+            finally:
+                try:
+                    await client.close()
+                except Exception:
+                    pass
+                # small pause before next attempt
+                await asyncio.sleep(5)
 
     asyncio.run(runner())
 
