@@ -4,8 +4,11 @@ from flask import Flask, jsonify, render_template_string, request
 
 app = Flask(__name__)
 
-# Shared secret (set same value in BOTH Render services)
+# Shared secret (set same value in BOTH Render services / userscript)
 WEB_SHARED_SECRET = (os.getenv("WEB_SHARED_SECRET") or "").strip()
+
+# Optional debug (set DEBUG=1 on Render Web service if you want logs)
+DEBUG = (os.getenv("DEBUG") or "").strip() == "1"
 
 STATE = {
     "rows": [],
@@ -21,7 +24,7 @@ def headers(resp):
     resp.headers.pop("X-Frame-Options", None)
     resp.headers["Content-Security-Policy"] = "frame-ancestors https://www.torn.com https://torn.com *"
 
-    # CORS (your Tampermonkey uses GM_xmlhttpRequest so it’s fine either way)
+    # CORS (Tampermonkey GM_xmlhttpRequest usually bypasses CORS, but keep correct anyway)
     origin = request.headers.get("Origin", "")
     allowed = {"https://www.torn.com", "https://torn.com"}
     if origin in allowed:
@@ -217,7 +220,7 @@ setInterval(refresh, 25000);
 def index():
     return render_template_string(HTML, updated_at=STATE.get("updated_at") or "—")
 
-# Worker pushes state here
+# ✅ Option B: Browser/Tampermonkey pushes state here
 @app.route("/api/push_state", methods=["POST", "OPTIONS"])
 def push_state():
     if request.method == "OPTIONS":
@@ -231,6 +234,18 @@ def push_state():
     if not isinstance(data, dict):
         return jsonify({"ok": False, "error": "bad json"}), 400
 
+    # --- light debug so you can confirm the push is landing ---
+    if DEBUG:
+        try:
+            rows_len = len(data.get("rows") or [])
+        except Exception:
+            rows_len = -1
+        print("DEBUG push_state ok:",
+              "rows=", rows_len,
+              "available_count=", data.get("available_count"),
+              "updated_at=", data.get("updated_at"))
+
+    # update only provided keys
     for k in ("rows", "updated_at", "chain", "war", "available_count"):
         if k in data:
             STATE[k] = data[k]
@@ -238,6 +253,12 @@ def push_state():
     # normalize
     STATE["rows"] = STATE.get("rows") or []
     STATE["available_count"] = int(STATE.get("available_count", 0) or 0)
+
+    # normalize chain/war objects
+    if not isinstance(STATE.get("chain"), dict):
+        STATE["chain"] = {"current": None, "max": None, "timeout": None, "cooldown": None}
+    if not isinstance(STATE.get("war"), dict):
+        STATE["war"] = {"opponent": None, "start": None, "end": None, "target": None}
 
     return jsonify({"ok": True})
 
@@ -275,7 +296,7 @@ def api_status():
 
     online = idle = offline = 0
     for r in rows:
-        mins = last_action_minutes(r.get("last_action_text"))
+        mins = last_action_minutes((r or {}).get("last_action_text"))
         if mins <= ONLINE_MAX_MIN:
             online += 1
         elif mins <= IDLE_MAX_MIN:
