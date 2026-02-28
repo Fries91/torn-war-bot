@@ -36,17 +36,55 @@ STATE = {
 def now_iso():
     return datetime.utcnow().isoformat() + "Z"
 
-def safe_member_rows(faction_json: dict):
-    members = faction_json.get("members") or {}
+def safe_member_rows(data: dict):
+    """
+    Torn v1: members is a dict keyed by torn_id -> member object
+    Torn v2: members is usually a list of member objects (often includes 'id')
+    This function supports both.
+    """
+    members = (data or {}).get("members")
+
     rows = []
-    for torn_id, m in members.items():
-        rows.append({
-            "torn_id": int(torn_id),
-            "name": m.get("name"),
-            "level": m.get("level"),
-            "last_action": (m.get("last_action") or {}).get("relative"),
-            "status": (m.get("status") or {}).get("description"),
-        })
+
+    # v1 dict
+    if isinstance(members, dict):
+        for torn_id, m in members.items():
+            rows.append({
+                "torn_id": int(torn_id),
+                "name": m.get("name"),
+                "level": m.get("level"),
+                "last_action": (m.get("last_action") or {}).get("relative"),
+                "status": (m.get("status") or {}).get("description"),
+            })
+        return rows
+
+    # v2 list
+    if isinstance(members, list):
+        for m in members:
+            # v2 commonly uses "id" for the member id
+            mid = m.get("id") or m.get("torn_id") or m.get("user_id")
+            try:
+                mid = int(mid) if mid is not None else None
+            except Exception:
+                mid = None
+
+            # v2 sometimes nests last_action/status differently; handle best-effort
+            last_action = m.get("last_action")
+            if isinstance(last_action, dict):
+                last_action = last_action.get("relative") or last_action.get("timestamp") or str(last_action)
+            status = m.get("status")
+            if isinstance(status, dict):
+                status = status.get("description") or status.get("state") or str(status)
+
+            rows.append({
+                "torn_id": mid,
+                "name": m.get("name"),
+                "level": m.get("level"),
+                "last_action": last_action if isinstance(last_action, str) else (str(last_action) if last_action is not None else None),
+                "status": status if isinstance(status, str) else (str(status) if status is not None else None),
+            })
+        return rows
+
     return rows
 
 def update_state_from_faction(data: dict):
@@ -64,7 +102,8 @@ def update_state_from_faction(data: dict):
         "respect": basic.get("respect"),
     }
 
-    STATE["rows"] = safe_member_rows(data or {})
+    rows = safe_member_rows(data or {})
+    STATE["rows"] = rows
 
     STATE["chain"] = {
         "current": chain.get("current"),
@@ -76,8 +115,8 @@ def update_state_from_faction(data: dict):
     STATE["war"] = {"opponent": None, "start": None, "end": None, "target": None}
 
     STATE["available_count"] = sum(
-        1 for r in STATE["rows"]
-        if "online" in (r.get("status") or "").lower()
+        1 for r in rows
+        if "online" in ((r.get("status") or "")).lower()
     )
 
     STATE["updated_at"] = now_iso()
@@ -114,6 +153,7 @@ def build_update_text() -> str:
         "🛡️ **War-Bot Update**\n"
         f"Faction: {faction_label}\n"
         f"Chain: {c.get('current')}/{c.get('max')}\n"
+        f"Members: {len(STATE.get('rows') or [])}\n"
         f"Online-ish: {STATE.get('available_count')}\n"
         f"Panel: {panel_url}\n"
         f"Updated: {STATE.get('updated_at') or '—'}"
@@ -189,6 +229,7 @@ HTML = """<!doctype html>
     <div style="display:flex; gap:10px; flex-wrap:wrap;">
       <div class="pill" id="chain">Chain: —</div>
       <div class="pill" id="avail">Online-ish: —</div>
+      <div class="pill" id="count">Members: —</div>
     </div>
   </div>
 
@@ -220,6 +261,7 @@ async function refresh(){
   const c = s.chain || {};
   document.getElementById('chain').textContent = `Chain: ${c.current ?? '—'}/${c.max ?? '—'}`;
   document.getElementById('avail').textContent = `Online-ish: ${s.available_count ?? '—'}`;
+  document.getElementById('count').textContent = `Members: ${(s.rows || []).length}`;
 
   const tb = document.getElementById('rows');
   tb.innerHTML = '';
