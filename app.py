@@ -4,8 +4,10 @@
 # - /health     : simple healthcheck
 # - /api/availability : chain-sitter opt in/out (protected optional token)
 #
-# IMPORTANT FIX FOR "Ask the owner":
-#   We REMOVE X-Frame-Options and use CSP frame-ancestors to allow torn.com to iframe.
+# IMPORTANT FIX FOR Torn "This content is blocked / Ask the owner":
+#   - Remove X-Frame-Options (all casings)
+#   - Set CSP frame-ancestors to include torn.com + www.torn.com + *.torn.com
+#   - Add X-Frame-Options: ALLOWALL (harmless if ignored, helps in some stacks)
 
 import os
 import time
@@ -449,7 +451,6 @@ async def poll_loop():
                     }
 
                     rows = merge_availability(safe_member_rows(core or {}))
-
                     STATE["opted_in_count"] = sum(1 for r in rows if r.get("is_chain_sitter") and r.get("opted_in"))
 
                     online_count = 0
@@ -524,8 +525,22 @@ app = Flask(__name__)
 
 @app.after_request
 def allow_iframe(resp):
-    resp.headers.pop("X-Frame-Options", None)
-    resp.headers["Content-Security-Policy"] = "frame-ancestors https://*.torn.com https://torn.com;"
+    # Remove X-Frame-Options in all common casings / duplicates
+    for h in ["X-Frame-Options", "x-frame-options"]:
+        try:
+            resp.headers.pop(h, None)
+        except Exception:
+            pass
+
+    # Allow Torn to embed (include torn.com + www.torn.com + *.torn.com)
+    resp.headers["Content-Security-Policy"] = (
+        "frame-ancestors 'self' https://torn.com https://www.torn.com https://*.torn.com;"
+    )
+
+    # Harmless if ignored; helps in some stacks that expect XFO
+    resp.headers["X-Frame-Options"] = "ALLOWALL"
+
+    # Avoid caching issues
     resp.headers["Cache-Control"] = "no-store"
     return resp
 
@@ -568,6 +583,7 @@ def api_availability():
     return jsonify({"ok": True})
 
 
+# ===================== PANEL HTML =====================
 HTML = """<!doctype html>
 <html>
 <head>
@@ -874,20 +890,18 @@ function renderMemberTables(){
     else                       (hosp ? off_h : off_ok).push(rr);
   }
 
-  // OK lists: most recent activity first (lowest mins first)
   const sortByRecent = (a,b)=> (a._live_mins || 1e9) - (b._live_mins || 1e9);
   on_ok.sort(sortByRecent);
   idle_ok.sort(sortByRecent);
   off_ok.sort(sortByRecent);
 
-  // ✅ Hospital lists: LOWEST hospital time first (so HIGHEST ends up at the bottom)
-  // Unknown timers go to the bottom of hospital column.
+  // Hospital: lowest time at top, highest at bottom
   const sortByHospitalLowFirst = (a,b)=>{
     const am = hospitalMinutes(a);
     const bm = hospitalMinutes(b);
     const av = (am == null) ? 1e9 : am;
     const bv = (bm == null) ? 1e9 : bm;
-    if (av !== bv) return av - bv;   // ASC
+    if (av !== bv) return av - bv;
     return sortByRecent(a,b);
   };
 
