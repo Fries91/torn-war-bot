@@ -4,11 +4,8 @@
 # - /health     : simple healthcheck
 # - /api/availability : chain-sitter opt in/out (protected optional token)
 #
-# FIXES:
-# ✅ Torn iframe: remove X-Frame-Options + CSP frame-ancestors
-# ✅ Gunicorn/Web Service: poll thread starts under gunicorn (before_request boot)
-# ✅ Panel: 2 columns (OK vs Hospital) + hospital timer sorted (lowest top, highest bottom)
-# ✅ NEW: 🎯 Bounty button per member (opens Torn bounty add page)
+# ✅ Panel Opt column: button toggles opt in/out (for YOUR row only)
+# ✅ Panel auto-reads me_id/me_name from URL query params (no prompts via userscript)
 
 import os
 import time
@@ -38,18 +35,19 @@ DISCORD_WEBHOOK_URL = (os.getenv("DISCORD_WEBHOOK_URL") or "").strip()
 PORT = int(os.getenv("PORT", "10000"))
 
 POLL_INTERVAL_SECONDS = int(os.getenv("POLL_INTERVAL_SECONDS", "30"))
-POST_INTERVAL_SECONDS = int(os.getenv("POST_INTERVAL_SECONDS", "120"))  # reserved
+POST_INTERVAL_SECONDS = int(os.getenv("POST_INTERVAL_SECONDS", "120"))
 
-SMART_PING_MIN_ONLINE = int(os.getenv("SMART_PING_MIN_ONLINE", "5"))  # reserved
-SMART_PING_MENTION = (os.getenv("SMART_PING_MENTION") or "@here").strip()  # reserved
-SMART_PING_COOLDOWN_SECONDS = int(os.getenv("SMART_PING_COOLDOWN_SECONDS", "600"))  # reserved
+SMART_PING_MIN_ONLINE = int(os.getenv("SMART_PING_MIN_ONLINE", "5"))
+SMART_PING_MENTION = (os.getenv("SMART_PING_MENTION") or "@here").strip()
+SMART_PING_COOLDOWN_SECONDS = int(os.getenv("SMART_PING_COOLDOWN_SECONDS", "600"))
 
-CHAIN_TIMEOUT_ALERT_SECONDS = int(os.getenv("CHAIN_TIMEOUT_ALERT_SECONDS", "600"))  # reserved
-CHAIN_TIMEOUT_COOLDOWN_SECONDS = int(os.getenv("CHAIN_TIMEOUT_COOLDOWN_SECONDS", "600"))  # reserved
+CHAIN_TIMEOUT_ALERT_SECONDS = int(os.getenv("CHAIN_TIMEOUT_ALERT_SECONDS", "600"))
+CHAIN_TIMEOUT_COOLDOWN_SECONDS = int(os.getenv("CHAIN_TIMEOUT_COOLDOWN_SECONDS", "600"))
 
-WAR_ALERT_COOLDOWN_SECONDS = int(os.getenv("WAR_ALERT_COOLDOWN_SECONDS", "600"))  # reserved
+WAR_ALERT_COOLDOWN_SECONDS = int(os.getenv("WAR_ALERT_COOLDOWN_SECONDS", "600"))
 
 # Optional: protect availability endpoint
+# NOTE: If you set AVAIL_TOKEN, the panel buttons won't be able to call /api/availability unless you embed the token.
 AVAIL_TOKEN = (os.getenv("AVAIL_TOKEN") or "").strip()
 
 # Chain sitters allowlist (ONLY these Torn IDs can opt in/out)
@@ -58,7 +56,7 @@ CHAIN_SITTER_IDS_RAW = (os.getenv("CHAIN_SITTER_IDS") or "1234").strip()
 
 # ===== helpers =====
 def _parse_id_set(csv: str) -> set[int]:
-    out: set[int] = set()
+    out = set()
     for part in (csv or "").split(","):
         part = part.strip()
         if not part:
@@ -77,7 +75,7 @@ def is_chain_sitter(torn_id: int) -> bool:
     return torn_id in CHAIN_SITTER_IDS
 
 
-def now_iso() -> str:
+def now_iso():
     return datetime.utcnow().isoformat() + "Z"
 
 
@@ -85,7 +83,7 @@ def unix_now() -> int:
     return int(time.time())
 
 
-def panel_url() -> str:
+def panel_url():
     return (PUBLIC_BASE_URL.rstrip("/") + "/") if PUBLIC_BASE_URL else "(set PUBLIC_BASE_URL)"
 
 
@@ -525,16 +523,12 @@ def _boot():
 
 @app.after_request
 def allow_iframe(resp):
-    # remove any default frame blockers
     for h in ["X-Frame-Options", "x-frame-options"]:
         resp.headers.pop(h, None)
 
-    # allow torn iframes
     resp.headers["Content-Security-Policy"] = (
         "frame-ancestors 'self' https://torn.com https://www.torn.com https://*.torn.com;"
     )
-
-    # extra permissive (kept)
     resp.headers["X-Frame-Options"] = "ALLOWALL"
     resp.headers["Cache-Control"] = "no-store"
     return resp
@@ -553,7 +547,6 @@ def health():
 
 @app.post("/api/availability")
 def api_availability():
-    # Protect endpoint if token set
     if AVAIL_TOKEN:
         tok = (request.headers.get("X-Avail-Token") or "").strip()
         if tok != AVAIL_TOKEN:
@@ -606,7 +599,17 @@ HTML = """<!doctype html>
   .colTitle { font-weight:800; margin: 6px 0 8px; }
   .hospTitle { color:#ffb4b4; }
 
-  /* NEW: Bounty button */
+  .topbtn{
+    padding:8px 10px;
+    background:#111;
+    border:1px solid #333;
+    border-radius:8px;
+    color:#fff;
+    font-weight:900;
+    cursor:pointer;
+    white-space:nowrap;
+  }
+
   .bbtn{
     display:inline-block;
     padding:6px 10px;
@@ -620,12 +623,31 @@ HTML = """<!doctype html>
     white-space:nowrap;
   }
   .bbtn:active{ transform: scale(0.98); }
+
+  .optbtn{
+    display:inline-block;
+    padding:6px 10px;
+    border-radius:10px;
+    border:1px solid #2a2a3a;
+    background:#111;
+    color:#fff;
+    font-weight:900;
+    cursor:pointer;
+    white-space:nowrap;
+  }
+  .optbtn.on{ border-color:#2fff88; box-shadow:0 0 16px rgba(47,255,136,0.35); }
+  .optbtn.off{ border-color:#ff4b4b; box-shadow:0 0 16px rgba(255,75,75,0.25); }
+  .optbtn:disabled{ opacity:0.6; cursor:not-allowed; }
+  .optbtn:active{ transform: scale(0.98); }
 </style>
 </head>
 <body>
   <div class="card">
-    <div id="title" style="font-weight:800; font-size:16px;">
-      <span class="gold">7DS*: Wrath</span> War-Bot
+    <div style="display:flex; gap:10px; align-items:center;">
+      <div id="title" style="font-weight:800; font-size:16px; flex:1;">
+        <span class="gold">7DS*: Wrath</span> War-Bot
+      </div>
+      <button class="topbtn" id="set_me">Set My ID</button>
     </div>
     <div class="muted" id="updated">Loading…</div>
     <div class="muted err" id="err"></div>
@@ -744,7 +766,6 @@ function bucketFromMinutes(mins){
   return 'offline';
 }
 
-// ===== LIVE war timer state (NO phase) =====
 let warStartsIn = null;
 let warStartedAgo = null;
 let warEndsIn = null;
@@ -769,7 +790,6 @@ function renderWarTime(){
   } else if (kind === "ended" && warEndedAgo != null) {
     t = `Time: ended ${fmtDur(warEndedAgo)} ago`;
   }
-
   document.getElementById('war_time').textContent = t;
 }
 
@@ -790,7 +810,6 @@ function tickWarTime(){
   } else if (kind === "ended") {
     if (warEndedAgo != null) warEndedAgo += 1;
   }
-
   renderWarTime();
 }
 
@@ -801,7 +820,6 @@ function pct(n, d){
   return Math.round(p);
 }
 
-// ===== LIVE members =====
 let latestRows = [];
 let rowsFetchedAtMs = 0;
 
@@ -823,7 +841,6 @@ function isHospital(r){
   return s.includes("hospital");
 }
 
-// ---- Parse hospital remaining time (minutes) from status ----
 function parseDurationMinutes(txt){
   txt = String(txt || "").toLowerCase();
   let total = 0;
@@ -855,18 +872,109 @@ function bountyCell(x){
   return `<a class="bbtn" href="${url}" target="_blank" rel="noopener noreferrer">🎯 Bounty</a>`;
 }
 
+// ===== Identity: auto-read from URL params me_id & me_name =====
+function getMyTornId(){ return (localStorage.getItem('warbot_my_torn_id') || '').trim(); }
+function getMyName(){ return (localStorage.getItem('warbot_my_name') || '').trim(); }
+
+function setMyIdentity(id, name){
+  id = String(id || '').trim();
+  name = String(name || '').trim();
+  if (id) localStorage.setItem('warbot_my_torn_id', id);
+  if (name) localStorage.setItem('warbot_my_name', name);
+}
+
+function readMeFromURL(){
+  try{
+    const u = new URL(window.location.href);
+    const meId = (u.searchParams.get('me_id') || '').trim();
+    const meName = (u.searchParams.get('me_name') || '').trim();
+    if (meId) setMyIdentity(meId, meName);
+  }catch(e){}
+}
+
+function setMyIdentityPrompt(){
+  const id = (prompt('Enter YOUR Torn ID (for Opt button):', getMyTornId()) || '').trim();
+  if (id) localStorage.setItem('warbot_my_torn_id', id);
+  const nm = (prompt('Enter YOUR Torn name (optional):', getMyName()) || '').trim();
+  if (nm) localStorage.setItem('warbot_my_name', nm);
+  return { id, nm };
+}
+
+readMeFromURL();
+
+function optCell(x){
+  const tid = x && x.torn_id != null ? String(x.torn_id) : '';
+  const myId = getMyTornId();
+  const isMe = myId && tid && myId === tid;
+
+  if (x.is_chain_sitter && isMe) {
+    const opted = !!x.opted_in;
+    const cls = opted ? 'optbtn on' : 'optbtn off';
+    const txt = opted ? '🟢 Opted In' : '🔴 Opted Out';
+    const next = opted ? '0' : '1';
+    return `<button class="${cls}" data-opt="1" data-next="${next}">${txt}</button>`;
+  }
+  return (x.is_chain_sitter && x.opted_in) ? '✅' : '—';
+}
+
+async function doOptToggle(nextVal, btn){
+  let myId = getMyTornId();
+  let myName = getMyName();
+
+  if (!myId) {
+    const v = setMyIdentityPrompt();
+    myId = (v.id || '').trim();
+    myName = (v.nm || '').trim();
+  }
+  if (!myId) { alert('Missing YOUR Torn ID.'); return; }
+
+  btn.disabled = true;
+  const oldText = btn.textContent;
+  btn.textContent = '⏳ Updating...';
+
+  try{
+    const res = await fetch('/api/availability', {
+      method: 'POST',
+      headers: { 'Content-Type':'application/json' },
+      body: JSON.stringify({ torn_id: myId, name: myName, available: nextVal })
+    });
+    const j = await res.json().catch(()=>({}));
+    if (!res.ok){
+      alert(j.error || 'Server error');
+      btn.disabled = false;
+      btn.textContent = oldText;
+      return;
+    }
+    await refresh();
+  }catch(e){
+    alert('Request failed.');
+  }finally{
+    btn.disabled = false;
+  }
+}
+
+document.addEventListener('click', (e)=>{
+  const t = e.target;
+  if (t && t.getAttribute && t.getAttribute('data-opt') === '1') {
+    e.preventDefault();
+    const next = t.getAttribute('data-next') === '1';
+    doOptToggle(next, t);
+  }
+});
+
+document.getElementById('set_me').addEventListener('click', ()=> setMyIdentityPrompt());
+
 function fillTableOK(tbodyId, arr){
   const tb = document.getElementById(tbodyId);
   tb.innerHTML = '';
   (arr || []).slice(0, 350).forEach(x=>{
-    const opt = (x.is_chain_sitter && x.opted_in) ? '✅' : '—';
     const sitterTag = x.is_chain_sitter ? '<span class="tag">CS</span>' : '';
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td><div class="namecell"><span class="${dotClass(x._kind)}"></span><span>${x.name||''}</span>${sitterTag}</div></td>
       <td>${x.level??''}</td>
       <td>${x.status||''}</td>
-      <td>${opt}</td>
+      <td>${optCell(x)}</td>
       <td>${bountyCell(x)}</td>
     `;
     tb.appendChild(tr);
@@ -877,7 +985,6 @@ function fillTableHosp(tbodyId, arr){
   const tb = document.getElementById(tbodyId);
   tb.innerHTML = '';
   (arr || []).slice(0, 350).forEach(x=>{
-    const opt = (x.is_chain_sitter && x.opted_in) ? '✅' : '—';
     const sitterTag = x.is_chain_sitter ? '<span class="tag">CS</span>' : '';
     const ht = hospitalTimeText(x);
     const tr = document.createElement('tr');
@@ -886,7 +993,7 @@ function fillTableHosp(tbodyId, arr){
       <td>${x.level??''}</td>
       <td title="${String(x.status||'').replace(/"/g,'&quot;')}">${ht}</td>
       <td>${x.status||''}</td>
-      <td>${opt}</td>
+      <td>${optCell(x)}</td>
       <td>${bountyCell(x)}</td>
     `;
     tb.appendChild(tr);
@@ -914,7 +1021,6 @@ function renderMemberTables(){
   idle_ok.sort(sortByRecent);
   off_ok.sort(sortByRecent);
 
-  // Hospital: lowest time at top, highest at bottom
   const sortByHospitalLowFirst = (a,b)=>{
     const am = hospitalMinutes(a);
     const bm = hospitalMinutes(b);
@@ -1017,7 +1123,6 @@ def home():
     return Response(HTML, mimetype="text/html")
 
 
-# Local run support
 if __name__ == "__main__":
     ensure_background_started()
     app.run(host="0.0.0.0", port=PORT)
