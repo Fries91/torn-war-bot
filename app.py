@@ -1,306 +1,520 @@
+# app.py ✅ COMPLETE (Online / Idle / Offline in their own sections)
+# - /           : Panel (iframe-safe for torn.com)
+# - /state      : JSON state (debug)
+# - /health     : healthcheck
+# - /api/availability : chain-sitter opt in/out (optional token)
+#
+# NOTES
+# - Online/Idle/Offline are based on "minutes" since last action:
+#   🟢 Online = 0–20, 🟡 Idle = 20–30, 🔴 Offline = 30+
+# - Lists are sorted by most recent (lowest minutes) first.
+# - Works under gunicorn: poll thread starts once (before_request boot).
+
 import os
 import time
 import threading
 import asyncio
 from datetime import datetime, timezone
 
-from flask import Flask, jsonify, request, Response
+from flask import Flask, jsonify, request, render_template_string
 from dotenv import load_dotenv
+import aiohttp
 
-from db import init_db, upsert_availability, get_availability_map
-from torn_api import get_faction_core, get_ranked_war_best
+from db import (
+    init_db,
+    upsert_availability,
+    get_availability_map,
+)
+
+from torn_api import get_faction_core, get_ranked_war
 
 load_dotenv()
 
-FACTION_ID = (os.getenv("FACTION_ID") or "").strip()
-FACTION_API_KEY = (os.getenv("FACTION_API_KEY") or "").strip()
-AVAIL_TOKEN = (os.getenv("AVAIL_TOKEN") or "").strip()   # 666
-POLL_SECONDS = int(os.getenv("POLL_SECONDS", "25"))
-
 app = Flask(__name__)
 
+# ===== ENV =====
+FACTION_ID = (os.getenv("FACTION_ID") or "").strip()
+FACTION_API_KEY = (os.getenv("FACTION_API_KEY") or "").strip()
+AVAIL_TOKEN = (os.getenv("AVAIL_TOKEN") or "").strip()  # yours = 666 (optional)
+CHAIN_SITTER_IDS = [s.strip() for s in (os.getenv("CHAIN_SITTER_IDS") or "").split(",") if s.strip()]  # "1234,5678"
+
+POLL_SECONDS = int(os.getenv("POLL_SECONDS") or "20")
+
+# ===== GLOBAL STATE =====
 STATE = {
     "rows": [],
     "updated_at": None,
-    "faction": {"name": None, "tag": None, "respect": None},
-    "war": {"opponent": None, "start": None, "end": None, "target": None, "score": None, "enemy_score": None},
-    "chain": {"current": None, "max": None, "timeout": None, "cooldown": None},
-    "available_count": 0,
     "counts": {"online": 0, "idle": 0, "offline": 0, "hospital": 0},
-    "last_error": None
+    "available_count": 0,
+    "chain": {"current": 0, "max": 10, "timeout": 0, "cooldown": 0},
+    "war": {"opponent": None, "start": None, "end": None, "target": None, "score": None},
+    "faction": {"name": None, "tag": None, "respect": None},
+    "last_error": None,
 }
 
 BOOTED = False
-POLL_THREAD = None
+BOOT_LOCK = threading.Lock()
 
-
-def iso_now():
-    return datetime.now(timezone.utc).isoformat()
-
-
-def status_from_last_action(mins):
-    # Online=0-20, Idle=21-30, Offline=31+
-    if mins is None:
-        return "offline"
-    if mins <= 20:
-        return "online"
-    if mins <= 30:
-        return "idle"
-    return "offline"
-
-
-def require_token_if_set(req):
-    if not AVAIL_TOKEN:
-        return True
-    token = (req.headers.get("X-Token") or req.args.get("token") or "").strip()
-    return token == AVAIL_TOKEN
-
-
+# ===== IFRAME-SAFE HEADERS =====
 @app.after_request
-def headers(resp):
-    # Not using iframe panels; keep it simple
-    resp.headers.pop("Content-Security-Policy", None)
-    resp.headers.pop("X-Frame-Options", None)
+def allow_iframe(resp):
+    # Torn iframe compatibility
+    resp.headers["X-Frame-Options"] = "ALLOWALL"
+    resp.headers["Content-Security-Policy"] = "frame-ancestors https://*.torn.com https://torn.com *"
     return resp
 
 
-def _read_minutes_from_member(m: dict):
+# ===== HELPERS =====
+def now_iso():
+    return datetime.now(timezone.utc).isoformat()
+
+def classify_status(minutes: int) -> str:
+    if minutes <= 20:
+        return "online"
+    if minutes <= 30:
+        return "idle"
+    return "offline"
+
+def parse_last_action_minutes(member: dict) -> int:
     """
-    Supports Torn member last_action shapes:
-      - last_action: {seconds: 123}
-      - last_action: {timestamp: 1712345678}  (UNIX seconds)
-      - last_action: {timestamp_iso: "..."} / {time:"..."} etc
-      - last_action: "2026-..."
+    Tries to read minutes from common Torn API shapes.
+    Your torn_api.py likely already returns `minutes`. If so, we use it.
     """
-    la = m.get("last_action")
-
-    if isinstance(la, dict):
-        # 1) seconds
-        secs = la.get("seconds")
-        if isinstance(secs, (int, float)):
-            return int(secs // 60)
-
-        # 2) unix timestamp (common!)
-        ts = la.get("timestamp")
-        if isinstance(ts, (int, float)) and ts > 0:
-            now = int(time.time())
-            diff = max(0, now - int(ts))
-            return int(diff // 60)
-
-        # 3) ISO-ish strings
-        iso = la.get("timestamp_iso") or la.get("time") or la.get("date")
-        if isinstance(iso, str) and iso.strip():
-            try:
-                s = iso.replace("Z", "+00:00")
-                dt = datetime.fromisoformat(s)
-                if dt.tzinfo is None:
-                    dt = dt.replace(tzinfo=timezone.utc)
-                return int((datetime.now(timezone.utc) - dt).total_seconds() // 60)
-            except Exception:
-                return None
-
-        return None
-
-    if isinstance(la, str) and la.strip():
+    if "minutes" in member and member["minutes"] is not None:
         try:
-            s = la.replace("Z", "+00:00")
-            dt = datetime.fromisoformat(s)
-            if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=timezone.utc)
-            return int((datetime.now(timezone.utc) - dt).total_seconds() // 60)
+            return int(member["minutes"])
         except Exception:
-            return None
+            return 999
 
-    return None
+    # Some Torn responses include last_action: { "relative": "x minutes ago", "timestamp": ... }
+    la = member.get("last_action") or {}
+    rel = (la.get("relative") or "").lower()
+    # crude parse: "15 minutes ago"
+    try:
+        if "minute" in rel:
+            return int(rel.split("minute")[0].strip())
+        if "hour" in rel:
+            h = int(rel.split("hour")[0].strip())
+            return h * 60
+        if "day" in rel:
+            d = int(rel.split("day")[0].strip())
+            return d * 1440
+        if "just now" in rel:
+            return 0
+    except Exception:
+        pass
+
+    return 999
+
+def is_chain_sitter(torn_id: str) -> bool:
+    return torn_id in set(CHAIN_SITTER_IDS)
+
+def token_ok(req) -> bool:
+    # If AVAIL_TOKEN not set, allow without token
+    if not AVAIL_TOKEN:
+        return True
+    t = (req.headers.get("X-Avail-Token") or req.args.get("token") or (req.json or {}).get("token") or "").strip()
+    return t == AVAIL_TOKEN
 
 
-def _read_hospital(m: dict):
-    """
-    status shapes:
-      status: {state:"Hospital", until: 171...} etc
-      status: "Hospital"
-    """
-    st = m.get("status")
-    hospital = False
-    until = None
-
-    if isinstance(st, dict):
-        state = (st.get("state") or st.get("status") or st.get("description") or "").lower()
-        if "hospital" in state:
-            hospital = True
-        until = st.get("until") or st.get("timestamp") or st.get("time") or st.get("date")
-
-    elif isinstance(st, str):
-        if "hospital" in st.lower():
-            hospital = True
-
-    return hospital, until
-
-
-async def poll_once():
-    global STATE
-
-    if not FACTION_ID or not FACTION_API_KEY:
-        STATE["last_error"] = {"error": "Missing FACTION_ID or FACTION_API_KEY env var", "at": iso_now()}
-        return
-
-    avail_map = get_availability_map() or {}
-
-    core = await get_faction_core(FACTION_ID, FACTION_API_KEY)
-    war_norm = await get_ranked_war_best(FACTION_ID, FACTION_API_KEY) or {}
-
-    # ✅ v2 "basic" object contains name/tag/respect
-    basic = core.get("basic") if isinstance(core, dict) else None
-    if not isinstance(basic, dict):
-        basic = {}
-
-    f_name = basic.get("name") or core.get("name")
-    f_tag = basic.get("tag") or core.get("tag")
-    f_respect = basic.get("respect") or core.get("respect")
-
-    members = core.get("members") or {}
-    members_iter = members.values() if isinstance(members, dict) else members
-
-    rows = []
-    available_count = 0
-    counts = {"online": 0, "idle": 0, "offline": 0, "hospital": 0}
-
-    for m in members_iter:
-        torn_id = str(m.get("id") or m.get("torn_id") or "")
-        name = m.get("name") or f"#{torn_id}"
-
-        mins = _read_minutes_from_member(m)
-        base_status = status_from_last_action(mins)
-
-        hospital, hospital_until = _read_hospital(m)
-        final_status = "hospital" if hospital else base_status
-
-        if final_status == "hospital":
-            counts["hospital"] += 1
-        elif final_status == "online":
-            counts["online"] += 1
-        elif final_status == "idle":
-            counts["idle"] += 1
-        else:
-            counts["offline"] += 1
-
-        db_rec = avail_map.get(int(torn_id)) if torn_id.isdigit() else None
-        is_available = bool(db_rec and db_rec.get("available"))
-        if is_available:
-            available_count += 1
-
-        rows.append({
-            "id": torn_id,
-            "name": name,
-            "minutes": mins,
-            "status": final_status,          # online / idle / offline / hospital
-            "hospital": hospital,
-            "hospital_until": hospital_until,
-            "available": is_available
-        })
-
-    # Sort: hospital first, then online, idle, offline; most recent activity near top
-    def sort_key(r):
-        bucket = {"hospital": 0, "online": 1, "idle": 2, "offline": 3}.get(r["status"], 9)
-        mins2 = r["minutes"] if isinstance(r["minutes"], int) else 999999
-        return (bucket, mins2)
-
-    rows.sort(key=sort_key)
-
-    # chain is usually inside core.chain OR war_norm.chain; prefer war_norm if present
-    chain_obj = war_norm.get("chain") or core.get("chain") or {}
-    if not isinstance(chain_obj, dict):
-        chain_obj = {}
-
-    chain = {
-        "current": chain_obj.get("current"),
-        "max": chain_obj.get("max"),
-        "timeout": chain_obj.get("timeout"),
-        "cooldown": chain_obj.get("cooldown"),
+# ===== HTML =====
+HTML = """
+<!doctype html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>⚔ 7DS*: WRATH WAR PANEL</title>
+  <style>
+    body {
+      background: #0b0b0b;
+      color: #f2f2f2;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+      margin: 0;
+      padding: 10px;
+    }
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    .title {
+      font-weight: 800;
+      letter-spacing: 0.5px;
+      font-size: 16px;
+    }
+    .meta {
+      font-size: 12px;
+      opacity: 0.8;
+    }
+    .pill {
+      display: inline-block;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.08);
+      font-size: 12px;
+      margin-left: 6px;
+      white-space: nowrap;
+    }
+    h2 {
+      margin: 14px 0 6px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+      font-size: 14px;
+      letter-spacing: 0.4px;
+    }
+    .member {
+      padding: 8px 10px;
+      margin: 6px 0;
+      border-radius: 10px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      font-size: 13px;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.06);
+    }
+    .left {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 0;
+    }
+    .name {
+      font-weight: 700;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      max-width: 68vw;
+    }
+    .sub {
+      opacity: 0.75;
+      font-size: 11px;
+    }
+    .right {
+      opacity: 0.85;
+      font-size: 12px;
+      white-space: nowrap;
     }
 
-    war_obj = {
-        "opponent": war_norm.get("opponent"),
-        "start": war_norm.get("start"),
-        "end": war_norm.get("end"),
-        "target": war_norm.get("target"),
-        "score": war_norm.get("score"),
-        "enemy_score": war_norm.get("enemy_score"),
+    .online  { border-left: 4px solid #00ff66; }
+    .idle    { border-left: 4px solid #ffd000; }
+    .offline { border-left: 4px solid #ff3333; }
+    .hospital{ border-left: 4px solid #b06cff; }
+
+    .section-empty {
+      opacity: 0.7;
+      font-size: 12px;
+      padding: 8px 2px;
     }
 
-    STATE.update({
-        "rows": rows,
-        "updated_at": iso_now(),
-        "faction": {"name": f_name, "tag": f_tag, "respect": f_respect},
-        "war": war_obj,
-        "chain": chain,
-        "available_count": available_count,
-        "counts": counts,
-        "last_error": None
-    })
+    .warbox {
+      margin-top: 10px;
+      padding: 10px;
+      border-radius: 12px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.07);
+      font-size: 12px;
+      line-height: 1.35;
+    }
+    .warrow {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      margin: 3px 0;
+    }
+    .label { opacity: 0.75; }
+  </style>
+</head>
+<body>
+
+  <div class="topbar">
+    <div class="title">⚔ 7DS*: WRATH WAR PANEL</div>
+    <div class="meta">
+      Updated: {{ updated_at or "—" }}
+      <span class="pill">🟢 {{ counts.online }}</span>
+      <span class="pill">🟡 {{ counts.idle }}</span>
+      <span class="pill">🔴 {{ counts.offline }}</span>
+      <span class="pill">🏥 {{ counts.hospital }}</span>
+      <span class="pill">✅ Avail: {{ available_count }}</span>
+    </div>
+  </div>
+
+  {% if war.opponent or war.target or war.score %}
+  <div class="warbox">
+    <div class="warrow"><div class="label">Opponent</div><div>{{ war.opponent or "—" }}</div></div>
+    <div class="warrow"><div class="label">Target</div><div>{{ war.target or "—" }}</div></div>
+    <div class="warrow"><div class="label">Score</div><div>{{ war.score or "—" }}</div></div>
+    <div class="warrow"><div class="label">Start</div><div>{{ war.start or "—" }}</div></div>
+    <div class="warrow"><div class="label">End</div><div>{{ war.end or "—" }}</div></div>
+  </div>
+  {% endif %}
+
+  <h2>🟢 ONLINE (0–20 mins)</h2>
+  {% if online|length == 0 %}
+    <div class="section-empty">No one online right now.</div>
+  {% endif %}
+  {% for row in online %}
+    <div class="member online">
+      <div class="left">
+        <div class="name">{{ row.name }}</div>
+        <div class="sub">ID: {{ row.id }}</div>
+      </div>
+      <div class="right">{{ row.minutes }}m</div>
+    </div>
+  {% endfor %}
+
+  <h2>🟡 IDLE (20–30 mins)</h2>
+  {% if idle|length == 0 %}
+    <div class="section-empty">No one idle right now.</div>
+  {% endif %}
+  {% for row in idle %}
+    <div class="member idle">
+      <div class="left">
+        <div class="name">{{ row.name }}</div>
+        <div class="sub">ID: {{ row.id }}</div>
+      </div>
+      <div class="right">{{ row.minutes }}m</div>
+    </div>
+  {% endfor %}
+
+  <h2>🔴 OFFLINE (30+ mins)</h2>
+  {% if offline|length == 0 %}
+    <div class="section-empty">No one offline (rare W).</div>
+  {% endif %}
+  {% for row in offline %}
+    <div class="member offline">
+      <div class="left">
+        <div class="name">{{ row.name }}</div>
+        <div class="sub">ID: {{ row.id }}</div>
+      </div>
+      <div class="right">{{ row.minutes }}m</div>
+    </div>
+  {% endfor %}
+
+  {% if hospital|length > 0 %}
+  <h2>🏥 HOSPITAL</h2>
+  {% for row in hospital %}
+    <div class="member hospital">
+      <div class="left">
+        <div class="name">{{ row.name }}</div>
+        <div class="sub">ID: {{ row.id }}</div>
+      </div>
+      <div class="right">{{ row.hospital_until or "In hosp" }}</div>
+    </div>
+  {% endfor %}
+  {% endif %}
+
+</body>
+</html>
+"""
 
 
-def poll_loop():
-    while True:
-        try:
-            asyncio.run(poll_once())
-        except Exception as e:
-            STATE["last_error"] = {"error": str(e), "at": iso_now()}
-        time.sleep(POLL_SECONDS)
-
-
-@app.before_request
-def boot_once():
-    global BOOTED, POLL_THREAD
-    if BOOTED:
-        return
-    BOOTED = True
-    init_db()
-    POLL_THREAD = threading.Thread(target=poll_loop, daemon=True)
-    POLL_THREAD.start()
-
-
+# ===== ROUTES =====
 @app.route("/health")
 def health():
-    return jsonify({"ok": True, "updated_at": STATE.get("updated_at"), "last_error": STATE.get("last_error")})
-
+    return "ok"
 
 @app.route("/state")
 def state():
     return jsonify(STATE)
 
-
-@app.route("/api/availability", methods=["POST"])
-def api_availability():
-    # token protected, anyone can opt
-    if not require_token_if_set(request):
-        return jsonify({"ok": False, "error": "unauthorized"}), 401
-
-    data = request.get_json(silent=True) or {}
-    torn_id = str(data.get("torn_id") or "").strip()
-    available = bool(data.get("available", False))
-    name = str(data.get("name") or "").strip()
-
-    if not torn_id.isdigit():
-        return jsonify({"ok": False, "error": "invalid_torn_id"}), 400
-
-    if not name:
-        existing = (get_availability_map() or {}).get(int(torn_id))
-        name = (existing or {}).get("name") or f"#{torn_id}"
-
-    upsert_availability(int(torn_id), name, available, iso_now())
-    return jsonify({"ok": True, "torn_id": torn_id, "available": available, "name": name})
-
-
 @app.route("/")
-def home():
-    return Response(
-        "<h3 style='font-family:Arial'>7DS*: Wrath War-Bot OK</h3><div>/state • /health • /api/availability</div>",
-        mimetype="text/html"
+def panel():
+    rows = STATE.get("rows", []) or []
+
+    online, idle, offline, hospital = [], [], [], [],
+
+    # If your rows already contain hospital flags, we’ll separate those too
+    hospital = []
+    online = []
+    idle = []
+    offline = []
+
+    for row in rows:
+        if row.get("hospital"):
+            hospital.append(row)
+            continue
+
+        mins = row.get("minutes", 999)
+        try:
+            mins = int(mins)
+        except Exception:
+            mins = 999
+        row["minutes"] = mins
+
+        st = row.get("status") or classify_status(mins)
+        row["status"] = st
+
+        if st == "online":
+            online.append(row)
+        elif st == "idle":
+            idle.append(row)
+        else:
+            offline.append(row)
+
+    online.sort(key=lambda x: x.get("minutes", 999))
+    idle.sort(key=lambda x: x.get("minutes", 999))
+    offline.sort(key=lambda x: x.get("minutes", 999))
+    hospital.sort(key=lambda x: (x.get("hospital_until") or ""))
+
+    return render_template_string(
+        HTML,
+        updated_at=STATE.get("updated_at"),
+        counts=STATE.get("counts", {}),
+        available_count=STATE.get("available_count", 0),
+        war=STATE.get("war", {}),
+        online=online,
+        idle=idle,
+        offline=offline,
+        hospital=hospital,
     )
 
 
+@app.route("/api/availability", methods=["POST"])
+def api_availability():
+    """
+    Body: { "id": "1234", "available": true/false, "token": "666" }  (token optional if AVAIL_TOKEN unset)
+    Or send header: X-Avail-Token: 666
+    """
+    if not token_ok(request):
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+
+    data = request.get_json(force=True, silent=True) or {}
+    torn_id = str(data.get("id") or "").strip()
+    available = bool(data.get("available", False))
+
+    if not torn_id:
+        return jsonify({"ok": False, "error": "missing id"}), 400
+
+    # chain sitter restriction (if CHAIN_SITTER_IDS is set)
+    if CHAIN_SITTER_IDS and (not is_chain_sitter(torn_id)):
+        return jsonify({"ok": False, "error": "not chain sitter"}), 403
+
+    upsert_availability(torn_id, available)
+    return jsonify({"ok": True, "id": torn_id, "available": available})
+
+
+# ===== POLLER =====
+async def poll_once(session: aiohttp.ClientSession):
+    """
+    Pulls faction core + war info.
+    Normalizes members to rows: {id,name,minutes,status,hospital,hospital_until,available}
+    """
+    # availability map from DB
+    avail_map = get_availability_map()  # { "1234": True/False, ... }
+
+    faction = await get_faction_core(session, FACTION_API_KEY, FACTION_ID)
+    war = await get_ranked_war(session, FACTION_API_KEY, FACTION_ID)
+
+    members = faction.get("members") or {}
+    rows = []
+
+    counts = {"online": 0, "idle": 0, "offline": 0, "hospital": 0}
+    available_count = 0
+
+    # Members might be dict keyed by id
+    for mid, m in members.items():
+        torn_id = str(m.get("id") or mid)
+        name = m.get("name") or "—"
+
+        minutes = parse_last_action_minutes(m)
+        status = classify_status(minutes)
+
+        hosp = bool(m.get("status", {}).get("state") == "Hospital" or m.get("hospital"))
+        hospital_until = m.get("status", {}).get("until") or m.get("hospital_until")
+
+        available = bool(avail_map.get(torn_id, False))
+        if available:
+            available_count += 1
+
+        if hosp:
+            counts["hospital"] += 1
+        else:
+            counts[status] += 1
+
+        rows.append({
+            "id": torn_id,
+            "name": name,
+            "minutes": minutes,
+            "status": status,
+            "hospital": hosp,
+            "hospital_until": hospital_until,
+            "available": available,
+        })
+
+    STATE["rows"] = rows
+    STATE["counts"] = counts
+    STATE["available_count"] = available_count
+    STATE["updated_at"] = now_iso()
+
+    # chain info if your wrapper provides it
+    if "chain" in faction and isinstance(faction["chain"], dict):
+        STATE["chain"] = {
+            "current": faction["chain"].get("current", 0),
+            "max": faction["chain"].get("max", 10),
+            "timeout": faction["chain"].get("timeout", 0),
+            "cooldown": faction["chain"].get("cooldown", 0),
+        }
+
+    # faction header bits
+    STATE["faction"] = {
+        "name": faction.get("name"),
+        "tag": faction.get("tag"),
+        "respect": faction.get("respect"),
+    }
+
+    # war info (best-effort)
+    if isinstance(war, dict):
+        STATE["war"] = {
+            "opponent": war.get("opponent"),
+            "start": war.get("start"),
+            "end": war.get("end"),
+            "target": war.get("target"),
+            "score": war.get("score"),
+        }
+
+    STATE["last_error"] = None
+
+
+async def poll_loop():
+    timeout = aiohttp.ClientTimeout(total=25)
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        while True:
+            try:
+                await poll_once(session)
+            except Exception as e:
+                STATE["last_error"] = {"error": str(e)}
+                STATE["updated_at"] = now_iso()
+            await asyncio.sleep(POLL_SECONDS)
+
+
+def start_poll_thread():
+    def runner():
+        asyncio.run(poll_loop())
+    t = threading.Thread(target=runner, daemon=True)
+    t.start()
+
+
+@app.before_request
+def boot_once():
+    global BOOTED
+    if BOOTED:
+        return
+    with BOOT_LOCK:
+        if BOOTED:
+            return
+        init_db()
+        start_poll_thread()
+        BOOTED = True
+
+
+# Local run (Render uses gunicorn)
 if __name__ == "__main__":
     init_db()
-    threading.Thread(target=poll_loop, daemon=True).start()
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", "5000")))
+    start_poll_thread()
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT") or "10000"))
