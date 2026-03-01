@@ -1,11 +1,3 @@
-# app.py ✅ COMPLETE (MATCHES your torn_api.py signatures)
-# - get_faction_core(faction_id, api_key)  (NO session)
-# - get_ranked_war_best(faction_id, api_key) (NO session)
-# - Reads Torn v2 shape: { basic, members, chain }
-# - Organizes Online / Idle / Offline sections
-# - /ping for Render port detection
-# - Panel always loads; shows last_error if polling fails
-
 import os
 import threading
 import asyncio
@@ -20,15 +12,13 @@ from torn_api import get_faction_core, get_ranked_war_best
 load_dotenv()
 app = Flask(__name__)
 
-# ===== ENV =====
 FACTION_ID = (os.getenv("FACTION_ID") or "").strip()
 FACTION_API_KEY = (os.getenv("FACTION_API_KEY") or "").strip()
 
-AVAIL_TOKEN = (os.getenv("AVAIL_TOKEN") or "").strip()  # optional (yours = 666)
+AVAIL_TOKEN = (os.getenv("AVAIL_TOKEN") or "").strip()
 CHAIN_SITTER_IDS = [s.strip() for s in (os.getenv("CHAIN_SITTER_IDS") or "").split(",") if s.strip()]
 POLL_SECONDS = int(os.getenv("POLL_SECONDS") or "20")
 
-# ===== STATE =====
 STATE = {
     "rows": [],
     "updated_at": None,
@@ -38,8 +28,8 @@ STATE = {
     "war": {"opponent": None, "opponent_id": None, "start": None, "end": None, "target": None, "score": None, "enemy_score": None},
     "faction": {"name": None, "tag": None, "respect": None},
     "enemy": {
-        "supported": False,
-        "reason": "Enemy members require opponent faction_id; your ranked-war normalizer returns name only.",
+        "supported": True,
+        "reason": None,
         "faction": {"name": None, "tag": None, "respect": None, "id": None},
         "rows": [],
         "counts": {"online": 0, "idle": 0, "offline": 0, "hospital": 0},
@@ -51,12 +41,13 @@ STATE = {
 BOOTED = False
 BOOT_LOCK = threading.Lock()
 
-# ===== IFRAME SAFE =====
+
 @app.after_request
 def allow_iframe(resp):
     resp.headers["X-Frame-Options"] = "ALLOWALL"
     resp.headers["Content-Security-Policy"] = "frame-ancestors https://*.torn.com https://torn.com *"
     return resp
+
 
 def now_iso():
     return datetime.now(timezone.utc).isoformat()
@@ -69,10 +60,6 @@ def classify_status(minutes: int) -> str:
     return "offline"
 
 def parse_last_action_minutes(member: dict) -> int:
-    """
-    Torn v2 'members' objects often contain:
-      member["last_action"]["relative"] like "5 minutes ago"
-    """
     la = (member or {}).get("last_action") or {}
     rel = (la.get("relative") or "").lower()
     try:
@@ -128,12 +115,7 @@ def split_sections(rows):
 
     return {"online": online, "idle": idle, "offline": offline, "hospital": hospital}
 
-
 def normalize_faction_rows(v2_payload: dict, avail_map=None):
-    """
-    Your torn_api returns v2 payload:
-      { "basic": {...}, "members": {...}, "chain": {...} }
-    """
     avail_map = avail_map or {}
     v2_payload = v2_payload or {}
 
@@ -161,7 +143,6 @@ def normalize_faction_rows(v2_payload: dict, avail_map=None):
         minutes = parse_last_action_minutes(m)
         status = classify_status(minutes)
 
-        # hospital check (v2 member status can vary)
         st = m.get("status") or {}
         hosp = bool(st.get("state") == "Hospital" or m.get("hospital"))
         hospital_until = st.get("until") or m.get("hospital_until")
@@ -185,12 +166,7 @@ def normalize_faction_rows(v2_payload: dict, avail_map=None):
             "available": available,
         })
 
-    header = {
-        "name": basic.get("name"),
-        "tag": basic.get("tag"),
-        "respect": basic.get("respect"),
-    }
-
+    header = {"name": basic.get("name"), "tag": basic.get("tag"), "respect": basic.get("respect")}
     chain_out = {
         "current": chain.get("current") or 0,
         "max": chain.get("max") or 10,
@@ -201,7 +177,6 @@ def normalize_faction_rows(v2_payload: dict, avail_map=None):
     return rows, counts, available_count, header, chain_out
 
 
-# ===== HTML =====
 HTML = """
 <!doctype html>
 <html>
@@ -214,6 +189,7 @@ HTML = """
     .title { font-weight:900; letter-spacing:.6px; font-size:16px; }
     .meta { font-size:12px; opacity:.85; }
     .pill { display:inline-block; padding:6px 10px; border-radius:999px; background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.08); font-size:12px; margin-left:6px; white-space:nowrap; }
+    .divider { margin:14px 0; height:1px; background:rgba(255,255,255,.10); }
     .section-title { font-weight:900; letter-spacing:.6px; margin-top:10px; margin-bottom:6px; display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; }
     .section-title .small { font-size:12px; opacity:.8; font-weight:600; }
     h2 { margin:12px 0 6px; padding-bottom:6px; border-bottom:1px solid rgba(255,255,255,.08); font-size:14px; letter-spacing:.4px; }
@@ -248,9 +224,10 @@ HTML = """
     <div class="err"><b>Last error:</b><br>{{ last_error.error }}</div>
   {% endif %}
 
-  {% if war.opponent or war.target or war.score %}
+  {% if war.opponent or war.target or war.score is not none %}
   <div class="warbox">
     <div class="warrow"><div class="label">Opponent</div><div>{{ war.opponent or "—" }}</div></div>
+    <div class="warrow"><div class="label">Opponent ID</div><div>{{ war.opponent_id or "—" }}</div></div>
     <div class="warrow"><div class="label">Our Score</div><div>{{ war.score if war.score is not none else "—" }}</div></div>
     <div class="warrow"><div class="label">Enemy Score</div><div>{{ war.enemy_score if war.enemy_score is not none else "—" }}</div></div>
     <div class="warrow"><div class="label">Target</div><div>{{ war.target if war.target is not none else "—" }}</div></div>
@@ -291,11 +268,54 @@ HTML = """
     </div>
   {% endfor %}
 
+  <div class="divider"></div>
+
+  <div class="section-title">
+    <div>🎯 ENEMY FACTION</div>
+    <div class="small">
+      {% if enemy.faction.name %}
+        {{ enemy.faction.tag or "" }} {{ enemy.faction.name }} (ID: {{ enemy.faction.id }})
+        · 🟢 {{ enemy.counts.online }} 🟡 {{ enemy.counts.idle }} 🔴 {{ enemy.counts.offline }} 🏥 {{ enemy.counts.hospital }}
+      {% else %}
+        Waiting for opponent id…
+      {% endif %}
+    </div>
+  </div>
+
+  {% if enemy.faction.name %}
+    <h2>🟢 ENEMY ONLINE (0–20 mins)</h2>
+    {% if them.online|length == 0 %}<div class="section-empty">No enemy online right now.</div>{% endif %}
+    {% for row in them.online %}
+      <div class="member online">
+        <div class="left"><div class="name">{{ row.name }}</div><div class="sub">ID: {{ row.id }}</div></div>
+        <div class="right">{{ row.minutes }}m</div>
+      </div>
+    {% endfor %}
+
+    <h2>🟡 ENEMY IDLE (20–30 mins)</h2>
+    {% if them.idle|length == 0 %}<div class="section-empty">No enemy idle right now.</div>{% endif %}
+    {% for row in them.idle %}
+      <div class="member idle">
+        <div class="left"><div class="name">{{ row.name }}</div><div class="sub">ID: {{ row.id }}</div></div>
+        <div class="right">{{ row.minutes }}m</div>
+      </div>
+    {% endfor %}
+
+    <h2>🔴 ENEMY OFFLINE (30+ mins)</h2>
+    {% if them.offline|length == 0 %}<div class="section-empty">No enemy offline right now.</div>{% endif %}
+    {% for row in them.offline %}
+      <div class="member offline">
+        <div class="left"><div class="name">{{ row.name }}</div><div class="sub">ID: {{ row.id }}</div></div>
+        <div class="right">{{ row.minutes }}m</div>
+      </div>
+    {% endfor %}
+  {% endif %}
+
 </body>
 </html>
 """
 
-# ===== ROUTES =====
+
 @app.route("/ping")
 def ping():
     return "pong"
@@ -311,6 +331,7 @@ def state():
 @app.route("/")
 def panel():
     you_sections = split_sections(STATE.get("rows") or [])
+    them_sections = split_sections((STATE.get("enemy") or {}).get("rows") or [])
     return render_template_string(
         HTML,
         updated_at=STATE.get("updated_at"),
@@ -318,8 +339,10 @@ def panel():
         available_count=STATE.get("available_count", 0),
         war=STATE.get("war", {}),
         faction=STATE.get("faction", {}),
+        enemy=STATE.get("enemy", {}),
         last_error=STATE.get("last_error"),
         you=you_sections,
+        them=them_sections,
     )
 
 @app.route("/api/availability", methods=["POST"])
@@ -341,18 +364,18 @@ def api_availability():
     return jsonify({"ok": True, "id": torn_id, "available": available})
 
 
-# ===== POLLER =====
 async def poll_once():
     if not FACTION_ID or not FACTION_API_KEY:
         raise RuntimeError("Missing FACTION_ID or FACTION_API_KEY env vars.")
 
     avail_map = get_availability_map()
 
-    v2_payload = await get_faction_core(FACTION_ID, FACTION_API_KEY)
-    if isinstance(v2_payload, dict) and v2_payload.get("error"):
-        raise RuntimeError(f"Torn API error: {v2_payload.get('error')}")
+    # OUR FACTION
+    our_payload = await get_faction_core(FACTION_ID, FACTION_API_KEY)
+    if isinstance(our_payload, dict) and our_payload.get("error"):
+        raise RuntimeError(f"Torn API error (core): {our_payload.get('error')}")
 
-    rows, counts, available_count, header, chain = normalize_faction_rows(v2_payload, avail_map=avail_map)
+    rows, counts, available_count, header, chain = normalize_faction_rows(our_payload, avail_map=avail_map)
 
     STATE["rows"] = rows
     STATE["counts"] = counts
@@ -360,9 +383,11 @@ async def poll_once():
     STATE["faction"] = header
     STATE["chain"] = chain
 
+    # WAR
     war = await get_ranked_war_best(FACTION_ID, FACTION_API_KEY)
     if isinstance(war, dict) and war.get("error"):
         war = {}
+
     STATE["war"] = {
         "opponent": war.get("opponent"),
         "opponent_id": war.get("opponent_id"),
@@ -373,8 +398,44 @@ async def poll_once():
         "enemy_score": war.get("enemy_score"),
     }
 
+    # ENEMY FACTION (needs opponent_id)
+    opp_id = war.get("opponent_id")
+    if opp_id:
+        enemy_payload = await get_faction_core(str(opp_id), FACTION_API_KEY)
+        if isinstance(enemy_payload, dict) and enemy_payload.get("error"):
+            # don’t crash whole app
+            STATE["enemy"] = {
+                "supported": True,
+                "reason": f"Enemy fetch error: {enemy_payload.get('error')}",
+                "faction": {"name": None, "tag": None, "respect": None, "id": str(opp_id)},
+                "rows": [],
+                "counts": {"online": 0, "idle": 0, "offline": 0, "hospital": 0},
+                "updated_at": now_iso(),
+            }
+        else:
+            erows, ecounts, _, eheader, _ = normalize_faction_rows(enemy_payload, avail_map={})
+            eheader["id"] = str(opp_id)
+            STATE["enemy"] = {
+                "supported": True,
+                "reason": None,
+                "faction": eheader,
+                "rows": erows,
+                "counts": ecounts,
+                "updated_at": now_iso(),
+            }
+    else:
+        STATE["enemy"] = {
+            "supported": True,
+            "reason": None,
+            "faction": {"name": None, "tag": None, "respect": None, "id": None},
+            "rows": [],
+            "counts": {"online": 0, "idle": 0, "offline": 0, "hospital": 0},
+            "updated_at": None,
+        }
+
     STATE["updated_at"] = now_iso()
     STATE["last_error"] = None
+
 
 async def poll_loop():
     while True:
@@ -385,10 +446,12 @@ async def poll_loop():
             STATE["updated_at"] = now_iso()
         await asyncio.sleep(POLL_SECONDS)
 
+
 def start_poll_thread():
     def runner():
         asyncio.run(poll_loop())
     threading.Thread(target=runner, daemon=True).start()
+
 
 @app.before_request
 def boot_once():
@@ -401,6 +464,7 @@ def boot_once():
         init_db()
         start_poll_thread()
         BOOTED = True
+
 
 if __name__ == "__main__":
     init_db()
