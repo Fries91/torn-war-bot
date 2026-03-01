@@ -7,20 +7,14 @@ from datetime import datetime, timezone
 from flask import Flask, jsonify, request, Response
 from dotenv import load_dotenv
 
-from db import (
-    init_db, upsert_availability, get_availability_map,
-    get_setting, set_setting,
-    get_alert_state, set_alert_state
-)
-
+from db import init_db, upsert_availability, get_availability_map
 from torn_api import get_faction_core, get_ranked_war_best
 
 load_dotenv()
 
 FACTION_ID = (os.getenv("FACTION_ID") or "").strip()
 FACTION_API_KEY = (os.getenv("FACTION_API_KEY") or "").strip()
-
-AVAIL_TOKEN = (os.getenv("AVAIL_TOKEN") or "").strip()   # yours = 666
+AVAIL_TOKEN = (os.getenv("AVAIL_TOKEN") or "").strip()   # 666
 POLL_SECONDS = int(os.getenv("POLL_SECONDS", "25"))
 
 app = Flask(__name__)
@@ -32,6 +26,7 @@ STATE = {
     "war": {"opponent": None, "start": None, "end": None, "target": None, "score": None, "enemy_score": None},
     "chain": {"current": None, "max": None, "timeout": None, "cooldown": None},
     "available_count": 0,
+    "counts": {"online": 0, "idle": 0, "offline": 0, "hospital": 0},
     "last_error": None
 }
 
@@ -41,19 +36,6 @@ POLL_THREAD = None
 
 def iso_now():
     return datetime.now(timezone.utc).isoformat()
-
-
-def minutes_since(ts_iso):
-    if not ts_iso:
-        return None
-    try:
-        s = str(ts_iso).replace("Z", "+00:00")
-        dt = datetime.fromisoformat(s)
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        return int((datetime.now(timezone.utc) - dt).total_seconds() // 60)
-    except Exception:
-        return None
 
 
 def status_from_last_action(mins):
@@ -76,10 +58,74 @@ def require_token_if_set(req):
 
 @app.after_request
 def headers(resp):
-    # We are not iframing anything; keep headers simple
     resp.headers.pop("Content-Security-Policy", None)
     resp.headers.pop("X-Frame-Options", None)
     return resp
+
+
+def _read_minutes_from_member(m: dict):
+    """
+    Supports multiple Torn shapes:
+    - last_action: {seconds: 123}
+    - last_action: {timestamp_iso: "..."} etc
+    """
+    la = m.get("last_action")
+
+    # common v2: last_action.seconds
+    if isinstance(la, dict):
+        secs = la.get("seconds")
+        if isinstance(secs, (int, float)):
+            return int(secs // 60)
+
+        # fallback: try parsing ISO-ish
+        iso = la.get("timestamp_iso") or la.get("timestamp") or la.get("time") or la.get("date")
+        if isinstance(iso, str):
+            try:
+                s = iso.replace("Z", "+00:00")
+                dt = datetime.fromisoformat(s)
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                return int((datetime.now(timezone.utc) - dt).total_seconds() // 60)
+            except Exception:
+                return None
+
+    # sometimes last_action is directly a string
+    if isinstance(la, str):
+        try:
+            s = la.replace("Z", "+00:00")
+            dt = datetime.fromisoformat(s)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return int((datetime.now(timezone.utc) - dt).total_seconds() // 60)
+        except Exception:
+            return None
+
+    return None
+
+
+def _read_hospital(m: dict):
+    """
+    v2 members often have:
+      status: {state: "Hospital", until: <unix> or "timestamp" ...}
+    We'll store hospital boolean + until (best effort).
+    """
+    st = m.get("status")
+    hospital = False
+    until = None
+
+    if isinstance(st, dict):
+        state = (st.get("state") or st.get("status") or "").lower()
+        if "hospital" in state:
+            hospital = True
+        # "until" may be unix seconds or string; keep raw
+        until = st.get("until") or st.get("timestamp") or st.get("time") or st.get("date")
+
+    # sometimes status is string
+    if isinstance(st, str):
+        if "hospital" in st.lower():
+            hospital = True
+
+    return hospital, until
 
 
 async def poll_once():
@@ -89,41 +135,40 @@ async def poll_once():
         STATE["last_error"] = {"error": "Missing FACTION_ID or FACTION_API_KEY env var", "at": iso_now()}
         return
 
-    # DB map: {id: {available: bool, name:..., updated_at:...}}
     avail_map = get_availability_map() or {}
 
     core = await get_faction_core(FACTION_ID, FACTION_API_KEY)
     war_norm = await get_ranked_war_best(FACTION_ID, FACTION_API_KEY) or {}
 
-    # faction
     f_name = core.get("name")
     f_tag = core.get("tag")
     f_respect = core.get("respect")
 
-    # members list shape can vary
-    members = core.get("members") or []
+    members = core.get("members") or {}
     members_iter = members.values() if isinstance(members, dict) else members
 
     rows = []
     available_count = 0
+    counts = {"online": 0, "idle": 0, "offline": 0, "hospital": 0}
 
     for m in members_iter:
         torn_id = str(m.get("id") or m.get("torn_id") or "")
         name = m.get("name") or f"#{torn_id}"
 
-        la = m.get("last_action")
-        mins = None
-        if isinstance(la, dict):
-            secs = la.get("seconds")
-            if isinstance(secs, (int, float)):
-                mins = int(secs / 60)
-            else:
-                last_action_iso = la.get("timestamp_iso") or la.get("timestamp") or la.get("time") or la.get("date")
-                mins = minutes_since(last_action_iso)
-        elif isinstance(la, str):
-            mins = minutes_since(la)
+        mins = _read_minutes_from_member(m)
+        base_status = status_from_last_action(mins)
 
-        status = status_from_last_action(mins)
+        hospital, hospital_until = _read_hospital(m)
+        final_status = "hospital" if hospital else base_status
+
+        if final_status == "hospital":
+            counts["hospital"] += 1
+        elif final_status == "online":
+            counts["online"] += 1
+        elif final_status == "idle":
+            counts["idle"] += 1
+        else:
+            counts["offline"] += 1
 
         db_rec = avail_map.get(int(torn_id)) if torn_id.isdigit() else None
         is_available = bool(db_rec and db_rec.get("available"))
@@ -134,19 +179,20 @@ async def poll_once():
             "id": torn_id,
             "name": name,
             "minutes": mins,
-            "status": status,
+            "status": final_status,          # online / idle / offline / hospital
+            "hospital": hospital,
+            "hospital_until": hospital_until,
             "available": is_available
         })
 
-    # Sort: online first, then idle, then offline — most recent on top
+    # Sort: hospital first, then online, idle, offline; most recent action near top
     def sort_key(r):
-        bucket = {"online": 0, "idle": 1, "offline": 2}.get(r["status"], 3)
+        bucket = {"hospital": 0, "online": 1, "idle": 2, "offline": 3}.get(r["status"], 9)
         mins2 = r["minutes"] if isinstance(r["minutes"], int) else 999999
         return (bucket, mins2)
 
     rows.sort(key=sort_key)
 
-    # war fields (from normalized torn_api)
     war_obj = {
         "opponent": war_norm.get("opponent"),
         "start": war_norm.get("start"),
@@ -171,6 +217,7 @@ async def poll_once():
         "war": war_obj,
         "chain": chain,
         "available_count": available_count,
+        "counts": counts,
         "last_error": None
     })
 
@@ -207,11 +254,7 @@ def state():
 
 @app.route("/api/availability", methods=["POST"])
 def api_availability():
-    """
-    POST JSON: {"torn_id":"1234","available":true,"name":"PopZ"}
-    - requires token if AVAIL_TOKEN set (yours=666)
-    - ✅ ANYONE can opt in/out now (no chain sitter restriction)
-    """
+    # token protected, anyone can opt
     if not require_token_if_set(request):
         return jsonify({"ok": False, "error": "unauthorized"}), 401
 
@@ -234,33 +277,7 @@ def api_availability():
 @app.route("/")
 def home():
     return Response(
-        """
-        <!doctype html>
-        <html><head>
-          <meta name="viewport" content="width=device-width, initial-scale=1" />
-          <title>7DS*: Wrath War-Bot</title>
-          <style>
-            body{margin:0;background:#0a0708;color:#eee;font-family:Arial}
-            .wrap{padding:16px;max-width:820px;margin:0 auto}
-            .box{background:#151112;border:1px solid #3a1518;border-radius:14px;padding:14px}
-            a{color:#ffcc66}
-            code{color:#ffcc66}
-          </style>
-        </head>
-        <body>
-          <div class="wrap">
-            <div class="box">
-              <h2 style="margin:0 0 10px 0;">🛡️ 7DS*: Wrath War-Bot</h2>
-              <div>This service powers the in-game overlay.</div>
-              <ul>
-                <li><code>/health</code></li>
-                <li><code>/state</code></li>
-                <li><code>/api/availability</code></li>
-              </ul>
-            </div>
-          </div>
-        </body></html>
-        """,
+        "<h3 style='font-family:Arial'>7DS*: Wrath War-Bot OK</h3><div>/state • /health • /api/availability</div>",
         mimetype="text/html"
     )
 
