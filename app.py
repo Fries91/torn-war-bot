@@ -38,16 +38,16 @@ DISCORD_WEBHOOK_URL = (os.getenv("DISCORD_WEBHOOK_URL") or "").strip()
 PORT = int(os.getenv("PORT", "10000"))
 
 POLL_INTERVAL_SECONDS = int(os.getenv("POLL_INTERVAL_SECONDS", "30"))
-POST_INTERVAL_SECONDS = int(os.getenv("POST_INTERVAL_SECONDS", "120"))
+POST_INTERVAL_SECONDS = int(os.getenv("POST_INTERVAL_SECONDS", "120"))  # reserved
 
-SMART_PING_MIN_ONLINE = int(os.getenv("SMART_PING_MIN_ONLINE", "5"))
-SMART_PING_MENTION = (os.getenv("SMART_PING_MENTION") or "@here").strip()
-SMART_PING_COOLDOWN_SECONDS = int(os.getenv("SMART_PING_COOLDOWN_SECONDS", "600"))
+SMART_PING_MIN_ONLINE = int(os.getenv("SMART_PING_MIN_ONLINE", "5"))  # reserved
+SMART_PING_MENTION = (os.getenv("SMART_PING_MENTION") or "@here").strip()  # reserved
+SMART_PING_COOLDOWN_SECONDS = int(os.getenv("SMART_PING_COOLDOWN_SECONDS", "600"))  # reserved
 
-CHAIN_TIMEOUT_ALERT_SECONDS = int(os.getenv("CHAIN_TIMEOUT_ALERT_SECONDS", "600"))
-CHAIN_TIMEOUT_COOLDOWN_SECONDS = int(os.getenv("CHAIN_TIMEOUT_COOLDOWN_SECONDS", "600"))
+CHAIN_TIMEOUT_ALERT_SECONDS = int(os.getenv("CHAIN_TIMEOUT_ALERT_SECONDS", "600"))  # reserved
+CHAIN_TIMEOUT_COOLDOWN_SECONDS = int(os.getenv("CHAIN_TIMEOUT_COOLDOWN_SECONDS", "600"))  # reserved
 
-WAR_ALERT_COOLDOWN_SECONDS = int(os.getenv("WAR_ALERT_COOLDOWN_SECONDS", "600"))
+WAR_ALERT_COOLDOWN_SECONDS = int(os.getenv("WAR_ALERT_COOLDOWN_SECONDS", "600"))  # reserved
 
 # Optional: protect availability endpoint
 AVAIL_TOKEN = (os.getenv("AVAIL_TOKEN") or "").strip()
@@ -58,7 +58,7 @@ CHAIN_SITTER_IDS_RAW = (os.getenv("CHAIN_SITTER_IDS") or "1234").strip()
 
 # ===== helpers =====
 def _parse_id_set(csv: str) -> set[int]:
-    out = set()
+    out: set[int] = set()
     for part in (csv or "").split(","):
         part = part.strip()
         if not part:
@@ -77,7 +77,7 @@ def is_chain_sitter(torn_id: int) -> bool:
     return torn_id in CHAIN_SITTER_IDS
 
 
-def now_iso():
+def now_iso() -> str:
     return datetime.utcnow().isoformat() + "Z"
 
 
@@ -85,7 +85,7 @@ def unix_now() -> int:
     return int(time.time())
 
 
-def panel_url():
+def panel_url() -> str:
     return (PUBLIC_BASE_URL.rstrip("/") + "/") if PUBLIC_BASE_URL else "(set PUBLIC_BASE_URL)"
 
 
@@ -521,18 +521,20 @@ def ensure_background_started():
 @app.before_request
 def _boot():
     ensure_background_started()
-# ----------------------------------------
 
 
 @app.after_request
 def allow_iframe(resp):
+    # remove any default frame blockers
     for h in ["X-Frame-Options", "x-frame-options"]:
         resp.headers.pop(h, None)
 
+    # allow torn iframes
     resp.headers["Content-Security-Policy"] = (
         "frame-ancestors 'self' https://torn.com https://www.torn.com https://*.torn.com;"
     )
 
+    # extra permissive (kept)
     resp.headers["X-Frame-Options"] = "ALLOWALL"
     resp.headers["Cache-Control"] = "no-store"
     return resp
@@ -551,8 +553,7 @@ def health():
 
 @app.post("/api/availability")
 def api_availability():
-    # ✅ THIS is the exact line that was broken in your deploy earlier.
-    # It MUST be: if AVAIL_TOKEN:
+    # Protect endpoint if token set
     if AVAIL_TOKEN:
         tok = (request.headers.get("X-Avail-Token") or "").strip()
         if tok != AVAIL_TOKEN:
