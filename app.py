@@ -20,17 +20,14 @@ load_dotenv()
 FACTION_ID = (os.getenv("FACTION_ID") or "").strip()
 FACTION_API_KEY = (os.getenv("FACTION_API_KEY") or "").strip()
 
-AVAIL_TOKEN = (os.getenv("AVAIL_TOKEN") or "").strip()   # you set this to 666 in Render
+AVAIL_TOKEN = (os.getenv("AVAIL_TOKEN") or "").strip()   # yours = 666
 POLL_SECONDS = int(os.getenv("POLL_SECONDS", "25"))
 
-# Chain sitter IDs (comma-separated Torn IDs), ex: "1234,5678"
+# Chain sitter IDs (comma-separated), ex: "1234,5678"
 CHAIN_SITTER_IDS = [s.strip() for s in (os.getenv("CHAIN_SITTER_IDS") or "1234").split(",") if s.strip()]
 CHAIN_SITTER_SET = set(CHAIN_SITTER_IDS)
 
-# Background file path (put in /static)
-LITE_BG = (os.getenv("LITE_BG") or "/static/wrath-bg.jpg").strip()
-
-app = Flask(__name__, static_folder="static")
+app = Flask(__name__)
 
 STATE = {
     "rows": [],
@@ -46,9 +43,9 @@ BOOTED = False
 POLL_THREAD = None
 
 
-# ---------- Helpers ----------
 def iso_now():
     return datetime.now(timezone.utc).isoformat()
+
 
 def minutes_since(ts_iso):
     if not ts_iso:
@@ -62,6 +59,7 @@ def minutes_since(ts_iso):
     except Exception:
         return None
 
+
 def status_from_last_action(mins):
     # Online=0-20, Idle=21-30, Offline=31+
     if mins is None:
@@ -72,8 +70,10 @@ def status_from_last_action(mins):
         return "idle"
     return "offline"
 
+
 def require_chain_sitter(torn_id):
     return bool(torn_id) and str(torn_id) in CHAIN_SITTER_SET
+
 
 def require_token_if_set(req):
     if not AVAIL_TOKEN:
@@ -82,23 +82,14 @@ def require_token_if_set(req):
     return token == AVAIL_TOKEN
 
 
-# ---------- Headers ----------
 @app.after_request
 def headers(resp):
-    # /lite is opened in a new tab => remove CSP/XFO entirely
-    if request.path.startswith("/lite"):
-        resp.headers.pop("Content-Security-Policy", None)
-        resp.headers.pop("X-Frame-Options", None)
-        return resp
-
-    # everything else: if you ever iframe it, allow torn.com
+    # We are NOT iframing anything anymore, but keeping this harmless.
     resp.headers.pop("Content-Security-Policy", None)
-    resp.headers["Content-Security-Policy"] = "frame-ancestors 'self' https://www.torn.com https://torn.com;"
-    resp.headers["X-Frame-Options"] = "ALLOWALL"
+    resp.headers.pop("X-Frame-Options", None)
     return resp
 
 
-# ---------- Polling ----------
 async def poll_once():
     global STATE
 
@@ -106,23 +97,17 @@ async def poll_once():
         STATE["last_error"] = {"error": "Missing FACTION_ID or FACTION_API_KEY env var", "at": iso_now()}
         return
 
-    # DB map: {id: {available: bool, name:..., updated_at:...}}
     avail_map = get_availability_map() or {}
 
     core = await get_faction_core(FACTION_ID, FACTION_API_KEY)
     war_norm = await get_ranked_war_best(FACTION_ID, FACTION_API_KEY) or {}
 
-    # faction
     f_name = core.get("name")
     f_tag = core.get("tag")
     f_respect = core.get("respect")
 
-    # members list shape can vary; support list or dict
     members = core.get("members") or []
-    if isinstance(members, dict):
-        members_iter = members.values()
-    else:
-        members_iter = members
+    members_iter = members.values() if isinstance(members, dict) else members
 
     rows = []
     available_count = 0
@@ -131,16 +116,17 @@ async def poll_once():
         torn_id = str(m.get("id") or m.get("torn_id") or "")
         name = m.get("name") or f"#{torn_id}"
 
-        # last action timestamp iso
-        last_action_iso = None
         la = m.get("last_action")
+        mins = None
         if isinstance(la, dict):
-            last_action_iso = la.get("timestamp_iso") or la.get("timestamp") or la.get("time") or la.get("date")
-            # Some Torn shapes give "seconds" instead. If so, convert to minutes and skip iso calc.
             secs = la.get("seconds")
-            mins = int(secs / 60) if isinstance(secs, (int, float)) else minutes_since(last_action_iso)
-        else:
-            mins = minutes_since(la if isinstance(la, str) else None)
+            if isinstance(secs, (int, float)):
+                mins = int(secs / 60)
+            else:
+                last_action_iso = la.get("timestamp_iso") or la.get("timestamp") or la.get("time") or la.get("date")
+                mins = minutes_since(last_action_iso)
+        elif isinstance(la, str):
+            mins = minutes_since(la)
 
         status = status_from_last_action(mins)
 
@@ -157,15 +143,14 @@ async def poll_once():
             "available": is_available
         })
 
-    # Sort: online first, then idle, then offline — and most recent on top
+    # Sort: online first, then idle, then offline — most recent on top
     def sort_key(r):
         bucket = {"online": 0, "idle": 1, "offline": 2}.get(r["status"], 3)
-        mins = r["minutes"] if isinstance(r["minutes"], int) else 999999
-        return (bucket, mins)
+        mins2 = r["minutes"] if isinstance(r["minutes"], int) else 999999
+        return (bucket, mins2)
 
     rows.sort(key=sort_key)
 
-    # war fields (use whatever your torn_api normalizes)
     war_obj = {
         "opponent": war_norm.get("opponent"),
         "start": war_norm.get("start"),
@@ -214,20 +199,21 @@ def boot_once():
     POLL_THREAD.start()
 
 
-# ---------- Routes ----------
 @app.route("/health")
 def health():
     return jsonify({"ok": True, "updated_at": STATE.get("updated_at"), "last_error": STATE.get("last_error")})
+
 
 @app.route("/state")
 def state():
     return jsonify(STATE)
 
+
 @app.route("/api/availability", methods=["POST"])
 def api_availability():
     """
     POST JSON: {"torn_id":"1234","available":true,"name":"PopZ"}
-    - requires token if AVAIL_TOKEN is set (yours = 666)
+    - requires token if AVAIL_TOKEN set (yours=666)
     - only allows chain sitters (CHAIN_SITTER_IDS env)
     """
     if not require_token_if_set(request):
@@ -236,7 +222,7 @@ def api_availability():
     data = request.get_json(silent=True) or {}
     torn_id = str(data.get("torn_id") or "").strip()
     available = bool(data.get("available", False))
-    name = str(data.get("name") or "").strip() or None
+    name = str(data.get("name") or "").strip()
 
     if not torn_id.isdigit():
         return jsonify({"ok": False, "error": "invalid_torn_id"}), 400
@@ -244,7 +230,6 @@ def api_availability():
     if not require_chain_sitter(torn_id):
         return jsonify({"ok": False, "error": "not_chain_sitter"}), 403
 
-    # If name not provided, keep existing name if present
     if not name:
         existing = (get_availability_map() or {}).get(int(torn_id))
         name = (existing or {}).get("name") or f"#{torn_id}"
@@ -255,6 +240,7 @@ def api_availability():
 
 @app.route("/")
 def home():
+    # Minimal landing
     return Response(
         """
         <!doctype html>
@@ -273,248 +259,18 @@ def home():
           <div class="wrap">
             <div class="box">
               <h2 style="margin:0 0 10px 0;">🛡️ 7DS*: Wrath War-Bot</h2>
-              <div>Open the CSP-proof panel:</div>
-              <div style="margin-top:10px;"><a href="/lite">/lite</a></div>
-              <div style="margin-top:10px; font-size:12px; opacity:.85;">
-                Background file should be at <code>static/wrath-bg.jpg</code>
-              </div>
+              <div>This service powers the in-game overlay. Endpoints:</div>
+              <ul>
+                <li><code>/health</code></li>
+                <li><code>/state</code></li>
+                <li><code>/api/availability</code></li>
+              </ul>
             </div>
           </div>
         </body></html>
         """,
         mimetype="text/html"
     )
-
-
-@app.route("/lite")
-def lite():
-    return Response(f"""
-<!doctype html>
-<html>
-<head>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>7DS*: Wrath — War-Bot</title>
-  <style>
-    :root {{
-      --gold:#d7b35a;
-      --line: rgba(255,60,50,.28);
-      --glass: rgba(0,0,0,.62);
-    }}
-    body {{
-      margin:0;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
-      color:#fff;
-      background:
-        linear-gradient(rgba(0,0,0,.78), rgba(0,0,0,.86)),
-        url('{LITE_BG}') center center / cover no-repeat fixed;
-    }}
-    .wrap {{ max-width: 980px; margin: 0 auto; padding: 14px; }}
-    .banner {{
-      background: linear-gradient(180deg, rgba(255,59,48,.20), rgba(0,0,0,.55));
-      border:1px solid var(--line);
-      border-radius:16px;
-      padding:12px 14px;
-      box-shadow: 0 12px 35px rgba(0,0,0,.55);
-      margin-bottom: 12px;
-    }}
-    .title {{ display:flex; align-items:center; gap:10px; }}
-    .crest {{
-      width:36px;height:36px;border-radius:12px;
-      display:grid;place-items:center;
-      border:1px solid rgba(215,179,90,.28);
-      background: radial-gradient(circle at 30% 30%, rgba(215,179,90,.18), rgba(255,59,48,.12), rgba(0,0,0,.6));
-      color:var(--gold);
-      font-weight:900;
-    }}
-    h1 {{ margin:0; font-size:16px; color: var(--gold); letter-spacing:.6px; }}
-    .sub {{ margin-top:4px; font-size:12px; opacity:.85; }}
-
-    .grid {{ display:grid; grid-template-columns: 1fr; gap:10px; }}
-    @media (min-width: 820px) {{ .grid {{ grid-template-columns: 1fr 1fr; }} }}
-
-    .card {{
-      background: var(--glass);
-      border:1px solid var(--line);
-      border-radius:16px;
-      padding:12px;
-      backdrop-filter: blur(6px);
-      box-shadow: 0 12px 35px rgba(0,0,0,.55);
-    }}
-    .card h2 {{
-      margin:0 0 8px 0;
-      font-size:13px;
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-    }}
-    .pill {{
-      font-size:11px;
-      padding:4px 8px;
-      border-radius:999px;
-      border:1px solid rgba(215,179,90,.22);
-      color:var(--gold);
-      background: rgba(215,179,90,.08);
-    }}
-
-    .row {{ display:flex; justify-content:space-between; gap:10px; padding:7px 0; border-top:1px solid rgba(255,255,255,.08); }}
-    .row:first-of-type {{ border-top:none; }}
-    .k {{ opacity:.85; font-size:12px; }}
-    .v {{ font-size:12px; text-align:right; }}
-
-    .members {{ display:flex; flex-direction:column; gap:8px; }}
-    .m {{
-      background: rgba(0,0,0,.45);
-      border:1px solid rgba(255,60,50,.18);
-      border-radius:14px;
-      padding:9px 10px;
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      gap:10px;
-    }}
-    .left {{ display:flex; align-items:center; gap:10px; min-width:0; }}
-    .dot {{ width:10px; height:10px; border-radius:999px; box-shadow: 0 0 0 3px rgba(255,255,255,.05); flex:0 0 auto; }}
-    .dot.online {{ background:#2cff6f; }}
-    .dot.idle {{ background:#ffcc00; }}
-    .dot.offline {{ background:#ff4444; }}
-    .name {{ font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width: 280px; }}
-    .meta {{ font-size:11px; opacity:.85; }}
-
-    .err {{
-      margin-top:10px;
-      padding:10px;
-      border-radius:14px;
-      border:1px solid rgba(255,59,48,.35);
-      background: rgba(255,59,48,.08);
-      color:#ffd6d3;
-      font-size:12px;
-      white-space:pre-wrap;
-      display:none;
-    }}
-    .footer {{
-      margin-top:10px;
-      font-size:11px;
-      opacity:.85;
-      display:flex;
-      justify-content:space-between;
-      gap:10px;
-    }}
-  </style>
-</head>
-<body>
-  <div class="wrap">
-    <div class="banner">
-      <div class="title">
-        <div class="crest">7</div>
-        <div>
-          <h1>7DS*: Wrath — War-Bot</h1>
-          <div class="sub">Live panel • auto refresh 15s</div>
-        </div>
-      </div>
-    </div>
-
-    <div class="grid">
-      <div class="card">
-        <h2>⚔ War Status <span class="pill" id="updated">—</span></h2>
-        <div class="row"><div class="k">Opponent</div><div class="v" id="opponent">—</div></div>
-        <div class="row"><div class="k">Target</div><div class="v" id="target">—</div></div>
-        <div class="row"><div class="k">Your Score</div><div class="v" id="score">—</div></div>
-        <div class="row"><div class="k">Enemy Score</div><div class="v" id="enemy">—</div></div>
-      </div>
-
-      <div class="card">
-        <h2>🟢 Online / 🟡 Idle / 🔴 Offline <span class="pill" id="counts">—</span></h2>
-        <div class="members" id="members"></div>
-      </div>
-    </div>
-
-    <div id="err" class="err"></div>
-
-    <div class="footer">
-      <div id="faction">—</div>
-      <div>Powered by Fries91</div>
-    </div>
-  </div>
-
-<script>
-  function esc(s) {{
-    return (s ?? "").toString().replace(/[&<>"']/g, m => ({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[m]));
-  }}
-
-  async function loadState() {{
-    try {{
-      const res = await fetch("/state", {{ cache: "no-store" }});
-      const data = await res.json();
-
-      document.getElementById("updated").textContent = data.updated_at ? "Updated" : "Waiting";
-
-      const f = data.faction || {{}};
-      document.getElementById("faction").textContent =
-        (f.tag ? `[${{esc(f.tag)}}] ` : "") + (f.name ? esc(f.name) : "Faction") + (f.respect ? ` • Respect ${{f.respect}}` : "");
-
-      const w = data.war || {{}};
-      document.getElementById("opponent").textContent = w.opponent ? esc(w.opponent) : "No active war";
-      document.getElementById("target").textContent = (w.target ?? "—");
-      document.getElementById("score").textContent = (w.score ?? "—");
-      document.getElementById("enemy").textContent = (w.enemy_score ?? "—");
-
-      const rows = data.rows || [];
-      let online=0, idle=0, offline=0;
-
-      const wrap = document.getElementById("members");
-      wrap.innerHTML = "";
-
-      rows.forEach(r => {{
-        const st = r.status || "offline";
-        if (st === "online") online++;
-        else if (st === "idle") idle++;
-        else offline++;
-
-        const mins = (typeof r.minutes === "number") ? `${{r.minutes}}m` : "—";
-
-        const el = document.createElement("div");
-        el.className = "m";
-        el.innerHTML = `
-          <div class="left">
-            <div class="dot ${{st}}"></div>
-            <div style="min-width:0;">
-              <div class="name">${{esc(r.name)}}</div>
-              <div class="meta">Last action: ${{mins}} • ID: ${{esc(r.id)}}</div>
-            </div>
-          </div>
-          <div class="meta" style="text-align:right;">
-            ${{st.toUpperCase()}}<br>
-            <span style="color:var(--gold);">
-              ${{st==="online"?"0–20m":(st==="idle"?"21–30m":"31m+")}}
-            </span>
-          </div>
-        `;
-        wrap.appendChild(el);
-      }});
-
-      document.getElementById("counts").textContent = `🟢 ${{online}}  🟡 ${{idle}}  🔴 ${{offline}}`;
-
-      const errBox = document.getElementById("err");
-      if (data.last_error) {{
-        errBox.style.display = "block";
-        errBox.textContent = "Last error:\\n" + JSON.stringify(data.last_error, null, 2);
-      }} else {{
-        errBox.style.display = "none";
-      }}
-    }} catch (e) {{
-      const errBox = document.getElementById("err");
-      errBox.style.display = "block";
-      errBox.textContent = "Failed to load /state\\n" + (e?.message || e);
-    }}
-  }}
-
-  loadState();
-  setInterval(loadState, 15000);
-</script>
-
-</body>
-</html>
-""", mimetype="text/html")
 
 
 if __name__ == "__main__":
