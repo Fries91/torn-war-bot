@@ -190,7 +190,7 @@ def normalize_faction_rows(v2_payload: dict, avail_map=None):
     return rows, counts, available_count, header, chain_out
 
 
-# ✅ HARDENED CSS: uses !important so Torn/PDA/iframe cannot override into “black on black”
+# ✅ 7 Deadly Sins: Wrath theme + iframe-safe CSS hardening
 HTML = r"""
 <!doctype html>
 <html>
@@ -200,22 +200,37 @@ HTML = r"""
   <title>⚔ 7DS*: WRATH WAR PANEL</title>
   <style>
     :root{
-      --bg:#0b0b0b;
-      --text:#f2f2f2;
-      --muted:rgba(242,242,242,.78);
-      --card:rgba(255,255,255,.03);
-      --cardBorder:rgba(255,255,255,.06);
+      --bg0:#070607;
+      --bg1:#0d0a0c;
+      --panel:#120f12;
+      --panel2:#171217;
+      --text:#f4f2f3;
+      --muted:rgba(244,242,243,.74);
+
+      --ember:#ff7a18;
+      --blood:#ff2a2a;
+      --gold:#ffd24a;
+      --violet:#b06cff;
+
       --line:rgba(255,255,255,.10);
+      --card:rgba(255,255,255,.035);
+      --cardBorder:rgba(255,255,255,.07);
+
       --green:#00ff66;
       --yellow:#ffd000;
       --red:#ff3333;
-      --purple:#b06cff;
+
       --dangerBg:rgba(255,80,80,.12);
       --dangerBorder:rgba(255,80,80,.25);
+
+      --glowRed: 0 0 14px rgba(255,42,42,.25), 0 0 26px rgba(255,42,42,.14);
+      --glowEmber: 0 0 14px rgba(255,122,24,.22), 0 0 28px rgba(255,122,24,.12);
     }
 
     html, body {
-      background: var(--bg) !important;
+      background: radial-gradient(1200px 700px at 18% 10%, rgba(255,42,42,.10), transparent 55%),
+                  radial-gradient(900px 600px at 82% 0%, rgba(255,122,24,.08), transparent 60%),
+                  linear-gradient(180deg, var(--bg0), var(--bg1)) !important;
       color: var(--text) !important;
       font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif !important;
       margin: 0 !important;
@@ -223,34 +238,168 @@ HTML = r"""
       -webkit-text-size-adjust: 100%;
     }
 
-    /* prevent external CSS forcing black text */
+    /* Torn/PDA override shield */
     * { color: inherit !important; }
 
+    .sigil {
+      height: 10px;
+      border-radius: 999px;
+      background: linear-gradient(90deg, transparent, rgba(255,42,42,.55), rgba(255,122,24,.45), transparent) !important;
+      filter: blur(.0px);
+      opacity: .9;
+      margin-bottom: 10px;
+      position: relative;
+      overflow: hidden;
+      border: 1px solid rgba(255,255,255,.06) !important;
+      box-shadow: var(--glowRed);
+    }
+    .sigil:after{
+      content:"";
+      position:absolute;
+      top:-40px; left:-60%;
+      width: 40%;
+      height: 120px;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,.10), transparent);
+      transform: rotate(18deg);
+      animation: sweep 5.8s linear infinite;
+      opacity:.5;
+    }
+    @keyframes sweep{
+      0%{ left:-60%; }
+      100%{ left:140%; }
+    }
+
     .topbar { display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:10px; }
-    .title { font-weight:900; letter-spacing:.6px; font-size:16px; color: var(--text) !important; }
-    .meta { font-size:12px; opacity:.92; display:flex; align-items:center; gap:8px; flex-wrap:wrap; color: var(--text) !important; }
-    .pill { display:inline-block; padding:6px 10px; border-radius:999px; background:rgba(255,255,255,.06) !important; border:1px solid rgba(255,255,255,.08) !important; font-size:12px; white-space:nowrap; color: var(--text) !important; }
+    .title {
+      font-weight: 950;
+      letter-spacing: 1.1px;
+      font-size: 16px;
+      color: var(--gold) !important;
+      text-transform: uppercase;
+      text-shadow: var(--glowEmber);
+    }
+
+    .meta { font-size:12px; opacity:.96; display:flex; align-items:center; gap:8px; flex-wrap:wrap; color: var(--text) !important; }
+
+    .pill {
+      display:inline-flex;
+      align-items:center;
+      gap:6px;
+      padding:6px 10px;
+      border-radius:999px;
+      background: linear-gradient(180deg, rgba(255,255,255,.075), rgba(255,255,255,.04)) !important;
+      border:1px solid rgba(255,255,255,.10) !important;
+      font-size:12px;
+      white-space:nowrap;
+      color: var(--text) !important;
+      box-shadow: 0 0 0 rgba(0,0,0,0);
+    }
+
     .divider { margin:14px 0; height:1px; background: var(--line) !important; }
-    .section-title { font-weight:900; letter-spacing:.6px; margin-top:10px; margin-bottom:6px; display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; color: var(--text) !important; }
-    .section-title .small { font-size:12px; opacity:.85; font-weight:600; color: var(--text) !important; }
-    h2 { margin:12px 0 6px; padding-bottom:6px; border-bottom:1px solid rgba(255,255,255,.08) !important; font-size:14px; letter-spacing:.4px; color: var(--text) !important; }
-    .member { padding:8px 10px; margin:6px 0; border-radius:10px; display:flex; justify-content:space-between; align-items:center; gap:10px; font-size:13px; background: var(--card) !important; border:1px solid var(--cardBorder) !important; color: var(--text) !important; }
-    .left { display:flex; flex-direction:column; gap:2px; min-width:0; }
-    .name { font-weight:800; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:68vw; color: var(--text) !important; }
-    .sub { opacity:.8; font-size:11px; color: var(--text) !important; }
-    .right { opacity:.95; font-size:12px; white-space:nowrap; color: var(--text) !important; }
+
+    .section-title {
+      font-weight: 950;
+      letter-spacing: 1.0px;
+      margin-top: 10px;
+      margin-bottom: 6px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      flex-wrap:wrap;
+      color: var(--gold) !important;
+      text-shadow: var(--glowEmber);
+    }
+    .section-title .small { font-size:12px; opacity:.9; font-weight:700; color: var(--text) !important; text-shadow:none; }
+
+    h2 {
+      margin:12px 0 6px;
+      padding-bottom:6px;
+      border-bottom:1px solid rgba(255,255,255,.10) !important;
+      font-size:13px;
+      letter-spacing:.7px;
+      color: var(--text) !important;
+      text-transform: uppercase;
+      opacity: .95;
+    }
+
+    .member {
+      padding:9px 10px;
+      margin:6px 0;
+      border-radius:12px;
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:10px;
+      font-size:13px;
+      background: linear-gradient(180deg, rgba(255,255,255,.045), rgba(255,255,255,.02)) !important;
+      border:1px solid var(--cardBorder) !important;
+      color: var(--text) !important;
+      box-shadow: 0 10px 20px rgba(0,0,0,.22);
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* subtle “ember dust” sheen */
+    .member:after{
+      content:"";
+      position:absolute;
+      inset:-1px;
+      background:
+        radial-gradient(260px 60px at 10% 0%, rgba(255,122,24,.10), transparent 65%),
+        radial-gradient(220px 55px at 90% 0%, rgba(255,42,42,.10), transparent 70%);
+      pointer-events:none;
+      opacity:.8;
+    }
+
+    .left { display:flex; flex-direction:column; gap:2px; min-width:0; position:relative; z-index:1; }
+    .name { font-weight:900; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:68vw; color: var(--text) !important; }
+    .sub { opacity:.82; font-size:11px; color: var(--text) !important; }
+    .right { opacity:.96; font-size:12px; white-space:nowrap; color: var(--text) !important; position:relative; z-index:1; }
+
     .online{ border-left:4px solid var(--green) !important; }
     .idle{ border-left:4px solid var(--yellow) !important; }
-    .offline{ border-left:4px solid var(--red) !important; }
-    .hospital{ border-left:4px solid var(--purple) !important; }
+    .offline{ border-left:4px solid var(--red) !important; box-shadow: var(--glowRed); }
+    .hospital{ border-left:4px solid var(--violet) !important; }
+
     .section-empty { opacity:.85; font-size:12px; padding:8px 2px; color: var(--text) !important; }
-    .err { margin-top:10px; padding:10px; border-radius:12px; background: var(--dangerBg) !important; border:1px solid var(--dangerBorder) !important; font-size:12px; white-space:pre-wrap; color: var(--text) !important; }
-    .warbox { margin-top:10px; padding:10px; border-radius:12px; background:rgba(255,255,255,.04) !important; border:1px solid rgba(255,255,255,.07) !important; font-size:12px; line-height:1.35; color: var(--text) !important; }
+
+    .err {
+      margin-top:10px;
+      padding:10px;
+      border-radius:12px;
+      background: var(--dangerBg) !important;
+      border:1px solid var(--dangerBorder) !important;
+      font-size:12px;
+      white-space:pre-wrap;
+      color: var(--text) !important;
+      box-shadow: var(--glowRed);
+    }
+
+    .warbox {
+      margin-top:10px;
+      padding:10px;
+      border-radius:14px;
+      background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03)) !important;
+      border:1px solid rgba(255,255,255,.10) !important;
+      font-size:12px;
+      line-height:1.35;
+      color: var(--text) !important;
+      box-shadow: var(--glowEmber);
+    }
+
     .warrow { display:flex; justify-content:space-between; gap:10px; margin:3px 0; }
     .label { opacity:.8; color: var(--muted) !important; }
+
+    /* nicer spacing on small screens */
+    @media (max-width: 520px){
+      .name{ max-width: 58vw; }
+    }
   </style>
 </head>
 <body>
+
+  <div class="sigil"></div>
 
   <div class="topbar">
     <div class="title">⚔ 7DS*: WRATH WAR PANEL</div>
@@ -413,21 +562,28 @@ def panel():
 
 @app.route("/api/availability", methods=["POST"])
 def api_availability():
-    if not token_ok(request):
-        return jsonify({"ok": False, "error": "unauthorized"}), 401
+    # ✅ don’t leak HTML 500 pages to the script — always return JSON
+    try:
+        if not token_ok(request):
+            return jsonify({"ok": False, "error": "unauthorized"}), 401
 
-    data = request.get_json(force=True, silent=True) or {}
-    torn_id = str(data.get("torn_id") or data.get("id") or "").strip()
-    available = bool(data.get("available", False))
+        data = request.get_json(force=True, silent=True) or {}
+        torn_id = str(data.get("torn_id") or data.get("id") or "").strip()
+        available = bool(data.get("available", False))
 
-    if not torn_id:
-        return jsonify({"ok": False, "error": "missing id"}), 400
+        if not torn_id:
+            return jsonify({"ok": False, "error": "missing id"}), 400
 
-    if CHAIN_SITTER_IDS and (not is_chain_sitter(torn_id)):
-        return jsonify({"ok": False, "error": "not chain sitter"}), 403
+        if CHAIN_SITTER_IDS and (not is_chain_sitter(torn_id)):
+            return jsonify({"ok": False, "error": "not chain sitter"}), 403
 
-    upsert_availability(torn_id, available)
-    return jsonify({"ok": True, "id": torn_id, "available": available})
+        upsert_availability(torn_id, available)
+        return jsonify({"ok": True, "id": torn_id, "available": available})
+
+    except Exception as e:
+        STATE["last_error"] = {"error": f"OPT API ERROR: {e}"}
+        STATE["updated_at"] = now_iso()
+        return jsonify({"ok": False, "error": str(e)}), 500
 
 
 async def poll_once():
