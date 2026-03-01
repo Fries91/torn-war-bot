@@ -1,7 +1,7 @@
 # app.py ✅ Render Web Service (Flask + background poll thread)
 # Routes:
-#   /        : simple landing (links to /lite)
-#   /lite    : ✅ CSP-proof lite panel (meant to open in new tab from shield)
+#   /        : landing (links to /lite)
+#   /lite    : ✅ CSP-proof Lite panel (open in NEW TAB from shield; no iframe)
 #   /state   : JSON state for UI + debugging
 #   /health  : healthcheck
 #   /api/availability : chain-sitter opt in/out (optional token)
@@ -21,24 +21,28 @@ from db import (
     get_alert_state, set_alert_state
 )
 
-# ✅ FIXED IMPORT (your torn_api.py has get_ranked_war_best_effort)
-from torn_api import get_faction_core, get_ranked_war_best_effort as get_ranked_war_best
+# ✅ Your torn_api.py now provides these
+from torn_api import get_faction_core, get_ranked_war_best
 
 load_dotenv()
 
 # ===== ENV =====
 FACTION_ID = (os.getenv("FACTION_ID") or "").strip()
 FACTION_API_KEY = (os.getenv("FACTION_API_KEY") or "").strip()
-AVAIL_TOKEN = (os.getenv("AVAIL_TOKEN") or "").strip()  # optional
+
+# Optional: protect /api/availability with a token
+AVAIL_TOKEN = (os.getenv("AVAIL_TOKEN") or "").strip()
+
+# Poll interval
 POLL_SECONDS = int(os.getenv("POLL_SECONDS", "25"))
 
 # Chain sitter IDs (comma-separated Torn IDs), ex: "1234,5678"
 CHAIN_SITTER_IDS = [s.strip() for s in (os.getenv("CHAIN_SITTER_IDS") or "1234").split(",") if s.strip()]
 CHAIN_SITTER_SET = set(CHAIN_SITTER_IDS)
 
-# Background image for /lite (put file in /static)
-# Example: /static/wrath-bg.jpg
-LITE_BG = (os.getenv("LITE_BG", "/static/wrath-bg.jpg") or "/static/wrath-bg.jpg").strip()
+# Background image path for /lite (put file in /static)
+# default expects: static/wrath-bg.jpg
+LITE_BG = (os.getenv("LITE_BG") or "/static/wrath-bg.jpg").strip()
 
 app = Flask(__name__, static_folder="static")
 
@@ -61,6 +65,7 @@ def iso_now():
     return datetime.now(timezone.utc).isoformat()
 
 def minutes_since(ts_iso):
+    """Return minutes since ISO timestamp; None if unknown."""
     if not ts_iso:
         return None
     try:
@@ -97,8 +102,8 @@ def require_token_if_set(req):
 def headers(resp):
     """
     IMPORTANT:
-    - /lite is opened in a new tab (NO iframe) => remove CSP/XFO entirely to avoid weird blocks.
-    - other routes: allow torn.com to iframe if you ever decide to embed them.
+    - /lite is opened in a new tab (NO iframe) => remove CSP/XFO entirely.
+    - other routes: iframing allowed for torn.com if you ever embed them.
     """
     if request.path.startswith("/lite"):
         resp.headers.pop("Content-Security-Policy", None)
@@ -122,12 +127,14 @@ async def poll_once():
     avail_map = get_availability_map() or {}
 
     core = await get_faction_core(FACTION_ID, FACTION_API_KEY)
-    war = await get_ranked_war_best(FACTION_ID, FACTION_API_KEY)  # aliased from *_effort
+    war_norm = await get_ranked_war_best(FACTION_ID, FACTION_API_KEY)  # normalized dict
 
+    # faction
     f_name = core.get("name")
     f_tag = core.get("tag")
     f_respect = core.get("respect")
 
+    # members
     members = core.get("members", []) or []
     rows = []
     available_count = 0
@@ -154,7 +161,7 @@ async def poll_once():
             "id": torn_id,
             "name": name,
             "minutes": mins,
-            "status": status,     # online / idle / offline
+            "status": status,       # online / idle / offline
             "available": is_available
         })
 
@@ -166,17 +173,17 @@ async def poll_once():
 
     rows.sort(key=sort_key)
 
-    w = war or {}
+    # war + chain (from normalized)
     war_obj = {
-        "opponent": w.get("opponent"),
-        "start": w.get("start"),
-        "end": w.get("end"),
-        "target": w.get("target"),
-        "score": w.get("score"),
-        "enemy_score": w.get("enemy_score"),
+        "opponent": war_norm.get("opponent"),
+        "start": war_norm.get("start"),
+        "end": war_norm.get("end"),
+        "target": war_norm.get("target"),
+        "score": war_norm.get("score"),
+        "enemy_score": war_norm.get("enemy_score"),
     }
 
-    chain_obj = w.get("chain") or {}
+    chain_obj = war_norm.get("chain") or {}
     chain = {
         "current": chain_obj.get("current"),
         "max": chain_obj.get("max"),
@@ -226,6 +233,11 @@ def state():
 
 @app.route("/api/availability", methods=["POST"])
 def api_availability():
+    """
+    POST JSON: {"torn_id":"1234","available":true}
+    Only allowed for chain sitters (CHAIN_SITTER_IDS env).
+    Optional token via header X-Token or query ?token=
+    """
     if not require_token_if_set(request):
         return jsonify({"ok": False, "error": "unauthorized"}), 401
 
@@ -249,7 +261,7 @@ def home():
           <title>7DS*: Wrath War-Bot</title>
           <style>
             body{margin:0;background:#0a0708;color:#eee;font-family:Arial}
-            .wrap{padding:16px;max-width:760px;margin:0 auto}
+            .wrap{padding:16px;max-width:820px;margin:0 auto}
             .box{background:#151112;border:1px solid #3a1518;border-radius:14px;padding:14px}
             a{color:#ffcc66}
             code{color:#ffcc66}
@@ -262,7 +274,7 @@ def home():
               <div>Open the CSP-proof panel:</div>
               <div style="margin-top:10px;"><a href="/lite">/lite</a></div>
               <div style="margin-top:10px; font-size:12px; opacity:.85;">
-                Put your background image at <code>static/wrath-bg.jpg</code> (or set env <code>LITE_BG</code>)
+                Put your background image at <code>static/wrath-bg.jpg</code> (or set env <code>LITE_BG</code>).
               </div>
             </div>
           </div>
@@ -396,7 +408,7 @@ def lite():
         <div class="crest">7</div>
         <div>
           <h1>7DS*: Wrath — War-Bot (Lite)</h1>
-          <div class="sub">Open in a new tab from the shield (no iframe = no CSP errors).</div>
+          <div class="sub">Wrath view • opens in new tab • auto refresh 15s</div>
         </div>
       </div>
     </div>
@@ -420,7 +432,7 @@ def lite():
 
     <div class="footer">
       <div id="faction">—</div>
-      <div>Auto-refresh: 15s</div>
+      <div>Powered by Fries91</div>
     </div>
   </div>
 
@@ -506,6 +518,7 @@ def lite():
 
 
 if __name__ == "__main__":
+    # Local dev only (Render uses gunicorn)
     init_db()
     threading.Thread(target=poll_loop, daemon=True).start()
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", "5000")))
