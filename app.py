@@ -1,17 +1,18 @@
-# app.py ✅ COMPLETE (auto-detect faction payload shape)
-# - Fixes: rows empty when torn_api.get_faction_core returns a nested/alternate structure
-# - Keeps: Online/Idle/Offline sections + enemy tracker (if supported)
-# - Adds: /ping for Render checks
+# app.py ✅ COMPLETE (MATCHES your torn_api.py signatures)
+# - get_faction_core(faction_id, api_key)  (NO session)
+# - get_ranked_war_best(faction_id, api_key) (NO session)
+# - Reads Torn v2 shape: { basic, members, chain }
+# - Organizes Online / Idle / Offline sections
+# - /ping for Render port detection
+# - Panel always loads; shows last_error if polling fails
 
 import os
 import threading
 import asyncio
-import inspect
 from datetime import datetime, timezone
 
 from flask import Flask, jsonify, request, render_template_string
 from dotenv import load_dotenv
-import aiohttp
 
 from db import init_db, upsert_availability, get_availability_map
 from torn_api import get_faction_core, get_ranked_war_best
@@ -19,24 +20,26 @@ from torn_api import get_faction_core, get_ranked_war_best
 load_dotenv()
 app = Flask(__name__)
 
+# ===== ENV =====
 FACTION_ID = (os.getenv("FACTION_ID") or "").strip()
 FACTION_API_KEY = (os.getenv("FACTION_API_KEY") or "").strip()
 
-AVAIL_TOKEN = (os.getenv("AVAIL_TOKEN") or "").strip()
+AVAIL_TOKEN = (os.getenv("AVAIL_TOKEN") or "").strip()  # optional (yours = 666)
 CHAIN_SITTER_IDS = [s.strip() for s in (os.getenv("CHAIN_SITTER_IDS") or "").split(",") if s.strip()]
 POLL_SECONDS = int(os.getenv("POLL_SECONDS") or "20")
 
+# ===== STATE =====
 STATE = {
     "rows": [],
     "updated_at": None,
     "counts": {"online": 0, "idle": 0, "offline": 0, "hospital": 0},
     "available_count": 0,
     "chain": {"current": 0, "max": 10, "timeout": 0, "cooldown": 0},
-    "war": {"opponent": None, "opponent_id": None, "start": None, "end": None, "target": None, "score": None},
+    "war": {"opponent": None, "opponent_id": None, "start": None, "end": None, "target": None, "score": None, "enemy_score": None},
     "faction": {"name": None, "tag": None, "respect": None},
     "enemy": {
-        "supported": True,
-        "reason": None,
+        "supported": False,
+        "reason": "Enemy members require opponent faction_id; your ranked-war normalizer returns name only.",
         "faction": {"name": None, "tag": None, "respect": None, "id": None},
         "rows": [],
         "counts": {"online": 0, "idle": 0, "offline": 0, "hospital": 0},
@@ -48,13 +51,12 @@ STATE = {
 BOOTED = False
 BOOT_LOCK = threading.Lock()
 
-
+# ===== IFRAME SAFE =====
 @app.after_request
 def allow_iframe(resp):
     resp.headers["X-Frame-Options"] = "ALLOWALL"
     resp.headers["Content-Security-Policy"] = "frame-ancestors https://*.torn.com https://torn.com *"
     return resp
-
 
 def now_iso():
     return datetime.now(timezone.utc).isoformat()
@@ -67,12 +69,10 @@ def classify_status(minutes: int) -> str:
     return "offline"
 
 def parse_last_action_minutes(member: dict) -> int:
-    if isinstance(member, dict) and member.get("minutes") is not None:
-        try:
-            return int(member["minutes"])
-        except Exception:
-            return 999
-
+    """
+    Torn v2 'members' objects often contain:
+      member["last_action"]["relative"] like "5 minutes ago"
+    """
     la = (member or {}).get("last_action") or {}
     rel = (la.get("relative") or "").lower()
     try:
@@ -99,54 +99,6 @@ def token_ok(req) -> bool:
     data = req.get_json(silent=True) or {}
     t = (req.headers.get("X-Avail-Token") or req.args.get("token") or data.get("token") or "").strip()
     return t == AVAIL_TOKEN
-
-def _sig_len(fn) -> int:
-    try:
-        return len(inspect.signature(fn).parameters)
-    except Exception:
-        return 0
-
-def enemy_supported_by_core() -> bool:
-    return _sig_len(get_faction_core) >= 2
-
-async def call_get_faction_core(session, api_key: str, faction_id: str):
-    n = _sig_len(get_faction_core)
-    if n >= 3:
-        return await get_faction_core(session, api_key, faction_id)
-    if n == 2:
-        return await get_faction_core(api_key, faction_id)
-    if n == 1:
-        return await get_faction_core(api_key)
-    return await get_faction_core(api_key)
-
-async def call_get_ranked_war_best(session, api_key: str, faction_id: str):
-    n = _sig_len(get_ranked_war_best)
-    if n >= 3:
-        return await get_ranked_war_best(session, api_key, faction_id)
-    if n == 2:
-        return await get_ranked_war_best(api_key, faction_id)
-    if n == 1:
-        return await get_ranked_war_best(api_key)
-    return await get_ranked_war_best(api_key)
-
-def extract_opponent_id(war: dict):
-    if not isinstance(war, dict):
-        return None
-    for k in ("opponent_id", "enemy_id", "faction_id", "target_faction_id"):
-        v = war.get(k)
-        if v:
-            return str(v)
-    opp = war.get("opponent")
-    if isinstance(opp, dict) and opp.get("id"):
-        return str(opp["id"])
-    factions = war.get("factions")
-    if isinstance(factions, dict):
-        keys = [str(x) for x in factions.keys()]
-        if FACTION_ID and str(FACTION_ID) in keys and len(keys) >= 2:
-            for fid in keys:
-                if fid != str(FACTION_ID):
-                    return fid
-    return None
 
 def split_sections(rows):
     online, idle, offline, hospital = [], [], [], []
@@ -177,85 +129,42 @@ def split_sections(rows):
     return {"online": online, "idle": idle, "offline": offline, "hospital": hospital}
 
 
-# ===== NEW: payload shape detection =====
-def extract_faction_payload(raw):
+def normalize_faction_rows(v2_payload: dict, avail_map=None):
     """
-    Your torn_api wrapper might return:
-    - {"name":..., "tag":..., "members": {...}}
-    - {"faction": {...}} or {"faction": {"members": ...}}
-    - {"faction": {"faction": {...}}} etc.
-    - {"data": {...}} etc.
-
-    This returns the dict that actually represents the faction object.
+    Your torn_api returns v2 payload:
+      { "basic": {...}, "members": {...}, "chain": {...} }
     """
-    if not isinstance(raw, dict):
-        return {}
-
-    # direct good shape
-    if "members" in raw and isinstance(raw.get("members"), (dict, list)):
-        return raw
-
-    # common nesting keys
-    for key in ("faction", "data", "response", "result"):
-        inner = raw.get(key)
-        if isinstance(inner, dict):
-            if "members" in inner and isinstance(inner.get("members"), (dict, list)):
-                return inner
-            # one more hop
-            for key2 in ("faction", "data", "response", "result"):
-                inner2 = inner.get(key2)
-                if isinstance(inner2, dict) and "members" in inner2 and isinstance(inner2.get("members"), (dict, list)):
-                    return inner2
-
-    # fallback: search shallowly for any dict containing 'members'
-    for v in raw.values():
-        if isinstance(v, dict) and "members" in v and isinstance(v.get("members"), (dict, list)):
-            return v
-
-    return raw  # last resort
-
-def find_members_container(faction_payload: dict):
-    """
-    Returns members container if present, else {}.
-    """
-    if not isinstance(faction_payload, dict):
-        return {}
-    mem = faction_payload.get("members")
-    if isinstance(mem, (dict, list)):
-        return mem
-    return {}
-
-def iter_members(members):
-    if isinstance(members, dict):
-        for mid, m in members.items():
-            if isinstance(m, dict):
-                yield str(m.get("id") or mid), m
-        return
-    if isinstance(members, list):
-        for m in members:
-            if isinstance(m, dict):
-                yield str(m.get("id") or ""), m
-        return
-
-def normalize_faction_rows(raw_faction: dict, avail_map=None):
     avail_map = avail_map or {}
+    v2_payload = v2_payload or {}
 
-    faction = extract_faction_payload(raw_faction)
-    members = find_members_container(faction)
+    basic = v2_payload.get("basic") or {}
+    members = v2_payload.get("members") or {}
+    chain = v2_payload.get("chain") or {}
 
     rows = []
     counts = {"online": 0, "idle": 0, "offline": 0, "hospital": 0}
     available_count = 0
 
-    for mid, m in iter_members(members):
+    if isinstance(members, dict):
+        items = members.items()
+    elif isinstance(members, list):
+        items = [(str(m.get("id") or ""), m) for m in members if isinstance(m, dict)]
+    else:
+        items = []
+
+    for mid, m in items:
+        if not isinstance(m, dict):
+            continue
         torn_id = str(m.get("id") or mid).strip() or str(mid).strip()
         name = m.get("name") or "—"
 
         minutes = parse_last_action_minutes(m)
         status = classify_status(minutes)
 
-        hosp = bool((m.get("status") or {}).get("state") == "Hospital" or m.get("hospital"))
-        hospital_until = (m.get("status") or {}).get("until") or m.get("hospital_until")
+        # hospital check (v2 member status can vary)
+        st = m.get("status") or {}
+        hosp = bool(st.get("state") == "Hospital" or m.get("hospital"))
+        hospital_until = st.get("until") or m.get("hospital_until")
 
         available = bool(avail_map.get(torn_id, False))
         if available:
@@ -277,23 +186,19 @@ def normalize_faction_rows(raw_faction: dict, avail_map=None):
         })
 
     header = {
-        "name": faction.get("name") or faction.get("faction_name"),
-        "tag": faction.get("tag"),
-        "respect": faction.get("respect"),
+        "name": basic.get("name"),
+        "tag": basic.get("tag"),
+        "respect": basic.get("respect"),
     }
 
-    # chain location varies
-    chain = {"current": 0, "max": 10, "timeout": 0, "cooldown": 0}
-    ch = faction.get("chain")
-    if isinstance(ch, dict):
-        chain = {
-            "current": ch.get("current", 0),
-            "max": ch.get("max", 10),
-            "timeout": ch.get("timeout", 0),
-            "cooldown": ch.get("cooldown", 0),
-        }
+    chain_out = {
+        "current": chain.get("current") or 0,
+        "max": chain.get("max") or 10,
+        "timeout": chain.get("timeout") or 0,
+        "cooldown": chain.get("cooldown") or 0,
+    }
 
-    return rows, counts, available_count, header, chain
+    return rows, counts, available_count, header, chain_out
 
 
 # ===== HTML =====
@@ -309,8 +214,7 @@ HTML = """
     .title { font-weight:900; letter-spacing:.6px; font-size:16px; }
     .meta { font-size:12px; opacity:.85; }
     .pill { display:inline-block; padding:6px 10px; border-radius:999px; background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.08); font-size:12px; margin-left:6px; white-space:nowrap; }
-    .divider { margin:14px 0; height:1px; background:rgba(255,255,255,.10); }
-    .section-title { font-weight:900; letter-spacing:.6px; margin-top:8px; margin-bottom:6px; display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; }
+    .section-title { font-weight:900; letter-spacing:.6px; margin-top:10px; margin-bottom:6px; display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; }
     .section-title .small { font-size:12px; opacity:.8; font-weight:600; }
     h2 { margin:12px 0 6px; padding-bottom:6px; border-bottom:1px solid rgba(255,255,255,.08); font-size:14px; letter-spacing:.4px; }
     .member { padding:8px 10px; margin:6px 0; border-radius:10px; display:flex; justify-content:space-between; align-items:center; gap:10px; font-size:13px; background:rgba(255,255,255,.03); border:1px solid rgba(255,255,255,.06); }
@@ -321,6 +225,9 @@ HTML = """
     .online{ border-left:4px solid #00ff66; } .idle{ border-left:4px solid #ffd000; } .offline{ border-left:4px solid #ff3333; } .hospital{ border-left:4px solid #b06cff; }
     .section-empty { opacity:.7; font-size:12px; padding:8px 2px; }
     .err { margin-top:10px; padding:10px; border-radius:12px; background:rgba(255,80,80,.12); border:1px solid rgba(255,80,80,.25); font-size:12px; }
+    .warbox { margin-top:10px; padding:10px; border-radius:12px; background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.07); font-size:12px; line-height:1.35; }
+    .warrow { display:flex; justify-content:space-between; gap:10px; margin:3px 0; }
+    .label { opacity:.75; }
   </style>
 </head>
 <body>
@@ -339,6 +246,17 @@ HTML = """
 
   {% if last_error %}
     <div class="err"><b>Last error:</b><br>{{ last_error.error }}</div>
+  {% endif %}
+
+  {% if war.opponent or war.target or war.score %}
+  <div class="warbox">
+    <div class="warrow"><div class="label">Opponent</div><div>{{ war.opponent or "—" }}</div></div>
+    <div class="warrow"><div class="label">Our Score</div><div>{{ war.score if war.score is not none else "—" }}</div></div>
+    <div class="warrow"><div class="label">Enemy Score</div><div>{{ war.enemy_score if war.enemy_score is not none else "—" }}</div></div>
+    <div class="warrow"><div class="label">Target</div><div>{{ war.target if war.target is not none else "—" }}</div></div>
+    <div class="warrow"><div class="label">Start</div><div>{{ war.start or "—" }}</div></div>
+    <div class="warrow"><div class="label">End</div><div>{{ war.end or "—" }}</div></div>
+  </div>
   {% endif %}
 
   <div class="section-title">
@@ -377,6 +295,7 @@ HTML = """
 </html>
 """
 
+# ===== ROUTES =====
 @app.route("/ping")
 def ping():
     return "pong"
@@ -397,6 +316,7 @@ def panel():
         updated_at=STATE.get("updated_at"),
         counts=STATE.get("counts", {}),
         available_count=STATE.get("available_count", 0),
+        war=STATE.get("war", {}),
         faction=STATE.get("faction", {}),
         last_error=STATE.get("last_error"),
         you=you_sections,
@@ -406,52 +326,64 @@ def panel():
 def api_availability():
     if not token_ok(request):
         return jsonify({"ok": False, "error": "unauthorized"}), 401
+
     data = request.get_json(force=True, silent=True) or {}
     torn_id = str(data.get("id") or "").strip()
     available = bool(data.get("available", False))
+
     if not torn_id:
         return jsonify({"ok": False, "error": "missing id"}), 400
+
     if CHAIN_SITTER_IDS and (not is_chain_sitter(torn_id)):
         return jsonify({"ok": False, "error": "not chain sitter"}), 403
+
     upsert_availability(torn_id, available)
     return jsonify({"ok": True, "id": torn_id, "available": available})
 
 
-async def poll_once(session: aiohttp.ClientSession):
+# ===== POLLER =====
+async def poll_once():
+    if not FACTION_ID or not FACTION_API_KEY:
+        raise RuntimeError("Missing FACTION_ID or FACTION_API_KEY env vars.")
+
     avail_map = get_availability_map()
-    raw_faction = await call_get_faction_core(session, FACTION_API_KEY, FACTION_ID)
 
-    rows, counts, available_count, header, chain = normalize_faction_rows(raw_faction, avail_map=avail_map)
+    v2_payload = await get_faction_core(FACTION_ID, FACTION_API_KEY)
+    if isinstance(v2_payload, dict) and v2_payload.get("error"):
+        raise RuntimeError(f"Torn API error: {v2_payload.get('error')}")
 
-    # If still empty, surface a clear error so you see it in shield
-    if not rows:
-        raise RuntimeError("No members found in get_faction_core() response. Your torn_api wrapper returns a different structure; update torn_api.py or paste its get_faction_core() here.")
+    rows, counts, available_count, header, chain = normalize_faction_rows(v2_payload, avail_map=avail_map)
 
     STATE["rows"] = rows
     STATE["counts"] = counts
     STATE["available_count"] = available_count
-    STATE["chain"] = chain
     STATE["faction"] = header
+    STATE["chain"] = chain
 
-    # war + enemy (optional) — kept minimal so your main panel stays stable
-    war = await call_get_ranked_war_best(session, FACTION_API_KEY, FACTION_ID)
-    opponent_id = extract_opponent_id(war)
-    STATE["war"]["opponent_id"] = opponent_id
+    war = await get_ranked_war_best(FACTION_ID, FACTION_API_KEY)
+    if isinstance(war, dict) and war.get("error"):
+        war = {}
+    STATE["war"] = {
+        "opponent": war.get("opponent"),
+        "opponent_id": war.get("opponent_id"),
+        "start": war.get("start"),
+        "end": war.get("end"),
+        "target": war.get("target"),
+        "score": war.get("score"),
+        "enemy_score": war.get("enemy_score"),
+    }
 
     STATE["updated_at"] = now_iso()
     STATE["last_error"] = None
 
-
 async def poll_loop():
-    timeout = aiohttp.ClientTimeout(total=25)
-    async with aiohttp.ClientSession(timeout=timeout) as session:
-        while True:
-            try:
-                await poll_once(session)
-            except Exception as e:
-                STATE["last_error"] = {"error": str(e)}
-                STATE["updated_at"] = now_iso()
-            await asyncio.sleep(POLL_SECONDS)
+    while True:
+        try:
+            await poll_once()
+        except Exception as e:
+            STATE["last_error"] = {"error": str(e)}
+            STATE["updated_at"] = now_iso()
+        await asyncio.sleep(POLL_SECONDS)
 
 def start_poll_thread():
     def runner():
