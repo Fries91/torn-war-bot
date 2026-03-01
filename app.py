@@ -190,7 +190,6 @@ def normalize_faction_rows(v2_payload: dict, avail_map=None):
     return rows, counts, available_count, header, chain_out
 
 
-# ✅ raw string avoids \d warnings in big HTML blocks if any appear later
 HTML = r"""
 <!doctype html>
 <html>
@@ -221,6 +220,7 @@ HTML = r"""
   </style>
 </head>
 <body>
+
   <div class="topbar">
     <div class="title">⚔ 7DS*: WRATH WAR PANEL</div>
     <div class="meta">
@@ -289,6 +289,59 @@ HTML = r"""
       <div class="right">{{ row.minutes }}m</div>
     </div>
   {% endfor %}
+
+  <div class="divider"></div>
+
+  <div class="section-title">
+    <div>🎯 ENEMY FACTION</div>
+    <div class="small">
+      {% if enemy.faction.name %}
+        {{ enemy.faction.tag or "" }} {{ enemy.faction.name }} (ID: {{ enemy.faction.id }})
+        · 🟢 {{ enemy.counts.online }} 🟡 {{ enemy.counts.idle }} 🔴 {{ enemy.counts.offline }} 🏥 {{ enemy.counts.hospital }}
+      {% else %}
+        Waiting for opponent id…
+      {% endif %}
+    </div>
+  </div>
+
+  {% if enemy.faction.name %}
+    <h2>🟢 ENEMY ONLINE (0–20 mins)</h2>
+    {% if them.online|length == 0 %}<div class="section-empty">No enemy online right now.</div>{% endif %}
+    {% for row in them.online %}
+      <div class="member online">
+        <div class="left"><div class="name">{{ row.name }}</div><div class="sub">ID: {{ row.id }}</div></div>
+        <div class="right">{{ row.minutes }}m</div>
+      </div>
+    {% endfor %}
+
+    <h2>🟡 ENEMY IDLE (20–30 mins)</h2>
+    {% if them.idle|length == 0 %}<div class="section-empty">No enemy idle right now.</div>{% endif %}
+    {% for row in them.idle %}
+      <div class="member idle">
+        <div class="left"><div class="name">{{ row.name }}</div><div class="sub">ID: {{ row.id }}</div></div>
+        <div class="right">{{ row.minutes }}m</div>
+      </div>
+    {% endfor %}
+
+    <h2>🏥 ENEMY HOSPITAL</h2>
+    {% if them.hospital|length == 0 %}<div class="section-empty">No enemy in hospital right now.</div>{% endif %}
+    {% for row in them.hospital %}
+      <div class="member hospital">
+        <div class="left"><div class="name">{{ row.name }}</div><div class="sub">ID: {{ row.id }}</div></div>
+        <div class="right">{{ row.hospital_until or "—" }}</div>
+      </div>
+    {% endfor %}
+
+    <h2>🔴 ENEMY OFFLINE (30+ mins)</h2>
+    {% if them.offline|length == 0 %}<div class="section-empty">No enemy offline right now.</div>{% endif %}
+    {% for row in them.offline %}
+      <div class="member offline">
+        <div class="left"><div class="name">{{ row.name }}</div><div class="sub">ID: {{ row.id }}</div></div>
+        <div class="right">{{ row.minutes }}m</div>
+      </div>
+    {% endfor %}
+  {% endif %}
+
 </body>
 </html>
 """
@@ -301,7 +354,6 @@ def ping():
 
 @app.route("/health")
 def health():
-    # ✅ This route MUST respond even if boot/poll fails
     return "ok"
 
 
@@ -313,6 +365,7 @@ def state():
 @app.route("/")
 def panel():
     you_sections = split_sections(STATE.get("rows") or [])
+    them_sections = split_sections((STATE.get("enemy") or {}).get("rows") or [])
     return render_template_string(
         HTML,
         updated_at=STATE.get("updated_at"),
@@ -320,8 +373,10 @@ def panel():
         available_count=STATE.get("available_count", 0),
         war=STATE.get("war", {}),
         faction=STATE.get("faction", {}),
+        enemy=STATE.get("enemy", {}),
         last_error=STATE.get("last_error"),
         you=you_sections,
+        them=them_sections,
     )
 
 
@@ -350,6 +405,7 @@ async def poll_once():
 
     avail_map = get_availability_map()
 
+    # OUR FACTION
     our_payload = await get_faction_core(FACTION_ID, FACTION_API_KEY)
     if isinstance(our_payload, dict) and our_payload.get("error"):
         raise RuntimeError(f"Torn API error (core): {our_payload.get('error')}")
@@ -362,6 +418,7 @@ async def poll_once():
     STATE["faction"] = header
     STATE["chain"] = chain
 
+    # WAR
     war = await get_ranked_war_best(FACTION_ID, FACTION_API_KEY)
     if isinstance(war, dict) and war.get("error"):
         war = {}
@@ -376,6 +433,40 @@ async def poll_once():
         "enemy_score": war.get("enemy_score"),
     }
 
+    # ENEMY FACTION (needs opponent_id)
+    opp_id = war.get("opponent_id")
+    if opp_id:
+        enemy_payload = await get_faction_core(str(opp_id), FACTION_API_KEY)
+        if isinstance(enemy_payload, dict) and enemy_payload.get("error"):
+            STATE["enemy"] = {
+                "supported": True,
+                "reason": f"Enemy fetch error: {enemy_payload.get('error')}",
+                "faction": {"name": None, "tag": None, "respect": None, "id": str(opp_id)},
+                "rows": [],
+                "counts": {"online": 0, "idle": 0, "offline": 0, "hospital": 0},
+                "updated_at": now_iso(),
+            }
+        else:
+            erows, ecounts, _, eheader, _ = normalize_faction_rows(enemy_payload, avail_map={})
+            eheader["id"] = str(opp_id)
+            STATE["enemy"] = {
+                "supported": True,
+                "reason": None,
+                "faction": eheader,
+                "rows": erows,
+                "counts": ecounts,
+                "updated_at": now_iso(),
+            }
+    else:
+        STATE["enemy"] = {
+            "supported": True,
+            "reason": None,
+            "faction": {"name": None, "tag": None, "respect": None, "id": None},
+            "rows": [],
+            "counts": {"online": 0, "idle": 0, "offline": 0, "hospital": 0},
+            "updated_at": None,
+        }
+
     STATE["updated_at"] = now_iso()
     STATE["last_error"] = None
 
@@ -385,7 +476,6 @@ async def poll_loop():
         try:
             await poll_once()
         except Exception as e:
-            # ✅ Never crash the process; just record the error
             STATE["last_error"] = {"error": str(e)}
             STATE["updated_at"] = now_iso()
         await asyncio.sleep(POLL_SECONDS)
@@ -399,19 +489,14 @@ def start_poll_thread():
 
 @app.before_request
 def boot_once():
-    """
-    ✅ CRITICAL FIX:
-    Do NOT block /health (or any request) if init_db/poll thread fails.
-    """
     global BOOTED
 
-    # always let these respond immediately
+    # ✅ never block /health or /ping
     if request.path in ("/health", "/ping"):
         return
 
     if BOOTED:
         return
-
     with BOOT_LOCK:
         if BOOTED:
             return
@@ -420,10 +505,9 @@ def boot_once():
             start_poll_thread()
             BOOTED = True
         except Exception as e:
-            # Don't block web requests; record the error and move on
             STATE["last_error"] = {"error": f"BOOT ERROR: {e}"}
             STATE["updated_at"] = now_iso()
-            BOOTED = True  # prevents endless boot attempts
+            BOOTED = True
 
 
 if __name__ == "__main__":
