@@ -158,6 +158,10 @@ def normalize_faction_rows(v2_payload: dict, avail_map=None):
 
         st = m.get("status") or {}
         hosp = bool(st.get("state") == "Hospital" or m.get("hospital"))
+
+        # Torn commonly provides:
+        # - status.until (unix timestamp seconds), or
+        # - hospital_until (already in payload)
         hospital_until = st.get("until") or m.get("hospital_until")
 
         available = bool(avail_map.get(torn_id, False))
@@ -190,7 +194,6 @@ def normalize_faction_rows(v2_payload: dict, avail_map=None):
     return rows, counts, available_count, header, chain_out
 
 
-# ✅ 7 Deadly Sins: Wrath theme + iframe-safe CSS hardening
 HTML = r"""
 <!doctype html>
 <html>
@@ -202,8 +205,6 @@ HTML = r"""
     :root{
       --bg0:#070607;
       --bg1:#0d0a0c;
-      --panel:#120f12;
-      --panel2:#171217;
       --text:#f4f2f3;
       --muted:rgba(244,242,243,.74);
 
@@ -213,7 +214,6 @@ HTML = r"""
       --violet:#b06cff;
 
       --line:rgba(255,255,255,.10);
-      --card:rgba(255,255,255,.035);
       --cardBorder:rgba(255,255,255,.07);
 
       --green:#00ff66;
@@ -245,7 +245,6 @@ HTML = r"""
       height: 10px;
       border-radius: 999px;
       background: linear-gradient(90deg, transparent, rgba(255,42,42,.55), rgba(255,122,24,.45), transparent) !important;
-      filter: blur(.0px);
       opacity: .9;
       margin-bottom: 10px;
       position: relative;
@@ -292,7 +291,6 @@ HTML = r"""
       font-size:12px;
       white-space:nowrap;
       color: var(--text) !important;
-      box-shadow: 0 0 0 rgba(0,0,0,0);
     }
 
     .divider { margin:14px 0; height:1px; background: var(--line) !important; }
@@ -339,8 +337,6 @@ HTML = r"""
       position: relative;
       overflow: hidden;
     }
-
-    /* subtle “ember dust” sheen */
     .member:after{
       content:"";
       position:absolute;
@@ -361,6 +357,12 @@ HTML = r"""
     .idle{ border-left:4px solid var(--yellow) !important; }
     .offline{ border-left:4px solid var(--red) !important; box-shadow: var(--glowRed); }
     .hospital{ border-left:4px solid var(--violet) !important; }
+
+    .hospTimer{
+      font-weight: 900;
+      letter-spacing: .4px;
+      text-shadow: var(--glowEmber);
+    }
 
     .section-empty { opacity:.85; font-size:12px; padding:8px 2px; color: var(--text) !important; }
 
@@ -391,7 +393,6 @@ HTML = r"""
     .warrow { display:flex; justify-content:space-between; gap:10px; margin:3px 0; }
     .label { opacity:.8; color: var(--muted) !important; }
 
-    /* nicer spacing on small screens */
     @media (max-width: 520px){
       .name{ max-width: 58vw; }
     }
@@ -457,7 +458,7 @@ HTML = r"""
   {% for row in you.hospital %}
     <div class="member hospital">
       <div class="left"><div class="name">{{ row.name }}</div><div class="sub">ID: {{ row.id }}</div></div>
-      <div class="right">{{ row.hospital_until or "—" }}</div>
+      <div class="right"><span class="hospTimer" data-until="{{ row.hospital_until or '' }}">—</span></div>
     </div>
   {% endfor %}
 
@@ -508,7 +509,7 @@ HTML = r"""
     {% for row in them.hospital %}
       <div class="member hospital">
         <div class="left"><div class="name">{{ row.name }}</div><div class="sub">ID: {{ row.id }}</div></div>
-        <div class="right">{{ row.hospital_until or "—" }}</div>
+        <div class="right"><span class="hospTimer" data-until="{{ row.hospital_until or '' }}">—</span></div>
       </div>
     {% endfor %}
 
@@ -521,6 +522,67 @@ HTML = r"""
       </div>
     {% endfor %}
   {% endif %}
+
+  <script>
+  (function () {
+    function parseUntil(raw) {
+      if (!raw) return null;
+
+      if (typeof raw === 'number') return raw * 1000;
+
+      const s = String(raw).trim();
+      if (!s) return null;
+
+      // unix seconds as string
+      if (/^\d+$/.test(s)) return parseInt(s, 10) * 1000;
+
+      // try date parsing
+      const ms = Date.parse(s);
+      if (!isNaN(ms)) return ms;
+
+      return null;
+    }
+
+    function fmt(msLeft) {
+      if (msLeft <= 0) return "OUT";
+      const totalSec = Math.floor(msLeft / 1000);
+      const h = Math.floor(totalSec / 3600);
+      const m = Math.floor((totalSec % 3600) / 60);
+      const s = totalSec % 60;
+      if (h > 0) return `${h}h ${m}m ${s}s`;
+      return `${m}m ${s}s`;
+    }
+
+    function tick() {
+      const now = Date.now();
+      document.querySelectorAll(".hospTimer").forEach(el => {
+        const raw = el.getAttribute("data-until") || "";
+        const untilMs = parseUntil(raw);
+
+        if (!untilMs) {
+          el.textContent = "—";
+          return;
+        }
+
+        const left = untilMs - now;
+        el.textContent = fmt(left);
+
+        // styling when close
+        if (left <= 0) {
+          el.style.opacity = "0.85";
+          el.style.fontWeight = "900";
+        } else if (left < 5 * 60 * 1000) { // < 5 min
+          el.style.fontWeight = "950";
+        } else {
+          el.style.fontWeight = "900";
+        }
+      });
+    }
+
+    tick();
+    setInterval(tick, 1000);
+  })();
+  </script>
 
 </body>
 </html>
