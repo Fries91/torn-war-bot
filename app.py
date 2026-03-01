@@ -23,10 +23,6 @@ FACTION_API_KEY = (os.getenv("FACTION_API_KEY") or "").strip()
 AVAIL_TOKEN = (os.getenv("AVAIL_TOKEN") or "").strip()   # yours = 666
 POLL_SECONDS = int(os.getenv("POLL_SECONDS", "25"))
 
-# Chain sitter IDs (comma-separated), ex: "1234,5678"
-CHAIN_SITTER_IDS = [s.strip() for s in (os.getenv("CHAIN_SITTER_IDS") or "1234").split(",") if s.strip()]
-CHAIN_SITTER_SET = set(CHAIN_SITTER_IDS)
-
 app = Flask(__name__)
 
 STATE = {
@@ -71,10 +67,6 @@ def status_from_last_action(mins):
     return "offline"
 
 
-def require_chain_sitter(torn_id):
-    return bool(torn_id) and str(torn_id) in CHAIN_SITTER_SET
-
-
 def require_token_if_set(req):
     if not AVAIL_TOKEN:
         return True
@@ -84,7 +76,7 @@ def require_token_if_set(req):
 
 @app.after_request
 def headers(resp):
-    # We are NOT iframing anything anymore, but keeping this harmless.
+    # We are not iframing anything; keep headers simple
     resp.headers.pop("Content-Security-Policy", None)
     resp.headers.pop("X-Frame-Options", None)
     return resp
@@ -97,15 +89,18 @@ async def poll_once():
         STATE["last_error"] = {"error": "Missing FACTION_ID or FACTION_API_KEY env var", "at": iso_now()}
         return
 
+    # DB map: {id: {available: bool, name:..., updated_at:...}}
     avail_map = get_availability_map() or {}
 
     core = await get_faction_core(FACTION_ID, FACTION_API_KEY)
     war_norm = await get_ranked_war_best(FACTION_ID, FACTION_API_KEY) or {}
 
+    # faction
     f_name = core.get("name")
     f_tag = core.get("tag")
     f_respect = core.get("respect")
 
+    # members list shape can vary
     members = core.get("members") or []
     members_iter = members.values() if isinstance(members, dict) else members
 
@@ -151,6 +146,7 @@ async def poll_once():
 
     rows.sort(key=sort_key)
 
+    # war fields (from normalized torn_api)
     war_obj = {
         "opponent": war_norm.get("opponent"),
         "start": war_norm.get("start"),
@@ -214,7 +210,7 @@ def api_availability():
     """
     POST JSON: {"torn_id":"1234","available":true,"name":"PopZ"}
     - requires token if AVAIL_TOKEN set (yours=666)
-    - only allows chain sitters (CHAIN_SITTER_IDS env)
+    - ✅ ANYONE can opt in/out now (no chain sitter restriction)
     """
     if not require_token_if_set(request):
         return jsonify({"ok": False, "error": "unauthorized"}), 401
@@ -227,9 +223,6 @@ def api_availability():
     if not torn_id.isdigit():
         return jsonify({"ok": False, "error": "invalid_torn_id"}), 400
 
-    if not require_chain_sitter(torn_id):
-        return jsonify({"ok": False, "error": "not_chain_sitter"}), 403
-
     if not name:
         existing = (get_availability_map() or {}).get(int(torn_id))
         name = (existing or {}).get("name") or f"#{torn_id}"
@@ -240,7 +233,6 @@ def api_availability():
 
 @app.route("/")
 def home():
-    # Minimal landing
     return Response(
         """
         <!doctype html>
@@ -259,7 +251,7 @@ def home():
           <div class="wrap">
             <div class="box">
               <h2 style="margin:0 0 10px 0;">🛡️ 7DS*: Wrath War-Bot</h2>
-              <div>This service powers the in-game overlay. Endpoints:</div>
+              <div>This service powers the in-game overlay.</div>
               <ul>
                 <li><code>/health</code></li>
                 <li><code>/state</code></li>
