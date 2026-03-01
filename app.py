@@ -58,6 +58,7 @@ def require_token_if_set(req):
 
 @app.after_request
 def headers(resp):
+    # Not using iframe panels; keep it simple
     resp.headers.pop("Content-Security-Policy", None)
     resp.headers.pop("X-Frame-Options", None)
     return resp
@@ -65,21 +66,30 @@ def headers(resp):
 
 def _read_minutes_from_member(m: dict):
     """
-    Supports multiple Torn shapes:
-    - last_action: {seconds: 123}
-    - last_action: {timestamp_iso: "..."} etc
+    Supports Torn member last_action shapes:
+      - last_action: {seconds: 123}
+      - last_action: {timestamp: 1712345678}  (UNIX seconds)
+      - last_action: {timestamp_iso: "..."} / {time:"..."} etc
+      - last_action: "2026-..."
     """
     la = m.get("last_action")
 
-    # common v2: last_action.seconds
     if isinstance(la, dict):
+        # 1) seconds
         secs = la.get("seconds")
         if isinstance(secs, (int, float)):
             return int(secs // 60)
 
-        # fallback: try parsing ISO-ish
-        iso = la.get("timestamp_iso") or la.get("timestamp") or la.get("time") or la.get("date")
-        if isinstance(iso, str):
+        # 2) unix timestamp (common!)
+        ts = la.get("timestamp")
+        if isinstance(ts, (int, float)) and ts > 0:
+            now = int(time.time())
+            diff = max(0, now - int(ts))
+            return int(diff // 60)
+
+        # 3) ISO-ish strings
+        iso = la.get("timestamp_iso") or la.get("time") or la.get("date")
+        if isinstance(iso, str) and iso.strip():
             try:
                 s = iso.replace("Z", "+00:00")
                 dt = datetime.fromisoformat(s)
@@ -89,8 +99,9 @@ def _read_minutes_from_member(m: dict):
             except Exception:
                 return None
 
-    # sometimes last_action is directly a string
-    if isinstance(la, str):
+        return None
+
+    if isinstance(la, str) and la.strip():
         try:
             s = la.replace("Z", "+00:00")
             dt = datetime.fromisoformat(s)
@@ -105,23 +116,21 @@ def _read_minutes_from_member(m: dict):
 
 def _read_hospital(m: dict):
     """
-    v2 members often have:
-      status: {state: "Hospital", until: <unix> or "timestamp" ...}
-    We'll store hospital boolean + until (best effort).
+    status shapes:
+      status: {state:"Hospital", until: 171...} etc
+      status: "Hospital"
     """
     st = m.get("status")
     hospital = False
     until = None
 
     if isinstance(st, dict):
-        state = (st.get("state") or st.get("status") or "").lower()
+        state = (st.get("state") or st.get("status") or st.get("description") or "").lower()
         if "hospital" in state:
             hospital = True
-        # "until" may be unix seconds or string; keep raw
         until = st.get("until") or st.get("timestamp") or st.get("time") or st.get("date")
 
-    # sometimes status is string
-    if isinstance(st, str):
+    elif isinstance(st, str):
         if "hospital" in st.lower():
             hospital = True
 
@@ -140,9 +149,14 @@ async def poll_once():
     core = await get_faction_core(FACTION_ID, FACTION_API_KEY)
     war_norm = await get_ranked_war_best(FACTION_ID, FACTION_API_KEY) or {}
 
-    f_name = core.get("name")
-    f_tag = core.get("tag")
-    f_respect = core.get("respect")
+    # ✅ v2 "basic" object contains name/tag/respect
+    basic = core.get("basic") if isinstance(core, dict) else None
+    if not isinstance(basic, dict):
+        basic = {}
+
+    f_name = basic.get("name") or core.get("name")
+    f_tag = basic.get("tag") or core.get("tag")
+    f_respect = basic.get("respect") or core.get("respect")
 
     members = core.get("members") or {}
     members_iter = members.values() if isinstance(members, dict) else members
@@ -185,13 +199,25 @@ async def poll_once():
             "available": is_available
         })
 
-    # Sort: hospital first, then online, idle, offline; most recent action near top
+    # Sort: hospital first, then online, idle, offline; most recent activity near top
     def sort_key(r):
         bucket = {"hospital": 0, "online": 1, "idle": 2, "offline": 3}.get(r["status"], 9)
         mins2 = r["minutes"] if isinstance(r["minutes"], int) else 999999
         return (bucket, mins2)
 
     rows.sort(key=sort_key)
+
+    # chain is usually inside core.chain OR war_norm.chain; prefer war_norm if present
+    chain_obj = war_norm.get("chain") or core.get("chain") or {}
+    if not isinstance(chain_obj, dict):
+        chain_obj = {}
+
+    chain = {
+        "current": chain_obj.get("current"),
+        "max": chain_obj.get("max"),
+        "timeout": chain_obj.get("timeout"),
+        "cooldown": chain_obj.get("cooldown"),
+    }
 
     war_obj = {
         "opponent": war_norm.get("opponent"),
@@ -200,14 +226,6 @@ async def poll_once():
         "target": war_norm.get("target"),
         "score": war_norm.get("score"),
         "enemy_score": war_norm.get("enemy_score"),
-    }
-
-    chain_obj = war_norm.get("chain") or {}
-    chain = {
-        "current": chain_obj.get("current"),
-        "max": chain_obj.get("max"),
-        "timeout": chain_obj.get("timeout"),
-        "cooldown": chain_obj.get("cooldown"),
     }
 
     STATE.update({
