@@ -1,7 +1,9 @@
 # app.py ✅ COMPLETE (Your faction + Enemy faction tracker UNDER yours)
+# Fix: uses get_ranked_war_best (matches your torn_api.py)
+#
 # - /           : Panel (iframe-safe for torn.com) with TWO trackers:
-#                 1) 7DS*: Wrath sections (Online/Idle/Offline/Hospital)
-#                 2) Enemy faction sections (Online/Idle/Offline/Hospital) shown UNDER yours
+#                 1) Your faction sections (Online/Idle/Offline/Hospital)
+#                 2) Enemy faction sections (Online/Idle/Offline/Hospital) under yours
 # - /state      : JSON state (debug)
 # - /health     : healthcheck
 # - /api/availability : chain-sitter opt in/out (optional token)
@@ -11,12 +13,13 @@
 # 🟡 Idle   = 20–30 mins
 # 🔴 Offline= 30+ mins
 #
-# REQUIREMENTS
-# - env: FACTION_ID, FACTION_API_KEY
-# - optional: AVAIL_TOKEN (yours = 666), CHAIN_SITTER_IDS="1234,....", POLL_SECONDS
+# ENV
+# - FACTION_ID, FACTION_API_KEY required
+# - AVAIL_TOKEN optional (yours = 666)
+# - CHAIN_SITTER_IDS optional: "1234,5678"
+# - POLL_SECONDS optional: "20"
 
 import os
-import time
 import threading
 import asyncio
 from datetime import datetime, timezone
@@ -31,7 +34,8 @@ from db import (
     get_availability_map,
 )
 
-from torn_api import get_faction_core, get_ranked_war
+# ✅ IMPORTANT: your file has get_ranked_war_best
+from torn_api import get_faction_core, get_ranked_war_best
 
 load_dotenv()
 
@@ -42,7 +46,7 @@ FACTION_ID = (os.getenv("FACTION_ID") or "").strip()
 FACTION_API_KEY = (os.getenv("FACTION_API_KEY") or "").strip()
 
 AVAIL_TOKEN = (os.getenv("AVAIL_TOKEN") or "").strip()  # optional (yours = 666)
-CHAIN_SITTER_IDS = [s.strip() for s in (os.getenv("CHAIN_SITTER_IDS") or "").split(",") if s.strip()]  # "1234,5678"
+CHAIN_SITTER_IDS = [s.strip() for s in (os.getenv("CHAIN_SITTER_IDS") or "").split(",") if s.strip()]
 POLL_SECONDS = int(os.getenv("POLL_SECONDS") or "20")
 
 # ===== GLOBAL STATE =====
@@ -86,7 +90,7 @@ def classify_status(minutes: int) -> str:
     return "offline"
 
 def parse_last_action_minutes(member: dict) -> int:
-    # Prefer precomputed `minutes` if your wrapper includes it
+    # Prefer already computed minutes if your wrapper includes it
     if "minutes" in member and member["minutes"] is not None:
         try:
             return int(member["minutes"])
@@ -139,10 +143,8 @@ def extract_opponent_id(war: dict):
     if isinstance(opp, dict) and opp.get("id"):
         return str(opp.get("id"))
 
-    # sometimes keys exist inside "war"->"factions" etc (best-effort)
     factions = war.get("factions")
     if isinstance(factions, dict):
-        # if your faction id is in there, pick the other key
         keys = [str(x) for x in factions.keys()]
         if FACTION_ID and str(FACTION_ID) in keys and len(keys) >= 2:
             for fid in keys:
@@ -152,10 +154,6 @@ def extract_opponent_id(war: dict):
     return None
 
 def split_sections(rows):
-    """
-    Input rows with: minutes,status,hospital,hospital_until,name,id
-    Output dict: online,idle,offline,hospital (sorted)
-    """
     online, idle, offline, hospital = [], [], [], []
     for row in rows:
         if row.get("hospital"):
@@ -195,125 +193,25 @@ HTML = """
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>⚔ 7DS*: WRATH WAR PANEL</title>
   <style>
-    body {
-      background: #0b0b0b;
-      color: #f2f2f2;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
-      margin: 0;
-      padding: 10px;
-    }
-    .topbar {
-      display: flex;
-      justify-content: space-between;
-      gap: 10px;
-      flex-wrap: wrap;
-      align-items: center;
-      margin-bottom: 10px;
-    }
-    .title {
-      font-weight: 900;
-      letter-spacing: 0.6px;
-      font-size: 16px;
-    }
-    .meta {
-      font-size: 12px;
-      opacity: 0.85;
-    }
-    .pill {
-      display: inline-block;
-      padding: 6px 10px;
-      border-radius: 999px;
-      background: rgba(255,255,255,0.06);
-      border: 1px solid rgba(255,255,255,0.08);
-      font-size: 12px;
-      margin-left: 6px;
-      white-space: nowrap;
-    }
-    .divider {
-      margin: 14px 0;
-      height: 1px;
-      background: rgba(255,255,255,0.10);
-    }
-    .section-title {
-      font-weight: 900;
-      letter-spacing: 0.6px;
-      margin-top: 8px;
-      margin-bottom: 6px;
-      display:flex;
-      align-items:center;
-      justify-content: space-between;
-      gap: 10px;
-      flex-wrap: wrap;
-    }
-    .section-title .small {
-      font-size: 12px;
-      opacity: 0.8;
-      font-weight: 600;
-    }
-    h2 {
-      margin: 12px 0 6px;
-      padding-bottom: 6px;
-      border-bottom: 1px solid rgba(255,255,255,0.08);
-      font-size: 14px;
-      letter-spacing: 0.4px;
-    }
-    .member {
-      padding: 8px 10px;
-      margin: 6px 0;
-      border-radius: 10px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 10px;
-      font-size: 13px;
-      background: rgba(255,255,255,0.03);
-      border: 1px solid rgba(255,255,255,0.06);
-    }
-    .left {
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
-      min-width: 0;
-    }
-    .name {
-      font-weight: 800;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-      max-width: 68vw;
-    }
-    .sub {
-      opacity: 0.75;
-      font-size: 11px;
-    }
-    .right {
-      opacity: 0.9;
-      font-size: 12px;
-      white-space: nowrap;
-    }
-
-    .online  { border-left: 4px solid #00ff66; }
-    .idle    { border-left: 4px solid #ffd000; }
-    .offline { border-left: 4px solid #ff3333; }
-    .hospital{ border-left: 4px solid #b06cff; }
-
-    .section-empty {
-      opacity: 0.7;
-      font-size: 12px;
-      padding: 8px 2px;
-    }
-
-    .warbox {
-      margin-top: 10px;
-      padding: 10px;
-      border-radius: 12px;
-      background: rgba(255,255,255,0.04);
-      border: 1px solid rgba(255,255,255,0.07);
-      font-size: 12px;
-      line-height: 1.35;
-    }
-    .warrow { display:flex; justify-content: space-between; gap: 10px; margin: 3px 0; }
-    .label { opacity: 0.75; }
+    body { background:#0b0b0b; color:#f2f2f2; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif; margin:0; padding:10px; }
+    .topbar { display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:10px; }
+    .title { font-weight:900; letter-spacing:.6px; font-size:16px; }
+    .meta { font-size:12px; opacity:.85; }
+    .pill { display:inline-block; padding:6px 10px; border-radius:999px; background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.08); font-size:12px; margin-left:6px; white-space:nowrap; }
+    .divider { margin:14px 0; height:1px; background:rgba(255,255,255,.10); }
+    .section-title { font-weight:900; letter-spacing:.6px; margin-top:8px; margin-bottom:6px; display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; }
+    .section-title .small { font-size:12px; opacity:.8; font-weight:600; }
+    h2 { margin:12px 0 6px; padding-bottom:6px; border-bottom:1px solid rgba(255,255,255,.08); font-size:14px; letter-spacing:.4px; }
+    .member { padding:8px 10px; margin:6px 0; border-radius:10px; display:flex; justify-content:space-between; align-items:center; gap:10px; font-size:13px; background:rgba(255,255,255,.03); border:1px solid rgba(255,255,255,.06); }
+    .left { display:flex; flex-direction:column; gap:2px; min-width:0; }
+    .name { font-weight:800; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:68vw; }
+    .sub { opacity:.75; font-size:11px; }
+    .right { opacity:.9; font-size:12px; white-space:nowrap; }
+    .online{ border-left:4px solid #00ff66; } .idle{ border-left:4px solid #ffd000; } .offline{ border-left:4px solid #ff3333; } .hospital{ border-left:4px solid #b06cff; }
+    .section-empty { opacity:.7; font-size:12px; padding:8px 2px; }
+    .warbox { margin-top:10px; padding:10px; border-radius:12px; background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.07); font-size:12px; line-height:1.35; }
+    .warrow { display:flex; justify-content:space-between; gap:10px; margin:3px 0; }
+    .label { opacity:.75; }
   </style>
 </head>
 <body>
@@ -438,7 +336,6 @@ HTML = """
   {% else %}
     <div class="section-empty">
       Enemy tracker will appear automatically once Ranked War opponent is detected.
-      If you’re not in a ranked war, this stays hidden.
     </div>
   {% endif %}
 
@@ -458,7 +355,6 @@ def state():
 
 @app.route("/")
 def panel():
-    # split your faction sections
     you_sections = split_sections(STATE.get("rows") or [])
     enemy_state = STATE.get("enemy") or {}
     them_sections = split_sections(enemy_state.get("rows") or [])
@@ -478,10 +374,6 @@ def panel():
 
 @app.route("/api/availability", methods=["POST"])
 def api_availability():
-    """
-    Body: { "id": "1234", "available": true/false, "token": "666" }  (token optional if AVAIL_TOKEN unset)
-    Or header: X-Avail-Token: 666
-    """
     if not token_ok(request):
         return jsonify({"ok": False, "error": "unauthorized"}), 401
 
@@ -501,9 +393,6 @@ def api_availability():
 
 # ===== POLLER =====
 def normalize_faction_rows(faction: dict, avail_map=None):
-    """
-    Returns: (rows, counts, available_count, faction_header, chain_dict)
-    """
     avail_map = avail_map or {}
     members = faction.get("members") or {}
 
@@ -559,14 +448,12 @@ def normalize_faction_rows(faction: dict, avail_map=None):
 
 
 async def poll_once(session: aiohttp.ClientSession):
-    # availability map from DB (your faction only)
-    avail_map = get_availability_map()  # { "1234": True/False, ... }
+    avail_map = get_availability_map()
 
-    # YOUR faction core + ranked war
+    # YOUR faction + war (✅ best function name)
     faction = await get_faction_core(session, FACTION_API_KEY, FACTION_ID)
-    war = await get_ranked_war(session, FACTION_API_KEY, FACTION_ID)
+    war = await get_ranked_war_best(session, FACTION_API_KEY, FACTION_ID)
 
-    # Fill YOUR state
     rows, counts, available_count, header, chain = normalize_faction_rows(faction, avail_map=avail_map)
     STATE["rows"] = rows
     STATE["counts"] = counts
@@ -574,18 +461,22 @@ async def poll_once(session: aiohttp.ClientSession):
     STATE["chain"] = chain
     STATE["faction"] = header
 
-    # War info best-effort
     opponent_id = extract_opponent_id(war)
-    STATE["war"] = {
-        "opponent": war.get("opponent") if isinstance(war, dict) else None,
-        "opponent_id": opponent_id,
-        "start": war.get("start") if isinstance(war, dict) else None,
-        "end": war.get("end") if isinstance(war, dict) else None,
-        "target": war.get("target") if isinstance(war, dict) else None,
-        "score": war.get("score") if isinstance(war, dict) else None,
-    }
 
-    # ENEMY tracker (only if we have opponent_id)
+    # store war info (best-effort, won't crash if keys differ)
+    if isinstance(war, dict):
+        STATE["war"] = {
+            "opponent": war.get("opponent"),
+            "opponent_id": opponent_id,
+            "start": war.get("start"),
+            "end": war.get("end"),
+            "target": war.get("target"),
+            "score": war.get("score"),
+        }
+    else:
+        STATE["war"] = {"opponent": None, "opponent_id": opponent_id, "start": None, "end": None, "target": None, "score": None}
+
+    # ENEMY
     if opponent_id:
         enemy_faction = await get_faction_core(session, FACTION_API_KEY, opponent_id)
         enemy_rows, enemy_counts, _, enemy_header, _ = normalize_faction_rows(enemy_faction, avail_map={})
@@ -598,7 +489,6 @@ async def poll_once(session: aiohttp.ClientSession):
             "updated_at": now_iso(),
         }
     else:
-        # Clear enemy display if not at war / no opponent detected
         STATE["enemy"] = {
             "faction": {"name": None, "tag": None, "respect": None, "id": None},
             "rows": [],
