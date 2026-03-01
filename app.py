@@ -190,33 +190,64 @@ def normalize_faction_rows(v2_payload: dict, avail_map=None):
     return rows, counts, available_count, header, chain_out
 
 
+# ✅ HARDENED CSS: uses !important so Torn/PDA/iframe cannot override into “black on black”
 HTML = r"""
 <!doctype html>
 <html>
 <head>
+  <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>⚔ 7DS*: WRATH WAR PANEL</title>
   <style>
-    body { background:#0b0b0b; color:#f2f2f2; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif; margin:0; padding:10px; }
+    :root{
+      --bg:#0b0b0b;
+      --text:#f2f2f2;
+      --muted:rgba(242,242,242,.78);
+      --card:rgba(255,255,255,.03);
+      --cardBorder:rgba(255,255,255,.06);
+      --line:rgba(255,255,255,.10);
+      --green:#00ff66;
+      --yellow:#ffd000;
+      --red:#ff3333;
+      --purple:#b06cff;
+      --dangerBg:rgba(255,80,80,.12);
+      --dangerBorder:rgba(255,80,80,.25);
+    }
+
+    html, body {
+      background: var(--bg) !important;
+      color: var(--text) !important;
+      font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif !important;
+      margin: 0 !important;
+      padding: 10px !important;
+      -webkit-text-size-adjust: 100%;
+    }
+
+    /* prevent external CSS forcing black text */
+    * { color: inherit !important; }
+
     .topbar { display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:10px; }
-    .title { font-weight:900; letter-spacing:.6px; font-size:16px; }
-    .meta { font-size:12px; opacity:.85; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
-    .pill { display:inline-block; padding:6px 10px; border-radius:999px; background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.08); font-size:12px; white-space:nowrap; }
-    .divider { margin:14px 0; height:1px; background:rgba(255,255,255,.10); }
-    .section-title { font-weight:900; letter-spacing:.6px; margin-top:10px; margin-bottom:6px; display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; }
-    .section-title .small { font-size:12px; opacity:.8; font-weight:600; }
-    h2 { margin:12px 0 6px; padding-bottom:6px; border-bottom:1px solid rgba(255,255,255,.08); font-size:14px; letter-spacing:.4px; }
-    .member { padding:8px 10px; margin:6px 0; border-radius:10px; display:flex; justify-content:space-between; align-items:center; gap:10px; font-size:13px; background:rgba(255,255,255,.03); border:1px solid rgba(255,255,255,.06); }
+    .title { font-weight:900; letter-spacing:.6px; font-size:16px; color: var(--text) !important; }
+    .meta { font-size:12px; opacity:.92; display:flex; align-items:center; gap:8px; flex-wrap:wrap; color: var(--text) !important; }
+    .pill { display:inline-block; padding:6px 10px; border-radius:999px; background:rgba(255,255,255,.06) !important; border:1px solid rgba(255,255,255,.08) !important; font-size:12px; white-space:nowrap; color: var(--text) !important; }
+    .divider { margin:14px 0; height:1px; background: var(--line) !important; }
+    .section-title { font-weight:900; letter-spacing:.6px; margin-top:10px; margin-bottom:6px; display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; color: var(--text) !important; }
+    .section-title .small { font-size:12px; opacity:.85; font-weight:600; color: var(--text) !important; }
+    h2 { margin:12px 0 6px; padding-bottom:6px; border-bottom:1px solid rgba(255,255,255,.08) !important; font-size:14px; letter-spacing:.4px; color: var(--text) !important; }
+    .member { padding:8px 10px; margin:6px 0; border-radius:10px; display:flex; justify-content:space-between; align-items:center; gap:10px; font-size:13px; background: var(--card) !important; border:1px solid var(--cardBorder) !important; color: var(--text) !important; }
     .left { display:flex; flex-direction:column; gap:2px; min-width:0; }
-    .name { font-weight:800; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:68vw; }
-    .sub { opacity:.75; font-size:11px; }
-    .right { opacity:.9; font-size:12px; white-space:nowrap; }
-    .online{ border-left:4px solid #00ff66; } .idle{ border-left:4px solid #ffd000; } .offline{ border-left:4px solid #ff3333; } .hospital{ border-left:4px solid #b06cff; }
-    .section-empty { opacity:.7; font-size:12px; padding:8px 2px; }
-    .err { margin-top:10px; padding:10px; border-radius:12px; background:rgba(255,80,80,.12); border:1px solid rgba(255,80,80,.25); font-size:12px; white-space:pre-wrap; }
-    .warbox { margin-top:10px; padding:10px; border-radius:12px; background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.07); font-size:12px; line-height:1.35; }
+    .name { font-weight:800; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:68vw; color: var(--text) !important; }
+    .sub { opacity:.8; font-size:11px; color: var(--text) !important; }
+    .right { opacity:.95; font-size:12px; white-space:nowrap; color: var(--text) !important; }
+    .online{ border-left:4px solid var(--green) !important; }
+    .idle{ border-left:4px solid var(--yellow) !important; }
+    .offline{ border-left:4px solid var(--red) !important; }
+    .hospital{ border-left:4px solid var(--purple) !important; }
+    .section-empty { opacity:.85; font-size:12px; padding:8px 2px; color: var(--text) !important; }
+    .err { margin-top:10px; padding:10px; border-radius:12px; background: var(--dangerBg) !important; border:1px solid var(--dangerBorder) !important; font-size:12px; white-space:pre-wrap; color: var(--text) !important; }
+    .warbox { margin-top:10px; padding:10px; border-radius:12px; background:rgba(255,255,255,.04) !important; border:1px solid rgba(255,255,255,.07) !important; font-size:12px; line-height:1.35; color: var(--text) !important; }
     .warrow { display:flex; justify-content:space-between; gap:10px; margin:3px 0; }
-    .label { opacity:.75; }
+    .label { opacity:.8; color: var(--muted) !important; }
   </style>
 </head>
 <body>
@@ -433,7 +464,7 @@ async def poll_once():
         "enemy_score": war.get("enemy_score"),
     }
 
-    # ENEMY FACTION (needs opponent_id)
+    # ENEMY FACTION
     opp_id = war.get("opponent_id")
     if opp_id:
         enemy_payload = await get_faction_core(str(opp_id), FACTION_API_KEY)
