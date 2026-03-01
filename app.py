@@ -52,12 +52,14 @@ def allow_iframe(resp):
 def now_iso():
     return datetime.now(timezone.utc).isoformat()
 
+
 def classify_status(minutes: int) -> str:
     if minutes <= 20:
         return "online"
     if minutes <= 30:
         return "idle"
     return "offline"
+
 
 def parse_last_action_minutes(member: dict) -> int:
     la = (member or {}).get("last_action") or {}
@@ -77,15 +79,31 @@ def parse_last_action_minutes(member: dict) -> int:
         pass
     return 999
 
+
 def is_chain_sitter(torn_id: str) -> bool:
     return torn_id in set(CHAIN_SITTER_IDS)
 
+
 def token_ok(req) -> bool:
+    """
+    Accept token from:
+      - Header: X-Avail-Token (old)
+      - Header: X-Token (userscript)
+      - Query:  ?token=
+      - Body:   {token: "..."}
+    """
     if not AVAIL_TOKEN:
         return True
     data = req.get_json(silent=True) or {}
-    t = (req.headers.get("X-Avail-Token") or req.args.get("token") or data.get("token") or "").strip()
+    t = (
+        req.headers.get("X-Avail-Token")
+        or req.headers.get("X-Token")
+        or req.args.get("token")
+        or data.get("token")
+        or ""
+    ).strip()
     return t == AVAIL_TOKEN
+
 
 def split_sections(rows):
     online, idle, offline, hospital = [], [], [], []
@@ -93,14 +111,17 @@ def split_sections(rows):
         if row.get("hospital"):
             hospital.append(row)
             continue
+
         mins = row.get("minutes", 999)
         try:
             mins = int(mins)
         except Exception:
             mins = 999
         row["minutes"] = mins
+
         st = row.get("status") or classify_status(mins)
         row["status"] = st
+
         if st == "online":
             online.append(row)
         elif st == "idle":
@@ -111,9 +132,17 @@ def split_sections(rows):
     online.sort(key=lambda x: x.get("minutes", 999))
     idle.sort(key=lambda x: x.get("minutes", 999))
     offline.sort(key=lambda x: x.get("minutes", 999))
-    hospital.sort(key=lambda x: (x.get("hospital_until") or ""))
+    # earliest release first (if numeric epoch), else keep stable
+    def hosp_key(x):
+        u = x.get("hospital_until")
+        try:
+            return int(u)
+        except Exception:
+            return 9999999999
+    hospital.sort(key=hosp_key)
 
     return {"online": online, "idle": idle, "offline": offline, "hospital": hospital}
+
 
 def normalize_faction_rows(v2_payload: dict, avail_map=None):
     avail_map = avail_map or {}
@@ -137,6 +166,7 @@ def normalize_faction_rows(v2_payload: dict, avail_map=None):
     for mid, m in items:
         if not isinstance(m, dict):
             continue
+
         torn_id = str(m.get("id") or mid).strip() or str(mid).strip()
         name = m.get("name") or "—"
 
@@ -259,6 +289,20 @@ HTML = """
     </div>
   {% endfor %}
 
+  <h2>🏥 HOSPITAL</h2>
+  {% if you.hospital|length == 0 %}<div class="section-empty">No one in hospital right now.</div>{% endif %}
+  {% for row in you.hospital %}
+    <div class="member hospital">
+      <div class="left">
+        <div class="name">{{ row.name }}</div>
+        <div class="sub">ID: {{ row.id }}</div>
+      </div>
+      <div class="right">
+        {% if row.hospital_until %}until {{ row.hospital_until }}{% else %}in hospital{% endif %}
+      </div>
+    </div>
+  {% endfor %}
+
   <h2>🔴 OFFLINE (30+ mins)</h2>
   {% if you.offline|length == 0 %}<div class="section-empty">No one offline right now.</div>{% endif %}
   {% for row in you.offline %}
@@ -301,6 +345,20 @@ HTML = """
       </div>
     {% endfor %}
 
+    <h2>🏥 ENEMY HOSPITAL</h2>
+    {% if them.hospital|length == 0 %}<div class="section-empty">No enemy in hospital right now.</div>{% endif %}
+    {% for row in them.hospital %}
+      <div class="member hospital">
+        <div class="left">
+          <div class="name">{{ row.name }}</div>
+          <div class="sub">ID: {{ row.id }}</div>
+        </div>
+        <div class="right">
+          {% if row.hospital_until %}until {{ row.hospital_until }}{% else %}in hospital{% endif %}
+        </div>
+      </div>
+    {% endfor %}
+
     <h2>🔴 ENEMY OFFLINE (30+ mins)</h2>
     {% if them.offline|length == 0 %}<div class="section-empty">No enemy offline right now.</div>{% endif %}
     {% for row in them.offline %}
@@ -320,13 +378,16 @@ HTML = """
 def ping():
     return "pong"
 
+
 @app.route("/health")
 def health():
     return "ok"
 
+
 @app.route("/state")
 def state():
     return jsonify(STATE)
+
 
 @app.route("/")
 def panel():
@@ -345,13 +406,19 @@ def panel():
         them=them_sections,
     )
 
+
 @app.route("/api/availability", methods=["POST"])
 def api_availability():
+    # Token protection (matches your userscript)
     if not token_ok(request):
         return jsonify({"ok": False, "error": "unauthorized"}), 401
 
     data = request.get_json(force=True, silent=True) or {}
-    torn_id = str(data.get("id") or "").strip()
+
+    # Accept both payload styles:
+    # - userscript sends: {torn_id: "...", available: true}
+    # - older versions:  {id: "...", available: true}
+    torn_id = str(data.get("torn_id") or data.get("id") or "").strip()
     available = bool(data.get("available", False))
 
     if not torn_id:
@@ -403,7 +470,6 @@ async def poll_once():
     if opp_id:
         enemy_payload = await get_faction_core(str(opp_id), FACTION_API_KEY)
         if isinstance(enemy_payload, dict) and enemy_payload.get("error"):
-            # don’t crash whole app
             STATE["enemy"] = {
                 "supported": True,
                 "reason": f"Enemy fetch error: {enemy_payload.get('error')}",
