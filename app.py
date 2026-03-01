@@ -1,1128 +1,542 @@
-# app.py  ✅ Single Render service (Flask + background poll thread)
-# - /           : Panel (iframe-safe for torn.com)
-# - /state      : JSON state (for debugging / overlay)
-# - /health     : simple healthcheck
-# - /api/availability : chain-sitter opt in/out (protected optional token)
-#
-# ✅ Panel Opt column: button toggles opt in/out (for YOUR row only)
-# ✅ Panel auto-reads me_id/me_name from URL query params (no prompts via userscript)
+# app.py  ✅ Single Render Web Service (Flask + background poll thread)
+# - /        : Full panel (iframe-friendly if you still use it)
+# - /lite    : ✅ CSP-proof “Lite” panel (open in new tab from shield) — 7 Deadly Sins: WRATH themed
+# - /state   : JSON state for overlay + lite
+# - /health  : simple healthcheck
+# - /api/availability : opt in/out (chain-sitter only; optional token)
 
 import os
 import time
 import threading
 import asyncio
-import re
-from datetime import datetime
+from datetime import datetime, timezone
 
-from flask import Flask, jsonify, Response, request
+from flask import Flask, jsonify, request, Response
 from dotenv import load_dotenv
-import aiohttp
 
 from db import (
     init_db, upsert_availability, get_availability_map,
+    get_setting, set_setting,
     get_alert_state, set_alert_state
 )
-from torn_api import get_faction_core, get_ranked_war_best_effort
+from torn_api import get_faction_core, get_ranked_war_best
 
 load_dotenv()
 
 # ===== ENV =====
 FACTION_ID = (os.getenv("FACTION_ID") or "").strip()
 FACTION_API_KEY = (os.getenv("FACTION_API_KEY") or "").strip()
-PUBLIC_BASE_URL = (os.getenv("PUBLIC_BASE_URL") or "").strip()
-DISCORD_WEBHOOK_URL = (os.getenv("DISCORD_WEBHOOK_URL") or "").strip()
+AVAIL_TOKEN = (os.getenv("AVAIL_TOKEN") or "").strip()  # optional
+POLL_SECONDS = int(os.getenv("POLL_SECONDS", "25"))
 
-PORT = int(os.getenv("PORT", "10000"))
+# Chain sitter IDs (comma-separated Torn IDs), ex: "1234,5678"
+CHAIN_SITTER_IDS = [s.strip() for s in (os.getenv("CHAIN_SITTER_IDS") or "1234").split(",") if s.strip()]
 
-POLL_INTERVAL_SECONDS = int(os.getenv("POLL_INTERVAL_SECONDS", "30"))
-POST_INTERVAL_SECONDS = int(os.getenv("POST_INTERVAL_SECONDS", "120"))
+app = Flask(__name__)
 
-SMART_PING_MIN_ONLINE = int(os.getenv("SMART_PING_MIN_ONLINE", "5"))
-SMART_PING_MENTION = (os.getenv("SMART_PING_MENTION") or "@here").strip()
-SMART_PING_COOLDOWN_SECONDS = int(os.getenv("SMART_PING_COOLDOWN_SECONDS", "600"))
+# ===== Global state =====
+STATE = {
+    "rows": [],  # list of members with computed status
+    "updated_at": None,
 
-CHAIN_TIMEOUT_ALERT_SECONDS = int(os.getenv("CHAIN_TIMEOUT_ALERT_SECONDS", "600"))
-CHAIN_TIMEOUT_COOLDOWN_SECONDS = int(os.getenv("CHAIN_TIMEOUT_COOLDOWN_SECONDS", "600"))
+    "faction": {"name": None, "tag": None, "respect": None},
+    "war": {"opponent": None, "start": None, "end": None, "target": None, "score": None, "enemy_score": None},
+    "chain": {"current": None, "max": None, "timeout": None, "cooldown": None},
 
-WAR_ALERT_COOLDOWN_SECONDS = int(os.getenv("WAR_ALERT_COOLDOWN_SECONDS", "600"))
+    "available_count": 0,
+    "last_error": None
+}
 
-# Optional: protect availability endpoint
-# NOTE: If you set AVAIL_TOKEN, the panel buttons won't be able to call /api/availability unless you embed the token.
-AVAIL_TOKEN = (os.getenv("AVAIL_TOKEN") or "").strip()
-
-# Chain sitters allowlist (ONLY these Torn IDs can opt in/out)
-CHAIN_SITTER_IDS_RAW = (os.getenv("CHAIN_SITTER_IDS") or "1234").strip()
-
-
-# ===== helpers =====
-def _parse_id_set(csv: str) -> set[int]:
-    out = set()
-    for part in (csv or "").split(","):
-        part = part.strip()
-        if not part:
-            continue
-        try:
-            out.add(int(part))
-        except Exception:
-            pass
-    return out
+BOOTED = False
+POLL_THREAD = None
 
 
-CHAIN_SITTER_IDS = _parse_id_set(CHAIN_SITTER_IDS_RAW)
+# ===== Helpers =====
+def iso_now():
+    return datetime.now(timezone.utc).isoformat()
 
-
-def is_chain_sitter(torn_id: int) -> bool:
-    return torn_id in CHAIN_SITTER_IDS
-
-
-def now_iso():
-    return datetime.utcnow().isoformat() + "Z"
-
-
-def unix_now() -> int:
-    return int(time.time())
-
-
-def panel_url():
-    return (PUBLIC_BASE_URL.rstrip("/") + "/") if PUBLIC_BASE_URL else "(set PUBLIC_BASE_URL)"
-
-
-async def send_webhook_message(content: str):
-    if not DISCORD_WEBHOOK_URL:
-        return
-    timeout = aiohttp.ClientTimeout(total=15)
-    async with aiohttp.ClientSession(timeout=timeout) as session:
-        await session.post(DISCORD_WEBHOOK_URL, json={"content": content})
-
-
-def should_fire(key: str, cooldown_seconds: int) -> bool:
-    last = get_alert_state(key, "0")
+def minutes_since(ts_iso: str | None) -> int | None:
+    """Return minutes since ISO timestamp; None if unknown."""
+    if not ts_iso:
+        return None
     try:
-        last_i = int(float(last))
+        # handle "Z"
+        ts_iso = ts_iso.replace("Z", "+00:00")
+        dt = datetime.fromisoformat(ts_iso)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return int((datetime.now(timezone.utc) - dt).total_seconds() // 60)
     except Exception:
-        last_i = 0
-    return (unix_now() - last_i) >= cooldown_seconds
+        return None
 
-
-def mark_fired(key: str):
-    set_alert_state(key, str(unix_now()))
-
-
-# ========= LAST ACTION -> minutes + bucket =========
-_RE_LAST_ACTION = re.compile(r"(\d+)\s*(second|minute|hour|day|week|month|year)s?\s*ago", re.I)
-
-
-def last_action_minutes(last_action_text: str) -> int:
-    s = (last_action_text or "").strip().lower()
-    if not s:
-        return 10**9
-    if "just now" in s or s == "now":
-        return 0
-
-    m = _RE_LAST_ACTION.search(s)
-    if not m:
-        return 10**9
-
-    qty = int(m.group(1))
-    unit = m.group(2).lower()
-
-    if unit == "second":
-        return 0
-    if unit == "minute":
-        return qty
-    if unit == "hour":
-        return qty * 60
-    if unit == "day":
-        return qty * 1440
-    if unit == "week":
-        return qty * 10080
-    if unit == "month":
-        return qty * 43200
-    if unit == "year":
-        return qty * 525600
-
-    return 10**9
-
-
-def last_action_bucket_from_minutes(minutes: int) -> str:
-    if minutes <= 20:
+def status_from_last_action(mins: int | None) -> str:
+    # Online=0-20, Idle=20-30, Offline=30+
+    if mins is None:
+        return "offline"
+    if mins <= 20:
         return "online"
-    if 20 < minutes <= 30:
+    if mins <= 30:
         return "idle"
     return "offline"
 
+def require_chain_sitter(torn_id: str | None) -> bool:
+    return bool(torn_id) and str(torn_id) in set(CHAIN_SITTER_IDS)
 
-# ========= Torn parsing =========
-def safe_member_rows(data: dict):
-    members = (data or {}).get("members")
-    rows = []
+def require_token_if_set(req):
+    if not AVAIL_TOKEN:
+        return True
+    token = (req.headers.get("X-Token") or req.args.get("token") or "").strip()
+    return token == AVAIL_TOKEN
 
-    def _add(m, uid_hint=None):
-        if not isinstance(m, dict):
-            return
-        mid = m.get("id") or m.get("torn_id") or m.get("user_id") or uid_hint
-        try:
-            mid = int(mid) if mid is not None else None
-        except Exception:
-            mid = None
 
-        last_action = m.get("last_action")
-        if isinstance(last_action, dict):
-            last_action = last_action.get("relative") or str(last_action.get("timestamp") or "")
-
-        status = m.get("status")
-        if isinstance(status, dict):
-            status = status.get("description") or status.get("state") or str(status)
-
-        rows.append(
-            {
-                "torn_id": mid,
-                "name": m.get("name"),
-                "level": m.get("level"),
-                "last_action": last_action if isinstance(last_action, str) else (str(last_action) if last_action is not None else ""),
-                "status": status if isinstance(status, str) else (str(status) if status is not None else ""),
-            }
-        )
-
-    if isinstance(members, list):
-        for m in members:
-            _add(m)
-    elif isinstance(members, dict):
-        for uid, m in members.items():
-            _add(m, uid_hint=uid)
-
-    return rows
-
-
-def merge_availability(rows):
-    avail_map = get_availability_map()
-    out = []
-    for r in rows:
-        tid = r.get("torn_id")
-        a = avail_map.get(int(tid)) if tid is not None and str(tid).isdigit() else None
-
-        r2 = dict(r)
-
-        chain_sitter = False
-        if tid is not None and str(tid).isdigit():
-            chain_sitter = is_chain_sitter(int(tid))
-
-        r2["is_chain_sitter"] = chain_sitter
-        r2["opted_in"] = (bool(a["available"]) if a else False) if chain_sitter else False
-        r2["opted_updated_at"] = (a["updated_at"] if a else None) if chain_sitter else None
-
-        mins = last_action_minutes(r2.get("last_action") or "")
-        r2["last_action_minutes"] = mins
-        r2["activity_bucket"] = last_action_bucket_from_minutes(mins)
-
-        out.append(r2)
-    return out
-
-
-def parse_ranked_war_entry(war_data: dict):
-    if not isinstance(war_data, dict) or not war_data or war_data.get("error"):
-        return None
-
-    rankedwars = war_data.get("rankedwars")
-    if not isinstance(rankedwars, list) or not rankedwars:
-        return None
-
-    def is_active(w):
-        try:
-            return int(w.get("end", 0)) == 0
-        except Exception:
-            return False
-
-    def start_ts(w):
-        try:
-            return int(w.get("start", 0))
-        except Exception:
-            return 0
-
-    active = [w for w in rankedwars if isinstance(w, dict) and is_active(w)]
-    pick = active if active else [w for w in rankedwars if isinstance(w, dict)]
-    if not pick:
-        return None
-
-    pick.sort(key=start_ts, reverse=True)
-    return pick[0]
-
-
-def compute_war_timers(start_ts, end_ts, now_ts):
-    starts_in = started_ago = ends_in = ended_ago = None
-
-    try:
-        s = int(start_ts) if start_ts is not None else None
-    except Exception:
-        s = None
-    try:
-        e = int(end_ts) if end_ts is not None else None
-    except Exception:
-        e = None
-
-    n = int(now_ts)
-
-    if s is None:
-        return None, None, None, None
-
-    if s > n:
-        starts_in = s - n
-        return starts_in, None, None, None
-
-    started_ago = n - s
-
-    if e is None or e == 0:
-        return None, started_ago, None, None
-
-    if e > n:
-        ends_in = e - n
-        return None, started_ago, ends_in, None
-
-    ended_ago = n - e
-    return None, started_ago, None, ended_ago
-
-
-def ranked_war_to_state(entry: dict):
-    out = {
-        "opponent": None,
-        "opponent_id": None,
-        "start": None,
-        "end": None,
-        "target": None,
-        "active": None,
-        "our_score": None,
-        "opp_score": None,
-        "our_chain": None,
-        "opp_chain": None,
-        "war_id": None,
-        "server_now": unix_now(),
-        "starts_in": None,
-        "started_ago": None,
-        "ends_in": None,
-        "ended_ago": None,
-    }
-    if not isinstance(entry, dict):
-        return out
-
-    out["war_id"] = entry.get("id")
-    out["start"] = entry.get("start")
-    out["end"] = entry.get("end")
-    out["target"] = entry.get("target")
-
-    try:
-        e = int(entry.get("end", 0))
-        out["active"] = (e == 0) or (e > out["server_now"])
-    except Exception:
-        out["active"] = None
-
-    factions = entry.get("factions")
-    our = None
-    opp = None
-
-    if isinstance(factions, list) and FACTION_ID:
-        for f in factions:
-            if not isinstance(f, dict):
-                continue
-            fid = f.get("id")
-            if fid is None:
-                continue
-            if str(fid) == str(FACTION_ID):
-                our = f
-            else:
-                opp = f
-
-    if our:
-        out["our_score"] = our.get("score")
-        out["our_chain"] = our.get("chain")
-
-    if opp:
-        out["opponent"] = opp.get("name") or str(opp.get("id"))
-        out["opponent_id"] = opp.get("id")
-        out["opp_score"] = opp.get("score")
-        out["opp_chain"] = opp.get("chain")
-
-    starts_in, started_ago, ends_in, ended_ago = compute_war_timers(out["start"], out["end"], out["server_now"])
-    out["starts_in"] = starts_in
-    out["started_ago"] = started_ago
-    out["ends_in"] = ends_in
-    out["ended_ago"] = ended_ago
-    return out
-
-
-def ensure_state_shape():
-    STATE.setdefault("rows", [])
-    STATE.setdefault("updated_at", None)
-    STATE.setdefault("chain", {"current": None, "max": None, "timeout": None, "cooldown": None})
-    STATE.setdefault("war", {})
-    for k in (
-        "opponent", "opponent_id", "start", "end", "target", "active",
-        "our_score", "opp_score", "our_chain", "opp_chain", "war_id",
-        "server_now", "starts_in", "started_ago", "ends_in", "ended_ago",
-    ):
-        STATE["war"].setdefault(k, None)
-
-    for k in ("online_count", "idle_count", "offline_count", "available_count", "opted_in_count"):
-        STATE.setdefault(k, 0)
-
-    STATE.setdefault("faction", {"name": None, "tag": None, "respect": None})
-    STATE.setdefault("last_error", None)
-    STATE.setdefault("war_debug", None)
-
-
-STATE = {
-    "rows": [],
-    "updated_at": None,
-    "chain": {"current": None, "max": None, "timeout": None, "cooldown": None},
-    "war": {
-        "opponent": None,
-        "opponent_id": None,
-        "start": None,
-        "end": None,
-        "target": None,
-        "active": None,
-        "our_score": None,
-        "opp_score": None,
-        "our_chain": None,
-        "opp_chain": None,
-        "war_id": None,
-        "server_now": None,
-        "starts_in": None,
-        "started_ago": None,
-        "ends_in": None,
-        "ended_ago": None,
-    },
-    "online_count": 0,
-    "idle_count": 0,
-    "offline_count": 0,
-    "available_count": 0,
-    "opted_in_count": 0,
-    "faction": {"name": None, "tag": None, "respect": None},
-    "last_error": None,
-    "war_debug": None,
-}
-
-
-# ===== background poll =====
-async def poll_loop():
-    ensure_state_shape()
-    while True:
-        ensure_state_shape()
-        if not FACTION_ID or not FACTION_API_KEY:
-            STATE["last_error"] = {"code": -1, "error": "Missing FACTION_ID or FACTION_API_KEY"}
-            STATE["updated_at"] = now_iso()
-        else:
-            try:
-                core = await get_faction_core(FACTION_ID, FACTION_API_KEY)
-
-                if isinstance(core, dict) and core.get("error"):
-                    STATE["last_error"] = core["error"]
-                    STATE["updated_at"] = now_iso()
-                else:
-                    basic = (core or {}).get("basic") or {}
-                    chain = (core or {}).get("chain") or {}
-
-                    STATE["faction"] = {
-                        "name": basic.get("name"),
-                        "tag": basic.get("tag"),
-                        "respect": basic.get("respect"),
-                    }
-
-                    rows = merge_availability(safe_member_rows(core or {}))
-                    STATE["opted_in_count"] = sum(1 for r in rows if r.get("is_chain_sitter") and r.get("opted_in"))
-
-                    online_count = 0
-                    idle_count = 0
-                    offline_count = 0
-                    for r in rows:
-                        b = r.get("activity_bucket") or "offline"
-                        if b == "online":
-                            online_count += 1
-                        elif b == "idle":
-                            idle_count += 1
-                        else:
-                            offline_count += 1
-
-                    STATE["rows"] = rows
-                    STATE["online_count"] = online_count
-                    STATE["idle_count"] = idle_count
-                    STATE["offline_count"] = offline_count
-                    STATE["available_count"] = online_count + idle_count
-
-                    STATE["chain"] = {
-                        "current": chain.get("current"),
-                        "max": chain.get("max"),
-                        "timeout": chain.get("timeout"),
-                        "cooldown": chain.get("cooldown"),
-                    }
-
-                    war_data = await get_ranked_war_best_effort(FACTION_ID, FACTION_API_KEY)
-                    STATE["war_debug"] = war_data
-                    entry = parse_ranked_war_entry(war_data)
-                    if entry:
-                        STATE["war"] = ranked_war_to_state(entry)
-                    else:
-                        STATE["war"] = {
-                            "opponent": None,
-                            "opponent_id": None,
-                            "start": None,
-                            "end": None,
-                            "target": None,
-                            "active": None,
-                            "our_score": None,
-                            "opp_score": None,
-                            "our_chain": None,
-                            "opp_chain": None,
-                            "war_id": None,
-                            "server_now": unix_now(),
-                            "starts_in": None,
-                            "started_ago": None,
-                            "ends_in": None,
-                            "ended_ago": None,
-                        }
-
-                    STATE["updated_at"] = now_iso()
-                    STATE["last_error"] = None
-
-            except Exception as e:
-                STATE["last_error"] = {"code": -2, "error": f"Torn request failed: {repr(e)}"}
-                STATE["updated_at"] = now_iso()
-
-        await asyncio.sleep(POLL_INTERVAL_SECONDS)
-
-
-def start_poll_thread():
-    def runner():
-        asyncio.run(poll_loop())
-    threading.Thread(target=runner, daemon=True).start()
-
-
-# ===== Flask app =====
-app = Flask(__name__)
-
-# ---------- GUNICORN SAFE BOOT ----------
-_bg_started = False
-_bg_lock = threading.Lock()
-
-
-def ensure_background_started():
-    global _bg_started
-    if _bg_started:
-        return
-    with _bg_lock:
-        if _bg_started:
-            return
-        init_db()
-        start_poll_thread()
-        _bg_started = True
-
-
-@app.before_request
-def _boot():
-    ensure_background_started()
-
-
+# ===== IFRAME / CSP headers (for / if you still embed) =====
 @app.after_request
 def allow_iframe(resp):
-    for h in ["X-Frame-Options", "x-frame-options"]:
-        resp.headers.pop(h, None)
-
-    resp.headers["Content-Security-Policy"] = (
-        "frame-ancestors 'self' https://torn.com https://www.torn.com https://*.torn.com;"
-    )
+    # If you still iframe the full panel inside Torn, keep this.
+    # Lite route is meant to be opened in a new tab, so iframe is not needed there.
+    resp.headers.pop("Content-Security-Policy", None)
+    resp.headers["Content-Security-Policy"] = "frame-ancestors 'self' https://www.torn.com https://torn.com;"
     resp.headers["X-Frame-Options"] = "ALLOWALL"
-    resp.headers["Cache-Control"] = "no-store"
     return resp
 
 
-@app.get("/state")
+# ===== Poller =====
+async def poll_once():
+    """Fetch faction + war data, update STATE."""
+    global STATE
+
+    # availability map from db (torn_id -> bool)
+    avail_map = get_availability_map() or {}
+
+    # Pull faction core + members
+    core = await get_faction_core(FACTION_ID, FACTION_API_KEY)
+
+    # Pull ranked war (best-effort)
+    war = await get_ranked_war_best(FACTION_ID, FACTION_API_KEY)
+
+    # Faction details
+    faction_name = core.get("name")
+    faction_tag = core.get("tag")
+    faction_respect = core.get("respect")
+
+    members = core.get("members", []) or []
+    rows = []
+    available_count = 0
+
+    # Build member rows
+    for m in members:
+        torn_id = str(m.get("id") or "")
+        name = m.get("name") or f"#{torn_id}"
+
+        last_action_iso = None
+        # Support multiple shapes
+        la = m.get("last_action")
+        if isinstance(la, dict):
+            last_action_iso = la.get("timestamp_iso") or la.get("timestamp") or la.get("time") or la.get("date")
+        elif isinstance(la, str):
+            last_action_iso = la
+
+        mins = minutes_since(last_action_iso)
+        status = status_from_last_action(mins)
+
+        is_available = bool(avail_map.get(torn_id, False))
+        if is_available:
+            available_count += 1
+
+        # Optional: hospital timer if your API provides it (safe if missing)
+        hosp = m.get("hospital") or {}
+        hosp_until = None
+        if isinstance(hosp, dict):
+            hosp_until = hosp.get("until") or hosp.get("until_iso") or hosp.get("end")
+
+        rows.append({
+            "id": torn_id,
+            "name": name,
+            "minutes": mins,
+            "status": status,     # online / idle / offline
+            "available": is_available,
+            "hospital_until": hosp_until
+        })
+
+    # Sort: Online first by most recent (lowest minutes), then idle, then offline
+    def sort_key(r):
+        bucket = {"online": 0, "idle": 1, "offline": 2}.get(r["status"], 3)
+        mins = r["minutes"] if isinstance(r["minutes"], int) else 999999
+        return (bucket, mins)
+
+    rows.sort(key=sort_key)
+
+    # War details (safe even if None)
+    war_obj = {
+        "opponent": war.get("opponent"),
+        "start": war.get("start"),
+        "end": war.get("end"),
+        "target": war.get("target"),
+        "score": war.get("score"),
+        "enemy_score": war.get("enemy_score"),
+    }
+
+    # Chain (safe)
+    chain_obj = war.get("chain") or {}
+    chain = {
+        "current": chain_obj.get("current"),
+        "max": chain_obj.get("max"),
+        "timeout": chain_obj.get("timeout"),
+        "cooldown": chain_obj.get("cooldown"),
+    }
+
+    STATE.update({
+        "rows": rows,
+        "updated_at": iso_now(),
+        "faction": {"name": faction_name, "tag": faction_tag, "respect": faction_respect},
+        "war": war_obj,
+        "chain": chain,
+        "available_count": available_count,
+        "last_error": None
+    })
+
+
+def poll_loop():
+    """Runs in a background thread."""
+    global STATE
+    while True:
+        try:
+            asyncio.run(poll_once())
+        except Exception as e:
+            STATE["last_error"] = {"error": str(e), "at": iso_now()}
+        time.sleep(POLL_SECONDS)
+
+
+@app.before_request
+def boot_once():
+    global BOOTED, POLL_THREAD
+    if BOOTED:
+        return
+    BOOTED = True
+    init_db()
+    POLL_THREAD = threading.Thread(target=poll_loop, daemon=True)
+    POLL_THREAD.start()
+
+
+# ===== Routes =====
+@app.route("/health")
+def health():
+    return jsonify({"ok": True, "updated_at": STATE.get("updated_at"), "last_error": STATE.get("last_error")})
+
+@app.route("/state")
 def state():
-    ensure_state_shape()
     return jsonify(STATE)
 
-
-@app.get("/health")
-def health():
-    return jsonify({"ok": True, "time": now_iso()})
-
-
-@app.post("/api/availability")
+@app.route("/api/availability", methods=["POST"])
 def api_availability():
-    if AVAIL_TOKEN:
-        tok = (request.headers.get("X-Avail-Token") or "").strip()
-        if tok != AVAIL_TOKEN:
-            return jsonify({"ok": False, "error": "unauthorized"}), 401
+    # Body: {"torn_id":"1234","available":true}
+    if not require_token_if_set(request):
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
 
     data = request.get_json(silent=True) or {}
-    torn_id = data.get("torn_id")
-    name = (data.get("name") or "")[:64]
-    available = bool(data.get("available"))
+    torn_id = str(data.get("torn_id") or "").strip()
+    available = bool(data.get("available", False))
 
-    if torn_id is None:
-        return jsonify({"ok": False, "error": "missing torn_id"}), 400
-
-    try:
-        torn_id = int(torn_id)
-    except Exception:
-        return jsonify({"ok": False, "error": "invalid torn_id"}), 400
-
-    if not is_chain_sitter(torn_id):
+    if not require_chain_sitter(torn_id):
         return jsonify({"ok": False, "error": "not_chain_sitter"}), 403
 
-    upsert_availability(torn_id=torn_id, name=name, available=available, updated_at=now_iso())
-    return jsonify({"ok": True})
+    upsert_availability(torn_id, available)
+    return jsonify({"ok": True, "torn_id": torn_id, "available": available})
 
 
-HTML = """<!doctype html>
+@app.route("/")
+def panel():
+    # Keep your existing full panel if you want.
+    # This is a simple fallback that points people to /lite.
+    return Response(
+        """
+        <!doctype html>
+        <html><head>
+          <meta name="viewport" content="width=device-width, initial-scale=1" />
+          <title>7DS*: Wrath War-Bot</title>
+          <style>
+            body{margin:0;background:#0b0b0b;color:#eee;font-family:Arial}
+            .wrap{padding:16px}
+            a{color:#ffcc66}
+            .box{background:#151515;border:1px solid #331111;border-radius:12px;padding:14px}
+          </style>
+        </head>
+        <body>
+          <div class="wrap">
+            <div class="box">
+              <h2 style="margin:0 0 10px 0;">🛡️ 7DS*: Wrath War-Bot</h2>
+              <div>Use the Lite panel to avoid CSP/iframe issues:</div>
+              <div style="margin-top:10px;"><a href="/lite">Open /lite</a></div>
+            </div>
+          </div>
+        </body></html>
+        """,
+        mimetype="text/html"
+    )
+
+
+@app.route("/lite")
+def lite():
+    # ✅ “CSP-proof” panel: meant to be opened in a new tab (NOT iframed).
+    return Response(
+        """
+<!doctype html>
 <html>
 <head>
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>7DS*: Wrath War-Bot</title>
-<style>
-  body { font-family: Arial, sans-serif; margin: 12px; background:#0b0b0f; color:#fff; }
-  .card { background:#151521; border:1px solid #2a2a3a; border-radius:12px; padding:12px; margin-bottom:10px; }
-  .muted { opacity:0.75; font-size: 12px; }
-  table { width:100%; border-collapse: collapse; }
-  th, td { text-align:left; padding:8px; border-bottom:1px solid #2a2a3a; font-size: 13px; vertical-align: middle; }
-  th { opacity:0.85; }
-  .pill { display:inline-block; padding:2px 10px; border:1px solid #2a2a3a; border-radius:999px; font-size:12px; opacity:0.95; }
-  .err { color:#ffb4b4; }
-  .gold { color:#ffd86a; }
-  .grid { display:flex; gap:10px; flex-wrap:wrap; }
-  .dot { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:8px; }
-  .g { background:#3dff86; box-shadow: 0 0 10px rgba(61,255,134,0.35); }
-  .y { background:#ffd86a; box-shadow: 0 0 10px rgba(255,216,106,0.28); }
-  .r { background:#ff4b4b; box-shadow: 0 0 10px rgba(255,75,75,0.28); }
-  .namecell { display:flex; align-items:center; }
-  .tag { font-size: 11px; opacity: 0.75; margin-left: 8px; }
-  .twoCol { display:flex; gap:10px; flex-wrap:wrap; }
-  .col { flex: 1 1 340px; min-width: 320px; }
-  .colTitle { font-weight:800; margin: 6px 0 8px; }
-  .hospTitle { color:#ffb4b4; }
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>7DS*: Wrath — War-Bot (Lite)</title>
+  <style>
+    :root{
+      --bg:#070607;
+      --panel:#0f0c0d;
+      --panel2:#120f10;
+      --gold:#d7b35a;
+      --ember:#ff3b30;
+      --blood:#b31217;
+      --ash:#b8b2b4;
+      --line:#2b1416;
+      --shadow: 0 12px 35px rgba(0,0,0,.55);
+    }
+    body{
+      margin:0;
+      background: radial-gradient(1200px 700px at 25% -10%, rgba(255,59,48,.18), transparent 55%),
+                  radial-gradient(900px 600px at 110% 10%, rgba(215,179,90,.10), transparent 50%),
+                  linear-gradient(180deg, #040304 0%, var(--bg) 100%);
+      color:#f0ecec;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+    }
+    .wrap{ padding:14px; max-width:980px; margin:0 auto; }
+    .banner{
+      position:relative;
+      background: linear-gradient(180deg, rgba(179,18,23,.25), rgba(15,12,13,.85));
+      border:1px solid var(--line);
+      border-radius:16px;
+      padding:14px 14px 12px 14px;
+      box-shadow: var(--shadow);
+      overflow:hidden;
+    }
+    .sigil{
+      position:absolute; right:-22px; top:-22px;
+      width:160px;height:160px;border-radius:999px;
+      background: radial-gradient(circle at 35% 35%, rgba(215,179,90,.20), rgba(179,18,23,.12), transparent 70%);
+      filter: blur(.2px);
+      border:1px solid rgba(215,179,90,.15);
+      transform: rotate(12deg);
+    }
+    .title{
+      display:flex; align-items:center; gap:10px;
+      letter-spacing:.5px;
+    }
+    .crest{
+      width:34px;height:34px;border-radius:10px;
+      background: linear-gradient(180deg, rgba(215,179,90,.20), rgba(179,18,23,.18));
+      border:1px solid rgba(215,179,90,.25);
+      display:grid; place-items:center;
+      box-shadow: 0 10px 25px rgba(0,0,0,.45);
+      font-weight:800; color:var(--gold);
+    }
+    h1{ margin:0; font-size:16px; color:var(--gold); }
+    .sub{ margin-top:4px; font-size:12px; color:var(--ash); }
 
-  .topbtn{
-    padding:8px 10px;
-    background:#111;
-    border:1px solid #333;
-    border-radius:8px;
-    color:#fff;
-    font-weight:900;
-    cursor:pointer;
-    white-space:nowrap;
-  }
+    .grid{ display:grid; grid-template-columns: 1fr; gap:10px; margin-top:12px; }
+    @media (min-width: 820px){ .grid{ grid-template-columns: 1fr 1fr; } }
 
-  .bbtn{
-    display:inline-block;
-    padding:6px 10px;
-    border:1px solid #2a2a3a;
-    border-radius:10px;
-    background:#111;
-    color:#ffd86a;
-    font-weight:900;
-    text-decoration:none;
-    cursor:pointer;
-    white-space:nowrap;
-  }
-  .bbtn:active{ transform: scale(0.98); }
+    .card{
+      background: linear-gradient(180deg, rgba(18,15,16,.92), rgba(10,8,9,.92));
+      border:1px solid var(--line);
+      border-radius:16px;
+      padding:12px;
+      box-shadow: var(--shadow);
+    }
+    .card h2{
+      margin:0 0 8px 0;
+      font-size:13px;
+      color:#fff;
+      display:flex; align-items:center; justify-content:space-between;
+    }
+    .pill{
+      font-size:11px;
+      padding:4px 8px;
+      border-radius:999px;
+      border:1px solid rgba(215,179,90,.22);
+      color:var(--gold);
+      background: rgba(215,179,90,.08);
+    }
 
-  .optbtn{
-    display:inline-block;
-    padding:6px 10px;
-    border-radius:10px;
-    border:1px solid #2a2a3a;
-    background:#111;
-    color:#fff;
-    font-weight:900;
-    cursor:pointer;
-    white-space:nowrap;
-  }
-  .optbtn.on{ border-color:#2fff88; box-shadow:0 0 16px rgba(47,255,136,0.35); }
-  .optbtn.off{ border-color:#ff4b4b; box-shadow:0 0 16px rgba(255,75,75,0.25); }
-  .optbtn:disabled{ opacity:0.6; cursor:not-allowed; }
-  .optbtn:active{ transform: scale(0.98); }
-</style>
+    .row{ display:flex; justify-content:space-between; gap:10px; padding:7px 0; border-top:1px solid rgba(43,20,22,.7); }
+    .row:first-of-type{ border-top:none; }
+    .k{ color:var(--ash); font-size:12px;}
+    .v{ color:#fff; font-size:12px; text-align:right; }
+
+    .members{ margin-top:6px; display:flex; flex-direction:column; gap:8px; }
+    .m{
+      border:1px solid rgba(43,20,22,.75);
+      background: rgba(7,6,7,.55);
+      border-radius:14px;
+      padding:9px 10px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+    }
+    .left{ display:flex; align-items:center; gap:10px; min-width:0; }
+    .dot{
+      width:10px; height:10px; border-radius:999px;
+      box-shadow: 0 0 0 3px rgba(255,255,255,.05);
+      flex:0 0 auto;
+    }
+    .name{ font-size:13px; color:#fff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:260px; }
+    .meta{ font-size:11px; color:var(--ash); }
+    .right{ display:flex; flex-direction:column; align-items:flex-end; gap:2px; }
+
+    .online{ background:#2cff6f; }
+    .idle{ background:#ffcc00; }
+    .offline{ background:#ff4444; }
+
+    .statusTxt{ font-size:11px; color:#fff; letter-spacing:.3px; }
+    .statusTxt span{ color:var(--gold); }
+
+    .footer{
+      margin-top:10px;
+      font-size:11px;
+      color:rgba(184,178,180,.85);
+      display:flex;
+      justify-content:space-between;
+      gap:10px;
+    }
+    .err{
+      margin-top:10px;
+      padding:10px;
+      border-radius:14px;
+      border:1px solid rgba(255,59,48,.35);
+      background: rgba(255,59,48,.08);
+      color:#ffd6d3;
+      font-size:12px;
+      white-space:pre-wrap;
+    }
+  </style>
 </head>
 <body>
-  <div class="card">
-    <div style="display:flex; gap:10px; align-items:center;">
-      <div id="title" style="font-weight:800; font-size:16px; flex:1;">
-        <span class="gold">7DS*: Wrath</span> War-Bot
+  <div class="wrap">
+    <div class="banner">
+      <div class="sigil"></div>
+      <div class="title">
+        <div class="crest">7</div>
+        <div>
+          <h1>7DS*: Wrath — War-Bot (Lite)</h1>
+          <div class="sub">“Wrath burns clean. Strike fast. Count true.”</div>
+        </div>
       </div>
-      <button class="topbtn" id="set_me">Set My ID</button>
     </div>
-    <div class="muted" id="updated">Loading…</div>
-    <div class="muted err" id="err"></div>
-  </div>
 
-  <div class="card">
     <div class="grid">
-      <div class="pill" id="chain">Chain: —</div>
-      <div class="pill" id="war">War: —</div>
-      <div class="pill" id="war_score">Score: —</div>
-      <div class="pill" id="war_target">Target: —</div>
-      <div class="pill" id="war_progress">Progress: —</div>
-      <div class="pill" id="war_time">Time: —</div>
-      <div class="pill" id="p_on">🟢 Online: —</div>
-      <div class="pill" id="p_idle">🟡 Idle: —</div>
-      <div class="pill" id="p_off">🔴 Offline: —</div>
-      <div class="pill" id="p_opt">Chain sitter opted-in: —</div>
+      <div class="card">
+        <h2>⚔ Ranked War <span class="pill" id="updated">—</span></h2>
+        <div class="row"><div class="k">Opponent</div><div class="v" id="opponent">—</div></div>
+        <div class="row"><div class="k">Target</div><div class="v" id="target">—</div></div>
+        <div class="row"><div class="k">Score</div><div class="v" id="score">—</div></div>
+        <div class="row"><div class="k">Enemy</div><div class="v" id="enemy">—</div></div>
+      </div>
+
+      <div class="card">
+        <h2>🜲 Presence <span class="pill" id="counts">—</span></h2>
+        <div class="members" id="members"></div>
+      </div>
+    </div>
+
+    <div id="err" class="err" style="display:none;"></div>
+
+    <div class="footer">
+      <div id="faction">—</div>
+      <div>Auto-refresh: 15s</div>
     </div>
   </div>
 
-  <div class="card">
-    <div class="colTitle gold">🟢 Online (0–20m, LIVE)</div>
-    <div class="twoCol">
-      <div class="col">
-        <div class="colTitle">✅ OK</div>
-        <div style="overflow:auto;">
-          <table>
-            <thead><tr><th>Member</th><th>Lvl</th><th>Status</th><th>Opt</th><th>Bounty</th></tr></thead>
-            <tbody id="rows_on_ok"></tbody>
-          </table>
-        </div>
-      </div>
-      <div class="col">
-        <div class="colTitle hospTitle">🏥 Hospital</div>
-        <div style="overflow:auto;">
-          <table>
-            <thead><tr><th>Member</th><th>Lvl</th><th>Hosp time</th><th>Status</th><th>Opt</th><th>Bounty</th></tr></thead>
-            <tbody id="rows_on_hosp"></tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  </div>
+  <script>
+    function esc(s){ return (s ?? "").toString().replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
 
-  <div class="card">
-    <div class="colTitle gold">🟡 Idle (21–30m, LIVE)</div>
-    <div class="twoCol">
-      <div class="col">
-        <div class="colTitle">✅ OK</div>
-        <div style="overflow:auto;">
-          <table>
-            <thead><tr><th>Member</th><th>Lvl</th><th>Status</th><th>Opt</th><th>Bounty</th></tr></thead>
-            <tbody id="rows_idle_ok"></tbody>
-          </table>
-        </div>
-      </div>
-      <div class="col">
-        <div class="colTitle hospTitle">🏥 Hospital</div>
-        <div style="overflow:auto;">
-          <table>
-            <thead><tr><th>Member</th><th>Lvl</th><th>Hosp time</th><th>Status</th><th>Opt</th><th>Bounty</th></tr></thead>
-            <tbody id="rows_idle_hosp"></tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  </div>
+    async function loadState(){
+      try{
+        const res = await fetch("/state", {cache:"no-store"});
+        const data = await res.json();
 
-  <div class="card">
-    <div class="colTitle">🔴 Offline (31m+, LIVE)</div>
-    <div class="twoCol">
-      <div class="col">
-        <div class="colTitle">✅ OK</div>
-        <div style="overflow:auto;">
-          <table>
-            <thead><tr><th>Member</th><th>Lvl</th><th>Status</th><th>Opt</th><th>Bounty</th></tr></thead>
-            <tbody id="rows_off_ok"></tbody>
-          </table>
-        </div>
-      </div>
-      <div class="col">
-        <div class="colTitle hospTitle">🏥 Hospital</div>
-        <div style="overflow:auto;">
-          <table>
-            <thead><tr><th>Member</th><th>Lvl</th><th>Hosp time</th><th>Status</th><th>Opt</th><th>Bounty</th></tr></thead>
-            <tbody id="rows_off_hosp"></tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  </div>
+        // Updated pill
+        document.getElementById("updated").textContent = data.updated_at ? "Updated" : "Waiting";
 
-<script>
-function fmtDur(sec){
-  sec = Math.max(0, Math.floor(sec || 0));
-  const d = Math.floor(sec / 86400); sec %= 86400;
-  const h = Math.floor(sec / 3600);  sec %= 3600;
-  const m = Math.floor(sec / 60);    sec %= 60;
-  const parts = [];
-  if (d) parts.push(d + "d");
-  if (h) parts.push(h + "h");
-  if (m) parts.push(m + "m");
-  parts.push(sec + "s");
-  return parts.join(" ");
-}
+        // Faction footer
+        const f = data.faction || {};
+        document.getElementById("faction").textContent =
+          (f.tag ? `[${f.tag}] ` : "") + (f.name || "Faction") + (f.respect ? ` • Respect ${f.respect}` : "");
 
-function dotClass(kind){
-  if (kind === 'online') return 'dot g';
-  if (kind === 'idle') return 'dot y';
-  return 'dot r';
-}
+        // War
+        const w = data.war || {};
+        document.getElementById("opponent").textContent = w.opponent ? esc(w.opponent) : "No active war";
+        document.getElementById("target").textContent = (w.target ?? "—");
+        document.getElementById("score").textContent = (w.score ?? "—");
+        document.getElementById("enemy").textContent = (w.enemy_score ?? "—");
 
-function bucketFromMinutes(mins){
-  if (mins <= 20) return 'online';
-  if (mins > 20 && mins <= 30) return 'idle';
-  return 'offline';
-}
+        // Members
+        const rows = data.rows || [];
+        let online=0, idle=0, offline=0;
+        const wrap = document.getElementById("members");
+        wrap.innerHTML = "";
 
-let warStartsIn = null;
-let warStartedAgo = null;
-let warEndsIn = null;
-let warEndedAgo = null;
+        rows.forEach(r=>{
+          const st = r.status || "offline";
+          if(st==="online") online++;
+          else if(st==="idle") idle++;
+          else offline++;
 
-function warKind(){
-  if (warStartsIn != null) return "upcoming";
-  if (warEndedAgo != null) return "ended";
-  return "active";
-}
+          const mins = (typeof r.minutes === "number") ? `${r.minutes}m` : "—";
+          const card = document.createElement("div");
+          card.className = "m";
+          card.innerHTML = `
+            <div class="left">
+              <div class="dot ${st}"></div>
+              <div style="min-width:0;">
+                <div class="name">${esc(r.name)}</div>
+                <div class="meta">Last action: ${mins} • ID: ${esc(r.id)}</div>
+              </div>
+            </div>
+            <div class="right">
+              <div class="statusTxt">${st.toUpperCase()}</div>
+              <div class="statusTxt"><span>${st==="online"?"0–20m":(st==="idle"?"20–30m":"30m+")}</span></div>
+            </div>
+          `;
+          wrap.appendChild(card);
+        });
 
-function renderWarTime(){
-  let t = "Time: —";
-  const kind = warKind();
+        document.getElementById("counts").textContent = `🟢 ${online}  🟡 ${idle}  🔴 ${offline}`;
 
-  if (kind === "upcoming" && warStartsIn != null) {
-    t = `Time: starts in ${fmtDur(warStartsIn)}`;
-  } else if (kind === "active") {
-    const started = (warStartedAgo != null) ? `started ${fmtDur(warStartedAgo)} ago` : "started";
-    const ends = (warEndsIn != null) ? ` | ends in ${fmtDur(warEndsIn)}` : "";
-    t = `Time: ${started}${ends}`;
-  } else if (kind === "ended" && warEndedAgo != null) {
-    t = `Time: ended ${fmtDur(warEndedAgo)} ago`;
-  }
-  document.getElementById('war_time').textContent = t;
-}
+        // Error
+        const errBox = document.getElementById("err");
+        if(data.last_error){
+          errBox.style.display = "block";
+          errBox.textContent = "Last error:\\n" + JSON.stringify(data.last_error, null, 2);
+        } else {
+          errBox.style.display = "none";
+        }
 
-function tickWarTime(){
-  const kind = warKind();
-
-  if (kind === "upcoming") {
-    if (warStartsIn != null) {
-      warStartsIn = Math.max(0, warStartsIn - 1);
-      if (warStartsIn === 0) { warStartsIn = null; warStartedAgo = 0; }
+      }catch(e){
+        const errBox = document.getElementById("err");
+        errBox.style.display = "block";
+        errBox.textContent = "Failed to load /state\\n" + (e?.message || e);
+      }
     }
-  } else if (kind === "active") {
-    if (warStartedAgo != null) warStartedAgo += 1;
-    if (warEndsIn != null) {
-      warEndsIn = Math.max(0, warEndsIn - 1);
-      if (warEndsIn === 0) { warEndsIn = null; warEndedAgo = 0; }
-    }
-  } else if (kind === "ended") {
-    if (warEndedAgo != null) warEndedAgo += 1;
-  }
-  renderWarTime();
-}
 
-function pct(n, d){
-  n = Number(n); d = Number(d);
-  if (!isFinite(n) || !isFinite(d) || d <= 0) return null;
-  const p = Math.max(0, Math.min(100, (n / d) * 100));
-  return Math.round(p);
-}
-
-let latestRows = [];
-let rowsFetchedAtMs = 0;
-
-function elapsedSeconds(){
-  if (!rowsFetchedAtMs) return 0;
-  return Math.max(0, (Date.now() - rowsFetchedAtMs) / 1000);
-}
-
-function liveMinutes(baseMinutes){
-  const e = elapsedSeconds();
-  const inc = e / 60.0;
-  const v = (baseMinutes == null) ? 1000000000 : baseMinutes;
-  if (v >= 1000000000) return v;
-  return v + inc;
-}
-
-function isHospital(r){
-  const s = (r.status || "").toLowerCase();
-  return s.includes("hospital");
-}
-
-function parseDurationMinutes(txt){
-  txt = String(txt || "").toLowerCase();
-  let total = 0;
-  const d = txt.match(/(\\d+)\\s*d/); if (d) total += parseInt(d[1],10) * 1440;
-  const h = txt.match(/(\\d+)\\s*h/); if (h) total += parseInt(h[1],10) * 60;
-  const m = txt.match(/(\\d+)\\s*m/); if (m) total += parseInt(m[1],10);
-  const s = txt.match(/(\\d+)\\s*s/); if (s && total === 0) total += 1;
-  return total > 0 ? total : null;
-}
-
-function hospitalMinutes(r){
-  const st = String(r.status || "").toLowerCase();
-  if (!st.includes("hospital")) return null;
-  const idx = st.indexOf("hospital");
-  const tail = idx >= 0 ? st.slice(idx) : st;
-  return parseDurationMinutes(tail) ?? parseDurationMinutes(st);
-}
-
-function hospitalTimeText(r){
-  const mins = hospitalMinutes(r);
-  if (mins == null) return "—";
-  return fmtDur(mins * 60);
-}
-
-function bountyCell(x){
-  const bid = x && x.torn_id != null ? String(x.torn_id) : '';
-  if (!bid) return '—';
-  const url = `https://www.torn.com/bounties.php?p=add&XID=${bid}`;
-  return `<a class="bbtn" href="${url}" target="_blank" rel="noopener noreferrer">🎯 Bounty</a>`;
-}
-
-// ===== Identity: auto-read from URL params me_id & me_name =====
-function getMyTornId(){ return (localStorage.getItem('warbot_my_torn_id') || '').trim(); }
-function getMyName(){ return (localStorage.getItem('warbot_my_name') || '').trim(); }
-
-function setMyIdentity(id, name){
-  id = String(id || '').trim();
-  name = String(name || '').trim();
-  if (id) localStorage.setItem('warbot_my_torn_id', id);
-  if (name) localStorage.setItem('warbot_my_name', name);
-}
-
-function readMeFromURL(){
-  try{
-    const u = new URL(window.location.href);
-    const meId = (u.searchParams.get('me_id') || '').trim();
-    const meName = (u.searchParams.get('me_name') || '').trim();
-    if (meId) setMyIdentity(meId, meName);
-  }catch(e){}
-}
-
-function setMyIdentityPrompt(){
-  const id = (prompt('Enter YOUR Torn ID (for Opt button):', getMyTornId()) || '').trim();
-  if (id) localStorage.setItem('warbot_my_torn_id', id);
-  const nm = (prompt('Enter YOUR Torn name (optional):', getMyName()) || '').trim();
-  if (nm) localStorage.setItem('warbot_my_name', nm);
-  return { id, nm };
-}
-
-readMeFromURL();
-
-function optCell(x){
-  const tid = x && x.torn_id != null ? String(x.torn_id) : '';
-  const myId = getMyTornId();
-  const isMe = myId && tid && myId === tid;
-
-  if (x.is_chain_sitter && isMe) {
-    const opted = !!x.opted_in;
-    const cls = opted ? 'optbtn on' : 'optbtn off';
-    const txt = opted ? '🟢 Opted In' : '🔴 Opted Out';
-    const next = opted ? '0' : '1';
-    return `<button class="${cls}" data-opt="1" data-next="${next}">${txt}</button>`;
-  }
-  return (x.is_chain_sitter && x.opted_in) ? '✅' : '—';
-}
-
-async function doOptToggle(nextVal, btn){
-  let myId = getMyTornId();
-  let myName = getMyName();
-
-  if (!myId) {
-    const v = setMyIdentityPrompt();
-    myId = (v.id || '').trim();
-    myName = (v.nm || '').trim();
-  }
-  if (!myId) { alert('Missing YOUR Torn ID.'); return; }
-
-  btn.disabled = true;
-  const oldText = btn.textContent;
-  btn.textContent = '⏳ Updating...';
-
-  try{
-    const res = await fetch('/api/availability', {
-      method: 'POST',
-      headers: { 'Content-Type':'application/json' },
-      body: JSON.stringify({ torn_id: myId, name: myName, available: nextVal })
-    });
-    const j = await res.json().catch(()=>({}));
-    if (!res.ok){
-      alert(j.error || 'Server error');
-      btn.disabled = false;
-      btn.textContent = oldText;
-      return;
-    }
-    await refresh();
-  }catch(e){
-    alert('Request failed.');
-  }finally{
-    btn.disabled = false;
-  }
-}
-
-document.addEventListener('click', (e)=>{
-  const t = e.target;
-  if (t && t.getAttribute && t.getAttribute('data-opt') === '1') {
-    e.preventDefault();
-    const next = t.getAttribute('data-next') === '1';
-    doOptToggle(next, t);
-  }
-});
-
-document.getElementById('set_me').addEventListener('click', ()=> setMyIdentityPrompt());
-
-function fillTableOK(tbodyId, arr){
-  const tb = document.getElementById(tbodyId);
-  tb.innerHTML = '';
-  (arr || []).slice(0, 350).forEach(x=>{
-    const sitterTag = x.is_chain_sitter ? '<span class="tag">CS</span>' : '';
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td><div class="namecell"><span class="${dotClass(x._kind)}"></span><span>${x.name||''}</span>${sitterTag}</div></td>
-      <td>${x.level??''}</td>
-      <td>${x.status||''}</td>
-      <td>${optCell(x)}</td>
-      <td>${bountyCell(x)}</td>
-    `;
-    tb.appendChild(tr);
-  });
-}
-
-function fillTableHosp(tbodyId, arr){
-  const tb = document.getElementById(tbodyId);
-  tb.innerHTML = '';
-  (arr || []).slice(0, 350).forEach(x=>{
-    const sitterTag = x.is_chain_sitter ? '<span class="tag">CS</span>' : '';
-    const ht = hospitalTimeText(x);
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td><div class="namecell"><span class="${dotClass(x._kind)}"></span><span>${x.name||''}</span>${sitterTag}</div></td>
-      <td>${x.level??''}</td>
-      <td title="${String(x.status||'').replace(/"/g,'&quot;')}">${ht}</td>
-      <td>${x.status||''}</td>
-      <td>${optCell(x)}</td>
-      <td>${bountyCell(x)}</td>
-    `;
-    tb.appendChild(tr);
-  });
-}
-
-function renderMemberTables(){
-  const on_ok = [], on_h = [];
-  const idle_ok = [], idle_h = [];
-  const off_ok = [], off_h = [];
-
-  for (const r of (latestRows || [])) {
-    const mins = liveMinutes(r.last_action_minutes);
-    const kind = bucketFromMinutes(mins);
-    const rr = Object.assign({}, r, { _live_mins: mins, _kind: kind });
-
-    const hosp = isHospital(rr);
-    if (kind === "online")      (hosp ? on_h : on_ok).push(rr);
-    else if (kind === "idle")   (hosp ? idle_h : idle_ok).push(rr);
-    else                       (hosp ? off_h : off_ok).push(rr);
-  }
-
-  const sortByRecent = (a,b)=> (a._live_mins || 1e9) - (b._live_mins || 1e9);
-  on_ok.sort(sortByRecent);
-  idle_ok.sort(sortByRecent);
-  off_ok.sort(sortByRecent);
-
-  const sortByHospitalLowFirst = (a,b)=>{
-    const am = hospitalMinutes(a);
-    const bm = hospitalMinutes(b);
-    const av = (am == null) ? 1e9 : am;
-    const bv = (bm == null) ? 1e9 : bm;
-    if (av !== bv) return av - bv;
-    return sortByRecent(a,b);
-  };
-
-  on_h.sort(sortByHospitalLowFirst);
-  idle_h.sort(sortByHospitalLowFirst);
-  off_h.sort(sortByHospitalLowFirst);
-
-  const onTotal = on_ok.length + on_h.length;
-  const idleTotal = idle_ok.length + idle_h.length;
-  const offTotal = off_ok.length + off_h.length;
-
-  document.getElementById('p_on').textContent   = `🟢 Online: ${onTotal} (OK ${on_ok.length} | 🏥 ${on_h.length})`;
-  document.getElementById('p_idle').textContent = `🟡 Idle: ${idleTotal} (OK ${idle_ok.length} | 🏥 ${idle_h.length})`;
-  document.getElementById('p_off').textContent  = `🔴 Offline: ${offTotal} (OK ${off_ok.length} | 🏥 ${off_h.length})`;
-
-  fillTableOK('rows_on_ok', on_ok);
-  fillTableHosp('rows_on_hosp', on_h);
-
-  fillTableOK('rows_idle_ok', idle_ok);
-  fillTableHosp('rows_idle_hosp', idle_h);
-
-  fillTableOK('rows_off_ok', off_ok);
-  fillTableHosp('rows_off_hosp', off_h);
-}
-
-async function refresh(){
-  const r = await fetch('/state');
-  const s = await r.json();
-
-  const f = s.faction || {};
-  document.getElementById('title').innerHTML =
-    `<span class="gold">${(f.tag ? '['+f.tag+'] ' : '') + (f.name || '7DS*: Wrath')}</span> War-Bot`;
-
-  document.getElementById('updated').textContent = 'Updated: ' + (s.updated_at || '—');
-  document.getElementById('err').textContent = s.last_error ? ('Error: ' + JSON.stringify(s.last_error)) : '';
-
-  const c = s.chain || {};
-  document.getElementById('chain').textContent =
-    `Chain: ${c.current ?? '—'}/${c.max ?? '—'} (timeout: ${c.timeout ?? '—'}s)`;
-
-  const w = s.war || {};
-  const opp = (w.opponent || '—');
-  document.getElementById('war').textContent = `War: ${opp}`;
-
-  const ourScore = (w.our_score ?? null);
-  const oppScore = (w.opp_score ?? null);
-  const ourChain = (w.our_chain ?? '—');
-  const oppChain = (w.opp_chain ?? '—');
-
-  document.getElementById('war_score').textContent =
-    `Score: ${(ourScore ?? '—')}–${(oppScore ?? '—')} | Chains: ${ourChain}–${oppChain}`;
-
-  const target = (w.target ?? null);
-  document.getElementById('war_target').textContent = `Target: ${(target ?? '—')}`;
-
-  const pOur = pct(ourScore, target);
-  const pOpp = pct(oppScore, target);
-  const progText =
-    (pOur != null || pOpp != null)
-      ? `Progress: ${(ourScore ?? '—')}/${(target ?? '—')} (${pOur ?? '—'}%) vs ${(oppScore ?? '—')}/${(target ?? '—')} (${pOpp ?? '—'}%)`
-      : `Progress: —`;
-  document.getElementById('war_progress').textContent = progText;
-
-  warStartsIn = (w.starts_in != null) ? Math.max(0, Math.floor(w.starts_in)) : null;
-  warStartedAgo = (w.started_ago != null) ? Math.max(0, Math.floor(w.started_ago)) : null;
-  warEndsIn = (w.ends_in != null) ? Math.max(0, Math.floor(w.ends_in)) : null;
-  warEndedAgo = (w.ended_ago != null) ? Math.max(0, Math.floor(w.ended_ago)) : null;
-  renderWarTime();
-
-  document.getElementById('p_opt').textContent  = `Chain sitter opted-in: ${s.opted_in_count ?? 0}`;
-
-  latestRows = (s.rows || []);
-  rowsFetchedAtMs = Date.now();
-  renderMemberTables();
-}
-
-function tick(){
-  if (!latestRows || latestRows.length === 0) return;
-  renderMemberTables();
-}
-
-refresh();
-setInterval(refresh, 10000);
-setInterval(tickWarTime, 1000);
-setInterval(tick, 1000);
-</script>
+    loadState();
+    setInterval(loadState, 15000);
+  </script>
 </body>
 </html>
-"""
-
-
-@app.get("/")
-def home():
-    return Response(HTML, mimetype="text/html")
+        """,
+        mimetype="text/html"
+    )
 
 
 if __name__ == "__main__":
-    ensure_background_started()
-    app.run(host="0.0.0.0", port=PORT)
+    # Local dev only (Render uses gunicorn)
+    init_db()
+    t = threading.Thread(target=poll_loop, daemon=True)
+    t.start()
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", "5000")))
