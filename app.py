@@ -1,5 +1,5 @@
 # app.py ✅ COMPLETE (Your faction + Enemy faction tracker UNDER yours)
-# Fix: uses get_ranked_war_best (matches your torn_api.py)
+# ✅ Works with torn_api functions that may take (session, key, id) OR (key, id) OR (key)
 #
 # - /           : Panel (iframe-safe for torn.com) with TWO trackers:
 #                 1) Your faction sections (Online/Idle/Offline/Hospital)
@@ -12,12 +12,6 @@
 # 🟢 Online = 0–20 mins
 # 🟡 Idle   = 20–30 mins
 # 🔴 Offline= 30+ mins
-#
-# ENV
-# - FACTION_ID, FACTION_API_KEY required
-# - AVAIL_TOKEN optional (yours = 666)
-# - CHAIN_SITTER_IDS optional: "1234,5678"
-# - POLL_SECONDS optional: "20"
 
 import os
 import threading
@@ -34,11 +28,10 @@ from db import (
     get_availability_map,
 )
 
-# ✅ IMPORTANT: your file has get_ranked_war_best
+# Your torn_api has get_ranked_war_best and get_faction_core, but signatures differ by version
 from torn_api import get_faction_core, get_ranked_war_best
 
 load_dotenv()
-
 app = Flask(__name__)
 
 # ===== ENV =====
@@ -125,21 +118,15 @@ def token_ok(req) -> bool:
     return t == AVAIL_TOKEN
 
 def extract_opponent_id(war: dict):
-    """
-    Tries multiple shapes because wrappers differ.
-    Returns string or None.
-    """
     if not isinstance(war, dict):
         return None
 
-    # common guesses
     for k in ("opponent_id", "enemy_id", "faction_id", "target_faction_id"):
         v = war.get(k)
         if v:
             return str(v)
 
     opp = war.get("opponent")
-    # opponent might be dict: {"id": "...", "name": "..."}
     if isinstance(opp, dict) and opp.get("id"):
         return str(opp.get("id"))
 
@@ -183,6 +170,42 @@ def split_sections(rows):
     hospital.sort(key=lambda x: (x.get("hospital_until") or ""))
 
     return {"online": online, "idle": idle, "offline": offline, "hospital": hospital}
+
+
+# ===== SIGNATURE-SAFE torn_api CALLS =====
+async def call_get_faction_core(session, api_key: str, faction_id: str):
+    """
+    Supports any of these:
+    - await get_faction_core(session, api_key, faction_id)
+    - await get_faction_core(api_key, faction_id)
+    - await get_faction_core(api_key)  (expects FACTION_ID inside torn_api)
+    """
+    try:
+        return await get_faction_core(session, api_key, faction_id)
+    except TypeError:
+        pass
+    try:
+        return await get_faction_core(api_key, faction_id)
+    except TypeError:
+        pass
+    return await get_faction_core(api_key)
+
+async def call_get_ranked_war_best(session, api_key: str, faction_id: str):
+    """
+    Supports any of these:
+    - await get_ranked_war_best(session, api_key, faction_id)
+    - await get_ranked_war_best(api_key, faction_id)
+    - await get_ranked_war_best(api_key)
+    """
+    try:
+        return await get_ranked_war_best(session, api_key, faction_id)
+    except TypeError:
+        pass
+    try:
+        return await get_ranked_war_best(api_key, faction_id)
+    except TypeError:
+        pass
+    return await get_ranked_war_best(api_key)
 
 
 # ===== HTML =====
@@ -371,7 +394,6 @@ def panel():
         them=them_sections,
     )
 
-
 @app.route("/api/availability", methods=["POST"])
 def api_availability():
     if not token_ok(request):
@@ -450,9 +472,9 @@ def normalize_faction_rows(faction: dict, avail_map=None):
 async def poll_once(session: aiohttp.ClientSession):
     avail_map = get_availability_map()
 
-    # YOUR faction + war (✅ best function name)
-    faction = await get_faction_core(session, FACTION_API_KEY, FACTION_ID)
-    war = await get_ranked_war_best(session, FACTION_API_KEY, FACTION_ID)
+    # ✅ signature-safe calls
+    faction = await call_get_faction_core(session, FACTION_API_KEY, FACTION_ID)
+    war = await call_get_ranked_war_best(session, FACTION_API_KEY, FACTION_ID)
 
     rows, counts, available_count, header, chain = normalize_faction_rows(faction, avail_map=avail_map)
     STATE["rows"] = rows
@@ -463,7 +485,6 @@ async def poll_once(session: aiohttp.ClientSession):
 
     opponent_id = extract_opponent_id(war)
 
-    # store war info (best-effort, won't crash if keys differ)
     if isinstance(war, dict):
         STATE["war"] = {
             "opponent": war.get("opponent"),
@@ -476,18 +497,12 @@ async def poll_once(session: aiohttp.ClientSession):
     else:
         STATE["war"] = {"opponent": None, "opponent_id": opponent_id, "start": None, "end": None, "target": None, "score": None}
 
-    # ENEMY
+    # Enemy tracker (auto)
     if opponent_id:
-        enemy_faction = await get_faction_core(session, FACTION_API_KEY, opponent_id)
+        enemy_faction = await call_get_faction_core(session, FACTION_API_KEY, opponent_id)
         enemy_rows, enemy_counts, _, enemy_header, _ = normalize_faction_rows(enemy_faction, avail_map={})
         enemy_header["id"] = opponent_id
-
-        STATE["enemy"] = {
-            "faction": enemy_header,
-            "rows": enemy_rows,
-            "counts": enemy_counts,
-            "updated_at": now_iso(),
-        }
+        STATE["enemy"] = {"faction": enemy_header, "rows": enemy_rows, "counts": enemy_counts, "updated_at": now_iso()}
     else:
         STATE["enemy"] = {
             "faction": {"name": None, "tag": None, "respect": None, "id": None},
@@ -515,8 +530,7 @@ async def poll_loop():
 def start_poll_thread():
     def runner():
         asyncio.run(poll_loop())
-    t = threading.Thread(target=runner, daemon=True)
-    t.start()
+    threading.Thread(target=runner, daemon=True).start()
 
 
 @app.before_request
