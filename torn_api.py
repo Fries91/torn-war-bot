@@ -1,3 +1,9 @@
+# torn_api.py  ✅ v2 API helpers + ranked war normalization (best-effort)
+# Fixes:
+# ✅ opponent_id extraction works when "factions" is a dict OR a list
+# ✅ score/enemy_score extraction works when "factions" is a dict OR a list
+# ✅ still supports multiple possible key names returned by Torn
+
 import aiohttp
 
 BASE_V2 = "https://api.torn.com/v2"
@@ -36,19 +42,39 @@ def _pick(d: dict, keys: list):
 
 
 def _extract_score(obj: dict):
+    """
+    Returns (our_score, enemy_score) as ints where possible.
+    Supports:
+      - direct keys on the war blob
+      - factions as dict keyed by faction id
+      - factions as list of faction objects
+    """
     if not isinstance(obj, dict):
         return None, None
 
+    # Direct fields sometimes exist
     our = _pick(obj, ["score", "points", "our_score", "faction_score"])
     enemy = _pick(obj, ["enemy_score", "opponent_score", "their_score"])
 
-    if our is None and isinstance(obj.get("factions"), dict):
-        vals = list(obj["factions"].values())
+    factions = obj.get("factions")
+
+    # Case A: factions is dict keyed by id -> values contain score/points
+    if (our is None or enemy is None) and isinstance(factions, dict):
+        vals = [v for v in factions.values() if isinstance(v, dict)]
         if len(vals) >= 2:
-            a = vals[0] if isinstance(vals[0], dict) else {}
-            b = vals[1] if isinstance(vals[1], dict) else {}
-            our = _pick(a, ["score", "points"])
-            enemy = _pick(b, ["score", "points"])
+            if our is None:
+                our = _pick(vals[0], ["score", "points"])
+            if enemy is None:
+                enemy = _pick(vals[1], ["score", "points"])
+
+    # Case B: factions is list of faction objects [{id, score}, ...]
+    if (our is None or enemy is None) and isinstance(factions, list):
+        vals = [v for v in factions if isinstance(v, dict)]
+        if len(vals) >= 2:
+            if our is None:
+                our = _pick(vals[0], ["score", "points"])
+            if enemy is None:
+                enemy = _pick(vals[1], ["score", "points"])
 
     return _to_int(our), _to_int(enemy)
 
@@ -88,7 +114,9 @@ def _find_active_war_blob(raw: dict):
     rw = raw.get("rankedwars")
     if isinstance(rw, dict):
         return rw
+
     if isinstance(rw, list) and rw:
+        # Prefer an unended war if we can detect it
         for item in rw:
             if isinstance(item, dict):
                 ended = item.get("end") or item.get("ended") or item.get("end_time")
@@ -100,6 +128,7 @@ def _find_active_war_blob(raw: dict):
     if isinstance(w, dict):
         return w
 
+    # Sometimes the response itself is the blob
     return raw
 
 
@@ -118,9 +147,18 @@ def _extract_opponent_name(blob: dict):
         return name
 
     factions = blob.get("factions")
+
+    # factions as dict
     if isinstance(factions, dict):
-        # name might exist inside faction objects
         for v in factions.values():
+            if isinstance(v, dict):
+                nm = _pick(v, ["name", "tag"])
+                if nm:
+                    return nm
+
+    # factions as list
+    if isinstance(factions, list):
+        for v in factions:
             if isinstance(v, dict):
                 nm = _pick(v, ["name", "tag"])
                 if nm:
@@ -131,34 +169,61 @@ def _extract_opponent_name(blob: dict):
 
 def _extract_opponent_id_from_factions(blob: dict, our_faction_id: str):
     """
-    Best reliable method:
-    if blob["factions"] is a dict keyed by faction id:
-      opponent_id = the key that isn't our_faction_id
+    Best method:
+    - prefer direct opponent_id fields if present
+    - else use factions:
+      A) dict keyed by faction id
+      B) list of faction objects with id/faction_id
     """
     if not isinstance(blob, dict):
         return None
+
+    # Sometimes Torn includes a direct field
+    direct = _pick(blob, ["opponent_id", "enemy_id", "their_faction_id"])
+    if direct is not None:
+        return str(direct)
+
     factions = blob.get("factions")
-    if not isinstance(factions, dict):
-        return None
 
-    keys = [str(k) for k in factions.keys()]
-    if not keys:
-        return None
+    # Case A: dict keyed by faction id
+    if isinstance(factions, dict):
+        keys = [str(k) for k in factions.keys()]
+        if not keys:
+            return None
 
-    # Prefer "other than ours"
-    if our_faction_id and str(our_faction_id) in keys:
-        for k in keys:
-            if k != str(our_faction_id):
-                return k
+        if our_faction_id and str(our_faction_id) in keys:
+            for k in keys:
+                if k != str(our_faction_id):
+                    return k
 
-    # Fallback: if we can't match ours, but there are 2, return the first
-    return keys[0]
+        # fallback
+        return keys[0]
+
+    # Case B: list of faction objects
+    if isinstance(factions, list) and factions:
+        ids = []
+        for f in factions:
+            if isinstance(f, dict):
+                fid = _pick(f, ["id", "faction_id"])
+                if fid is not None:
+                    ids.append(str(fid))
+
+        if not ids:
+            return None
+
+        if our_faction_id and str(our_faction_id) in ids:
+            for fid in ids:
+                if fid != str(our_faction_id):
+                    return fid
+
+        return ids[0]
+
+    return None
 
 
 async def get_ranked_war_best_effort(faction_id: str, api_key: str) -> dict:
     """
-    IMPORTANT: For opponent_id, we *must* prefer the /rankedwars endpoint,
-    because it often includes factions keyed by id.
+    Try the dedicated endpoint first, then fallback to selections=rankedwars.
     """
     try:
         data = await torn_get_v2(f"/faction/{faction_id}/rankedwars", {"key": api_key})
@@ -168,7 +233,10 @@ async def get_ranked_war_best_effort(faction_id: str, api_key: str) -> dict:
         pass
 
     try:
-        data = await torn_get_v2(f"/faction/{faction_id}", {"selections": "rankedwars", "key": api_key})
+        data = await torn_get_v2(
+            f"/faction/{faction_id}",
+            {"selections": "rankedwars", "key": api_key}
+        )
         if isinstance(data, dict) and not data.get("error"):
             return data
     except Exception:
@@ -194,13 +262,13 @@ def _normalize_ranked_war(raw: dict, our_faction_id: str) -> dict:
 
     return {
         "opponent": opponent,
-        "opponent_id": opponent_id,   # ✅ now should populate
+        "opponent_id": opponent_id,  # ✅ should populate now
         "start": start,
         "end": end,
         "target": target,
         "score": our_score,
         "enemy_score": enemy_score,
-        "chain": chain
+        "chain": chain,
     }
 
 
