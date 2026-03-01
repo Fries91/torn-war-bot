@@ -1,21 +1,12 @@
-# app.py ✅ COMPLETE (Your faction + Enemy faction tracker UNDER yours)
-# ✅ Works with torn_api functions that may take (session, key, id) OR (key, id) OR (key)
-#
-# - /           : Panel (iframe-safe for torn.com) with TWO trackers:
-#                 1) Your faction sections (Online/Idle/Offline/Hospital)
-#                 2) Enemy faction sections (Online/Idle/Offline/Hospital) under yours
-# - /state      : JSON state (debug)
-# - /health     : healthcheck
-# - /api/availability : chain-sitter opt in/out (optional token)
-#
-# STATUS RULES (minutes since last action)
-# 🟢 Online = 0–20 mins
-# 🟡 Idle   = 20–30 mins
-# 🔴 Offline= 30+ mins
+# app.py ✅ COMPLETE (Members fixed + Enemy tracker if supported)
+# - Robustly adapts to your torn_api function signatures using inspect.signature
+# - Supports members returned as dict OR list
+# - Enemy tracker only runs if get_faction_core supports faction_id
 
 import os
 import threading
 import asyncio
+import inspect
 from datetime import datetime, timezone
 
 from flask import Flask, jsonify, request, render_template_string
@@ -28,7 +19,6 @@ from db import (
     get_availability_map,
 )
 
-# Your torn_api has get_ranked_war_best and get_faction_core, but signatures differ by version
 from torn_api import get_faction_core, get_ranked_war_best
 
 load_dotenv()
@@ -52,6 +42,8 @@ STATE = {
     "war": {"opponent": None, "opponent_id": None, "start": None, "end": None, "target": None, "score": None},
     "faction": {"name": None, "tag": None, "respect": None},
     "enemy": {
+        "supported": True,
+        "reason": None,
         "faction": {"name": None, "tag": None, "respect": None, "id": None},
         "rows": [],
         "counts": {"online": 0, "idle": 0, "offline": 0, "hospital": 0},
@@ -83,7 +75,6 @@ def classify_status(minutes: int) -> str:
     return "offline"
 
 def parse_last_action_minutes(member: dict) -> int:
-    # Prefer already computed minutes if your wrapper includes it
     if "minutes" in member and member["minutes"] is not None:
         try:
             return int(member["minutes"])
@@ -120,16 +111,13 @@ def token_ok(req) -> bool:
 def extract_opponent_id(war: dict):
     if not isinstance(war, dict):
         return None
-
     for k in ("opponent_id", "enemy_id", "faction_id", "target_faction_id"):
         v = war.get(k)
         if v:
             return str(v)
-
     opp = war.get("opponent")
     if isinstance(opp, dict) and opp.get("id"):
         return str(opp.get("id"))
-
     factions = war.get("factions")
     if isinstance(factions, dict):
         keys = [str(x) for x in factions.keys()]
@@ -137,7 +125,6 @@ def extract_opponent_id(war: dict):
             for fid in keys:
                 if fid != str(FACTION_ID):
                     return fid
-
     return None
 
 def split_sections(rows):
@@ -172,40 +159,53 @@ def split_sections(rows):
     return {"online": online, "idle": idle, "offline": offline, "hospital": hospital}
 
 
-# ===== SIGNATURE-SAFE torn_api CALLS =====
+# ===== SIGNATURE-AWARE torn_api CALLS =====
+def _sig_params(fn):
+    try:
+        return list(inspect.signature(fn).parameters.keys())
+    except Exception:
+        return []
+
 async def call_get_faction_core(session, api_key: str, faction_id: str):
     """
-    Supports any of these:
-    - await get_faction_core(session, api_key, faction_id)
-    - await get_faction_core(api_key, faction_id)
-    - await get_faction_core(api_key)  (expects FACTION_ID inside torn_api)
+    Supports common patterns:
+    - get_faction_core(session, api_key, faction_id)
+    - get_faction_core(api_key, faction_id)
+    - get_faction_core(api_key)  (uses FACTION_ID inside torn_api)
     """
-    try:
+    params = _sig_params(get_faction_core)
+
+    # If it expects a session-like first param
+    if len(params) >= 3:
         return await get_faction_core(session, api_key, faction_id)
-    except TypeError:
-        pass
-    try:
+
+    if len(params) == 2:
         return await get_faction_core(api_key, faction_id)
-    except TypeError:
-        pass
+
+    if len(params) == 1:
+        return await get_faction_core(api_key)
+
+    # Fallback (shouldn't happen)
     return await get_faction_core(api_key)
 
 async def call_get_ranked_war_best(session, api_key: str, faction_id: str):
-    """
-    Supports any of these:
-    - await get_ranked_war_best(session, api_key, faction_id)
-    - await get_ranked_war_best(api_key, faction_id)
-    - await get_ranked_war_best(api_key)
-    """
-    try:
+    params = _sig_params(get_ranked_war_best)
+    if len(params) >= 3:
         return await get_ranked_war_best(session, api_key, faction_id)
-    except TypeError:
-        pass
-    try:
+    if len(params) == 2:
         return await get_ranked_war_best(api_key, faction_id)
-    except TypeError:
-        pass
+    if len(params) == 1:
+        return await get_ranked_war_best(api_key)
     return await get_ranked_war_best(api_key)
+
+def enemy_supported_by_core() -> bool:
+    """
+    Enemy tracking needs a core function that can take a faction_id.
+    If your get_faction_core only accepts (api_key), it can only fetch YOUR faction,
+    so enemy faction fetch isn't possible with that function.
+    """
+    params = _sig_params(get_faction_core)
+    return len(params) >= 2  # (api_key, faction_id) OR (session, api_key, faction_id)
 
 
 # ===== HTML =====
@@ -309,7 +309,9 @@ HTML = """
   <div class="section-title">
     <div>🎯 ENEMY FACTION (LIVE)</div>
     <div class="small">
-      {% if enemy.faction.name %}
+      {% if enemy.supported == false %}
+        Enemy tracking disabled: {{ enemy.reason }}
+      {% elif enemy.faction.name %}
         {{ enemy.faction.tag or "" }} {{ enemy.faction.name }}
         · Updated: {{ enemy.updated_at or "—" }}
         · 🟢 {{ enemy.counts.online }} 🟡 {{ enemy.counts.idle }} 🔴 {{ enemy.counts.offline }} 🏥 {{ enemy.counts.hospital }}
@@ -319,7 +321,7 @@ HTML = """
     </div>
   </div>
 
-  {% if enemy.faction.name %}
+  {% if enemy.supported and enemy.faction.name %}
     <h2>🟢 ONLINE (0–20 mins)</h2>
     {% if them.online|length == 0 %}<div class="section-empty">No enemy online right now.</div>{% endif %}
     {% for row in them.online %}
@@ -356,10 +358,6 @@ HTML = """
       </div>
     {% endfor %}
     {% endif %}
-  {% else %}
-    <div class="section-empty">
-      Enemy tracker will appear automatically once Ranked War opponent is detected.
-    </div>
   {% endif %}
 
 </body>
@@ -414,23 +412,43 @@ def api_availability():
 
 
 # ===== POLLER =====
+def _iter_members(members):
+    """
+    Supports:
+    - dict keyed by id -> member dict
+    - list of member dicts
+    """
+    if isinstance(members, dict):
+        for mid, m in members.items():
+            yield str(m.get("id") or mid), m
+        return
+    if isinstance(members, list):
+        for m in members:
+            mid = str(m.get("id") or "")
+            yield mid, m
+        return
+    return
+
 def normalize_faction_rows(faction: dict, avail_map=None):
     avail_map = avail_map or {}
-    members = faction.get("members") or {}
+    members = (faction or {}).get("members") or {}
 
     rows = []
     counts = {"online": 0, "idle": 0, "offline": 0, "hospital": 0}
     available_count = 0
 
-    for mid, m in members.items():
-        torn_id = str(m.get("id") or mid)
+    for mid, m in _iter_members(members):
+        if not isinstance(m, dict):
+            continue
+
+        torn_id = str(m.get("id") or mid).strip() or str(mid).strip()
         name = m.get("name") or "—"
 
         minutes = parse_last_action_minutes(m)
         status = classify_status(minutes)
 
-        hosp = bool(m.get("status", {}).get("state") == "Hospital" or m.get("hospital"))
-        hospital_until = m.get("status", {}).get("until") or m.get("hospital_until")
+        hosp = bool((m.get("status") or {}).get("state") == "Hospital" or m.get("hospital"))
+        hospital_until = (m.get("status") or {}).get("until") or m.get("hospital_until")
 
         available = bool(avail_map.get(torn_id, False))
         if available:
@@ -452,31 +470,35 @@ def normalize_faction_rows(faction: dict, avail_map=None):
         })
 
     header = {
-        "name": faction.get("name"),
-        "tag": faction.get("tag"),
-        "respect": faction.get("respect"),
+        "name": (faction or {}).get("name"),
+        "tag": (faction or {}).get("tag"),
+        "respect": (faction or {}).get("respect"),
     }
 
     chain = {"current": 0, "max": 10, "timeout": 0, "cooldown": 0}
-    if "chain" in faction and isinstance(faction["chain"], dict):
+    if isinstance((faction or {}).get("chain"), dict):
+        ch = faction["chain"]
         chain = {
-            "current": faction["chain"].get("current", 0),
-            "max": faction["chain"].get("max", 10),
-            "timeout": faction["chain"].get("timeout", 0),
-            "cooldown": faction["chain"].get("cooldown", 0),
+            "current": ch.get("current", 0),
+            "max": ch.get("max", 10),
+            "timeout": ch.get("timeout", 0),
+            "cooldown": ch.get("cooldown", 0),
         }
 
     return rows, counts, available_count, header, chain
 
-
 async def poll_once(session: aiohttp.ClientSession):
     avail_map = get_availability_map()
 
-    # ✅ signature-safe calls
     faction = await call_get_faction_core(session, FACTION_API_KEY, FACTION_ID)
     war = await call_get_ranked_war_best(session, FACTION_API_KEY, FACTION_ID)
 
     rows, counts, available_count, header, chain = normalize_faction_rows(faction, avail_map=avail_map)
+
+    # If members suddenly empty, surface a useful error (instead of silently showing nothing)
+    if not rows:
+        raise RuntimeError("Faction members empty. Check FACTION_ID/FACTION_API_KEY and torn_api get_faction_core response shape.")
+
     STATE["rows"] = rows
     STATE["counts"] = counts
     STATE["available_count"] = available_count
@@ -497,23 +519,43 @@ async def poll_once(session: aiohttp.ClientSession):
     else:
         STATE["war"] = {"opponent": None, "opponent_id": opponent_id, "start": None, "end": None, "target": None, "score": None}
 
-    # Enemy tracker (auto)
-    if opponent_id:
-        enemy_faction = await call_get_faction_core(session, FACTION_API_KEY, opponent_id)
-        enemy_rows, enemy_counts, _, enemy_header, _ = normalize_faction_rows(enemy_faction, avail_map={})
-        enemy_header["id"] = opponent_id
-        STATE["enemy"] = {"faction": enemy_header, "rows": enemy_rows, "counts": enemy_counts, "updated_at": now_iso()}
+    # Enemy support check
+    if not enemy_supported_by_core():
+        STATE["enemy"]["supported"] = False
+        STATE["enemy"]["reason"] = "torn_api.get_faction_core does not accept a faction_id in your version."
+        STATE["enemy"]["faction"] = {"name": None, "tag": None, "respect": None, "id": None}
+        STATE["enemy"]["rows"] = []
+        STATE["enemy"]["counts"] = {"online": 0, "idle": 0, "offline": 0, "hospital": 0}
+        STATE["enemy"]["updated_at"] = None
     else:
-        STATE["enemy"] = {
-            "faction": {"name": None, "tag": None, "respect": None, "id": None},
-            "rows": [],
-            "counts": {"online": 0, "idle": 0, "offline": 0, "hospital": 0},
-            "updated_at": None,
-        }
+        STATE["enemy"]["supported"] = True
+        STATE["enemy"]["reason"] = None
+
+        if opponent_id:
+            enemy_faction = await call_get_faction_core(session, FACTION_API_KEY, opponent_id)
+            enemy_rows, enemy_counts, _, enemy_header, _ = normalize_faction_rows(enemy_faction, avail_map={})
+            enemy_header["id"] = opponent_id
+
+            STATE["enemy"] = {
+                "supported": True,
+                "reason": None,
+                "faction": enemy_header,
+                "rows": enemy_rows,
+                "counts": enemy_counts,
+                "updated_at": now_iso(),
+            }
+        else:
+            STATE["enemy"] = {
+                "supported": True,
+                "reason": None,
+                "faction": {"name": None, "tag": None, "respect": None, "id": None},
+                "rows": [],
+                "counts": {"online": 0, "idle": 0, "offline": 0, "hospital": 0},
+                "updated_at": None,
+            }
 
     STATE["updated_at"] = now_iso()
     STATE["last_error"] = None
-
 
 async def poll_loop():
     timeout = aiohttp.ClientTimeout(total=25)
@@ -526,12 +568,10 @@ async def poll_loop():
                 STATE["updated_at"] = now_iso()
             await asyncio.sleep(POLL_SECONDS)
 
-
 def start_poll_thread():
     def runner():
         asyncio.run(poll_loop())
     threading.Thread(target=runner, daemon=True).start()
-
 
 @app.before_request
 def boot_once():
@@ -544,7 +584,6 @@ def boot_once():
         init_db()
         start_poll_thread()
         BOOTED = True
-
 
 if __name__ == "__main__":
     init_db()
