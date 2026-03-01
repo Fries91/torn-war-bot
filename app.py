@@ -105,45 +105,6 @@ def token_ok(req) -> bool:
     return t == AVAIL_TOKEN
 
 
-def split_sections(rows):
-    online, idle, offline, hospital = [], [], [], []
-    for row in rows:
-        if row.get("hospital"):
-            hospital.append(row)
-            continue
-
-        mins = row.get("minutes", 999)
-        try:
-            mins = int(mins)
-        except Exception:
-            mins = 999
-        row["minutes"] = mins
-
-        st = row.get("status") or classify_status(mins)
-        row["status"] = st
-
-        if st == "online":
-            online.append(row)
-        elif st == "idle":
-            idle.append(row)
-        else:
-            offline.append(row)
-
-    online.sort(key=lambda x: x.get("minutes", 999))
-    idle.sort(key=lambda x: x.get("minutes", 999))
-    offline.sort(key=lambda x: x.get("minutes", 999))
-    # earliest release first (if numeric epoch), else keep stable
-    def hosp_key(x):
-        u = x.get("hospital_until")
-        try:
-            return int(u)
-        except Exception:
-            return 9999999999
-    hospital.sort(key=hosp_key)
-
-    return {"online": online, "idle": idle, "offline": offline, "hospital": hospital}
-
-
 def normalize_faction_rows(v2_payload: dict, avail_map=None):
     avail_map = avail_map or {}
     v2_payload = v2_payload or {}
@@ -207,6 +168,7 @@ def normalize_faction_rows(v2_payload: dict, avail_map=None):
     return rows, counts, available_count, header, chain_out
 
 
+# ================== REALTIME PANEL (polls /state via JS) ==================
 HTML = """
 <!doctype html>
 <html>
@@ -222,7 +184,7 @@ HTML = """
     .divider { margin:14px 0; height:1px; background:rgba(255,255,255,.10); }
     .section-title { font-weight:900; letter-spacing:.6px; margin-top:10px; margin-bottom:6px; display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; }
     .section-title .small { font-size:12px; opacity:.8; font-weight:600; }
-    h2 { margin:12px 0 6px; padding-bottom:6px; border-bottom:1px solid rgba(255,255,255,.08); font-size:14px; letter-spacing:.4px; }
+    h2 { margin:12px 0 6px; padding-bottom:6px; border-bottom:1px solid rgba(255,255,255,.08); font-size:14px; letter-spacing:.4px; display:flex; justify-content:space-between; align-items:center; gap:10px; }
     .member { padding:8px 10px; margin:6px 0; border-radius:10px; display:flex; justify-content:space-between; align-items:center; gap:10px; font-size:13px; background:rgba(255,255,255,.03); border:1px solid rgba(255,255,255,.06); }
     .left { display:flex; flex-direction:column; gap:2px; min-width:0; }
     .name { font-weight:800; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:68vw; }
@@ -230,144 +192,226 @@ HTML = """
     .right { opacity:.9; font-size:12px; white-space:nowrap; }
     .online{ border-left:4px solid #00ff66; } .idle{ border-left:4px solid #ffd000; } .offline{ border-left:4px solid #ff3333; } .hospital{ border-left:4px solid #b06cff; }
     .section-empty { opacity:.7; font-size:12px; padding:8px 2px; }
-    .err { margin-top:10px; padding:10px; border-radius:12px; background:rgba(255,80,80,.12); border:1px solid rgba(255,80,80,.25); font-size:12px; }
+    .err { margin-top:10px; padding:10px; border-radius:12px; background:rgba(255,80,80,.12); border:1px solid rgba(255,80,80,.25); font-size:12px; white-space:pre-wrap; }
     .warbox { margin-top:10px; padding:10px; border-radius:12px; background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.07); font-size:12px; line-height:1.35; }
     .warrow { display:flex; justify-content:space-between; gap:10px; margin:3px 0; }
     .label { opacity:.75; }
+    .rt { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+    .btn { cursor:pointer; user-select:none; padding:6px 10px; border-radius:999px; background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.10); font-size:12px; }
   </style>
 </head>
 <body>
 
   <div class="topbar">
     <div class="title">⚔ 7DS*: WRATH WAR PANEL</div>
-    <div class="meta">
-      Updated: {{ updated_at or "—" }}
-      <span class="pill">🟢 {{ counts.online }}</span>
-      <span class="pill">🟡 {{ counts.idle }}</span>
-      <span class="pill">🔴 {{ counts.offline }}</span>
-      <span class="pill">🏥 {{ counts.hospital }}</span>
-      <span class="pill">✅ Avail: {{ available_count }}</span>
+    <div class="meta rt">
+      <span id="rt-updated">Updated: —</span>
+      <span class="pill" id="rt-online">🟢 0</span>
+      <span class="pill" id="rt-idle">🟡 0</span>
+      <span class="pill" id="rt-offline">🔴 0</span>
+      <span class="pill" id="rt-hospital">🏥 0</span>
+      <span class="pill" id="rt-avail">✅ Avail: 0</span>
+      <span class="btn" id="rt-refresh">Refresh now</span>
     </div>
   </div>
 
-  {% if last_error %}
-    <div class="err"><b>Last error:</b><br>{{ last_error.error }}</div>
-  {% endif %}
+  <div id="rt-error" class="err" style="display:none;"></div>
 
-  {% if war.opponent or war.target or war.score is not none %}
-  <div class="warbox">
-    <div class="warrow"><div class="label">Opponent</div><div>{{ war.opponent or "—" }}</div></div>
-    <div class="warrow"><div class="label">Opponent ID</div><div>{{ war.opponent_id or "—" }}</div></div>
-    <div class="warrow"><div class="label">Our Score</div><div>{{ war.score if war.score is not none else "—" }}</div></div>
-    <div class="warrow"><div class="label">Enemy Score</div><div>{{ war.enemy_score if war.enemy_score is not none else "—" }}</div></div>
-    <div class="warrow"><div class="label">Target</div><div>{{ war.target if war.target is not none else "—" }}</div></div>
-    <div class="warrow"><div class="label">Start</div><div>{{ war.start or "—" }}</div></div>
-    <div class="warrow"><div class="label">End</div><div>{{ war.end or "—" }}</div></div>
-  </div>
-  {% endif %}
+  <div id="rt-war" style="display:none;" class="warbox"></div>
 
   <div class="section-title">
     <div>🛡️ YOUR FACTION</div>
-    <div class="small">{{ faction.tag or "" }} {{ faction.name or "" }}</div>
+    <div class="small" id="rt-you-title">—</div>
   </div>
 
-  <h2>🟢 ONLINE (0–20 mins)</h2>
-  {% if you.online|length == 0 %}<div class="section-empty">No one online right now.</div>{% endif %}
-  {% for row in you.online %}
-    <div class="member online">
-      <div class="left"><div class="name">{{ row.name }}</div><div class="sub">ID: {{ row.id }}</div></div>
-      <div class="right">{{ row.minutes }}m</div>
-    </div>
-  {% endfor %}
+  <h2>🟢 ONLINE (0–20 mins) <span class="pill" id="rt-you-online-count">0</span></h2>
+  <div id="rt-you-online"></div>
 
-  <h2>🟡 IDLE (20–30 mins)</h2>
-  {% if you.idle|length == 0 %}<div class="section-empty">No one idle right now.</div>{% endif %}
-  {% for row in you.idle %}
-    <div class="member idle">
-      <div class="left"><div class="name">{{ row.name }}</div><div class="sub">ID: {{ row.id }}</div></div>
-      <div class="right">{{ row.minutes }}m</div>
-    </div>
-  {% endfor %}
+  <h2>🟡 IDLE (20–30 mins) <span class="pill" id="rt-you-idle-count">0</span></h2>
+  <div id="rt-you-idle"></div>
 
-  <h2>🏥 HOSPITAL</h2>
-  {% if you.hospital|length == 0 %}<div class="section-empty">No one in hospital right now.</div>{% endif %}
-  {% for row in you.hospital %}
-    <div class="member hospital">
-      <div class="left">
-        <div class="name">{{ row.name }}</div>
-        <div class="sub">ID: {{ row.id }}</div>
-      </div>
-      <div class="right">
-        {% if row.hospital_until %}until {{ row.hospital_until }}{% else %}in hospital{% endif %}
-      </div>
-    </div>
-  {% endfor %}
+  <h2>🏥 HOSPITAL <span class="pill" id="rt-you-hosp-count">0</span></h2>
+  <div id="rt-you-hosp"></div>
 
-  <h2>🔴 OFFLINE (30+ mins)</h2>
-  {% if you.offline|length == 0 %}<div class="section-empty">No one offline right now.</div>{% endif %}
-  {% for row in you.offline %}
-    <div class="member offline">
-      <div class="left"><div class="name">{{ row.name }}</div><div class="sub">ID: {{ row.id }}</div></div>
-      <div class="right">{{ row.minutes }}m</div>
-    </div>
-  {% endfor %}
+  <h2>🔴 OFFLINE (30+ mins) <span class="pill" id="rt-you-offline-count">0</span></h2>
+  <div id="rt-you-offline"></div>
 
   <div class="divider"></div>
 
   <div class="section-title">
     <div>🎯 ENEMY FACTION</div>
-    <div class="small">
-      {% if enemy.faction.name %}
-        {{ enemy.faction.tag or "" }} {{ enemy.faction.name }} (ID: {{ enemy.faction.id }})
-        · 🟢 {{ enemy.counts.online }} 🟡 {{ enemy.counts.idle }} 🔴 {{ enemy.counts.offline }} 🏥 {{ enemy.counts.hospital }}
-      {% else %}
-        Waiting for opponent id…
-      {% endif %}
-    </div>
+    <div class="small" id="rt-them-title">Waiting for opponent id…</div>
   </div>
 
-  {% if enemy.faction.name %}
-    <h2>🟢 ENEMY ONLINE (0–20 mins)</h2>
-    {% if them.online|length == 0 %}<div class="section-empty">No enemy online right now.</div>{% endif %}
-    {% for row in them.online %}
-      <div class="member online">
-        <div class="left"><div class="name">{{ row.name }}</div><div class="sub">ID: {{ row.id }}</div></div>
-        <div class="right">{{ row.minutes }}m</div>
-      </div>
-    {% endfor %}
+  <div id="rt-enemy-wrap" style="display:none;">
+    <h2>🟢 ENEMY ONLINE <span class="pill" id="rt-them-online-count">0</span></h2>
+    <div id="rt-them-online"></div>
 
-    <h2>🟡 ENEMY IDLE (20–30 mins)</h2>
-    {% if them.idle|length == 0 %}<div class="section-empty">No enemy idle right now.</div>{% endif %}
-    {% for row in them.idle %}
-      <div class="member idle">
-        <div class="left"><div class="name">{{ row.name }}</div><div class="sub">ID: {{ row.id }}</div></div>
-        <div class="right">{{ row.minutes }}m</div>
-      </div>
-    {% endfor %}
+    <h2>🟡 ENEMY IDLE <span class="pill" id="rt-them-idle-count">0</span></h2>
+    <div id="rt-them-idle"></div>
 
-    <h2>🏥 ENEMY HOSPITAL</h2>
-    {% if them.hospital|length == 0 %}<div class="section-empty">No enemy in hospital right now.</div>{% endif %}
-    {% for row in them.hospital %}
-      <div class="member hospital">
+    <h2>🏥 ENEMY HOSPITAL <span class="pill" id="rt-them-hosp-count">0</span></h2>
+    <div id="rt-them-hosp"></div>
+
+    <h2>🔴 ENEMY OFFLINE <span class="pill" id="rt-them-offline-count">0</span></h2>
+    <div id="rt-them-offline"></div>
+  </div>
+
+<script>
+  const REFRESH_MS = 8000;
+
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => (s ?? "").toString().replace(/[&<>"']/g, (m) => ({
+    "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+  }[m]));
+
+  function fmtMins(n){
+    if (typeof n !== "number") return "—";
+    if (n < 60) return `${n}m`;
+    const h = Math.floor(n/60), m = n%60;
+    return `${h}h ${m}m`;
+  }
+
+  function hospLeft(until){
+    const t = Number(until);
+    if (!t) return "in hospital";
+    const now = Date.now()/1000;
+    const mins = Math.max(0, Math.round((t - now)/60));
+    if (mins <= 0) return "in hospital";
+    if (mins < 60) return `${mins}m left`;
+    const h = Math.floor(mins/60), m = mins%60;
+    return `${h}h ${m}m left`;
+  }
+
+  function memberHTML(r, st){
+    const name = esc(r.name || r.id || "Unknown");
+    const id = esc(r.id || "");
+    const right = st === "hospital" ? hospLeft(r.hospital_until) : fmtMins(r.minutes);
+    return `
+      <div class="member ${st}">
         <div class="left">
-          <div class="name">{{ row.name }}</div>
-          <div class="sub">ID: {{ row.id }}</div>
+          <div class="name">${name}</div>
+          <div class="sub">ID: ${id}</div>
         </div>
-        <div class="right">
-          {% if row.hospital_until %}until {{ row.hospital_until }}{% else %}in hospital{% endif %}
-        </div>
+        <div class="right">${esc(right)}</div>
       </div>
-    {% endfor %}
+    `;
+  }
 
-    <h2>🔴 ENEMY OFFLINE (30+ mins)</h2>
-    {% if them.offline|length == 0 %}<div class="section-empty">No enemy offline right now.</div>{% endif %}
-    {% for row in them.offline %}
-      <div class="member offline">
-        <div class="left"><div class="name">{{ row.name }}</div><div class="sub">ID: {{ row.id }}</div></div>
-        <div class="right">{{ row.minutes }}m</div>
-      </div>
-    {% endfor %}
-  {% endif %}
+  function split(rows){
+    const online=[], idle=[], offline=[], hosp=[];
+    for (const r of (rows||[])){
+      const isHosp = !!r.hospital || r.status === "hospital";
+      if (isHosp) { hosp.push(r); continue; }
+      if (r.status === "online") online.push(r);
+      else if (r.status === "idle") idle.push(r);
+      else offline.push(r);
+    }
+    online.sort((a,b)=>(a.minutes??999999)-(b.minutes??999999));
+    idle.sort((a,b)=>(a.minutes??999999)-(b.minutes??999999));
+    offline.sort((a,b)=>(a.minutes??999999)-(b.minutes??999999));
+    hosp.sort((a,b)=>(Number(a.hospital_until)||9999999999)-(Number(b.hospital_until)||9999999999));
+    return {online,idle,offline,hosp};
+  }
+
+  function setList(el, arr, st, emptyText){
+    el.innerHTML = "";
+    if (!arr.length){
+      el.innerHTML = `<div class="section-empty">${esc(emptyText)}</div>`;
+      return;
+    }
+    for (const r of arr){
+      el.insertAdjacentHTML("beforeend", memberHTML(r, st));
+    }
+  }
+
+  function render(state){
+    const err = $("rt-error");
+    if (state.last_error){
+      err.style.display = "block";
+      err.textContent = "Last error:\\n" + JSON.stringify(state.last_error, null, 2);
+    } else {
+      err.style.display = "none";
+      err.textContent = "";
+    }
+
+    const c = state.counts || {};
+    $("rt-updated").textContent = `Updated: ${state.updated_at || "—"}`;
+    $("rt-online").textContent = `🟢 ${c.online ?? 0}`;
+    $("rt-idle").textContent = `🟡 ${c.idle ?? 0}`;
+    $("rt-offline").textContent = `🔴 ${c.offline ?? 0}`;
+    $("rt-hospital").textContent = `🏥 ${c.hospital ?? 0}`;
+    $("rt-avail").textContent = `✅ Avail: ${state.available_count ?? 0}`;
+
+    const f = state.faction || {};
+    $("rt-you-title").textContent = `${(f.tag?`[${f.tag}] `:"")}${f.name || ""}`.trim() || "—";
+
+    const w = state.war || {};
+    const warShow = (w.opponent || w.target || w.score !== null || w.enemy_score !== null);
+    const warEl = $("rt-war");
+    warEl.style.display = warShow ? "block" : "none";
+    if (warShow){
+      warEl.innerHTML = `
+        <div class="warrow"><div class="label">Opponent</div><div>${esc(w.opponent || "—")}</div></div>
+        <div class="warrow"><div class="label">Opponent ID</div><div>${esc(w.opponent_id || "—")}</div></div>
+        <div class="warrow"><div class="label">Our Score</div><div>${esc(w.score ?? "—")}</div></div>
+        <div class="warrow"><div class="label">Enemy Score</div><div>${esc(w.enemy_score ?? "—")}</div></div>
+        <div class="warrow"><div class="label">Target</div><div>${esc(w.target ?? "—")}</div></div>
+        <div class="warrow"><div class="label">Start</div><div>${esc(w.start || "—")}</div></div>
+        <div class="warrow"><div class="label">End</div><div>${esc(w.end || "—")}</div></div>
+      `;
+    }
+
+    const you = split(state.rows || []);
+    $("rt-you-online-count").textContent = you.online.length;
+    $("rt-you-idle-count").textContent = you.idle.length;
+    $("rt-you-hosp-count").textContent = you.hosp.length;
+    $("rt-you-offline-count").textContent = you.offline.length;
+
+    setList($("rt-you-online"), you.online, "online", "No one online right now.");
+    setList($("rt-you-idle"), you.idle, "idle", "No one idle right now.");
+    setList($("rt-you-hosp"), you.hosp, "hospital", "No one in hospital right now.");
+    setList($("rt-you-offline"), you.offline, "offline", "No one offline right now.");
+
+    const enemy = state.enemy || {};
+    const ef = enemy.faction || {};
+    const hasEnemy = !!ef.name;
+
+    $("rt-enemy-wrap").style.display = hasEnemy ? "block" : "none";
+    $("rt-them-title").textContent = hasEnemy
+      ? `${(ef.tag?`[${ef.tag}] `:"")}${ef.name} (ID: ${ef.id || "—"})`
+      : "Waiting for opponent id…";
+
+    if (hasEnemy){
+      const them = split(enemy.rows || []);
+      $("rt-them-online-count").textContent = them.online.length;
+      $("rt-them-idle-count").textContent = them.idle.length;
+      $("rt-them-hosp-count").textContent = them.hosp.length;
+      $("rt-them-offline-count").textContent = them.offline.length;
+
+      setList($("rt-them-online"), them.online, "online", "No enemy online right now.");
+      setList($("rt-them-idle"), them.idle, "idle", "No enemy idle right now.");
+      setList($("rt-them-hosp"), them.hosp, "hospital", "No enemy in hospital right now.");
+      setList($("rt-them-offline"), them.offline, "offline", "No enemy offline right now.");
+    }
+  }
+
+  async function refresh(){
+    try{
+      const r = await fetch("/state?cb=" + Date.now(), { cache: "no-store" });
+      const data = await r.json();
+      render(data);
+    }catch(e){
+      const err = $("rt-error");
+      err.style.display = "block";
+      err.textContent = "Failed to load /state\\n" + (e?.message || e);
+    }
+  }
+
+  $("rt-refresh").addEventListener("click", refresh);
+  refresh();
+  setInterval(refresh, REFRESH_MS);
+</script>
 
 </body>
 </html>
@@ -391,33 +435,16 @@ def state():
 
 @app.route("/")
 def panel():
-    you_sections = split_sections(STATE.get("rows") or [])
-    them_sections = split_sections((STATE.get("enemy") or {}).get("rows") or [])
-    return render_template_string(
-        HTML,
-        updated_at=STATE.get("updated_at"),
-        counts=STATE.get("counts", {}),
-        available_count=STATE.get("available_count", 0),
-        war=STATE.get("war", {}),
-        faction=STATE.get("faction", {}),
-        enemy=STATE.get("enemy", {}),
-        last_error=STATE.get("last_error"),
-        you=you_sections,
-        them=them_sections,
-    )
+    # realtime panel fetches /state itself
+    return render_template_string(HTML)
 
 
 @app.route("/api/availability", methods=["POST"])
 def api_availability():
-    # Token protection (matches your userscript)
     if not token_ok(request):
         return jsonify({"ok": False, "error": "unauthorized"}), 401
 
     data = request.get_json(force=True, silent=True) or {}
-
-    # Accept both payload styles:
-    # - userscript sends: {torn_id: "...", available: true}
-    # - older versions:  {id: "...", available: true}
     torn_id = str(data.get("torn_id") or data.get("id") or "").strip()
     available = bool(data.get("available", False))
 
