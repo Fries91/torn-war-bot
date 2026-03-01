@@ -1,17 +1,17 @@
 import os
 import sqlite3
-from typing import Optional, Dict, Any, List
+from typing import Dict, Any
 
 DB_PATH = os.getenv("DB_PATH", "warbot.db")
 
 def _con():
-    return sqlite3.connect(DB_PATH)
+    # check_same_thread=False prevents thread errors under gunicorn --threads
+    return sqlite3.connect(DB_PATH, timeout=30, check_same_thread=False)
 
 def init_db():
     con = _con()
     cur = con.cursor()
 
-    # settings kv
     cur.execute("""
     CREATE TABLE IF NOT EXISTS settings (
         k TEXT PRIMARY KEY,
@@ -19,7 +19,6 @@ def init_db():
     )
     """)
 
-    # member availability + last update
     cur.execute("""
     CREATE TABLE IF NOT EXISTS member_availability (
         torn_id INTEGER PRIMARY KEY,
@@ -29,7 +28,6 @@ def init_db():
     )
     """)
 
-    # throttle alerts (avoid spam)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS alert_state (
         k TEXT PRIMARY KEY,
@@ -78,24 +76,37 @@ def get_alert_state(k: str, default: str = "") -> str:
     con.close()
     return row[0] if row else default
 
-def upsert_availability(torn_id: int, name: str, available: bool, updated_at: str):
+
+# ✅ COMPAT: app.py calls upsert_availability(torn_id, available)
+def upsert_availability(torn_id: str, available: bool):
     con = _con()
     cur = con.cursor()
     cur.execute(
         """
         INSERT INTO member_availability(torn_id, name, available, updated_at)
-        VALUES(?,?,?,?)
+        VALUES(?, ?, ?, datetime('now'))
         ON CONFLICT(torn_id) DO UPDATE SET
-          name=excluded.name,
           available=excluded.available,
           updated_at=excluded.updated_at
         """,
-        (torn_id, name, 1 if available else 0, updated_at)
+        (int(torn_id), None, 1 if available else 0)
     )
     con.commit()
     con.close()
 
-def get_availability_map() -> Dict[int, Dict[str, Any]]:
+
+# ✅ COMPAT: app.py expects {"1234": True, ...}
+def get_availability_map() -> Dict[str, bool]:
+    con = _con()
+    cur = con.cursor()
+    cur.execute("SELECT torn_id, available FROM member_availability")
+    rows = cur.fetchall()
+    con.close()
+    return {str(torn_id): bool(available) for (torn_id, available) in rows}
+
+
+# (Optional) keep your old detailed map if you still want it elsewhere
+def get_availability_map_full() -> Dict[int, Dict[str, Any]]:
     con = _con()
     cur = con.cursor()
     cur.execute("SELECT torn_id, name, available, updated_at FROM member_availability")
