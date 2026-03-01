@@ -168,7 +168,6 @@ def normalize_faction_rows(v2_payload: dict, avail_map=None):
     return rows, counts, available_count, header, chain_out
 
 
-# ================== REALTIME PANEL (polls /state via JS) ==================
 HTML = """
 <!doctype html>
 <html>
@@ -179,8 +178,10 @@ HTML = """
     body { background:#0b0b0b; color:#f2f2f2; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif; margin:0; padding:10px; }
     .topbar { display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:10px; }
     .title { font-weight:900; letter-spacing:.6px; font-size:16px; }
-    .meta { font-size:12px; opacity:.85; }
-    .pill { display:inline-block; padding:6px 10px; border-radius:999px; background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.08); font-size:12px; margin-left:6px; white-space:nowrap; }
+    .meta { font-size:12px; opacity:.85; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+    .pill { display:inline-block; padding:6px 10px; border-radius:999px; background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.08); font-size:12px; white-space:nowrap; }
+    .btn { cursor:pointer; user-select:none; padding:6px 10px; border-radius:999px; background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.10); font-size:12px; white-space:nowrap; }
+    .btn.on { border-color: rgba(0,255,102,.30); }
     .divider { margin:14px 0; height:1px; background:rgba(255,255,255,.10); }
     .section-title { font-weight:900; letter-spacing:.6px; margin-top:10px; margin-bottom:6px; display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; }
     .section-title .small { font-size:12px; opacity:.8; font-weight:600; }
@@ -196,27 +197,48 @@ HTML = """
     .warbox { margin-top:10px; padding:10px; border-radius:12px; background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.07); font-size:12px; line-height:1.35; }
     .warrow { display:flex; justify-content:space-between; gap:10px; margin:3px 0; }
     .label { opacity:.75; }
-    .rt { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
-    .btn { cursor:pointer; user-select:none; padding:6px 10px; border-radius:999px; background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.10); font-size:12px; }
+
+    .optwrap{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+    .optlabel{ opacity:.85; }
+    .optinput{
+      width:110px; padding:7px 10px; border-radius:999px;
+      background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.10);
+      color:#f2f2f2; outline:none; font-size:12px;
+    }
+    .toast{
+      position:fixed; left:50%; bottom:16px; transform:translateX(-50%);
+      z-index:999999; padding:10px 12px; border-radius:12px;
+      background:rgba(0,0,0,.78); border:1px solid rgba(255,255,255,.10);
+      color:#f2f2f2; font-size:12px; opacity:0; pointer-events:none;
+      transition:opacity .18s ease;
+      max-width:92vw; white-space:pre-wrap;
+    }
+    .toast.show{ opacity:1; }
   </style>
 </head>
 <body>
 
   <div class="topbar">
     <div class="title">⚔ 7DS*: WRATH WAR PANEL</div>
-    <div class="meta rt">
+    <div class="meta">
       <span id="rt-updated">Updated: —</span>
       <span class="pill" id="rt-online">🟢 0</span>
       <span class="pill" id="rt-idle">🟡 0</span>
       <span class="pill" id="rt-offline">🔴 0</span>
       <span class="pill" id="rt-hospital">🏥 0</span>
       <span class="pill" id="rt-avail">✅ Avail: 0</span>
+
       <span class="btn" id="rt-refresh">Refresh now</span>
+
+      <span class="optwrap">
+        <span class="optlabel">Your ID:</span>
+        <input class="optinput" id="rt-myid" inputmode="numeric" placeholder="e.g. 1234" />
+        <span class="btn" id="rt-opt"><span id="rt-opt-text">OPT IN</span></span>
+      </span>
     </div>
   </div>
 
   <div id="rt-error" class="err" style="display:none;"></div>
-
   <div id="rt-war" style="display:none;" class="warbox"></div>
 
   <div class="section-title">
@@ -257,13 +279,24 @@ HTML = """
     <div id="rt-them-offline"></div>
   </div>
 
+  <div id="rt-toast" class="toast"></div>
+
 <script>
   const REFRESH_MS = 8000;
+  const AVAIL_TOKEN = {{ avail_token_json|safe }};
+  const PREFILL_XID = {{ prefill_xid_json|safe }};
 
   const $ = (id) => document.getElementById(id);
   const esc = (s) => (s ?? "").toString().replace(/[&<>"']/g, (m) => ({
     "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
   }[m]));
+
+  function toast(msg){
+    const t = $("rt-toast");
+    t.textContent = msg;
+    t.classList.add("show");
+    setTimeout(() => t.classList.remove("show"), 2200);
+  }
 
   function fmtMins(n){
     if (typeof n !== "number") return "—";
@@ -287,10 +320,12 @@ HTML = """
     const name = esc(r.name || r.id || "Unknown");
     const id = esc(r.id || "");
     const right = st === "hospital" ? hospLeft(r.hospital_until) : fmtMins(r.minutes);
+    const avail = !!r.available;
+    const a = avail ? " ✅ OPTED" : "";
     return `
       <div class="member ${st}">
         <div class="left">
-          <div class="name">${name}</div>
+          <div class="name">${name}${a}</div>
           <div class="sub">ID: ${id}</div>
         </div>
         <div class="right">${esc(right)}</div>
@@ -323,6 +358,27 @@ HTML = """
     for (const r of arr){
       el.insertAdjacentHTML("beforeend", memberHTML(r, st));
     }
+  }
+
+  function getMyId(){
+    return ($("rt-myid").value || "").trim();
+  }
+  function setMyId(v){
+    $("rt-myid").value = (v || "").trim();
+  }
+
+  function findMyAvail(state, myId){
+    if (!myId) return false;
+    const rows = state.rows || [];
+    const hit = rows.find(r => String(r.id) === String(myId));
+    return !!(hit && hit.available);
+  }
+
+  function syncOptUI(isOn){
+    const b = $("rt-opt");
+    const t = $("rt-opt-text");
+    b.classList.toggle("on", !!isOn);
+    t.textContent = isOn ? "OPTED IN" : "OPT IN";
   }
 
   function render(state){
@@ -394,6 +450,9 @@ HTML = """
       setList($("rt-them-hosp"), them.hosp, "hospital", "No enemy in hospital right now.");
       setList($("rt-them-offline"), them.offline, "offline", "No enemy offline right now.");
     }
+
+    const myId = getMyId();
+    syncOptUI(findMyAvail(state, myId));
   }
 
   async function refresh(){
@@ -408,7 +467,70 @@ HTML = """
     }
   }
 
-  $("rt-refresh").addEventListener("click", refresh);
+  async function postOpt(tornId, available){
+    const payload = { torn_id: String(tornId || ""), available: !!available };
+    const qs = AVAIL_TOKEN ? ("?token=" + encodeURIComponent(AVAIL_TOKEN)) : "";
+    const r = await fetch("/api/availability" + qs, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(AVAIL_TOKEN ? {"X-Token": AVAIL_TOKEN} : {})
+      },
+      body: JSON.stringify(payload)
+    });
+    let body = {};
+    try { body = await r.json(); } catch {}
+    return { ok: r.ok, status: r.status, body };
+  }
+
+  // 1) Load saved ID
+  const saved = localStorage.getItem("wrath_myid") || "";
+  if (saved) setMyId(saved);
+
+  // 2) If opened with ?xid=1234, auto-fill and save
+  if (PREFILL_XID && /^\d+$/.test(String(PREFILL_XID))) {
+    setMyId(String(PREFILL_XID));
+    localStorage.setItem("wrath_myid", String(PREFILL_XID));
+  }
+
+  $("rt-myid").addEventListener("input", () => {
+    localStorage.setItem("wrath_myid", getMyId());
+  });
+
+  $("rt-refresh").addEventListener("click", () => refresh());
+
+  $("rt-opt").addEventListener("click", async () => {
+    const myId = getMyId();
+    if (!myId || !/^\d+$/.test(myId)) {
+      toast("Enter your Torn ID first.");
+      return;
+    }
+
+    const isOn = $("rt-opt").classList.contains("on");
+    const next = !isOn;
+
+    // optimistic UI
+    syncOptUI(next);
+
+    const res = await postOpt(myId, next);
+    if (!res.ok) {
+      // rollback
+      syncOptUI(!next);
+
+      if (res.status === 403) toast("Not allowed: chain sitters only.");
+      else if (res.status === 401) toast("Unauthorized: bad token.");
+      else toast("OPT failed: " + (res.body?.error || ("HTTP " + res.status)));
+
+      const err = $("rt-error");
+      err.style.display = "block";
+      err.textContent = "OPT error:\\n" + JSON.stringify(res.body || {}, null, 2);
+      return;
+    }
+
+    toast(next ? `✅ OPTED IN (${myId})` : `✅ OPTED OUT (${myId})`);
+    await refresh();
+  });
+
   refresh();
   setInterval(refresh, REFRESH_MS);
 </script>
@@ -435,8 +557,20 @@ def state():
 
 @app.route("/")
 def panel():
-    # realtime panel fetches /state itself
-    return render_template_string(HTML)
+    """
+    If userscript opens: https://yourapp/?xid=1234
+    then we prefill the input automatically.
+    """
+    import json
+    xid = (request.args.get("xid") or "").strip()
+    if xid and not xid.isdigit():
+        xid = ""
+
+    return render_template_string(
+        HTML,
+        avail_token_json=json.dumps(AVAIL_TOKEN or ""),
+        prefill_xid_json=json.dumps(xid or "")
+    )
 
 
 @app.route("/api/availability", methods=["POST"])
