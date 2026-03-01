@@ -5,9 +5,10 @@
 # - /api/availability : chain-sitter opt in/out (protected optional token)
 #
 # FIXES:
-# ✅ Torn iframe fix (CSP frame-ancestors + remove XFO)
-# ✅ Gunicorn/Web Service fix (poll thread starts under gunicorn via before_request boot)
-# ✅ Keeps your panel HTML + hospital split + live war progress
+# ✅ Torn iframe: remove X-Frame-Options + CSP frame-ancestors
+# ✅ Gunicorn/Web Service: poll thread starts under gunicorn (before_request boot)
+# ✅ Panel: 2 columns (OK vs Hospital) + hospital timer sorted (lowest top, highest bottom)
+# ✅ NEW: 🎯 Bounty button per member (opens Torn bounty add page)
 
 import os
 import time
@@ -512,6 +513,7 @@ app = Flask(__name__)
 _bg_started = False
 _bg_lock = threading.Lock()
 
+
 def ensure_background_started():
     global _bg_started
     if _bg_started:
@@ -523,6 +525,7 @@ def ensure_background_started():
         start_poll_thread()
         _bg_started = True
 
+
 @app.before_request
 def _boot():
     ensure_background_started()
@@ -531,22 +534,14 @@ def _boot():
 
 @app.after_request
 def allow_iframe(resp):
-    # Remove X-Frame-Options in all common casings / duplicates
     for h in ["X-Frame-Options", "x-frame-options"]:
-        try:
-            resp.headers.pop(h, None)
-        except Exception:
-            pass
+        resp.headers.pop(h, None)
 
-    # Allow Torn to embed (include torn.com + www.torn.com + *.torn.com)
     resp.headers["Content-Security-Policy"] = (
         "frame-ancestors 'self' https://torn.com https://www.torn.com https://*.torn.com;"
     )
 
-    # Helps some stacks (harmless if ignored)
     resp.headers["X-Frame-Options"] = "ALLOWALL"
-
-    # Avoid caching issues
     resp.headers["Cache-Control"] = "no-store"
     return resp
 
@@ -589,7 +584,6 @@ def api_availability():
     return jsonify({"ok": True})
 
 
-# ===================== PANEL HTML =====================
 HTML = """<!doctype html>
 <html>
 <head>
@@ -616,6 +610,21 @@ HTML = """<!doctype html>
   .col { flex: 1 1 340px; min-width: 320px; }
   .colTitle { font-weight:800; margin: 6px 0 8px; }
   .hospTitle { color:#ffb4b4; }
+
+  /* NEW: Bounty button */
+  .bbtn{
+    display:inline-block;
+    padding:6px 10px;
+    border:1px solid #2a2a3a;
+    border-radius:10px;
+    background:#111;
+    color:#ffd86a;
+    font-weight:900;
+    text-decoration:none;
+    cursor:pointer;
+    white-space:nowrap;
+  }
+  .bbtn:active{ transform: scale(0.98); }
 </style>
 </head>
 <body>
@@ -649,7 +658,7 @@ HTML = """<!doctype html>
         <div class="colTitle">✅ OK</div>
         <div style="overflow:auto;">
           <table>
-            <thead><tr><th>Member</th><th>Lvl</th><th>Status</th><th>Opt</th></tr></thead>
+            <thead><tr><th>Member</th><th>Lvl</th><th>Status</th><th>Opt</th><th>Bounty</th></tr></thead>
             <tbody id="rows_on_ok"></tbody>
           </table>
         </div>
@@ -658,7 +667,7 @@ HTML = """<!doctype html>
         <div class="colTitle hospTitle">🏥 Hospital</div>
         <div style="overflow:auto;">
           <table>
-            <thead><tr><th>Member</th><th>Lvl</th><th>Hosp time</th><th>Status</th><th>Opt</th></tr></thead>
+            <thead><tr><th>Member</th><th>Lvl</th><th>Hosp time</th><th>Status</th><th>Opt</th><th>Bounty</th></tr></thead>
             <tbody id="rows_on_hosp"></tbody>
           </table>
         </div>
@@ -673,7 +682,7 @@ HTML = """<!doctype html>
         <div class="colTitle">✅ OK</div>
         <div style="overflow:auto;">
           <table>
-            <thead><tr><th>Member</th><th>Lvl</th><th>Status</th><th>Opt</th></tr></thead>
+            <thead><tr><th>Member</th><th>Lvl</th><th>Status</th><th>Opt</th><th>Bounty</th></tr></thead>
             <tbody id="rows_idle_ok"></tbody>
           </table>
         </div>
@@ -682,7 +691,7 @@ HTML = """<!doctype html>
         <div class="colTitle hospTitle">🏥 Hospital</div>
         <div style="overflow:auto;">
           <table>
-            <thead><tr><th>Member</th><th>Lvl</th><th>Hosp time</th><th>Status</th><th>Opt</th></tr></thead>
+            <thead><tr><th>Member</th><th>Lvl</th><th>Hosp time</th><th>Status</th><th>Opt</th><th>Bounty</th></tr></thead>
             <tbody id="rows_idle_hosp"></tbody>
           </table>
         </div>
@@ -697,7 +706,7 @@ HTML = """<!doctype html>
         <div class="colTitle">✅ OK</div>
         <div style="overflow:auto;">
           <table>
-            <thead><tr><th>Member</th><th>Lvl</th><th>Status</th><th>Opt</th></tr></thead>
+            <thead><tr><th>Member</th><th>Lvl</th><th>Status</th><th>Opt</th><th>Bounty</th></tr></thead>
             <tbody id="rows_off_ok"></tbody>
           </table>
         </div>
@@ -706,7 +715,7 @@ HTML = """<!doctype html>
         <div class="colTitle hospTitle">🏥 Hospital</div>
         <div style="overflow:auto;">
           <table>
-            <thead><tr><th>Member</th><th>Lvl</th><th>Hosp time</th><th>Status</th><th>Opt</th></tr></thead>
+            <thead><tr><th>Member</th><th>Lvl</th><th>Hosp time</th><th>Status</th><th>Opt</th><th>Bounty</th></tr></thead>
             <tbody id="rows_off_hosp"></tbody>
           </table>
         </div>
@@ -844,6 +853,13 @@ function hospitalTimeText(r){
   return fmtDur(mins * 60);
 }
 
+function bountyCell(x){
+  const bid = x && x.torn_id != null ? String(x.torn_id) : '';
+  if (!bid) return '—';
+  const url = `https://www.torn.com/bounties.php?p=add&XID=${bid}`;
+  return `<a class="bbtn" href="${url}" target="_blank" rel="noopener noreferrer">🎯 Bounty</a>`;
+}
+
 function fillTableOK(tbodyId, arr){
   const tb = document.getElementById(tbodyId);
   tb.innerHTML = '';
@@ -856,6 +872,7 @@ function fillTableOK(tbodyId, arr){
       <td>${x.level??''}</td>
       <td>${x.status||''}</td>
       <td>${opt}</td>
+      <td>${bountyCell(x)}</td>
     `;
     tb.appendChild(tr);
   });
@@ -875,6 +892,7 @@ function fillTableHosp(tbodyId, arr){
       <td title="${String(x.status||'').replace(/"/g,'&quot;')}">${ht}</td>
       <td>${x.status||''}</td>
       <td>${opt}</td>
+      <td>${bountyCell(x)}</td>
     `;
     tb.appendChild(tr);
   });
