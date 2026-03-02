@@ -43,7 +43,7 @@ STATE = {
         "counts": {"online": 0, "idle": 0, "offline": 0, "hospital": 0},
         "updated_at": None,
     },
-    "med_deals": [],  # ✅ NEW
+    "med_deals": [],
     "last_error": None,
 }
 
@@ -200,12 +200,21 @@ def normalize_faction_rows(v2_payload: dict, avail_map=None):
 
 
 # =========================
-# 💊 MED DEALS (SQLite)
+# 💊 MED DEALS (SQLite) — UPDATED FOR DROPDOWNS
 # =========================
 def _md_conn():
     return sqlite3.connect(MED_DEALS_DB_PATH, check_same_thread=False)
 
+def _md_has_column(con, table: str, col: str) -> bool:
+    cur = con.execute(f"PRAGMA table_info({table});")
+    cols = [r[1] for r in cur.fetchall()]
+    return col in cols
+
 def init_med_deals_db():
+    """
+    Creates table if missing, then migrates older versions by adding new columns.
+    Backwards compatible with old enemy_player_* fields.
+    """
     con = _md_conn()
     try:
         con.execute("""
@@ -214,18 +223,45 @@ def init_med_deals_db():
             created_at TEXT NOT NULL,
             reporter_id TEXT NOT NULL,
             reporter_name TEXT,
+
+            -- War snapshot (optional)
             war_opponent_id TEXT,
             war_opponent_name TEXT,
+
+            -- NEW: dropdown fields
+            enemy_faction TEXT,
+            member_id TEXT,
+            member_name TEXT,
+            proof TEXT,
+
+            -- OLD (kept for compatibility)
             enemy_player_id TEXT,
             enemy_player_name TEXT,
+
             item TEXT NOT NULL,
             qty INTEGER NOT NULL DEFAULT 1,
             price INTEGER,
             notes TEXT
         );
         """)
+
+        # Migrate older DB files that were created before the new columns existed
+        for col, ddl in [
+            ("enemy_faction", "ALTER TABLE med_deals ADD COLUMN enemy_faction TEXT;"),
+            ("member_id", "ALTER TABLE med_deals ADD COLUMN member_id TEXT;"),
+            ("member_name", "ALTER TABLE med_deals ADD COLUMN member_name TEXT;"),
+            ("proof", "ALTER TABLE med_deals ADD COLUMN proof TEXT;"),
+        ]:
+            if not _md_has_column(con, "med_deals", col):
+                try:
+                    con.execute(ddl)
+                except Exception:
+                    # If SQLite version / weird state, ignore; table create above covers fresh installs.
+                    pass
+
         con.execute("CREATE INDEX IF NOT EXISTS idx_med_deals_created_at ON med_deals(created_at);")
         con.execute("CREATE INDEX IF NOT EXISTS idx_med_deals_reporter_id ON med_deals(reporter_id);")
+        con.execute("CREATE INDEX IF NOT EXISTS idx_med_deals_enemy_faction ON med_deals(enemy_faction);")
         con.commit()
     finally:
         con.close()
@@ -234,10 +270,12 @@ def list_med_deals(limit=25):
     con = _md_conn()
     try:
         cur = con.execute("""
-            SELECT id, created_at, reporter_id, reporter_name,
-                   war_opponent_id, war_opponent_name,
-                   enemy_player_id, enemy_player_name,
-                   item, qty, price, notes
+            SELECT
+              id, created_at, reporter_id, reporter_name,
+              war_opponent_id, war_opponent_name,
+              enemy_faction, member_id, member_name, proof,
+              enemy_player_id, enemy_player_name,
+              item, qty, price, notes
             FROM med_deals
             ORDER BY id DESC
             LIMIT ?
@@ -252,18 +290,33 @@ def list_med_deals(limit=25):
                 "reporter_name": r[3],
                 "war_opponent_id": r[4],
                 "war_opponent_name": r[5],
-                "enemy_player_id": r[6],
-                "enemy_player_name": r[7],
-                "item": r[8],
-                "qty": r[9],
-                "price": r[10],
-                "notes": r[11],
+
+                # NEW
+                "enemy_faction": r[6],
+                "member_id": r[7],
+                "member_name": r[8],
+                "proof": r[9],
+
+                # OLD (compat)
+                "enemy_player_id": r[10],
+                "enemy_player_name": r[11],
+
+                "item": r[12],
+                "qty": r[13],
+                "price": r[14],
+                "notes": r[15],
             })
         return out
     finally:
         con.close()
 
 def add_med_deal(payload: dict):
+    """
+    Accepts NEW payload:
+      enemy_faction, member_id, member_name, proof
+    Also accepts OLD payload:
+      enemy_player_id, enemy_player_name
+    """
     created_at = now_iso()
     reporter_id = str(payload.get("reporter_id") or "").strip()
     reporter_name = (payload.get("reporter_name") or "").strip()
@@ -271,6 +324,13 @@ def add_med_deal(payload: dict):
     war_opponent_id = str(payload.get("war_opponent_id") or "").strip() or None
     war_opponent_name = (payload.get("war_opponent_name") or "").strip() or None
 
+    # NEW dropdown fields
+    enemy_faction = (payload.get("enemy_faction") or "").strip() or None
+    member_id = str(payload.get("member_id") or "").strip() or None
+    member_name = (payload.get("member_name") or "").strip() or None
+    proof = (payload.get("proof") or "").strip() or None
+
+    # OLD fields (still allowed)
     enemy_player_id = str(payload.get("enemy_player_id") or "").strip() or None
     enemy_player_name = (payload.get("enemy_player_name") or "").strip() or None
 
@@ -281,6 +341,16 @@ def add_med_deal(payload: dict):
 
     if not reporter_id:
         raise ValueError("missing reporter_id")
+
+    # Require enemy_faction + member_id for the dropdown version
+    # BUT if someone uses old fields, allow as fallback.
+    if not enemy_faction and not (enemy_player_id or enemy_player_name):
+        raise ValueError("missing enemy_faction (or old enemy_player fields)")
+    if not member_id and not member_name:
+        # allow legacy deals without member dropdown
+        member_id = None
+        member_name = None
+
     if not item:
         raise ValueError("missing item")
 
@@ -305,12 +375,14 @@ def add_med_deal(payload: dict):
             INSERT INTO med_deals (
                 created_at, reporter_id, reporter_name,
                 war_opponent_id, war_opponent_name,
+                enemy_faction, member_id, member_name, proof,
                 enemy_player_id, enemy_player_name,
                 item, qty, price, notes
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             created_at, reporter_id, reporter_name,
             war_opponent_id, war_opponent_name,
+            enemy_faction, member_id, member_name, proof,
             enemy_player_id, enemy_player_name,
             item, qty, price, notes
         ))
@@ -343,7 +415,7 @@ def delete_med_deal(deal_id: int, requester_id: str):
         con.close()
 
 
-# ✅ WRATH THEME PANEL (adds Med Deals section)
+# ✅ WRATH THEME PANEL (your HTML left mostly as-is; Med Deals shows new fields too)
 HTML = r"""
 <!doctype html>
 <html>
@@ -357,26 +429,20 @@ HTML = r"""
       --bg1:#0d0a0c;
       --text:#f4f2f3;
       --muted:rgba(244,242,243,.74);
-
       --ember:#ff7a18;
       --blood:#ff2a2a;
       --gold:#ffd24a;
       --violet:#b06cff;
-
       --line: rgba(255,255,255,0);
       --cardBorder: rgba(255,255,255,.05);
-
       --green:#00ff66;
       --yellow:#ffd000;
       --red:#ff3333;
-
       --dangerBg:rgba(255,80,80,.12);
       --dangerBorder:rgba(255,80,80,.25);
-
       --glowRed: 0 0 14px rgba(255,42,42,.25), 0 0 26px rgba(255,42,42,.14);
       --glowEmber: 0 0 14px rgba(255,122,24,.22), 0 0 28px rgba(255,122,24,.12);
     }
-
     html, body {
       background: radial-gradient(1200px 700px at 18% 10%, rgba(255,42,42,.10), transparent 55%),
                   radial-gradient(900px 600px at 82% 0%, rgba(255,122,24,.08), transparent 60%),
@@ -389,21 +455,11 @@ HTML = r"""
     }
     * { color: inherit !important; }
 
-    .sigil{
-      height:10px; border-radius:999px;
-      background: linear-gradient(90deg, transparent, rgba(255,42,42,.55), rgba(255,122,24,.45), transparent) !important;
-      opacity:.9; margin-bottom:10px; position:relative; overflow:hidden;
-      border:1px solid transparent !important;
-      box-shadow: var(--glowRed);
-    }
-    .sigil:after{
-      content:""; position:absolute; top:-40px; left:-60%;
-      width:40%; height:120px;
+    .sigil{ height:10px; border-radius:999px; background: linear-gradient(90deg, transparent, rgba(255,42,42,.55), rgba(255,122,24,.45), transparent) !important;
+      opacity:.9; margin-bottom:10px; position:relative; overflow:hidden; border:1px solid transparent !important; box-shadow: var(--glowRed); }
+    .sigil:after{ content:""; position:absolute; top:-40px; left:-60%; width:40%; height:120px;
       background: linear-gradient(90deg, transparent, rgba(255,255,255,.10), transparent);
-      transform: rotate(18deg);
-      animation: sweep 5.8s linear infinite;
-      opacity:.5;
-    }
+      transform: rotate(18deg); animation: sweep 5.8s linear infinite; opacity:.5; }
     @keyframes sweep{ 0%{ left:-60%; } 100%{ left:140%; } }
 
     .topbar { display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:10px; }
@@ -413,41 +469,26 @@ HTML = r"""
     .pill { display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border-radius:999px;
       background: linear-gradient(180deg, rgba(255,255,255,.075), rgba(255,255,255,.04)) !important;
       border:1px solid rgba(255,255,255,.05) !important;
-      font-size:12px; white-space:nowrap; color: var(--text) !important;
-    }
+      font-size:12px; white-space:nowrap; color: var(--text) !important; }
 
     .divider { margin:14px 0; height:1px; background: transparent !important; }
 
-    .section-title {
-      font-weight: 950; letter-spacing: 1.0px;
-      margin-top: 10px; margin-bottom: 6px;
+    .section-title { font-weight: 950; letter-spacing: 1.0px; margin-top: 10px; margin-bottom: 6px;
       display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;
-      color: var(--gold) !important; text-shadow: var(--glowEmber);
-    }
+      color: var(--gold) !important; text-shadow: var(--glowEmber); }
     .section-title .small { font-size:12px; opacity:.9; font-weight:700; color: var(--text) !important; text-shadow:none; }
 
     h2 { margin:12px 0 6px; padding-bottom:6px; border-bottom:1px solid transparent !important;
       font-size:13px; letter-spacing:.7px; color: var(--text) !important;
-      text-transform: uppercase; opacity: .95;
-    }
+      text-transform: uppercase; opacity: .95; }
 
-    .member {
-      padding:9px 10px; margin:6px 0; border-radius:12px;
-      display:flex; justify-content:space-between; align-items:center; gap:10px;
-      font-size:13px;
+    .member { padding:9px 10px; margin:6px 0; border-radius:12px; display:flex; justify-content:space-between; align-items:center; gap:10px; font-size:13px;
       background: linear-gradient(180deg, rgba(255,255,255,.045), rgba(255,255,255,.02)) !important;
-      border:1px solid var(--cardBorder) !important;
-      color: var(--text) !important;
-      box-shadow: 0 10px 20px rgba(0,0,0,.22);
-      position: relative; overflow: hidden;
-    }
-    .member:after{
-      content:""; position:absolute; inset:-1px;
-      background:
-        radial-gradient(260px 60px at 10% 0%, rgba(255,122,24,.10), transparent 65%),
-        radial-gradient(220px 55px at 90% 0%, rgba(255,42,42,.10), transparent 70%);
-      pointer-events:none; opacity:.8;
-    }
+      border:1px solid var(--cardBorder) !important; color: var(--text) !important; box-shadow: 0 10px 20px rgba(0,0,0,.22); position: relative; overflow: hidden; }
+    .member:after{ content:""; position:absolute; inset:-1px;
+      background: radial-gradient(260px 60px at 10% 0%, rgba(255,122,24,.10), transparent 65%),
+                  radial-gradient(220px 55px at 90% 0%, rgba(255,42,42,.10), transparent 70%);
+      pointer-events:none; opacity:.8; }
 
     .left { display:flex; flex-direction:column; gap:2px; min-width:0; position:relative; z-index:1; }
     .name { font-weight:900; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:52vw; color: var(--text) !important; }
@@ -456,27 +497,16 @@ HTML = r"""
     .rightWrap{ display:flex; align-items:center; justify-content:flex-end; gap:8px; white-space:nowrap; position:relative; z-index:2; }
     .right { opacity:.96; font-size:12px; white-space:nowrap; color: var(--text) !important; }
 
-    .abtn{
-      display:inline-flex; align-items:center; gap:6px;
-      padding:6px 10px; border-radius:12px;
+    .abtn{ display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border-radius:12px;
       border:1px solid rgba(255,255,255,.12) !important;
       background: linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.03)) !important;
-      font-size:12px; font-weight:950;
-      color: var(--text) !important; text-decoration:none !important;
-      box-shadow: 0 10px 18px rgba(0,0,0,.24);
-      cursor:pointer;
-    }
+      font-size:12px; font-weight:950; color: var(--text) !important; text-decoration:none !important;
+      box-shadow: 0 10px 18px rgba(0,0,0,.24); cursor:pointer; }
     .abtn:active{ transform: translateY(1px); }
-    .abtn.attack{
-      border-color: rgba(255,122,24,.45) !important;
-      background: linear-gradient(180deg, rgba(255,122,24,.22), rgba(255,42,42,.10)) !important;
-      box-shadow: var(--glowEmber);
-    }
-    .abtn.bounty{
-      border-color: rgba(255,42,42,.40) !important;
-      background: linear-gradient(180deg, rgba(255,42,42,.20), rgba(255,122,24,.10)) !important;
-      box-shadow: var(--glowRed);
-    }
+    .abtn.attack{ border-color: rgba(255,122,24,.45) !important;
+      background: linear-gradient(180deg, rgba(255,122,24,.22), rgba(255,42,42,.10)) !important; box-shadow: var(--glowEmber); }
+    .abtn.bounty{ border-color: rgba(255,42,42,.40) !important;
+      background: linear-gradient(180deg, rgba(255,42,42,.20), rgba(255,122,24,.10)) !important; box-shadow: var(--glowRed); }
 
     .online{ border-left:4px solid var(--green) !important; }
     .idle{ border-left:4px solid var(--yellow) !important; }
@@ -486,57 +516,27 @@ HTML = r"""
     .hospTimer{ font-weight: 900; letter-spacing: .4px; text-shadow: var(--glowEmber); }
     .section-empty { opacity:.85; font-size:12px; padding:8px 2px; color: var(--text) !important; }
 
-    .err {
-      margin-top:10px; padding:10px; border-radius:12px;
-      background: var(--dangerBg) !important;
-      border:1px solid rgba(255,80,80,.25) !important;
-      font-size:12px; white-space:pre-wrap;
-      color: var(--text) !important;
-      box-shadow: var(--glowRed);
-    }
+    .err { margin-top:10px; padding:10px; border-radius:12px; background: var(--dangerBg) !important;
+      border:1px solid rgba(255,80,80,.25) !important; font-size:12px; white-space:pre-wrap; color: var(--text) !important; box-shadow: var(--glowRed); }
 
-    .warbox {
-      margin-top:10px; padding:10px; border-radius:14px;
+    .warbox { margin-top:10px; padding:10px; border-radius:14px;
       background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03)) !important;
-      border:1px solid rgba(255,255,255,.05) !important;
-      font-size:12px; line-height:1.35;
-      color: var(--text) !important;
-      box-shadow: var(--glowEmber);
-    }
+      border:1px solid rgba(255,255,255,.05) !important; font-size:12px; line-height:1.35; color: var(--text) !important; box-shadow: var(--glowEmber); }
     .warrow { display:flex; justify-content:space-between; gap:10px; margin:3px 0; }
     .label { opacity:.8; color: var(--muted) !important; }
 
-    .collapsible {
-      border-radius: 14px;
-      border: 1px solid rgba(255,255,255,.05) !important;
+    .collapsible { border-radius: 14px; border: 1px solid rgba(255,255,255,.05) !important;
       background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02)) !important;
-      box-shadow: 0 10px 20px rgba(0,0,0,.22);
-      overflow: hidden;
-      margin: 10px 0;
-    }
-    .collapsible-summary {
-      list-style: none;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 10px;
-      cursor: pointer;
-      padding: 10px 12px;
-      font-weight: 950;
-      letter-spacing: .7px;
-      text-transform: uppercase;
-      user-select: none;
-    }
+      box-shadow: 0 10px 20px rgba(0,0,0,.22); overflow: hidden; margin: 10px 0; }
+    .collapsible-summary { list-style: none; display: flex; align-items: center; justify-content: space-between;
+      gap: 10px; cursor: pointer; padding: 10px 12px; font-weight: 950; letter-spacing: .7px; text-transform: uppercase; user-select: none; }
     .collapsible-summary::-webkit-details-marker { display: none; }
     .collapsible-summary:after { content: "▾"; opacity: .9; margin-left: 8px; }
     .collapsible[open] .collapsible-summary:after { content: "▴"; }
     .collapsible-body { padding: 0 10px 10px; }
 
-    /* 💊 Med Deals */
     .dealCard{
-      padding:10px;
-      margin:6px 0;
-      border-radius:14px;
+      padding:10px; margin:6px 0; border-radius:14px;
       border:1px solid rgba(255,255,255,.08) !important;
       background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02)) !important;
       box-shadow: 0 10px 20px rgba(0,0,0,.20);
@@ -544,28 +544,7 @@ HTML = r"""
     }
     .dealRow{ display:flex; justify-content:space-between; gap:10px; margin:4px 0; }
     .dealLabel{ opacity:.75; }
-    .dealStrong{ font-weight:950; }
-    .dealForm{
-      margin-top:10px;
-      padding:10px;
-      border-radius:14px;
-      border:1px solid rgba(255,255,255,.08) !important;
-      background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02)) !important;
-    }
-    .dealGrid{ display:grid; grid-template-columns:1fr 1fr; gap:8px; }
-    .dealGrid input, .dealGrid textarea{
-      width:100%;
-      box-sizing:border-box;
-      padding:10px;
-      border-radius:12px;
-      border:1px solid rgba(255,255,255,.12) !important;
-      background: rgba(0,0,0,.25) !important;
-      color: var(--text) !important;
-      outline:none;
-      font-size:12px;
-    }
-    .dealGrid textarea{ grid-column: 1 / -1; min-height:70px; resize:vertical; }
-    @media (max-width:520px){ .dealGrid{ grid-template-columns:1fr; } }
+    .dealStrong{ font-weight:950; text-align:right; }
   </style>
 </head>
 <body>
@@ -600,7 +579,6 @@ HTML = r"""
   </div>
   {% endif %}
 
-  <!-- 💊 Med Deals -->
   <details class="collapsible" open>
     <summary class="collapsible-summary">
       <span>💊 MED DEALS</span>
@@ -615,12 +593,27 @@ HTML = r"""
         <div class="dealCard">
           <div class="dealRow"><div class="dealLabel">When</div><div class="dealStrong">{{ d.created_at }}</div></div>
           <div class="dealRow"><div class="dealLabel">Reporter</div><div class="dealStrong">{{ d.reporter_name or d.reporter_id }}</div></div>
-          {% if d.enemy_player_name or d.enemy_player_id %}
-            <div class="dealRow"><div class="dealLabel">Enemy</div><div class="dealStrong">{{ d.enemy_player_name or "—" }}{% if d.enemy_player_id %} ({{ d.enemy_player_id }}){% endif %}</div></div>
+
+          {% if d.enemy_faction %}
+            <div class="dealRow"><div class="dealLabel">Enemy Faction</div><div class="dealStrong">{{ d.enemy_faction }}</div></div>
+          {% elif d.war_opponent_name or d.war_opponent_id %}
+            <div class="dealRow"><div class="dealLabel">Enemy Faction</div><div class="dealStrong">{{ d.war_opponent_name or "—" }}{% if d.war_opponent_id %} ({{ d.war_opponent_id }}){% endif %}</div></div>
           {% endif %}
+
+          {% if d.member_name or d.member_id %}
+            <div class="dealRow"><div class="dealLabel">Member</div><div class="dealStrong">{{ d.member_name or "—" }}{% if d.member_id %} ({{ d.member_id }}){% endif %}</div></div>
+          {% endif %}
+
+          {% if d.enemy_player_name or d.enemy_player_id %}
+            <div class="dealRow"><div class="dealLabel">Enemy Player</div><div class="dealStrong">{{ d.enemy_player_name or "—" }}{% if d.enemy_player_id %} ({{ d.enemy_player_id }}){% endif %}</div></div>
+          {% endif %}
+
           <div class="dealRow"><div class="dealLabel">Item</div><div class="dealStrong">{{ d.item }} ×{{ d.qty }}</div></div>
           {% if d.price is not none %}
             <div class="dealRow"><div class="dealLabel">Price</div><div class="dealStrong">${{ d.price }}</div></div>
+          {% endif %}
+          {% if d.proof %}
+            <div class="dealRow"><div class="dealLabel">Proof</div><div class="dealStrong">{{ d.proof }}</div></div>
           {% endif %}
           {% if d.notes %}
             <div class="dealRow"><div class="dealLabel">Notes</div><div class="dealStrong">{{ d.notes }}</div></div>
@@ -628,11 +621,8 @@ HTML = r"""
         </div>
       {% endfor %}
 
-      <div class="dealForm">
-        <div class="section-empty" style="margin-bottom:8px;">
-          Add a deal from this page with a POST to <code>/api/med_deals</code> (token required if AVAIL_TOKEN is set).
-          The overlay is the easiest way to submit.
-        </div>
+      <div class="section-empty" style="margin-top:8px;">
+        Deals are posted from the overlay via <code>/api/med_deals</code>.
       </div>
     </div>
   </details>
@@ -746,62 +736,6 @@ HTML = r"""
         </div>
       </div>
     {% endfor %}
-
-    <h2>🟡 ENEMY IDLE (20–30 mins)</h2>
-    {% if them.idle|length == 0 %}<div class="section-empty">No enemy idle right now.</div>{% endif %}
-    {% for row in them.idle %}
-      <div class="member idle">
-        <div class="left">
-          <div class="name">{{ row.name }}</div>
-          <div class="sub">ID: {{ row.id }}</div>
-        </div>
-        <div class="rightWrap">
-          <div class="right">{{ row.minutes }}m</div>
-          <a class="abtn attack" target="_blank" rel="noopener noreferrer"
-             href="https://www.torn.com/loader.php?sid=attack&user2ID={{ row.id }}">⚔️ Attack</a>
-        </div>
-      </div>
-    {% endfor %}
-
-    <h2>🏥 ENEMY HOSPITAL</h2>
-    {% if them.hospital|length == 0 %}<div class="section-empty">No enemy in hospital right now.</div>{% endif %}
-    {% for row in them.hospital %}
-      <div class="member hospital">
-        <div class="left">
-          <div class="name">{{ row.name }}</div>
-          <div class="sub">ID: {{ row.id }}</div>
-        </div>
-        <div class="rightWrap">
-          <div class="right"><span class="hospTimer" data-until="{{ row.hospital_until or '' }}">—</span></div>
-          <a class="abtn attack" target="_blank" rel="noopener noreferrer"
-             href="https://www.torn.com/loader.php?sid=attack&user2ID={{ row.id }}">⚔️ Attack</a>
-        </div>
-      </div>
-    {% endfor %}
-
-    <details class="collapsible">
-      <summary class="collapsible-summary">
-        <span>🔴 ENEMY OFFLINE (30+ mins)</span>
-        <span class="pill">{{ them.offline|length }}</span>
-      </summary>
-
-      <div class="collapsible-body">
-        {% if them.offline|length == 0 %}<div class="section-empty">No enemy offline right now.</div>{% endif %}
-        {% for row in them.offline %}
-          <div class="member offline">
-            <div class="left">
-              <div class="name">{{ row.name }}</div>
-              <div class="sub">ID: {{ row.id }}</div>
-            </div>
-            <div class="rightWrap">
-              <div class="right">{{ row.minutes }}m</div>
-              <a class="abtn attack" target="_blank" rel="noopener noreferrer"
-                 href="https://www.torn.com/loader.php?sid=attack&user2ID={{ row.id }}">⚔️ Attack</a>
-            </div>
-          </div>
-        {% endfor %}
-      </div>
-    </details>
   {% endif %}
 
   <script>
@@ -922,13 +856,14 @@ def api_med_deals_add():
 
         data = request.get_json(force=True, silent=True) or {}
 
-        # Fill current war opponent info from STATE (so users don't have to type it)
+        # Fill current war opponent info from STATE (snapshot)
         war = STATE.get("war") or {}
         data.setdefault("war_opponent_id", war.get("opponent_id"))
         data.setdefault("war_opponent_name", war.get("opponent"))
 
         new_id = add_med_deal(data)
-        # refresh snapshot
+
+        # refresh snapshot for /state
         STATE["med_deals"] = list_med_deals(MED_DEALS_LIMIT)
         STATE["updated_at"] = now_iso()
         return jsonify({"ok": True, "id": new_id})
@@ -1035,7 +970,7 @@ async def poll_once():
             "updated_at": None,
         }
 
-    # ✅ refresh Med Deals snapshot (so overlay gets it via /state)
+    # refresh Med Deals snapshot (so overlay gets it via /state)
     STATE["med_deals"] = list_med_deals(MED_DEALS_LIMIT)
 
     STATE["updated_at"] = now_iso()
@@ -1070,7 +1005,7 @@ def boot_once():
             return
         try:
             init_db()
-            init_med_deals_db()  # ✅ NEW
+            init_med_deals_db()
             start_poll_thread()
             BOOTED = True
         except Exception as e:
