@@ -1,6 +1,7 @@
 import os
 import threading
 import asyncio
+import sqlite3
 from datetime import datetime, timezone
 
 from flask import Flask, jsonify, request, render_template_string
@@ -19,6 +20,13 @@ AVAIL_TOKEN = (os.getenv("AVAIL_TOKEN") or "").strip()
 CHAIN_SITTER_IDS = [s.strip() for s in (os.getenv("CHAIN_SITTER_IDS") or "").split(",") if s.strip()]
 POLL_SECONDS = int(os.getenv("POLL_SECONDS") or "20")
 
+# Med Deals storage (SQLite). If you already use a DB path in db.py, you can set MED_DEALS_DB_PATH to the same file.
+MED_DEALS_DB_PATH = (os.getenv("MED_DEALS_DB_PATH") or "med_deals.db").strip()
+MED_DEALS_LIMIT = int(os.getenv("MED_DEALS_LIMIT") or "25")
+
+# Optional: allow admins to delete any deal (comma-separated torn IDs)
+MED_DEALS_ADMIN_IDS = {s.strip() for s in (os.getenv("MED_DEALS_ADMIN_IDS") or "").split(",") if s.strip()}
+
 STATE = {
     "rows": [],
     "updated_at": None,
@@ -35,6 +43,7 @@ STATE = {
         "counts": {"online": 0, "idle": 0, "offline": 0, "hospital": 0},
         "updated_at": None,
     },
+    "med_deals": [],  # ✅ NEW
     "last_error": None,
 }
 
@@ -190,7 +199,151 @@ def normalize_faction_rows(v2_payload: dict, avail_map=None):
     return rows, counts, available_count, header, chain_out
 
 
-# ✅ WRATH THEME PANEL — NO-LINES MODE ENABLED (removes “white hairlines” in Torn/Safari)
+# =========================
+# 💊 MED DEALS (SQLite)
+# =========================
+def _md_conn():
+    return sqlite3.connect(MED_DEALS_DB_PATH, check_same_thread=False)
+
+def init_med_deals_db():
+    con = _md_conn()
+    try:
+        con.execute("""
+        CREATE TABLE IF NOT EXISTS med_deals (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TEXT NOT NULL,
+            reporter_id TEXT NOT NULL,
+            reporter_name TEXT,
+            war_opponent_id TEXT,
+            war_opponent_name TEXT,
+            enemy_player_id TEXT,
+            enemy_player_name TEXT,
+            item TEXT NOT NULL,
+            qty INTEGER NOT NULL DEFAULT 1,
+            price INTEGER,
+            notes TEXT
+        );
+        """)
+        con.execute("CREATE INDEX IF NOT EXISTS idx_med_deals_created_at ON med_deals(created_at);")
+        con.execute("CREATE INDEX IF NOT EXISTS idx_med_deals_reporter_id ON med_deals(reporter_id);")
+        con.commit()
+    finally:
+        con.close()
+
+def list_med_deals(limit=25):
+    con = _md_conn()
+    try:
+        cur = con.execute("""
+            SELECT id, created_at, reporter_id, reporter_name,
+                   war_opponent_id, war_opponent_name,
+                   enemy_player_id, enemy_player_name,
+                   item, qty, price, notes
+            FROM med_deals
+            ORDER BY id DESC
+            LIMIT ?
+        """, (int(limit),))
+        rows = cur.fetchall()
+        out = []
+        for r in rows:
+            out.append({
+                "id": r[0],
+                "created_at": r[1],
+                "reporter_id": r[2],
+                "reporter_name": r[3],
+                "war_opponent_id": r[4],
+                "war_opponent_name": r[5],
+                "enemy_player_id": r[6],
+                "enemy_player_name": r[7],
+                "item": r[8],
+                "qty": r[9],
+                "price": r[10],
+                "notes": r[11],
+            })
+        return out
+    finally:
+        con.close()
+
+def add_med_deal(payload: dict):
+    created_at = now_iso()
+    reporter_id = str(payload.get("reporter_id") or "").strip()
+    reporter_name = (payload.get("reporter_name") or "").strip()
+
+    war_opponent_id = str(payload.get("war_opponent_id") or "").strip() or None
+    war_opponent_name = (payload.get("war_opponent_name") or "").strip() or None
+
+    enemy_player_id = str(payload.get("enemy_player_id") or "").strip() or None
+    enemy_player_name = (payload.get("enemy_player_name") or "").strip() or None
+
+    item = (payload.get("item") or "").strip()
+    qty = payload.get("qty", 1)
+    price = payload.get("price", None)
+    notes = (payload.get("notes") or "").strip() or None
+
+    if not reporter_id:
+        raise ValueError("missing reporter_id")
+    if not item:
+        raise ValueError("missing item")
+
+    try:
+        qty = int(qty)
+    except Exception:
+        qty = 1
+    if qty <= 0:
+        qty = 1
+
+    if price is not None and price != "":
+        try:
+            price = int(price)
+        except Exception:
+            price = None
+    else:
+        price = None
+
+    con = _md_conn()
+    try:
+        cur = con.execute("""
+            INSERT INTO med_deals (
+                created_at, reporter_id, reporter_name,
+                war_opponent_id, war_opponent_name,
+                enemy_player_id, enemy_player_name,
+                item, qty, price, notes
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            created_at, reporter_id, reporter_name,
+            war_opponent_id, war_opponent_name,
+            enemy_player_id, enemy_player_name,
+            item, qty, price, notes
+        ))
+        con.commit()
+        return cur.lastrowid
+    finally:
+        con.close()
+
+def delete_med_deal(deal_id: int, requester_id: str):
+    requester_id = str(requester_id or "").strip()
+    if not requester_id:
+        raise ValueError("missing requester_id")
+
+    con = _md_conn()
+    try:
+        cur = con.execute("SELECT reporter_id FROM med_deals WHERE id = ?", (int(deal_id),))
+        row = cur.fetchone()
+        if not row:
+            return False, "not found"
+        reporter_id = str(row[0])
+
+        # allow delete if owner or admin
+        if requester_id != reporter_id and requester_id not in MED_DEALS_ADMIN_IDS:
+            return False, "forbidden"
+
+        con.execute("DELETE FROM med_deals WHERE id = ?", (int(deal_id),))
+        con.commit()
+        return True, "deleted"
+    finally:
+        con.close()
+
+
+# ✅ WRATH THEME PANEL (adds Med Deals section)
 HTML = r"""
 <!doctype html>
 <html>
@@ -210,7 +363,6 @@ HTML = r"""
       --gold:#ffd24a;
       --violet:#b06cff;
 
-      /* ✅ kill the “white hairline” separators */
       --line: rgba(255,255,255,0);
       --cardBorder: rgba(255,255,255,.05);
 
@@ -235,152 +387,86 @@ HTML = r"""
       padding: 10px !important;
       -webkit-text-size-adjust: 100%;
     }
-
     * { color: inherit !important; }
 
     .sigil{
-      height:10px;
-      border-radius:999px;
+      height:10px; border-radius:999px;
       background: linear-gradient(90deg, transparent, rgba(255,42,42,.55), rgba(255,122,24,.45), transparent) !important;
-      opacity:.9;
-      margin-bottom:10px;
-      position:relative;
-      overflow:hidden;
-      /* ✅ remove thin border that can “hairline” */
+      opacity:.9; margin-bottom:10px; position:relative; overflow:hidden;
       border:1px solid transparent !important;
       box-shadow: var(--glowRed);
     }
     .sigil:after{
-      content:"";
-      position:absolute;
-      top:-40px; left:-60%;
-      width:40%;
-      height:120px;
+      content:""; position:absolute; top:-40px; left:-60%;
+      width:40%; height:120px;
       background: linear-gradient(90deg, transparent, rgba(255,255,255,.10), transparent);
       transform: rotate(18deg);
       animation: sweep 5.8s linear infinite;
       opacity:.5;
     }
-    @keyframes sweep{
-      0%{ left:-60%; }
-      100%{ left:140%; }
-    }
+    @keyframes sweep{ 0%{ left:-60%; } 100%{ left:140%; } }
 
     .topbar { display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:10px; }
-    .title {
-      font-weight: 950;
-      letter-spacing: 1.1px;
-      font-size: 16px;
-      color: var(--gold) !important;
-      text-transform: uppercase;
-      text-shadow: var(--glowEmber);
-    }
+    .title { font-weight: 950; letter-spacing: 1.1px; font-size: 16px; color: var(--gold) !important; text-transform: uppercase; text-shadow: var(--glowEmber); }
     .meta { font-size:12px; opacity:.96; display:flex; align-items:center; gap:8px; flex-wrap:wrap; color: var(--text) !important; }
 
-    .pill {
-      display:inline-flex;
-      align-items:center;
-      gap:6px;
-      padding:6px 10px;
-      border-radius:999px;
+    .pill { display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border-radius:999px;
       background: linear-gradient(180deg, rgba(255,255,255,.075), rgba(255,255,255,.04)) !important;
-      /* ✅ soften borders so no “white lines” */
       border:1px solid rgba(255,255,255,.05) !important;
-      font-size:12px;
-      white-space:nowrap;
-      color: var(--text) !important;
+      font-size:12px; white-space:nowrap; color: var(--text) !important;
     }
 
-    /* ✅ divider line OFF */
     .divider { margin:14px 0; height:1px; background: transparent !important; }
 
     .section-title {
-      font-weight: 950;
-      letter-spacing: 1.0px;
-      margin-top: 10px;
-      margin-bottom: 6px;
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      gap:10px;
-      flex-wrap:wrap;
-      color: var(--gold) !important;
-      text-shadow: var(--glowEmber);
+      font-weight: 950; letter-spacing: 1.0px;
+      margin-top: 10px; margin-bottom: 6px;
+      display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;
+      color: var(--gold) !important; text-shadow: var(--glowEmber);
     }
     .section-title .small { font-size:12px; opacity:.9; font-weight:700; color: var(--text) !important; text-shadow:none; }
 
-    h2 {
-      margin:12px 0 6px;
-      padding-bottom:6px;
-      /* ✅ remove header underline line */
-      border-bottom:1px solid transparent !important;
-      font-size:13px;
-      letter-spacing:.7px;
-      color: var(--text) !important;
-      text-transform: uppercase;
-      opacity: .95;
+    h2 { margin:12px 0 6px; padding-bottom:6px; border-bottom:1px solid transparent !important;
+      font-size:13px; letter-spacing:.7px; color: var(--text) !important;
+      text-transform: uppercase; opacity: .95;
     }
 
     .member {
-      padding:9px 10px;
-      margin:6px 0;
-      border-radius:12px;
-      display:flex;
-      justify-content:space-between;
-      align-items:center;
-      gap:10px;
+      padding:9px 10px; margin:6px 0; border-radius:12px;
+      display:flex; justify-content:space-between; align-items:center; gap:10px;
       font-size:13px;
       background: linear-gradient(180deg, rgba(255,255,255,.045), rgba(255,255,255,.02)) !important;
-      /* ✅ soften border */
       border:1px solid var(--cardBorder) !important;
       color: var(--text) !important;
       box-shadow: 0 10px 20px rgba(0,0,0,.22);
-      position: relative;
-      overflow: hidden;
+      position: relative; overflow: hidden;
     }
     .member:after{
-      content:"";
-      position:absolute;
-      inset:-1px;
+      content:""; position:absolute; inset:-1px;
       background:
         radial-gradient(260px 60px at 10% 0%, rgba(255,122,24,.10), transparent 65%),
         radial-gradient(220px 55px at 90% 0%, rgba(255,42,42,.10), transparent 70%);
-      pointer-events:none;
-      opacity:.8;
+      pointer-events:none; opacity:.8;
     }
 
     .left { display:flex; flex-direction:column; gap:2px; min-width:0; position:relative; z-index:1; }
     .name { font-weight:900; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:52vw; color: var(--text) !important; }
     .sub { opacity:.82; font-size:11px; color: var(--text) !important; }
 
-    .rightWrap{
-      display:flex;
-      align-items:center;
-      justify-content:flex-end;
-      gap:8px;
-      white-space:nowrap;
-      position:relative;
-      z-index:2;
-    }
-
+    .rightWrap{ display:flex; align-items:center; justify-content:flex-end; gap:8px; white-space:nowrap; position:relative; z-index:2; }
     .right { opacity:.96; font-size:12px; white-space:nowrap; color: var(--text) !important; }
 
     .abtn{
-      display:inline-flex;
-      align-items:center;
-      gap:6px;
-      padding:6px 10px;
-      border-radius:12px;
+      display:inline-flex; align-items:center; gap:6px;
+      padding:6px 10px; border-radius:12px;
       border:1px solid rgba(255,255,255,.12) !important;
       background: linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.03)) !important;
-      font-size:12px;
-      font-weight:950;
-      color: var(--text) !important;
-      text-decoration:none !important;
+      font-size:12px; font-weight:950;
+      color: var(--text) !important; text-decoration:none !important;
       box-shadow: 0 10px 18px rgba(0,0,0,.24);
+      cursor:pointer;
     }
     .abtn:active{ transform: translateY(1px); }
-
     .abtn.attack{
       border-color: rgba(255,122,24,.45) !important;
       background: linear-gradient(180deg, rgba(255,122,24,.22), rgba(255,42,42,.10)) !important;
@@ -397,46 +483,31 @@ HTML = r"""
     .offline{ border-left:4px solid var(--red) !important; box-shadow: var(--glowRed); }
     .hospital{ border-left:4px solid var(--violet) !important; }
 
-    .hospTimer{
-      font-weight: 900;
-      letter-spacing: .4px;
-      text-shadow: var(--glowEmber);
-    }
-
+    .hospTimer{ font-weight: 900; letter-spacing: .4px; text-shadow: var(--glowEmber); }
     .section-empty { opacity:.85; font-size:12px; padding:8px 2px; color: var(--text) !important; }
 
     .err {
-      margin-top:10px;
-      padding:10px;
-      border-radius:12px;
+      margin-top:10px; padding:10px; border-radius:12px;
       background: var(--dangerBg) !important;
       border:1px solid rgba(255,80,80,.25) !important;
-      font-size:12px;
-      white-space:pre-wrap;
+      font-size:12px; white-space:pre-wrap;
       color: var(--text) !important;
       box-shadow: var(--glowRed);
     }
 
     .warbox {
-      margin-top:10px;
-      padding:10px;
-      border-radius:14px;
+      margin-top:10px; padding:10px; border-radius:14px;
       background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03)) !important;
-      /* ✅ soften border */
       border:1px solid rgba(255,255,255,.05) !important;
-      font-size:12px;
-      line-height:1.35;
+      font-size:12px; line-height:1.35;
       color: var(--text) !important;
       box-shadow: var(--glowEmber);
     }
-
     .warrow { display:flex; justify-content:space-between; gap:10px; margin:3px 0; }
     .label { opacity:.8; color: var(--muted) !important; }
 
-    /* ✅ Collapsible sections (OFFLINE) */
     .collapsible {
       border-radius: 14px;
-      /* ✅ soften border */
       border: 1px solid rgba(255,255,255,.05) !important;
       background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02)) !important;
       box-shadow: 0 10px 20px rgba(0,0,0,.22);
@@ -454,22 +525,47 @@ HTML = r"""
       font-weight: 950;
       letter-spacing: .7px;
       text-transform: uppercase;
-      color: var(--text) !important;
       user-select: none;
     }
     .collapsible-summary::-webkit-details-marker { display: none; }
-    .collapsible-summary:after {
-      content: "▾";
-      opacity: .9;
-      margin-left: 8px;
-    }
+    .collapsible-summary:after { content: "▾"; opacity: .9; margin-left: 8px; }
     .collapsible[open] .collapsible-summary:after { content: "▴"; }
     .collapsible-body { padding: 0 10px 10px; }
 
-    @media (max-width: 520px){
-      .name{ max-width: 46vw; }
-      .abtn{ padding:6px 9px; }
+    /* 💊 Med Deals */
+    .dealCard{
+      padding:10px;
+      margin:6px 0;
+      border-radius:14px;
+      border:1px solid rgba(255,255,255,.08) !important;
+      background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02)) !important;
+      box-shadow: 0 10px 20px rgba(0,0,0,.20);
+      font-size:12px;
     }
+    .dealRow{ display:flex; justify-content:space-between; gap:10px; margin:4px 0; }
+    .dealLabel{ opacity:.75; }
+    .dealStrong{ font-weight:950; }
+    .dealForm{
+      margin-top:10px;
+      padding:10px;
+      border-radius:14px;
+      border:1px solid rgba(255,255,255,.08) !important;
+      background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02)) !important;
+    }
+    .dealGrid{ display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+    .dealGrid input, .dealGrid textarea{
+      width:100%;
+      box-sizing:border-box;
+      padding:10px;
+      border-radius:12px;
+      border:1px solid rgba(255,255,255,.12) !important;
+      background: rgba(0,0,0,.25) !important;
+      color: var(--text) !important;
+      outline:none;
+      font-size:12px;
+    }
+    .dealGrid textarea{ grid-column: 1 / -1; min-height:70px; resize:vertical; }
+    @media (max-width:520px){ .dealGrid{ grid-template-columns:1fr; } }
   </style>
 </head>
 <body>
@@ -503,6 +599,45 @@ HTML = r"""
     <div class="warrow"><div class="label">End</div><div>{{ war.end or "—" }}</div></div>
   </div>
   {% endif %}
+
+  <!-- 💊 Med Deals -->
+  <details class="collapsible" open>
+    <summary class="collapsible-summary">
+      <span>💊 MED DEALS</span>
+      <span class="pill">{{ med_deals|length }}</span>
+    </summary>
+    <div class="collapsible-body">
+      {% if med_deals|length == 0 %}
+        <div class="section-empty">No deals logged yet.</div>
+      {% endif %}
+
+      {% for d in med_deals %}
+        <div class="dealCard">
+          <div class="dealRow"><div class="dealLabel">When</div><div class="dealStrong">{{ d.created_at }}</div></div>
+          <div class="dealRow"><div class="dealLabel">Reporter</div><div class="dealStrong">{{ d.reporter_name or d.reporter_id }}</div></div>
+          {% if d.enemy_player_name or d.enemy_player_id %}
+            <div class="dealRow"><div class="dealLabel">Enemy</div><div class="dealStrong">{{ d.enemy_player_name or "—" }}{% if d.enemy_player_id %} ({{ d.enemy_player_id }}){% endif %}</div></div>
+          {% endif %}
+          <div class="dealRow"><div class="dealLabel">Item</div><div class="dealStrong">{{ d.item }} ×{{ d.qty }}</div></div>
+          {% if d.price is not none %}
+            <div class="dealRow"><div class="dealLabel">Price</div><div class="dealStrong">${{ d.price }}</div></div>
+          {% endif %}
+          {% if d.notes %}
+            <div class="dealRow"><div class="dealLabel">Notes</div><div class="dealStrong">{{ d.notes }}</div></div>
+          {% endif %}
+        </div>
+      {% endfor %}
+
+      <div class="dealForm">
+        <div class="section-empty" style="margin-bottom:8px;">
+          Add a deal from this page with a POST to <code>/api/med_deals</code> (token required if AVAIL_TOKEN is set).
+          The overlay is the easiest way to submit.
+        </div>
+      </div>
+    </div>
+  </details>
+
+  <div class="divider"></div>
 
   <div class="section-title">
     <div>🛡️ YOUR FACTION</div>
@@ -557,7 +692,6 @@ HTML = r"""
     </div>
   {% endfor %}
 
-  <!-- ✅ OFFLINE COLLAPSIBLE -->
   <details class="collapsible">
     <summary class="collapsible-summary">
       <span>🔴 OFFLINE (30+ mins)</span>
@@ -645,7 +779,6 @@ HTML = r"""
       </div>
     {% endfor %}
 
-    <!-- ✅ ENEMY OFFLINE COLLAPSIBLE -->
     <details class="collapsible">
       <summary class="collapsible-summary">
         <span>🔴 ENEMY OFFLINE (30+ mins)</span>
@@ -678,12 +811,11 @@ HTML = r"""
       if (typeof raw === 'number') return raw * 1000;
       const s = String(raw).trim();
       if (!s) return null;
-      if (/^\d+$/.test(s)) return parseInt(s, 10) * 1000;
+      if (/^\\d+$/.test(s)) return parseInt(s, 10) * 1000;
       const ms = Date.parse(s);
       if (!isNaN(ms)) return ms;
       return null;
     }
-
     function fmt(msLeft) {
       if (msLeft <= 0) return "OUT";
       const totalSec = Math.floor(msLeft / 1000);
@@ -693,29 +825,17 @@ HTML = r"""
       if (h > 0) return `${h}h ${m}m ${s}s`;
       return `${m}m ${s}s`;
     }
-
     function tick() {
       const now = Date.now();
       document.querySelectorAll(".hospTimer").forEach(el => {
         const raw = el.getAttribute("data-until") || "";
         const untilMs = parseUntil(raw);
-
         if (!untilMs) { el.textContent = "—"; return; }
-
         const left = untilMs - now;
         el.textContent = fmt(left);
-
-        if (left <= 0) {
-          el.style.opacity = "0.85";
-          el.style.fontWeight = "900";
-        } else if (left < 5 * 60 * 1000) {
-          el.style.fontWeight = "950";
-        } else {
-          el.style.fontWeight = "900";
-        }
+        el.style.opacity = (left <= 0) ? "0.85" : "1";
       });
     }
-
     tick();
     setInterval(tick, 1000);
   })();
@@ -756,6 +876,7 @@ def panel():
         last_error=STATE.get("last_error"),
         you=you_sections,
         them=them_sections,
+        med_deals=STATE.get("med_deals") or [],
     )
 
 
@@ -780,6 +901,71 @@ def api_availability():
 
     except Exception as e:
         STATE["last_error"] = {"error": f"OPT API ERROR: {e}"}
+        STATE["updated_at"] = now_iso()
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+# 💊 MED DEALS API
+@app.route("/api/med_deals", methods=["GET"])
+def api_med_deals_list():
+    try:
+        return jsonify({"ok": True, "deals": list_med_deals(MED_DEALS_LIMIT)})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/med_deals", methods=["POST"])
+def api_med_deals_add():
+    try:
+        if not token_ok(request):
+            return jsonify({"ok": False, "error": "unauthorized"}), 401
+
+        data = request.get_json(force=True, silent=True) or {}
+
+        # Fill current war opponent info from STATE (so users don't have to type it)
+        war = STATE.get("war") or {}
+        data.setdefault("war_opponent_id", war.get("opponent_id"))
+        data.setdefault("war_opponent_name", war.get("opponent"))
+
+        new_id = add_med_deal(data)
+        # refresh snapshot
+        STATE["med_deals"] = list_med_deals(MED_DEALS_LIMIT)
+        STATE["updated_at"] = now_iso()
+        return jsonify({"ok": True, "id": new_id})
+
+    except ValueError as ve:
+        return jsonify({"ok": False, "error": str(ve)}), 400
+    except Exception as e:
+        STATE["last_error"] = {"error": f"MED DEALS ADD ERROR: {e}"}
+        STATE["updated_at"] = now_iso()
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/med_deals/<int:deal_id>", methods=["DELETE"])
+def api_med_deals_delete(deal_id: int):
+    try:
+        if not token_ok(request):
+            return jsonify({"ok": False, "error": "unauthorized"}), 401
+
+        requester_id = (
+            request.headers.get("X-Requester-Id")
+            or request.args.get("requester_id")
+            or (request.get_json(silent=True) or {}).get("requester_id")
+            or ""
+        )
+        ok, msg = delete_med_deal(deal_id, requester_id=str(requester_id).strip())
+        if not ok:
+            code = 404 if msg == "not found" else 403
+            return jsonify({"ok": False, "error": msg}), code
+
+        STATE["med_deals"] = list_med_deals(MED_DEALS_LIMIT)
+        STATE["updated_at"] = now_iso()
+        return jsonify({"ok": True, "id": deal_id})
+
+    except ValueError as ve:
+        return jsonify({"ok": False, "error": str(ve)}), 400
+    except Exception as e:
+        STATE["last_error"] = {"error": f"MED DEALS DELETE ERROR: {e}"}
         STATE["updated_at"] = now_iso()
         return jsonify({"ok": False, "error": str(e)}), 500
 
@@ -849,6 +1035,9 @@ async def poll_once():
             "updated_at": None,
         }
 
+    # ✅ refresh Med Deals snapshot (so overlay gets it via /state)
+    STATE["med_deals"] = list_med_deals(MED_DEALS_LIMIT)
+
     STATE["updated_at"] = now_iso()
     STATE["last_error"] = None
 
@@ -872,10 +1061,8 @@ def start_poll_thread():
 @app.before_request
 def boot_once():
     global BOOTED
-
     if request.path in ("/health", "/ping"):
         return
-
     if BOOTED:
         return
     with BOOT_LOCK:
@@ -883,6 +1070,7 @@ def boot_once():
             return
         try:
             init_db()
+            init_med_deals_db()  # ✅ NEW
             start_poll_thread()
             BOOTED = True
         except Exception as e:
@@ -893,6 +1081,7 @@ def boot_once():
 
 if __name__ == "__main__":
     init_db()
+    init_med_deals_db()
     start_poll_thread()
     port = int(os.getenv("PORT", "10000"))
     app.run(host="0.0.0.0", port=port)
