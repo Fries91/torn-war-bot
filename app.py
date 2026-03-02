@@ -200,7 +200,7 @@ def normalize_faction_rows(v2_payload: dict, avail_map=None):
 
 
 # =========================
-# 💊 MED DEALS (SQLite) — UPDATED FOR DROPDOWNS
+# 💊 MED DEALS (SQLite) — SIMPLE (ENEMY MEMBER + OUR MEMBER + NOTES)
 # =========================
 def _md_conn():
     return sqlite3.connect(MED_DEALS_DB_PATH, check_same_thread=False)
@@ -213,7 +213,7 @@ def _md_has_column(con, table: str, col: str) -> bool:
 def init_med_deals_db():
     """
     Creates table if missing, then migrates older versions by adding new columns.
-    Backwards compatible with old enemy_player_* fields.
+    Keeps old columns for backward compatibility.
     """
     con = _md_conn()
     try:
@@ -228,16 +228,21 @@ def init_med_deals_db():
             war_opponent_id TEXT,
             war_opponent_name TEXT,
 
-            -- NEW: dropdown fields
+            -- snapshot fields
             enemy_faction TEXT,
+
+            -- our member
             member_id TEXT,
             member_name TEXT,
+
+            -- optional
             proof TEXT,
 
-            -- OLD (kept for compatibility)
+            -- enemy member
             enemy_player_id TEXT,
             enemy_player_name TEXT,
 
+            -- legacy columns (kept)
             item TEXT NOT NULL,
             qty INTEGER NOT NULL DEFAULT 1,
             price INTEGER,
@@ -245,18 +250,19 @@ def init_med_deals_db():
         );
         """)
 
-        # Migrate older DB files that were created before the new columns existed
         for col, ddl in [
             ("enemy_faction", "ALTER TABLE med_deals ADD COLUMN enemy_faction TEXT;"),
             ("member_id", "ALTER TABLE med_deals ADD COLUMN member_id TEXT;"),
             ("member_name", "ALTER TABLE med_deals ADD COLUMN member_name TEXT;"),
             ("proof", "ALTER TABLE med_deals ADD COLUMN proof TEXT;"),
+            ("enemy_player_id", "ALTER TABLE med_deals ADD COLUMN enemy_player_id TEXT;"),
+            ("enemy_player_name", "ALTER TABLE med_deals ADD COLUMN enemy_player_name TEXT;"),
+            ("notes", "ALTER TABLE med_deals ADD COLUMN notes TEXT;"),
         ]:
             if not _md_has_column(con, "med_deals", col):
                 try:
                     con.execute(ddl)
                 except Exception:
-                    # If SQLite version / weird state, ignore; table create above covers fresh installs.
                     pass
 
         con.execute("CREATE INDEX IF NOT EXISTS idx_med_deals_created_at ON med_deals(created_at);")
@@ -291,13 +297,11 @@ def list_med_deals(limit=25):
                 "war_opponent_id": r[4],
                 "war_opponent_name": r[5],
 
-                # NEW
                 "enemy_faction": r[6],
                 "member_id": r[7],
                 "member_name": r[8],
                 "proof": r[9],
 
-                # OLD (compat)
                 "enemy_player_id": r[10],
                 "enemy_player_name": r[11],
 
@@ -312,10 +316,11 @@ def list_med_deals(limit=25):
 
 def add_med_deal(payload: dict):
     """
-    Accepts NEW payload:
-      enemy_faction, member_id, member_name, proof
-    Also accepts OLD payload:
-      enemy_player_id, enemy_player_name
+    Simplified payload:
+      - enemy_player_id, enemy_player_name (required)
+      - member_id, member_name            (required)
+      - notes                             (optional)
+      - enemy_faction snapshot            (optional)
     """
     created_at = now_iso()
     reporter_id = str(payload.get("reporter_id") or "").strip()
@@ -324,50 +329,28 @@ def add_med_deal(payload: dict):
     war_opponent_id = str(payload.get("war_opponent_id") or "").strip() or None
     war_opponent_name = (payload.get("war_opponent_name") or "").strip() or None
 
-    # NEW dropdown fields
     enemy_faction = (payload.get("enemy_faction") or "").strip() or None
-    member_id = str(payload.get("member_id") or "").strip() or None
-    member_name = (payload.get("member_name") or "").strip() or None
-    proof = (payload.get("proof") or "").strip() or None
 
-    # OLD fields (still allowed)
     enemy_player_id = str(payload.get("enemy_player_id") or "").strip() or None
     enemy_player_name = (payload.get("enemy_player_name") or "").strip() or None
 
-    item = (payload.get("item") or "").strip()
-    qty = payload.get("qty", 1)
-    price = payload.get("price", None)
+    member_id = str(payload.get("member_id") or "").strip() or None
+    member_name = (payload.get("member_name") or "").strip() or None
+
     notes = (payload.get("notes") or "").strip() or None
 
     if not reporter_id:
         raise ValueError("missing reporter_id")
+    if not enemy_player_id:
+        raise ValueError("missing enemy_player_id (select an enemy member)")
+    if not member_id:
+        raise ValueError("missing member_id (select our member)")
 
-    # Require enemy_faction + member_id for the dropdown version
-    # BUT if someone uses old fields, allow as fallback.
-    if not enemy_faction and not (enemy_player_id or enemy_player_name):
-        raise ValueError("missing enemy_faction (or old enemy_player fields)")
-    if not member_id and not member_name:
-        # allow legacy deals without member dropdown
-        member_id = None
-        member_name = None
-
-    if not item:
-        raise ValueError("missing item")
-
-    try:
-        qty = int(qty)
-    except Exception:
-        qty = 1
-    if qty <= 0:
-        qty = 1
-
-    if price is not None and price != "":
-        try:
-            price = int(price)
-        except Exception:
-            price = None
-    else:
-        price = None
+    # keep legacy fields populated for DB compatibility
+    item = "MED DEAL"
+    qty = 1
+    price = None
+    proof = None
 
     con = _md_conn()
     try:
@@ -404,7 +387,6 @@ def delete_med_deal(deal_id: int, requester_id: str):
             return False, "not found"
         reporter_id = str(row[0])
 
-        # allow delete if owner or admin
         if requester_id != reporter_id and requester_id not in MED_DEALS_ADMIN_IDS:
             return False, "forbidden"
 
@@ -415,7 +397,7 @@ def delete_med_deal(deal_id: int, requester_id: str):
         con.close()
 
 
-# ✅ WRATH THEME PANEL (your HTML left mostly as-is; Med Deals shows new fields too)
+# ✅ WRATH THEME PANEL (Med Deals display simplified)
 HTML = r"""
 <!doctype html>
 <html>
@@ -600,21 +582,14 @@ HTML = r"""
             <div class="dealRow"><div class="dealLabel">Enemy Faction</div><div class="dealStrong">{{ d.war_opponent_name or "—" }}{% if d.war_opponent_id %} ({{ d.war_opponent_id }}){% endif %}</div></div>
           {% endif %}
 
-          {% if d.member_name or d.member_id %}
-            <div class="dealRow"><div class="dealLabel">Member</div><div class="dealStrong">{{ d.member_name or "—" }}{% if d.member_id %} ({{ d.member_id }}){% endif %}</div></div>
-          {% endif %}
-
           {% if d.enemy_player_name or d.enemy_player_id %}
-            <div class="dealRow"><div class="dealLabel">Enemy Player</div><div class="dealStrong">{{ d.enemy_player_name or "—" }}{% if d.enemy_player_id %} ({{ d.enemy_player_id }}){% endif %}</div></div>
+            <div class="dealRow"><div class="dealLabel">Enemy Member</div><div class="dealStrong">{{ d.enemy_player_name or "—" }}{% if d.enemy_player_id %} ({{ d.enemy_player_id }}){% endif %}</div></div>
           {% endif %}
 
-          <div class="dealRow"><div class="dealLabel">Item</div><div class="dealStrong">{{ d.item }} ×{{ d.qty }}</div></div>
-          {% if d.price is not none %}
-            <div class="dealRow"><div class="dealLabel">Price</div><div class="dealStrong">${{ d.price }}</div></div>
+          {% if d.member_name or d.member_id %}
+            <div class="dealRow"><div class="dealLabel">Our Member</div><div class="dealStrong">{{ d.member_name or "—" }}{% if d.member_id %} ({{ d.member_id }}){% endif %}</div></div>
           {% endif %}
-          {% if d.proof %}
-            <div class="dealRow"><div class="dealLabel">Proof</div><div class="dealStrong">{{ d.proof }}</div></div>
-          {% endif %}
+
           {% if d.notes %}
             <div class="dealRow"><div class="dealLabel">Notes</div><div class="dealStrong">{{ d.notes }}</div></div>
           {% endif %}
@@ -861,9 +836,17 @@ def api_med_deals_add():
         data.setdefault("war_opponent_id", war.get("opponent_id"))
         data.setdefault("war_opponent_name", war.get("opponent"))
 
+        # Snapshot enemy faction string automatically
+        enemy = STATE.get("enemy") or {}
+        ef = (enemy.get("faction") or {})
+        if ef.get("name"):
+            snap = ef.get("name")
+            if ef.get("id"):
+                snap = f"{snap} ({ef.get('id')})"
+            data.setdefault("enemy_faction", snap)
+
         new_id = add_med_deal(data)
 
-        # refresh snapshot for /state
         STATE["med_deals"] = list_med_deals(MED_DEALS_LIMIT)
         STATE["updated_at"] = now_iso()
         return jsonify({"ok": True, "id": new_id})
@@ -970,7 +953,6 @@ async def poll_once():
             "updated_at": None,
         }
 
-    # refresh Med Deals snapshot (so overlay gets it via /state)
     STATE["med_deals"] = list_med_deals(MED_DEALS_LIMIT)
 
     STATE["updated_at"] = now_iso()
