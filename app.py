@@ -190,6 +190,7 @@ def normalize_faction_rows(v2_payload: dict, avail_map=None):
     return rows, counts, available_count, header, chain_out
 
 
+# ✅ WRATH THEME PANEL — NO-LINES MODE ENABLED (removes “white hairlines” in Torn/Safari)
 HTML = r"""
 <!doctype html>
 <html>
@@ -209,8 +210,9 @@ HTML = r"""
       --gold:#ffd24a;
       --violet:#b06cff;
 
-      --line:rgba(255,255,255,.10);
-      --cardBorder:rgba(255,255,255,.07);
+      /* ✅ kill the “white hairline” separators */
+      --line: rgba(255,255,255,0);
+      --cardBorder: rgba(255,255,255,.05);
 
       --green:#00ff66;
       --yellow:#ffd000;
@@ -244,7 +246,8 @@ HTML = r"""
       margin-bottom:10px;
       position:relative;
       overflow:hidden;
-      border:1px solid rgba(255,255,255,.06) !important;
+      /* ✅ remove thin border that can “hairline” */
+      border:1px solid transparent !important;
       box-shadow: var(--glowRed);
     }
     .sigil:after{
@@ -281,13 +284,15 @@ HTML = r"""
       padding:6px 10px;
       border-radius:999px;
       background: linear-gradient(180deg, rgba(255,255,255,.075), rgba(255,255,255,.04)) !important;
-      border:1px solid rgba(255,255,255,.10) !important;
+      /* ✅ soften borders so no “white lines” */
+      border:1px solid rgba(255,255,255,.05) !important;
       font-size:12px;
       white-space:nowrap;
       color: var(--text) !important;
     }
 
-    .divider { margin:14px 0; height:1px; background: var(--line) !important; }
+    /* ✅ divider line OFF */
+    .divider { margin:14px 0; height:1px; background: transparent !important; }
 
     .section-title {
       font-weight: 950;
@@ -307,7 +312,8 @@ HTML = r"""
     h2 {
       margin:12px 0 6px;
       padding-bottom:6px;
-      border-bottom:1px solid rgba(255,255,255,.10) !important;
+      /* ✅ remove header underline line */
+      border-bottom:1px solid transparent !important;
       font-size:13px;
       letter-spacing:.7px;
       color: var(--text) !important;
@@ -325,6 +331,7 @@ HTML = r"""
       gap:10px;
       font-size:13px;
       background: linear-gradient(180deg, rgba(255,255,255,.045), rgba(255,255,255,.02)) !important;
+      /* ✅ soften border */
       border:1px solid var(--cardBorder) !important;
       color: var(--text) !important;
       box-shadow: 0 10px 20px rgba(0,0,0,.22);
@@ -364,7 +371,7 @@ HTML = r"""
       gap:6px;
       padding:6px 10px;
       border-radius:12px;
-      border:1px solid rgba(255,255,255,.14) !important;
+      border:1px solid rgba(255,255,255,.12) !important;
       background: linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.03)) !important;
       font-size:12px;
       font-weight:950;
@@ -403,7 +410,7 @@ HTML = r"""
       padding:10px;
       border-radius:12px;
       background: var(--dangerBg) !important;
-      border:1px solid var(--dangerBorder) !important;
+      border:1px solid rgba(255,80,80,.25) !important;
       font-size:12px;
       white-space:pre-wrap;
       color: var(--text) !important;
@@ -415,7 +422,8 @@ HTML = r"""
       padding:10px;
       border-radius:14px;
       background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03)) !important;
-      border:1px solid rgba(255,255,255,.10) !important;
+      /* ✅ soften border */
+      border:1px solid rgba(255,255,255,.05) !important;
       font-size:12px;
       line-height:1.35;
       color: var(--text) !important;
@@ -428,7 +436,8 @@ HTML = r"""
     /* ✅ Collapsible sections (OFFLINE) */
     .collapsible {
       border-radius: 14px;
-      border: 1px solid rgba(255,255,255,.10) !important;
+      /* ✅ soften border */
+      border: 1px solid rgba(255,255,255,.05) !important;
       background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02)) !important;
       box-shadow: 0 10px 20px rgba(0,0,0,.22);
       overflow: hidden;
@@ -691,10 +700,7 @@ HTML = r"""
         const raw = el.getAttribute("data-until") || "";
         const untilMs = parseUntil(raw);
 
-        if (!untilMs) {
-          el.textContent = "—";
-          return;
-        }
+        if (!untilMs) { el.textContent = "—"; return; }
 
         const left = untilMs - now;
         el.textContent = fmt(left);
