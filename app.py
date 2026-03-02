@@ -158,10 +158,6 @@ def normalize_faction_rows(v2_payload: dict, avail_map=None):
 
         st = m.get("status") or {}
         hosp = bool(st.get("state") == "Hospital" or m.get("hospital"))
-
-        # Torn commonly provides:
-        # - status.until (unix timestamp seconds), or
-        # - hospital_until (already in payload)
         hospital_until = st.get("until") or m.get("hospital_until")
 
         available = bool(avail_map.get(torn_id, False))
@@ -238,26 +234,26 @@ HTML = r"""
       -webkit-text-size-adjust: 100%;
     }
 
-    /* Torn/PDA override shield */
+    /* prevent external CSS forcing black text */
     * { color: inherit !important; }
 
-    .sigil {
-      height: 10px;
-      border-radius: 999px;
+    .sigil{
+      height:10px;
+      border-radius:999px;
       background: linear-gradient(90deg, transparent, rgba(255,42,42,.55), rgba(255,122,24,.45), transparent) !important;
-      opacity: .9;
-      margin-bottom: 10px;
-      position: relative;
-      overflow: hidden;
-      border: 1px solid rgba(255,255,255,.06) !important;
+      opacity:.9;
+      margin-bottom:10px;
+      position:relative;
+      overflow:hidden;
+      border:1px solid rgba(255,255,255,.06) !important;
       box-shadow: var(--glowRed);
     }
     .sigil:after{
       content:"";
       position:absolute;
       top:-40px; left:-60%;
-      width: 40%;
-      height: 120px;
+      width:40%;
+      height:120px;
       background: linear-gradient(90deg, transparent, rgba(255,255,255,.10), transparent);
       transform: rotate(18deg);
       animation: sweep 5.8s linear infinite;
@@ -277,7 +273,6 @@ HTML = r"""
       text-transform: uppercase;
       text-shadow: var(--glowEmber);
     }
-
     .meta { font-size:12px; opacity:.96; display:flex; align-items:center; gap:8px; flex-wrap:wrap; color: var(--text) !important; }
 
     .pill {
@@ -393,6 +388,38 @@ HTML = r"""
     .warrow { display:flex; justify-content:space-between; gap:10px; margin:3px 0; }
     .label { opacity:.8; color: var(--muted) !important; }
 
+    /* ✅ Collapsible sections (OFFLINE) */
+    .collapsible {
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,.10) !important;
+      background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02)) !important;
+      box-shadow: 0 10px 20px rgba(0,0,0,.22);
+      overflow: hidden;
+      margin: 10px 0;
+    }
+    .collapsible-summary {
+      list-style: none;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      cursor: pointer;
+      padding: 10px 12px;
+      font-weight: 950;
+      letter-spacing: .7px;
+      text-transform: uppercase;
+      color: var(--text) !important;
+      user-select: none;
+    }
+    .collapsible-summary::-webkit-details-marker { display: none; }
+    .collapsible-summary:after {
+      content: "▾";
+      opacity: .9;
+      margin-left: 8px;
+    }
+    .collapsible[open] .collapsible-summary:after { content: "▴"; }
+    .collapsible-body { padding: 0 10px 10px; }
+
     @media (max-width: 520px){
       .name{ max-width: 58vw; }
     }
@@ -462,14 +489,23 @@ HTML = r"""
     </div>
   {% endfor %}
 
-  <h2>🔴 OFFLINE (30+ mins)</h2>
-  {% if you.offline|length == 0 %}<div class="section-empty">No one offline right now.</div>{% endif %}
-  {% for row in you.offline %}
-    <div class="member offline">
-      <div class="left"><div class="name">{{ row.name }}</div><div class="sub">ID: {{ row.id }}</div></div>
-      <div class="right">{{ row.minutes }}m</div>
+  <!-- ✅ OFFLINE COLLAPSIBLE -->
+  <details class="collapsible">
+    <summary class="collapsible-summary">
+      <span>🔴 OFFLINE (30+ mins)</span>
+      <span class="pill">{{ you.offline|length }}</span>
+    </summary>
+
+    <div class="collapsible-body">
+      {% if you.offline|length == 0 %}<div class="section-empty">No one offline right now.</div>{% endif %}
+      {% for row in you.offline %}
+        <div class="member offline">
+          <div class="left"><div class="name">{{ row.name }}</div><div class="sub">ID: {{ row.id }}</div></div>
+          <div class="right">{{ row.minutes }}m</div>
+        </div>
+      {% endfor %}
     </div>
-  {% endfor %}
+  </details>
 
   <div class="divider"></div>
 
@@ -513,33 +549,35 @@ HTML = r"""
       </div>
     {% endfor %}
 
-    <h2>🔴 ENEMY OFFLINE (30+ mins)</h2>
-    {% if them.offline|length == 0 %}<div class="section-empty">No enemy offline right now.</div>{% endif %}
-    {% for row in them.offline %}
-      <div class="member offline">
-        <div class="left"><div class="name">{{ row.name }}</div><div class="sub">ID: {{ row.id }}</div></div>
-        <div class="right">{{ row.minutes }}m</div>
+    <!-- ✅ ENEMY OFFLINE COLLAPSIBLE -->
+    <details class="collapsible">
+      <summary class="collapsible-summary">
+        <span>🔴 ENEMY OFFLINE (30+ mins)</span>
+        <span class="pill">{{ them.offline|length }}</span>
+      </summary>
+
+      <div class="collapsible-body">
+        {% if them.offline|length == 0 %}<div class="section-empty">No enemy offline right now.</div>{% endif %}
+        {% for row in them.offline %}
+          <div class="member offline">
+            <div class="left"><div class="name">{{ row.name }}</div><div class="sub">ID: {{ row.id }}</div></div>
+            <div class="right">{{ row.minutes }}m</div>
+          </div>
+        {% endfor %}
       </div>
-    {% endfor %}
+    </details>
   {% endif %}
 
   <script>
   (function () {
     function parseUntil(raw) {
       if (!raw) return null;
-
       if (typeof raw === 'number') return raw * 1000;
-
       const s = String(raw).trim();
       if (!s) return null;
-
-      // unix seconds as string
       if (/^\d+$/.test(s)) return parseInt(s, 10) * 1000;
-
-      // try date parsing
       const ms = Date.parse(s);
       if (!isNaN(ms)) return ms;
-
       return null;
     }
 
@@ -567,11 +605,10 @@ HTML = r"""
         const left = untilMs - now;
         el.textContent = fmt(left);
 
-        // styling when close
         if (left <= 0) {
           el.style.opacity = "0.85";
           el.style.fontWeight = "900";
-        } else if (left < 5 * 60 * 1000) { // < 5 min
+        } else if (left < 5 * 60 * 1000) {
           el.style.fontWeight = "950";
         } else {
           el.style.fontWeight = "900";
@@ -624,7 +661,7 @@ def panel():
 
 @app.route("/api/availability", methods=["POST"])
 def api_availability():
-    # ✅ don’t leak HTML 500 pages to the script — always return JSON
+    # Always return JSON (avoid HTML 500 pages in Tampermonkey)
     try:
         if not token_ok(request):
             return jsonify({"ok": False, "error": "unauthorized"}), 401
@@ -654,7 +691,6 @@ async def poll_once():
 
     avail_map = get_availability_map()
 
-    # OUR FACTION
     our_payload = await get_faction_core(FACTION_ID, FACTION_API_KEY)
     if isinstance(our_payload, dict) and our_payload.get("error"):
         raise RuntimeError(f"Torn API error (core): {our_payload.get('error')}")
@@ -667,7 +703,6 @@ async def poll_once():
     STATE["faction"] = header
     STATE["chain"] = chain
 
-    # WAR
     war = await get_ranked_war_best(FACTION_ID, FACTION_API_KEY)
     if isinstance(war, dict) and war.get("error"):
         war = {}
@@ -682,7 +717,6 @@ async def poll_once():
         "enemy_score": war.get("enemy_score"),
     }
 
-    # ENEMY FACTION
     opp_id = war.get("opponent_id")
     if opp_id:
         enemy_payload = await get_faction_core(str(opp_id), FACTION_API_KEY)
@@ -740,7 +774,6 @@ def start_poll_thread():
 def boot_once():
     global BOOTED
 
-    # ✅ never block /health or /ping
     if request.path in ("/health", "/ping"):
         return
 
