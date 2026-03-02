@@ -1,4 +1,4 @@
-# app.py ✅ FIXED: Chain Sitters section + secure opt (self-only) + med deals delete sync + /state includes chain_sitters
+# app.py ✅ FIXED: Chain Sitters = OPTED IN members (no CHAIN_SITTER_IDS gate) + secure opt (self-only) + med deals delete sync
 import os
 import threading
 import asyncio
@@ -18,7 +18,6 @@ FACTION_ID = (os.getenv("FACTION_ID") or "").strip()
 FACTION_API_KEY = (os.getenv("FACTION_API_KEY") or "").strip()
 
 AVAIL_TOKEN = (os.getenv("AVAIL_TOKEN") or "").strip()
-CHAIN_SITTER_IDS = [s.strip() for s in (os.getenv("CHAIN_SITTER_IDS") or "").split(",") if s.strip()]
 POLL_SECONDS = int(os.getenv("POLL_SECONDS") or "20")
 
 MED_DEALS_DB_PATH = (os.getenv("MED_DEALS_DB_PATH") or "med_deals.db").strip()
@@ -42,7 +41,7 @@ STATE = {
         "updated_at": None,
     },
     "med_deals": [],
-    "chain_sitters": [],  # ✅ NEW
+    "chain_sitters": [],  # ✅ NOW: members who are opted-in (available==True)
     "last_error": None,
 }
 
@@ -82,9 +81,6 @@ def parse_last_action_minutes(member: dict) -> int:
     except Exception:
         pass
     return 999
-
-def is_chain_sitter(torn_id: str) -> bool:
-    return torn_id in set(CHAIN_SITTER_IDS)
 
 def token_ok(req) -> bool:
     if not AVAIL_TOKEN:
@@ -290,7 +286,6 @@ def add_med_deal(payload: dict):
 
     war_opponent_id = str(payload.get("war_opponent_id") or "").strip() or None
     war_opponent_name = (payload.get("war_opponent_name") or "").strip() or None
-
     enemy_faction = (payload.get("enemy_faction") or "").strip() or None
 
     enemy_player_id = str(payload.get("enemy_player_id") or "").strip() or None
@@ -393,6 +388,10 @@ def panel():
 
 @app.route("/api/availability", methods=["POST"])
 def api_availability():
+    """
+    ✅ Any member can opt in/out (token protected if AVAIL_TOKEN set)
+    ✅ Still self-only: requester_id must match torn_id
+    """
     try:
         if not token_ok(request):
             return jsonify({"ok": False, "error": "unauthorized"}), 401
@@ -411,17 +410,38 @@ def api_availability():
         if not torn_id:
             return jsonify({"ok": False, "error": "missing id"}), 400
 
-        # ✅ chain sitter only
-        if CHAIN_SITTER_IDS and (not is_chain_sitter(torn_id)):
-            return jsonify({"ok": False, "error": "not chain sitter"}), 403
-
         # ✅ self-only (prevents toggling others)
         if requester_id and requester_id != torn_id:
             return jsonify({"ok": False, "error": "forbidden"}), 403
 
         upsert_availability(torn_id, available)
 
-        # refresh state instantly
+        # ✅ update current in-memory STATE instantly (so /state reflects it right away)
+        try:
+            # update the row flag + available_count
+            ac = 0
+            for r in STATE.get("rows") or []:
+                if str(r.get("id")) == torn_id:
+                    r["available"] = bool(available)
+                if bool(r.get("available", False)):
+                    ac += 1
+            STATE["available_count"] = ac
+
+            # rebuild chain_sitters = all opted-in
+            cs = []
+            for r in STATE.get("rows") or []:
+                if bool(r.get("available", False)):
+                    cs.append({
+                        "id": str(r.get("id")),
+                        "name": r.get("name") or "—",
+                        "available": True,
+                        "status": r.get("status") or "offline",
+                    })
+            cs.sort(key=lambda x: (x.get("name") or ""))
+            STATE["chain_sitters"] = cs
+        except Exception:
+            pass
+
         STATE["med_deals"] = list_med_deals(MED_DEALS_LIMIT)
         STATE["updated_at"] = now_iso()
 
@@ -492,7 +512,6 @@ def api_med_deals_delete(deal_id: int):
             code = 404 if msg == "not found" else 403
             return jsonify({"ok": False, "error": msg}), code
 
-        # ✅ force STATE refresh immediately from DB
         STATE["med_deals"] = list_med_deals(MED_DEALS_LIMIT)
         STATE["updated_at"] = now_iso()
 
@@ -521,18 +540,17 @@ async def poll_once():
     STATE["faction"] = header
     STATE["chain"] = chain
 
-    # ✅ CHAIN SITTERS section (real availability from DB)
+    # ✅ CHAIN SITTERS = opted-in members (available==True)
     cs = []
-    cs_ids = set(CHAIN_SITTER_IDS)
     for r in rows:
-        if str(r.get("id")) in cs_ids:
+        if bool(r.get("available", False)):
             cs.append({
                 "id": str(r.get("id")),
                 "name": r.get("name") or "—",
-                "available": bool(r.get("available", False)),
+                "available": True,
                 "status": r.get("status") or "offline",
             })
-    cs.sort(key=lambda x: (0 if x.get("available") else 1, x.get("name") or ""))
+    cs.sort(key=lambda x: (x.get("name") or ""))
     STATE["chain_sitters"] = cs
 
     war = await get_ranked_war_best(FACTION_ID, FACTION_API_KEY)
