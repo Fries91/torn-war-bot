@@ -200,10 +200,10 @@ def normalize_faction_rows(v2_payload: dict, avail_map=None):
 
 
 # =========================
-# 💊 MED DEALS (SQLite) — SIMPLE (ENEMY MEMBER + OUR MEMBER + NOTES)
+# 💊 MED DEALS (SQLite)
 # =========================
 def _md_conn():
-    return sqlite3.connect(MED_DEALS_DB_PATH, check_same_thread=False)
+    return sqlite3.connect(MED_DEALS_DB_PATH, check_same_thread=False, timeout=30)
 
 def _md_has_column(con, table: str, col: str) -> bool:
     cur = con.execute(f"PRAGMA table_info({table});")
@@ -211,10 +211,6 @@ def _md_has_column(con, table: str, col: str) -> bool:
     return col in cols
 
 def init_med_deals_db():
-    """
-    Creates table if missing, then migrates older versions by adding new columns.
-    Keeps old columns for backward compatibility.
-    """
     con = _md_conn()
     try:
         con.execute("""
@@ -224,25 +220,19 @@ def init_med_deals_db():
             reporter_id TEXT NOT NULL,
             reporter_name TEXT,
 
-            -- War snapshot (optional)
             war_opponent_id TEXT,
             war_opponent_name TEXT,
 
-            -- snapshot fields
             enemy_faction TEXT,
 
-            -- our member
             member_id TEXT,
             member_name TEXT,
 
-            -- optional
             proof TEXT,
 
-            -- enemy member
             enemy_player_id TEXT,
             enemy_player_name TEXT,
 
-            -- legacy columns (kept)
             item TEXT NOT NULL,
             qty INTEGER NOT NULL DEFAULT 1,
             price INTEGER,
@@ -296,15 +286,12 @@ def list_med_deals(limit=25):
                 "reporter_name": r[3],
                 "war_opponent_id": r[4],
                 "war_opponent_name": r[5],
-
                 "enemy_faction": r[6],
                 "member_id": r[7],
                 "member_name": r[8],
                 "proof": r[9],
-
                 "enemy_player_id": r[10],
                 "enemy_player_name": r[11],
-
                 "item": r[12],
                 "qty": r[13],
                 "price": r[14],
@@ -315,13 +302,6 @@ def list_med_deals(limit=25):
         con.close()
 
 def add_med_deal(payload: dict):
-    """
-    Simplified payload:
-      - enemy_player_id, enemy_player_name (required)
-      - member_id, member_name            (required)
-      - notes                             (optional)
-      - enemy_faction snapshot            (optional)
-    """
     created_at = now_iso()
     reporter_id = str(payload.get("reporter_id") or "").strip()
     reporter_name = (payload.get("reporter_name") or "").strip()
@@ -346,7 +326,6 @@ def add_med_deal(payload: dict):
     if not member_id:
         raise ValueError("missing member_id (select our member)")
 
-    # keep legacy fields populated for DB compatibility
     item = "MED DEAL"
     qty = 1
     price = None
@@ -397,7 +376,7 @@ def delete_med_deal(deal_id: int, requester_id: str):
         con.close()
 
 
-# ✅ WRATH THEME PANEL (Med Deals display simplified)
+# ✅ WRATH THEME PANEL (your full HTML from earlier)
 HTML = r"""
 <!doctype html>
 <html>
@@ -831,12 +810,10 @@ def api_med_deals_add():
 
         data = request.get_json(force=True, silent=True) or {}
 
-        # Fill current war opponent info from STATE (snapshot)
         war = STATE.get("war") or {}
         data.setdefault("war_opponent_id", war.get("opponent_id"))
         data.setdefault("war_opponent_name", war.get("opponent"))
 
-        # Snapshot enemy faction string automatically
         enemy = STATE.get("enemy") or {}
         ef = (enemy.get("faction") or {})
         if ef.get("name"):
@@ -859,18 +836,21 @@ def api_med_deals_add():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
+# ✅ DELETE URL STYLE
 @app.route("/api/med_deals/<int:deal_id>", methods=["DELETE"])
 def api_med_deals_delete(deal_id: int):
     try:
         if not token_ok(request):
             return jsonify({"ok": False, "error": "unauthorized"}), 401
 
+        payload = request.get_json(silent=True) or {}
         requester_id = (
             request.headers.get("X-Requester-Id")
             or request.args.get("requester_id")
-            or (request.get_json(silent=True) or {}).get("requester_id")
+            or payload.get("requester_id")
             or ""
-        )
+        ).strip()
+
         ok, msg = delete_med_deal(deal_id, requester_id=str(requester_id).strip())
         if not ok:
             code = 404 if msg == "not found" else 403
@@ -882,6 +862,41 @@ def api_med_deals_delete(deal_id: int):
 
     except ValueError as ve:
         return jsonify({"ok": False, "error": str(ve)}), 400
+    except Exception as e:
+        STATE["last_error"] = {"error": f"MED DEALS DELETE ERROR: {e}"}
+        STATE["updated_at"] = now_iso()
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+# ✅ DELETE BODY STYLE (fallback)
+@app.route("/api/med_deals", methods=["DELETE"])
+def api_med_deals_delete_body():
+    try:
+        if not token_ok(request):
+            return jsonify({"ok": False, "error": "unauthorized"}), 401
+
+        data = request.get_json(force=True, silent=True) or {}
+        deal_id = data.get("id")
+
+        requester_id = (
+            request.headers.get("X-Requester-Id")
+            or request.args.get("requester_id")
+            or data.get("requester_id")
+            or ""
+        ).strip()
+
+        if deal_id is None:
+            return jsonify({"ok": False, "error": "missing id"}), 400
+
+        ok, msg = delete_med_deal(int(deal_id), requester_id=str(requester_id).strip())
+        if not ok:
+            code = 404 if msg == "not found" else 403
+            return jsonify({"ok": False, "error": msg}), code
+
+        STATE["med_deals"] = list_med_deals(MED_DEALS_LIMIT)
+        STATE["updated_at"] = now_iso()
+        return jsonify({"ok": True, "id": int(deal_id)})
+
     except Exception as e:
         STATE["last_error"] = {"error": f"MED DEALS DELETE ERROR: {e}"}
         STATE["updated_at"] = now_iso()
@@ -954,7 +969,6 @@ async def poll_once():
         }
 
     STATE["med_deals"] = list_med_deals(MED_DEALS_LIMIT)
-
     STATE["updated_at"] = now_iso()
     STATE["last_error"] = None
 
