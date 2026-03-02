@@ -420,6 +420,40 @@ HTML = r"""
     .collapsible[open] .collapsible-summary:after { content: "▴"; }
     .collapsible-body { padding: 0 10px 10px; }
 
+    /* ✅ ACTION BUTTONS (Enemy Attack) */
+    .actions{
+      display:flex;
+      align-items:center;
+      justify-content:flex-end;
+      gap:8px;
+      position:relative;
+      z-index:2;
+      white-space:nowrap;
+    }
+    .btn{
+      border: 1px solid rgba(255,255,255,.14) !important;
+      background: linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.03)) !important;
+      color: var(--text) !important;
+      padding: 6px 10px;
+      border-radius: 10px;
+      font-weight: 950;
+      font-size: 12px;
+      cursor: pointer;
+      user-select: none;
+      text-decoration: none !important;
+      display:inline-flex;
+      align-items:center;
+      gap:6px;
+      box-shadow: 0 10px 18px rgba(0,0,0,.18);
+    }
+    .btn:active{ transform: translateY(1px); }
+
+    .btn-attack{
+      border-color: rgba(255,122,24,.45) !important;
+      background: linear-gradient(180deg, rgba(255,122,24,.24), rgba(255,42,42,.12)) !important;
+      box-shadow: var(--glowEmber);
+    }
+
     @media (max-width: 520px){
       .name{ max-width: 58vw; }
     }
@@ -527,7 +561,14 @@ HTML = r"""
     {% for row in them.online %}
       <div class="member online">
         <div class="left"><div class="name">{{ row.name }}</div><div class="sub">ID: {{ row.id }}</div></div>
-        <div class="right">{{ row.minutes }}m</div>
+        <div class="actions">
+          <div class="right">{{ row.minutes }}m</div>
+          <a class="btn btn-attack"
+             href="https://www.torn.com/loader.php?sid=attack&user2ID={{ row.id }}"
+             target="_blank" rel="noopener noreferrer">
+            🎯 Attack
+          </a>
+        </div>
       </div>
     {% endfor %}
 
@@ -536,7 +577,14 @@ HTML = r"""
     {% for row in them.idle %}
       <div class="member idle">
         <div class="left"><div class="name">{{ row.name }}</div><div class="sub">ID: {{ row.id }}</div></div>
-        <div class="right">{{ row.minutes }}m</div>
+        <div class="actions">
+          <div class="right">{{ row.minutes }}m</div>
+          <a class="btn btn-attack"
+             href="https://www.torn.com/loader.php?sid=attack&user2ID={{ row.id }}"
+             target="_blank" rel="noopener noreferrer">
+            🎯 Attack
+          </a>
+        </div>
       </div>
     {% endfor %}
 
@@ -545,7 +593,14 @@ HTML = r"""
     {% for row in them.hospital %}
       <div class="member hospital">
         <div class="left"><div class="name">{{ row.name }}</div><div class="sub">ID: {{ row.id }}</div></div>
-        <div class="right"><span class="hospTimer" data-until="{{ row.hospital_until or '' }}">—</span></div>
+        <div class="actions">
+          <div class="right"><span class="hospTimer" data-until="{{ row.hospital_until or '' }}">—</span></div>
+          <a class="btn btn-attack"
+             href="https://www.torn.com/loader.php?sid=attack&user2ID={{ row.id }}"
+             target="_blank" rel="noopener noreferrer">
+            🎯 Attack
+          </a>
+        </div>
       </div>
     {% endfor %}
 
@@ -561,7 +616,14 @@ HTML = r"""
         {% for row in them.offline %}
           <div class="member offline">
             <div class="left"><div class="name">{{ row.name }}</div><div class="sub">ID: {{ row.id }}</div></div>
-            <div class="right">{{ row.minutes }}m</div>
+            <div class="actions">
+              <div class="right">{{ row.minutes }}m</div>
+              <a class="btn btn-attack"
+                 href="https://www.torn.com/loader.php?sid=attack&user2ID={{ row.id }}"
+                 target="_blank" rel="noopener noreferrer">
+                🎯 Attack
+              </a>
+            </div>
           </div>
         {% endfor %}
       </div>
