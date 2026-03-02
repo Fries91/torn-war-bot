@@ -234,7 +234,6 @@ HTML = r"""
       -webkit-text-size-adjust: 100%;
     }
 
-    /* prevent external CSS forcing black text */
     * { color: inherit !important; }
 
     .sigil{
@@ -344,9 +343,47 @@ HTML = r"""
     }
 
     .left { display:flex; flex-direction:column; gap:2px; min-width:0; position:relative; z-index:1; }
-    .name { font-weight:900; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:68vw; color: var(--text) !important; }
+    .name { font-weight:900; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:52vw; color: var(--text) !important; }
     .sub { opacity:.82; font-size:11px; color: var(--text) !important; }
-    .right { opacity:.96; font-size:12px; white-space:nowrap; color: var(--text) !important; position:relative; z-index:1; }
+
+    .rightWrap{
+      display:flex;
+      align-items:center;
+      justify-content:flex-end;
+      gap:8px;
+      white-space:nowrap;
+      position:relative;
+      z-index:2;
+    }
+
+    .right { opacity:.96; font-size:12px; white-space:nowrap; color: var(--text) !important; }
+
+    .abtn{
+      display:inline-flex;
+      align-items:center;
+      gap:6px;
+      padding:6px 10px;
+      border-radius:12px;
+      border:1px solid rgba(255,255,255,.14) !important;
+      background: linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.03)) !important;
+      font-size:12px;
+      font-weight:950;
+      color: var(--text) !important;
+      text-decoration:none !important;
+      box-shadow: 0 10px 18px rgba(0,0,0,.24);
+    }
+    .abtn:active{ transform: translateY(1px); }
+
+    .abtn.attack{
+      border-color: rgba(255,122,24,.45) !important;
+      background: linear-gradient(180deg, rgba(255,122,24,.22), rgba(255,42,42,.10)) !important;
+      box-shadow: var(--glowEmber);
+    }
+    .abtn.bounty{
+      border-color: rgba(255,42,42,.40) !important;
+      background: linear-gradient(180deg, rgba(255,42,42,.20), rgba(255,122,24,.10)) !important;
+      box-shadow: var(--glowRed);
+    }
 
     .online{ border-left:4px solid var(--green) !important; }
     .idle{ border-left:4px solid var(--yellow) !important; }
@@ -420,42 +457,9 @@ HTML = r"""
     .collapsible[open] .collapsible-summary:after { content: "▴"; }
     .collapsible-body { padding: 0 10px 10px; }
 
-    /* ✅ ACTION BUTTONS (Enemy Attack) */
-    .actions{
-      display:flex;
-      align-items:center;
-      justify-content:flex-end;
-      gap:8px;
-      position:relative;
-      z-index:2;
-      white-space:nowrap;
-    }
-    .btn{
-      border: 1px solid rgba(255,255,255,.14) !important;
-      background: linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.03)) !important;
-      color: var(--text) !important;
-      padding: 6px 10px;
-      border-radius: 10px;
-      font-weight: 950;
-      font-size: 12px;
-      cursor: pointer;
-      user-select: none;
-      text-decoration: none !important;
-      display:inline-flex;
-      align-items:center;
-      gap:6px;
-      box-shadow: 0 10px 18px rgba(0,0,0,.18);
-    }
-    .btn:active{ transform: translateY(1px); }
-
-    .btn-attack{
-      border-color: rgba(255,122,24,.45) !important;
-      background: linear-gradient(180deg, rgba(255,122,24,.24), rgba(255,42,42,.12)) !important;
-      box-shadow: var(--glowEmber);
-    }
-
     @media (max-width: 520px){
-      .name{ max-width: 58vw; }
+      .name{ max-width: 46vw; }
+      .abtn{ padding:6px 9px; }
     }
   </style>
 </head>
@@ -500,8 +504,15 @@ HTML = r"""
   {% if you.online|length == 0 %}<div class="section-empty">No one online right now.</div>{% endif %}
   {% for row in you.online %}
     <div class="member online">
-      <div class="left"><div class="name">{{ row.name }}</div><div class="sub">ID: {{ row.id }}</div></div>
-      <div class="right">{{ row.minutes }}m</div>
+      <div class="left">
+        <div class="name">{{ row.name }}</div>
+        <div class="sub">ID: {{ row.id }}</div>
+      </div>
+      <div class="rightWrap">
+        <div class="right">{{ row.minutes }}m</div>
+        <a class="abtn bounty" target="_blank" rel="noopener noreferrer"
+           href="https://www.torn.com/bounties.php?step=add&userID={{ row.id }}">🎯 Bounty</a>
+      </div>
     </div>
   {% endfor %}
 
@@ -509,8 +520,15 @@ HTML = r"""
   {% if you.idle|length == 0 %}<div class="section-empty">No one idle right now.</div>{% endif %}
   {% for row in you.idle %}
     <div class="member idle">
-      <div class="left"><div class="name">{{ row.name }}</div><div class="sub">ID: {{ row.id }}</div></div>
-      <div class="right">{{ row.minutes }}m</div>
+      <div class="left">
+        <div class="name">{{ row.name }}</div>
+        <div class="sub">ID: {{ row.id }}</div>
+      </div>
+      <div class="rightWrap">
+        <div class="right">{{ row.minutes }}m</div>
+        <a class="abtn bounty" target="_blank" rel="noopener noreferrer"
+           href="https://www.torn.com/bounties.php?step=add&userID={{ row.id }}">🎯 Bounty</a>
+      </div>
     </div>
   {% endfor %}
 
@@ -518,8 +536,15 @@ HTML = r"""
   {% if you.hospital|length == 0 %}<div class="section-empty">No one in hospital right now.</div>{% endif %}
   {% for row in you.hospital %}
     <div class="member hospital">
-      <div class="left"><div class="name">{{ row.name }}</div><div class="sub">ID: {{ row.id }}</div></div>
-      <div class="right"><span class="hospTimer" data-until="{{ row.hospital_until or '' }}">—</span></div>
+      <div class="left">
+        <div class="name">{{ row.name }}</div>
+        <div class="sub">ID: {{ row.id }}</div>
+      </div>
+      <div class="rightWrap">
+        <div class="right"><span class="hospTimer" data-until="{{ row.hospital_until or '' }}">—</span></div>
+        <a class="abtn bounty" target="_blank" rel="noopener noreferrer"
+           href="https://www.torn.com/bounties.php?step=add&userID={{ row.id }}">🎯 Bounty</a>
+      </div>
     </div>
   {% endfor %}
 
@@ -534,8 +559,15 @@ HTML = r"""
       {% if you.offline|length == 0 %}<div class="section-empty">No one offline right now.</div>{% endif %}
       {% for row in you.offline %}
         <div class="member offline">
-          <div class="left"><div class="name">{{ row.name }}</div><div class="sub">ID: {{ row.id }}</div></div>
-          <div class="right">{{ row.minutes }}m</div>
+          <div class="left">
+            <div class="name">{{ row.name }}</div>
+            <div class="sub">ID: {{ row.id }}</div>
+          </div>
+          <div class="rightWrap">
+            <div class="right">{{ row.minutes }}m</div>
+            <a class="abtn bounty" target="_blank" rel="noopener noreferrer"
+               href="https://www.torn.com/bounties.php?step=add&userID={{ row.id }}">🎯 Bounty</a>
+          </div>
         </div>
       {% endfor %}
     </div>
@@ -560,14 +592,14 @@ HTML = r"""
     {% if them.online|length == 0 %}<div class="section-empty">No enemy online right now.</div>{% endif %}
     {% for row in them.online %}
       <div class="member online">
-        <div class="left"><div class="name">{{ row.name }}</div><div class="sub">ID: {{ row.id }}</div></div>
-        <div class="actions">
+        <div class="left">
+          <div class="name">{{ row.name }}</div>
+          <div class="sub">ID: {{ row.id }}</div>
+        </div>
+        <div class="rightWrap">
           <div class="right">{{ row.minutes }}m</div>
-          <a class="btn btn-attack"
-             href="https://www.torn.com/loader.php?sid=attack&user2ID={{ row.id }}"
-             target="_blank" rel="noopener noreferrer">
-            🎯 Attack
-          </a>
+          <a class="abtn attack" target="_blank" rel="noopener noreferrer"
+             href="https://www.torn.com/loader.php?sid=attack&user2ID={{ row.id }}">⚔️ Attack</a>
         </div>
       </div>
     {% endfor %}
@@ -576,14 +608,14 @@ HTML = r"""
     {% if them.idle|length == 0 %}<div class="section-empty">No enemy idle right now.</div>{% endif %}
     {% for row in them.idle %}
       <div class="member idle">
-        <div class="left"><div class="name">{{ row.name }}</div><div class="sub">ID: {{ row.id }}</div></div>
-        <div class="actions">
+        <div class="left">
+          <div class="name">{{ row.name }}</div>
+          <div class="sub">ID: {{ row.id }}</div>
+        </div>
+        <div class="rightWrap">
           <div class="right">{{ row.minutes }}m</div>
-          <a class="btn btn-attack"
-             href="https://www.torn.com/loader.php?sid=attack&user2ID={{ row.id }}"
-             target="_blank" rel="noopener noreferrer">
-            🎯 Attack
-          </a>
+          <a class="abtn attack" target="_blank" rel="noopener noreferrer"
+             href="https://www.torn.com/loader.php?sid=attack&user2ID={{ row.id }}">⚔️ Attack</a>
         </div>
       </div>
     {% endfor %}
@@ -592,14 +624,14 @@ HTML = r"""
     {% if them.hospital|length == 0 %}<div class="section-empty">No enemy in hospital right now.</div>{% endif %}
     {% for row in them.hospital %}
       <div class="member hospital">
-        <div class="left"><div class="name">{{ row.name }}</div><div class="sub">ID: {{ row.id }}</div></div>
-        <div class="actions">
+        <div class="left">
+          <div class="name">{{ row.name }}</div>
+          <div class="sub">ID: {{ row.id }}</div>
+        </div>
+        <div class="rightWrap">
           <div class="right"><span class="hospTimer" data-until="{{ row.hospital_until or '' }}">—</span></div>
-          <a class="btn btn-attack"
-             href="https://www.torn.com/loader.php?sid=attack&user2ID={{ row.id }}"
-             target="_blank" rel="noopener noreferrer">
-            🎯 Attack
-          </a>
+          <a class="abtn attack" target="_blank" rel="noopener noreferrer"
+             href="https://www.torn.com/loader.php?sid=attack&user2ID={{ row.id }}">⚔️ Attack</a>
         </div>
       </div>
     {% endfor %}
@@ -615,14 +647,14 @@ HTML = r"""
         {% if them.offline|length == 0 %}<div class="section-empty">No enemy offline right now.</div>{% endif %}
         {% for row in them.offline %}
           <div class="member offline">
-            <div class="left"><div class="name">{{ row.name }}</div><div class="sub">ID: {{ row.id }}</div></div>
-            <div class="actions">
+            <div class="left">
+              <div class="name">{{ row.name }}</div>
+              <div class="sub">ID: {{ row.id }}</div>
+            </div>
+            <div class="rightWrap">
               <div class="right">{{ row.minutes }}m</div>
-              <a class="btn btn-attack"
-                 href="https://www.torn.com/loader.php?sid=attack&user2ID={{ row.id }}"
-                 target="_blank" rel="noopener noreferrer">
-                🎯 Attack
-              </a>
+              <a class="abtn attack" target="_blank" rel="noopener noreferrer"
+                 href="https://www.torn.com/loader.php?sid=attack&user2ID={{ row.id }}">⚔️ Attack</a>
             </div>
           </div>
         {% endfor %}
@@ -723,7 +755,6 @@ def panel():
 
 @app.route("/api/availability", methods=["POST"])
 def api_availability():
-    # Always return JSON (avoid HTML 500 pages in Tampermonkey)
     try:
         if not token_ok(request):
             return jsonify({"ok": False, "error": "unauthorized"}), 401
