@@ -1,123 +1,317 @@
+import json
 import os
+import secrets
 import sqlite3
-from typing import Dict, Any
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
 
-DB_PATH = os.getenv("DB_PATH", "warbot.db")
+DB_PATH = os.getenv("DB_PATH", "war_hub.db")
+
+
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _ensure_parent_dir(path: str):
+    parent = os.path.dirname(path)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+
 
 def _con():
-    # check_same_thread=False prevents thread errors under gunicorn --threads
-    return sqlite3.connect(DB_PATH, timeout=30, check_same_thread=False)
+    _ensure_parent_dir(DB_PATH)
+    con = sqlite3.connect(DB_PATH, timeout=30, check_same_thread=False)
+    con.row_factory = sqlite3.Row
+    return con
+
+
+def _row_to_dict(row) -> Optional[Dict[str, Any]]:
+    return dict(row) if row else None
+
 
 def init_db():
     con = _con()
     cur = con.cursor()
 
     cur.execute("""
-    CREATE TABLE IF NOT EXISTS settings (
-        k TEXT PRIMARY KEY,
-        v TEXT
-    )
+        CREATE TABLE IF NOT EXISTS users (
+            user_id TEXT PRIMARY KEY,
+            name TEXT DEFAULT '',
+            api_key TEXT NOT NULL,
+            faction_id TEXT DEFAULT '',
+            faction_name TEXT DEFAULT '',
+            available INTEGER DEFAULT 1,
+            chain_sitter INTEGER DEFAULT 0,
+            created_at TEXT,
+            last_seen_at TEXT
+        )
     """)
 
     cur.execute("""
-    CREATE TABLE IF NOT EXISTS member_availability (
-        torn_id INTEGER PRIMARY KEY,
-        name TEXT,
-        available INTEGER NOT NULL DEFAULT 0,
-        updated_at TEXT
-    )
+        CREATE TABLE IF NOT EXISTS sessions (
+            token TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            created_at TEXT,
+            last_seen_at TEXT
+        )
     """)
 
     cur.execute("""
-    CREATE TABLE IF NOT EXISTS alert_state (
-        k TEXT PRIMARY KEY,
-        v TEXT
-    )
+        CREATE TABLE IF NOT EXISTS med_deals (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
+            buyer_name TEXT DEFAULT '',
+            seller_name TEXT DEFAULT '',
+            amount INTEGER DEFAULT 0,
+            notes TEXT DEFAULT '',
+            created_at TEXT
+        )
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS targets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
+            target_id TEXT DEFAULT '',
+            target_name TEXT DEFAULT '',
+            notes TEXT DEFAULT '',
+            created_at TEXT
+        )
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS bounties (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
+            target_id TEXT DEFAULT '',
+            target_name TEXT DEFAULT '',
+            reward_text TEXT DEFAULT '',
+            created_at TEXT
+        )
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS notifications (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
+            kind TEXT DEFAULT '',
+            text TEXT DEFAULT '',
+            seen INTEGER DEFAULT 0,
+            created_at TEXT
+        )
     """)
 
     con.commit()
     con.close()
 
-def set_setting(k: str, v: str):
+
+def upsert_user(user_id: str, name: str, api_key: str, faction_id: str = "", faction_name: str = ""):
+    now = _utc_now()
     con = _con()
     cur = con.cursor()
-    cur.execute(
-        "INSERT INTO settings(k,v) VALUES(?,?) "
-        "ON CONFLICT(k) DO UPDATE SET v=excluded.v",
-        (k, v)
-    )
+
+    cur.execute("SELECT user_id FROM users WHERE user_id = ?", (user_id,))
+    existing = cur.fetchone()
+
+    if existing:
+        cur.execute("""
+            UPDATE users
+            SET name = ?, api_key = ?, faction_id = ?, faction_name = ?, last_seen_at = ?
+            WHERE user_id = ?
+        """, (name, api_key, faction_id, faction_name, now, user_id))
+    else:
+        cur.execute("""
+            INSERT INTO users (
+                user_id, name, api_key, faction_id, faction_name,
+                available, chain_sitter, created_at, last_seen_at
+            ) VALUES (?, ?, ?, ?, ?, 1, 0, ?, ?)
+        """, (user_id, name, api_key, faction_id, faction_name, now, now))
+
     con.commit()
     con.close()
 
-def get_setting(k: str, default: str = "") -> str:
+
+def get_user(user_id: str) -> Optional[Dict[str, Any]]:
     con = _con()
     cur = con.cursor()
-    cur.execute("SELECT v FROM settings WHERE k=?", (k,))
+    cur.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
     row = cur.fetchone()
     con.close()
-    return row[0] if row else default
+    return _row_to_dict(row)
 
-def set_alert_state(k: str, v: str):
+
+def create_session(user_id: str) -> str:
+    token = secrets.token_hex(24)
+    now = _utc_now()
+
     con = _con()
     cur = con.cursor()
-    cur.execute(
-        "INSERT INTO alert_state(k,v) VALUES(?,?) "
-        "ON CONFLICT(k) DO UPDATE SET v=excluded.v",
-        (k, v)
-    )
+    cur.execute("""
+        INSERT INTO sessions (token, user_id, created_at, last_seen_at)
+        VALUES (?, ?, ?, ?)
+    """, (token, user_id, now, now))
     con.commit()
     con.close()
+    return token
 
-def get_alert_state(k: str, default: str = "") -> str:
+
+def get_session(token: str) -> Optional[Dict[str, Any]]:
     con = _con()
     cur = con.cursor()
-    cur.execute("SELECT v FROM alert_state WHERE k=?", (k,))
+    cur.execute("SELECT * FROM sessions WHERE token = ?", (token,))
     row = cur.fetchone()
     con.close()
-    return row[0] if row else default
+    return _row_to_dict(row)
 
 
-# ✅ COMPAT: app.py calls upsert_availability(torn_id, available)
-def upsert_availability(torn_id: str, available: bool):
+def touch_session(token: str):
     con = _con()
     cur = con.cursor()
-    cur.execute(
-        """
-        INSERT INTO member_availability(torn_id, name, available, updated_at)
-        VALUES(?, ?, ?, datetime('now'))
-        ON CONFLICT(torn_id) DO UPDATE SET
-          available=excluded.available,
-          updated_at=excluded.updated_at
-        """,
-        (int(torn_id), None, 1 if available else 0)
-    )
+    cur.execute("UPDATE sessions SET last_seen_at = ? WHERE token = ?", (_utc_now(), token))
     con.commit()
     con.close()
 
 
-# ✅ COMPAT: app.py expects {"1234": True, ...}
-def get_availability_map() -> Dict[str, bool]:
+def set_availability(user_id: str, available: int):
     con = _con()
     cur = con.cursor()
-    cur.execute("SELECT torn_id, available FROM member_availability")
-    rows = cur.fetchall()
+    cur.execute("UPDATE users SET available = ?, last_seen_at = ? WHERE user_id = ?", (available, _utc_now(), user_id))
+    con.commit()
     con.close()
-    return {str(torn_id): bool(available) for (torn_id, available) in rows}
 
 
-# (Optional) keep your old detailed map if you still want it elsewhere
-def get_availability_map_full() -> Dict[int, Dict[str, Any]]:
+def set_chain_sitter(user_id: str, enabled: int):
     con = _con()
     cur = con.cursor()
-    cur.execute("SELECT torn_id, name, available, updated_at FROM member_availability")
-    rows = cur.fetchall()
+    cur.execute("UPDATE users SET chain_sitter = ?, last_seen_at = ? WHERE user_id = ?", (enabled, _utc_now(), user_id))
+    con.commit()
     con.close()
-    out: Dict[int, Dict[str, Any]] = {}
-    for torn_id, name, available, updated_at in rows:
-        out[int(torn_id)] = {
-            "torn_id": int(torn_id),
-            "name": name,
-            "available": bool(available),
-            "updated_at": updated_at,
-        }
-    return out
+
+
+def add_med_deal(user_id: str, buyer_name: str, seller_name: str, amount: int, notes: str):
+    con = _con()
+    cur = con.cursor()
+    cur.execute("""
+        INSERT INTO med_deals (user_id, buyer_name, seller_name, amount, notes, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+    """, (user_id, buyer_name, seller_name, amount, notes, _utc_now()))
+    con.commit()
+    con.close()
+
+
+def list_med_deals(user_id: str) -> List[Dict[str, Any]]:
+    con = _con()
+    cur = con.cursor()
+    cur.execute("""
+        SELECT * FROM med_deals
+        WHERE user_id = ?
+        ORDER BY id DESC
+    """, (user_id,))
+    rows = [dict(r) for r in cur.fetchall()]
+    con.close()
+    return rows
+
+
+def delete_med_deal(user_id: str, deal_id: int):
+    con = _con()
+    cur = con.cursor()
+    cur.execute("DELETE FROM med_deals WHERE user_id = ? AND id = ?", (user_id, deal_id))
+    con.commit()
+    con.close()
+
+
+def add_target(user_id: str, target_id: str, target_name: str, notes: str):
+    con = _con()
+    cur = con.cursor()
+    cur.execute("""
+        INSERT INTO targets (user_id, target_id, target_name, notes, created_at)
+        VALUES (?, ?, ?, ?, ?)
+    """, (user_id, target_id, target_name, notes, _utc_now()))
+    con.commit()
+    con.close()
+
+
+def list_targets(user_id: str) -> List[Dict[str, Any]]:
+    con = _con()
+    cur = con.cursor()
+    cur.execute("""
+        SELECT * FROM targets
+        WHERE user_id = ?
+        ORDER BY id DESC
+    """, (user_id,))
+    rows = [dict(r) for r in cur.fetchall()]
+    con.close()
+    return rows
+
+
+def delete_target(user_id: str, target_row_id: int):
+    con = _con()
+    cur = con.cursor()
+    cur.execute("DELETE FROM targets WHERE user_id = ? AND id = ?", (user_id, target_row_id))
+    con.commit()
+    con.close()
+
+
+def add_bounty(user_id: str, target_id: str, target_name: str, reward_text: str):
+    con = _con()
+    cur = con.cursor()
+    cur.execute("""
+        INSERT INTO bounties (user_id, target_id, target_name, reward_text, created_at)
+        VALUES (?, ?, ?, ?, ?)
+    """, (user_id, target_id, target_name, reward_text, _utc_now()))
+    con.commit()
+    con.close()
+
+
+def list_bounties(user_id: str) -> List[Dict[str, Any]]:
+    con = _con()
+    cur = con.cursor()
+    cur.execute("""
+        SELECT * FROM bounties
+        WHERE user_id = ?
+        ORDER BY id DESC
+    """, (user_id,))
+    rows = [dict(r) for r in cur.fetchall()]
+    con.close()
+    return rows
+
+
+def delete_bounty(user_id: str, bounty_id: int):
+    con = _con()
+    cur = con.cursor()
+    cur.execute("DELETE FROM bounties WHERE user_id = ? AND id = ?", (user_id, bounty_id))
+    con.commit()
+    con.close()
+
+
+def add_notification(user_id: str, kind: str, text: str):
+    con = _con()
+    cur = con.cursor()
+    cur.execute("""
+        INSERT INTO notifications (user_id, kind, text, seen, created_at)
+        VALUES (?, ?, ?, 0, ?)
+    """, (user_id, kind, text, _utc_now()))
+    con.commit()
+    con.close()
+
+
+def list_notifications(user_id: str) -> List[Dict[str, Any]]:
+    con = _con()
+    cur = con.cursor()
+    cur.execute("""
+        SELECT * FROM notifications
+        WHERE user_id = ?
+        ORDER BY id DESC
+        LIMIT 50
+    """, (user_id,))
+    rows = [dict(r) for r in cur.fetchall()]
+    con.close()
+    return rows
+
+
+def mark_notifications_seen(user_id: str):
+    con = _con()
+    cur = con.cursor()
+    cur.execute("UPDATE notifications SET seen = 1 WHERE user_id = ?", (user_id,))
+    con.commit()
+    con.close()
