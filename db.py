@@ -250,10 +250,7 @@ def list_med_deals(user_id: str) -> List[Dict[str, Any]]:
 def delete_med_deal(user_id: str, deal_id: int):
     con = _con()
     cur = con.cursor()
-    cur.execute(
-        "DELETE FROM med_deals WHERE user_id = ? AND id = ?",
-        (user_id, deal_id),
-    )
+    cur.execute("DELETE FROM med_deals WHERE user_id = ? AND id = ?", (user_id, deal_id))
     con.commit()
     con.close()
 
@@ -285,10 +282,7 @@ def list_targets(user_id: str) -> List[Dict[str, Any]]:
 def delete_target(user_id: str, target_row_id: int):
     con = _con()
     cur = con.cursor()
-    cur.execute(
-        "DELETE FROM targets WHERE user_id = ? AND id = ?",
-        (user_id, target_row_id),
-    )
+    cur.execute("DELETE FROM targets WHERE user_id = ? AND id = ?", (user_id, target_row_id))
     con.commit()
     con.close()
 
@@ -320,10 +314,7 @@ def list_bounties(user_id: str) -> List[Dict[str, Any]]:
 def delete_bounty(user_id: str, bounty_id: int):
     con = _con()
     cur = con.cursor()
-    cur.execute(
-        "DELETE FROM bounties WHERE user_id = ? AND id = ?",
-        (user_id, bounty_id),
-    )
+    cur.execute("DELETE FROM bounties WHERE user_id = ? AND id = ?", (user_id, bounty_id))
     con.commit()
     con.close()
 
@@ -356,9 +347,6 @@ def list_notifications(user_id: str) -> List[Dict[str, Any]]:
 def mark_notifications_seen(user_id: str):
     con = _con()
     cur = con.cursor()
-    cur.execute(
-        "UPDATE notifications SET seen = 1 WHERE user_id = ?",
-        (user_id,),
-    )
+    cur.execute("UPDATE notifications SET seen = 1 WHERE user_id = ?", (user_id,))
     con.commit()
     con.close()
