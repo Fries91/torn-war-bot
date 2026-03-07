@@ -10,6 +10,7 @@ from db import (
     init_db,
     upsert_user,
     get_user,
+    get_user_map_by_faction,
     create_session,
     get_session,
     touch_session,
@@ -28,7 +29,7 @@ from db import (
     add_notification,
     mark_notifications_seen,
 )
-from torn_api import me_basic, faction_basic, profile_url
+from torn_api import me_basic, faction_basic, profile_url, attack_url, bounty_url
 
 load_dotenv()
 
@@ -76,6 +77,63 @@ def require_session(fn):
         return fn(*args, **kwargs)
 
     return wrapper
+
+
+def _merge_faction_members(faction_id: str, members: list) -> Dict[str, Any]:
+    local_map = get_user_map_by_faction(faction_id) if faction_id else {}
+
+    merged = []
+    chain_sitters = []
+    available_count = 0
+    local_linked_count = 0
+
+    for m in members:
+        uid = str(m.get("user_id") or "")
+        local = local_map.get(uid)
+
+        available = int(local["available"]) if local else 1
+        chain_sitter = int(local["chain_sitter"]) if local else 0
+        linked = bool(local)
+
+        if linked:
+            local_linked_count += 1
+        if available:
+            available_count += 1
+
+        item = {
+            "user_id": uid,
+            "name": m.get("name", "Unknown"),
+            "level": m.get("level", ""),
+            "status": m.get("status", ""),
+            "position": m.get("position", ""),
+            "last_action": m.get("last_action", ""),
+            "available": available,
+            "chain_sitter": chain_sitter,
+            "linked_user": linked,
+            "profile_url": profile_url(uid),
+            "attack_url": attack_url(uid),
+            "bounty_url": bounty_url(uid),
+        }
+        merged.append(item)
+
+        if chain_sitter:
+            chain_sitters.append({
+                "user_id": uid,
+                "name": item["name"],
+                "level": item["level"],
+                "profile_url": item["profile_url"],
+                "attack_url": item["attack_url"],
+            })
+
+    merged.sort(key=lambda x: (0 if x["available"] else 1, (x["name"] or "").lower()))
+    chain_sitters.sort(key=lambda x: (x["name"] or "").lower())
+
+    return {
+        "members": merged,
+        "chain_sitters": chain_sitters,
+        "available_count": available_count,
+        "local_linked_count": local_linked_count,
+    }
 
 
 @app.route("/")
@@ -167,41 +225,53 @@ def api_state():
         faction_id = user["faction_id"] or ""
         faction_name = user["faction_name"] or ""
 
-        faction = {"ok": False, "members": []}
+        faction = {
+            "ok": True,
+            "faction_id": faction_id,
+            "faction_name": faction_name,
+            "enemy_faction_name": "",
+            "enemy_faction_id": "",
+            "members": [],
+        }
+
         if faction_id:
             faction = faction_basic(api_key)
+            if not faction.get("ok"):
+                return err(faction.get("error", "Could not load faction."), 500)
 
-        members = []
-        for m in faction.get("members", []):
-            members.append(
-                {
-                    "user_id": str(m.get("user_id", "")),
-                    "name": m.get("name", "Unknown"),
-                    "status": m.get("status", ""),
-                    "position": m.get("position", ""),
-                    "level": m.get("level", ""),
-                    "last_action": m.get("last_action", ""),
-                    "available": int(m.get("available", 1)),
-                    "chain_sitter": int(m.get("chain_sitter", 0)),
-                    "profile_url": profile_url(str(m.get("user_id", ""))),
-                }
-            )
+        merged = _merge_faction_members(
+            faction.get("faction_id", faction_id),
+            faction.get("members", []),
+        )
+
+        members = merged["members"]
+        chain_sitters = merged["chain_sitters"]
+        available_count = merged["available_count"]
+        local_linked_count = merged["local_linked_count"]
 
         return ok(
             me={
                 "user_id": user["user_id"],
                 "name": user["name"],
-                "faction_id": faction_id,
-                "faction_name": faction_name,
+                "faction_id": faction.get("faction_id", faction_id),
+                "faction_name": faction.get("faction_name", faction_name),
                 "profile_url": profile_url(user["user_id"]),
+                "available": int(user.get("available", 1)),
+                "chain_sitter": int(user.get("chain_sitter", 0)),
             },
             war={
-                "active": True if faction_id else False,
-                "faction_id": faction_id,
-                "faction_name": faction_name,
+                "active": bool(faction.get("faction_id")),
+                "faction_id": faction.get("faction_id", faction_id),
+                "faction_name": faction.get("faction_name", faction_name),
+                "enemy_faction_id": faction.get("enemy_faction_id", ""),
+                "enemy_faction_name": faction.get("enemy_faction_name", ""),
                 "member_count": len(members),
+                "available_count": available_count,
+                "chain_sitter_count": len(chain_sitters),
+                "linked_user_count": local_linked_count,
             },
             members=members,
+            chain_sitters=chain_sitters,
             med_deals=list_med_deals(user_id),
             targets=list_targets(user_id),
             bounties=list_bounties(user_id),
