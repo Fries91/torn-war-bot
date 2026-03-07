@@ -18,6 +18,14 @@ def profile_url(user_id: str) -> str:
     return f"https://www.torn.com/profiles.php?XID={user_id}"
 
 
+def bounty_url(user_id: str) -> str:
+    return f"https://www.torn.com/bounties.php#/p=add&userID={user_id}"
+
+
+def attack_url(user_id: str) -> str:
+    return f"https://www.torn.com/loader.php?sid=attack&user2ID={user_id}"
+
+
 def me_basic(api_key: str) -> Dict[str, Any]:
     res = _safe_get(
         f"{API_BASE}/user/",
@@ -51,7 +59,14 @@ def faction_basic(api_key: str) -> Dict[str, Any]:
 
     faction_id = me["player"].get("faction_id")
     if not faction_id:
-        return {"ok": True, "members": []}
+        return {
+            "ok": True,
+            "faction_id": "",
+            "faction_name": "",
+            "enemy_faction_name": "",
+            "enemy_faction_id": "",
+            "members": [],
+        }
 
     res = _safe_get(
         f"{API_BASE}/faction/",
@@ -81,10 +96,16 @@ def faction_basic(api_key: str) -> Dict[str, Any]:
                 "status": m.get("status", ""),
                 "position": m.get("position", ""),
                 "last_action": last_action,
-                "available": 1,
-                "chain_sitter": 0,
             }
         )
 
     members.sort(key=lambda x: (x.get("name") or "").lower())
-    return {"ok": True, "members": members}
+
+    return {
+        "ok": True,
+        "faction_id": str(data.get("ID") or faction_id or ""),
+        "faction_name": data.get("name") or me["player"].get("faction_name") or "",
+        "enemy_faction_name": "",
+        "enemy_faction_id": "",
+        "members": members,
+    }
