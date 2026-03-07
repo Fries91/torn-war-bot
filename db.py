@@ -1,4 +1,3 @@
-import json
 import os
 import secrets
 import sqlite3
@@ -105,7 +104,13 @@ def init_db():
     con.close()
 
 
-def upsert_user(user_id: str, name: str, api_key: str, faction_id: str = "", faction_name: str = ""):
+def upsert_user(
+    user_id: str,
+    name: str,
+    api_key: str,
+    faction_id: str = "",
+    faction_name: str = "",
+):
     now = _utc_now()
     con = _con()
     cur = con.cursor()
@@ -140,10 +145,29 @@ def get_user(user_id: str) -> Optional[Dict[str, Any]]:
     return _row_to_dict(row)
 
 
+def get_users_by_faction(faction_id: str) -> List[Dict[str, Any]]:
+    if not faction_id:
+        return []
+    con = _con()
+    cur = con.cursor()
+    cur.execute("""
+        SELECT * FROM users
+        WHERE faction_id = ?
+        ORDER BY LOWER(name) ASC
+    """, (faction_id,))
+    rows = [dict(r) for r in cur.fetchall()]
+    con.close()
+    return rows
+
+
+def get_user_map_by_faction(faction_id: str) -> Dict[str, Dict[str, Any]]:
+    rows = get_users_by_faction(faction_id)
+    return {str(r["user_id"]): r for r in rows}
+
+
 def create_session(user_id: str) -> str:
     token = secrets.token_hex(24)
     now = _utc_now()
-
     con = _con()
     cur = con.cursor()
     cur.execute("""
@@ -167,7 +191,10 @@ def get_session(token: str) -> Optional[Dict[str, Any]]:
 def touch_session(token: str):
     con = _con()
     cur = con.cursor()
-    cur.execute("UPDATE sessions SET last_seen_at = ? WHERE token = ?", (_utc_now(), token))
+    cur.execute(
+        "UPDATE sessions SET last_seen_at = ? WHERE token = ?",
+        (_utc_now(), token),
+    )
     con.commit()
     con.close()
 
@@ -175,7 +202,11 @@ def touch_session(token: str):
 def set_availability(user_id: str, available: int):
     con = _con()
     cur = con.cursor()
-    cur.execute("UPDATE users SET available = ?, last_seen_at = ? WHERE user_id = ?", (available, _utc_now(), user_id))
+    cur.execute("""
+        UPDATE users
+        SET available = ?, last_seen_at = ?
+        WHERE user_id = ?
+    """, (1 if available else 0, _utc_now(), user_id))
     con.commit()
     con.close()
 
@@ -183,7 +214,11 @@ def set_availability(user_id: str, available: int):
 def set_chain_sitter(user_id: str, enabled: int):
     con = _con()
     cur = con.cursor()
-    cur.execute("UPDATE users SET chain_sitter = ?, last_seen_at = ? WHERE user_id = ?", (enabled, _utc_now(), user_id))
+    cur.execute("""
+        UPDATE users
+        SET chain_sitter = ?, last_seen_at = ?
+        WHERE user_id = ?
+    """, (1 if enabled else 0, _utc_now(), user_id))
     con.commit()
     con.close()
 
@@ -215,7 +250,10 @@ def list_med_deals(user_id: str) -> List[Dict[str, Any]]:
 def delete_med_deal(user_id: str, deal_id: int):
     con = _con()
     cur = con.cursor()
-    cur.execute("DELETE FROM med_deals WHERE user_id = ? AND id = ?", (user_id, deal_id))
+    cur.execute(
+        "DELETE FROM med_deals WHERE user_id = ? AND id = ?",
+        (user_id, deal_id),
+    )
     con.commit()
     con.close()
 
@@ -247,7 +285,10 @@ def list_targets(user_id: str) -> List[Dict[str, Any]]:
 def delete_target(user_id: str, target_row_id: int):
     con = _con()
     cur = con.cursor()
-    cur.execute("DELETE FROM targets WHERE user_id = ? AND id = ?", (user_id, target_row_id))
+    cur.execute(
+        "DELETE FROM targets WHERE user_id = ? AND id = ?",
+        (user_id, target_row_id),
+    )
     con.commit()
     con.close()
 
@@ -279,7 +320,10 @@ def list_bounties(user_id: str) -> List[Dict[str, Any]]:
 def delete_bounty(user_id: str, bounty_id: int):
     con = _con()
     cur = con.cursor()
-    cur.execute("DELETE FROM bounties WHERE user_id = ? AND id = ?", (user_id, bounty_id))
+    cur.execute(
+        "DELETE FROM bounties WHERE user_id = ? AND id = ?",
+        (user_id, bounty_id),
+    )
     con.commit()
     con.close()
 
@@ -312,6 +356,9 @@ def list_notifications(user_id: str) -> List[Dict[str, Any]]:
 def mark_notifications_seen(user_id: str):
     con = _con()
     cur = con.cursor()
-    cur.execute("UPDATE notifications SET seen = 1 WHERE user_id = ?", (user_id,))
+    cur.execute(
+        "UPDATE notifications SET seen = 1 WHERE user_id = ?",
+        (user_id,),
+    )
     con.commit()
     con.close()
