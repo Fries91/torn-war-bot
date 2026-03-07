@@ -1,646 +1,385 @@
-# app.py ✅ FIXED: Chain Sitters = OPTED IN members (no CHAIN_SITTER_IDS gate) + secure opt (self-only) + med deals delete sync
 import os
-import threading
-import asyncio
-import sqlite3
 from datetime import datetime, timezone
+from functools import wraps
+from typing import Any, Dict, Optional
 
-from flask import Flask, jsonify, request, render_template_string
 from dotenv import load_dotenv
+from flask import Flask, jsonify, request, send_from_directory
 
-from db import init_db, upsert_availability, get_availability_map
-from torn_api import get_faction_core, get_ranked_war_best
+from db import (
+    init_db,
+    upsert_user,
+    get_user,
+    create_session,
+    get_session,
+    touch_session,
+    set_availability,
+    set_chain_sitter,
+    list_med_deals,
+    add_med_deal,
+    delete_med_deal,
+    list_targets,
+    add_target,
+    delete_target,
+    list_bounties,
+    add_bounty,
+    delete_bounty,
+    list_notifications,
+    add_notification,
+    mark_notifications_seen,
+)
+from torn_api import me_basic, faction_basic, profile_url
 
 load_dotenv()
-app = Flask(__name__)
 
-FACTION_ID = (os.getenv("FACTION_ID") or "").strip()
-FACTION_API_KEY = (os.getenv("FACTION_API_KEY") or "").strip()
-
-AVAIL_TOKEN = (os.getenv("AVAIL_TOKEN") or "").strip()
-POLL_SECONDS = int(os.getenv("POLL_SECONDS") or "20")
-
-MED_DEALS_DB_PATH = (os.getenv("MED_DEALS_DB_PATH") or "med_deals.db").strip()
-MED_DEALS_LIMIT = int(os.getenv("MED_DEALS_LIMIT") or "25")
-MED_DEALS_ADMIN_IDS = {s.strip() for s in (os.getenv("MED_DEALS_ADMIN_IDS") or "").split(",") if s.strip()}
-
-STATE = {
-    "rows": [],
-    "updated_at": None,
-    "counts": {"online": 0, "idle": 0, "offline": 0, "hospital": 0},
-    "available_count": 0,
-    "chain": {"current": 0, "max": 10, "timeout": 0, "cooldown": 0},
-    "war": {"opponent": None, "opponent_id": None, "start": None, "end": None, "target": None, "score": None, "enemy_score": None},
-    "faction": {"name": None, "tag": None, "respect": None},
-    "enemy": {
-        "supported": True,
-        "reason": None,
-        "faction": {"name": None, "tag": None, "respect": None, "id": None},
-        "rows": [],
-        "counts": {"online": 0, "idle": 0, "offline": 0, "hospital": 0},
-        "updated_at": None,
-    },
-    "med_deals": [],
-    "chain_sitters": [],  # ✅ NOW: members who are opted-in (available==True)
-    "last_error": None,
+APP_NAME = "War Hub"
+ADMIN_KEYS = {
+    k.strip()
+    for k in os.getenv("ADMIN_KEYS", "").split(",")
+    if k.strip()
 }
 
-BOOTED = False
-BOOT_LOCK = threading.Lock()
+app = Flask(__name__, static_folder="static")
 
-@app.after_request
-def allow_iframe(resp):
-    resp.headers["X-Frame-Options"] = "ALLOWALL"
-    resp.headers["Content-Security-Policy"] = "frame-ancestors https://*.torn.com https://torn.com *"
-    return resp
 
-def now_iso():
+def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
-def classify_status(minutes: int) -> str:
-    if minutes <= 20:
-        return "online"
-    if minutes <= 30:
-        return "idle"
-    return "offline"
 
-def parse_last_action_minutes(member: dict) -> int:
-    la = (member or {}).get("last_action") or {}
-    rel = (la.get("relative") or "").lower()
-    try:
-        if "just now" in rel:
-            return 0
-        if "minute" in rel:
-            return int(rel.split("minute")[0].strip())
-        if "hour" in rel:
-            h = int(rel.split("hour")[0].strip())
-            return h * 60
-        if "day" in rel:
-            d = int(rel.split("day")[0].strip())
-            return d * 1440
-    except Exception:
-        pass
-    return 999
+def ok(data: Optional[Dict[str, Any]] = None, **kwargs):
+    payload = {"ok": True}
+    if data:
+        payload.update(data)
+    payload.update(kwargs)
+    return jsonify(payload)
 
-def token_ok(req) -> bool:
-    if not AVAIL_TOKEN:
-        return True
-    data = req.get_json(silent=True) or {}
-    t = (
-        req.headers.get("X-Avail-Token")
-        or req.headers.get("X-Token")
-        or req.args.get("token")
-        or data.get("token")
-        or ""
-    ).strip()
-    return t == AVAIL_TOKEN
 
-def split_sections(rows):
-    online, idle, offline, hospital = [], [], [], []
-    for row in rows:
-        if row.get("hospital"):
-            hospital.append(row)
-            continue
-        mins = row.get("minutes", 999)
-        try:
-            mins = int(mins)
-        except Exception:
-            mins = 999
-        row["minutes"] = mins
-        st = row.get("status") or classify_status(mins)
-        row["status"] = st
-        if st == "online":
-            online.append(row)
-        elif st == "idle":
-            idle.append(row)
-        else:
-            offline.append(row)
+def err(message: str, status: int = 400, **kwargs):
+    payload = {"ok": False, "error": message}
+    payload.update(kwargs)
+    return jsonify(payload), status
 
-    online.sort(key=lambda x: x.get("minutes", 999))
-    idle.sort(key=lambda x: x.get("minutes", 999))
-    offline.sort(key=lambda x: x.get("minutes", 999))
-    hospital.sort(key=lambda x: (x.get("hospital_until") or ""))
 
-    return {"online": online, "idle": idle, "offline": offline, "hospital": hospital}
+def require_session(fn):
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        token = request.headers.get("X-Session-Token", "").strip()
+        if not token:
+            return err("Missing session token.", 401)
 
-def normalize_faction_rows(v2_payload: dict, avail_map=None):
-    avail_map = avail_map or {}
-    v2_payload = v2_payload or {}
+        sess = get_session(token)
+        if not sess:
+            return err("Invalid session token.", 401)
 
-    basic = v2_payload.get("basic") or {}
-    members = v2_payload.get("members") or {}
-    chain = v2_payload.get("chain") or {}
+        touch_session(token)
+        request.session = sess
+        return fn(*args, **kwargs)
 
-    rows = []
-    counts = {"online": 0, "idle": 0, "offline": 0, "hospital": 0}
-    available_count = 0
+    return wrapper
 
-    if isinstance(members, dict):
-        items = members.items()
-    elif isinstance(members, list):
-        items = [(str(m.get("id") or ""), m) for m in members if isinstance(m, dict)]
-    else:
-        items = []
 
-    for mid, m in items:
-        if not isinstance(m, dict):
-            continue
+@app.route("/")
+def root():
+    return ok(
+        service=APP_NAME,
+        status="online",
+        now=utc_now(),
+        endpoints=[
+            "/health",
+            "/api/auth",
+            "/api/state",
+        ],
+    )
 
-        torn_id = str(m.get("id") or mid).strip() or str(mid).strip()
-        name = m.get("name") or "—"
-
-        minutes = parse_last_action_minutes(m)
-        status = classify_status(minutes)
-
-        st = m.get("status") or {}
-        hosp = bool(st.get("state") == "Hospital" or m.get("hospital"))
-        hospital_until = st.get("until") or m.get("hospital_until")
-
-        available = bool(avail_map.get(torn_id, False))
-        if available:
-            available_count += 1
-
-        if hosp:
-            counts["hospital"] += 1
-        else:
-            counts[status] += 1
-
-        rows.append({
-            "id": torn_id,
-            "name": name,
-            "minutes": minutes,
-            "status": status,
-            "hospital": hosp,
-            "hospital_until": hospital_until,
-            "available": available,
-        })
-
-    header = {"name": basic.get("name"), "tag": basic.get("tag"), "respect": basic.get("respect")}
-    chain_out = {
-        "current": chain.get("current") or 0,
-        "max": chain.get("max") or 10,
-        "timeout": chain.get("timeout") or 0,
-        "cooldown": chain.get("cooldown") or 0,
-    }
-
-    return rows, counts, available_count, header, chain_out
-
-# =========================
-# 💊 MED DEALS (SQLite)
-# =========================
-def _md_conn():
-    return sqlite3.connect(MED_DEALS_DB_PATH, check_same_thread=False, timeout=30)
-
-def _md_has_column(con, table: str, col: str) -> bool:
-    cur = con.execute(f"PRAGMA table_info({table});")
-    cols = [r[1] for r in cur.fetchall()]
-    return col in cols
-
-def init_med_deals_db():
-    con = _md_conn()
-    try:
-        con.execute("""
-        CREATE TABLE IF NOT EXISTS med_deals (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            created_at TEXT NOT NULL,
-            reporter_id TEXT NOT NULL,
-            reporter_name TEXT,
-            war_opponent_id TEXT,
-            war_opponent_name TEXT,
-            enemy_faction TEXT,
-            member_id TEXT,
-            member_name TEXT,
-            proof TEXT,
-            enemy_player_id TEXT,
-            enemy_player_name TEXT,
-            item TEXT NOT NULL,
-            qty INTEGER NOT NULL DEFAULT 1,
-            price INTEGER,
-            notes TEXT
-        );
-        """)
-        for col, ddl in [
-            ("enemy_faction", "ALTER TABLE med_deals ADD COLUMN enemy_faction TEXT;"),
-            ("member_id", "ALTER TABLE med_deals ADD COLUMN member_id TEXT;"),
-            ("member_name", "ALTER TABLE med_deals ADD COLUMN member_name TEXT;"),
-            ("proof", "ALTER TABLE med_deals ADD COLUMN proof TEXT;"),
-            ("enemy_player_id", "ALTER TABLE med_deals ADD COLUMN enemy_player_id TEXT;"),
-            ("enemy_player_name", "ALTER TABLE med_deals ADD COLUMN enemy_player_name TEXT;"),
-            ("notes", "ALTER TABLE med_deals ADD COLUMN notes TEXT;"),
-        ]:
-            if not _md_has_column(con, "med_deals", col):
-                try:
-                    con.execute(ddl)
-                except Exception:
-                    pass
-        con.execute("CREATE INDEX IF NOT EXISTS idx_med_deals_created_at ON med_deals(created_at);")
-        con.execute("CREATE INDEX IF NOT EXISTS idx_med_deals_reporter_id ON med_deals(reporter_id);")
-        con.execute("CREATE INDEX IF NOT EXISTS idx_med_deals_enemy_faction ON med_deals(enemy_faction);")
-        con.commit()
-    finally:
-        con.close()
-
-def list_med_deals(limit=25):
-    con = _md_conn()
-    try:
-        cur = con.execute("""
-            SELECT
-              id, created_at, reporter_id, reporter_name,
-              war_opponent_id, war_opponent_name,
-              enemy_faction, member_id, member_name, proof,
-              enemy_player_id, enemy_player_name,
-              item, qty, price, notes
-            FROM med_deals
-            ORDER BY id DESC
-            LIMIT ?
-        """, (int(limit),))
-        rows = cur.fetchall()
-        out = []
-        for r in rows:
-            out.append({
-                "id": r[0],
-                "created_at": r[1],
-                "reporter_id": r[2],
-                "reporter_name": r[3],
-                "war_opponent_id": r[4],
-                "war_opponent_name": r[5],
-                "enemy_faction": r[6],
-                "member_id": r[7],
-                "member_name": r[8],
-                "proof": r[9],
-                "enemy_player_id": r[10],
-                "enemy_player_name": r[11],
-                "item": r[12],
-                "qty": r[13],
-                "price": r[14],
-                "notes": r[15],
-            })
-        return out
-    finally:
-        con.close()
-
-def add_med_deal(payload: dict):
-    created_at = now_iso()
-    reporter_id = str(payload.get("reporter_id") or "").strip()
-    reporter_name = (payload.get("reporter_name") or "").strip()
-
-    war_opponent_id = str(payload.get("war_opponent_id") or "").strip() or None
-    war_opponent_name = (payload.get("war_opponent_name") or "").strip() or None
-    enemy_faction = (payload.get("enemy_faction") or "").strip() or None
-
-    enemy_player_id = str(payload.get("enemy_player_id") or "").strip() or None
-    enemy_player_name = (payload.get("enemy_player_name") or "").strip() or None
-
-    member_id = str(payload.get("member_id") or "").strip() or None
-    member_name = (payload.get("member_name") or "").strip() or None
-
-    notes = (payload.get("notes") or "").strip() or None
-
-    if not reporter_id:
-        raise ValueError("missing reporter_id")
-    if not enemy_player_id:
-        raise ValueError("missing enemy_player_id (select an enemy member)")
-    if not member_id:
-        raise ValueError("missing member_id (select our member)")
-
-    item = "MED DEAL"
-    qty = 1
-    price = None
-    proof = None
-
-    con = _md_conn()
-    try:
-        cur = con.execute("""
-            INSERT INTO med_deals (
-                created_at, reporter_id, reporter_name,
-                war_opponent_id, war_opponent_name,
-                enemy_faction, member_id, member_name, proof,
-                enemy_player_id, enemy_player_name,
-                item, qty, price, notes
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            created_at, reporter_id, reporter_name,
-            war_opponent_id, war_opponent_name,
-            enemy_faction, member_id, member_name, proof,
-            enemy_player_id, enemy_player_name,
-            item, qty, price, notes
-        ))
-        con.commit()
-        return cur.lastrowid
-    finally:
-        con.close()
-
-def delete_med_deal(deal_id: int, requester_id: str):
-    requester_id = str(requester_id or "").strip()
-    if not requester_id:
-        raise ValueError("missing requester_id")
-
-    con = _md_conn()
-    try:
-        cur = con.execute("SELECT reporter_id FROM med_deals WHERE id = ?", (int(deal_id),))
-        row = cur.fetchone()
-        if not row:
-            return False, "not found"
-        reporter_id = str(row[0])
-
-        if requester_id != reporter_id and requester_id not in MED_DEALS_ADMIN_IDS:
-            return False, "forbidden"
-
-        con.execute("DELETE FROM med_deals WHERE id = ?", (int(deal_id),))
-        con.commit()
-        return True, "deleted"
-    finally:
-        con.close()
-
-# ✅ Panel HTML (unchanged from your current file)
-HTML = r"""<!doctype html><html><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>⚔ 7DS*: WRATH WAR PANEL</title></head><body><pre>Use /state in overlay. Panel HTML left as-is in your file.</pre></body></html>"""
-
-@app.route("/ping")
-def ping():
-    return "pong"
 
 @app.route("/health")
 def health():
-    return "ok"
+    return ok(service=APP_NAME, status="healthy", now=utc_now())
 
-@app.route("/state")
-def state():
-    return jsonify(STATE)
 
-@app.route("/")
-def panel():
-    you_sections = split_sections(STATE.get("rows") or [])
-    them_sections = split_sections((STATE.get("enemy") or {}).get("rows") or [])
-    return render_template_string(
-        HTML,
-        updated_at=STATE.get("updated_at"),
-        counts=STATE.get("counts", {}),
-        available_count=STATE.get("available_count", 0),
-        war=STATE.get("war", {}),
-        faction=STATE.get("faction", {}),
-        enemy=STATE.get("enemy", {}),
-        last_error=STATE.get("last_error"),
-        you=you_sections,
-        them=them_sections,
-        med_deals=STATE.get("med_deals") or [],
-    )
+@app.route("/static/<path:path>")
+def static_proxy(path):
+    return send_from_directory("static", path)
 
-@app.route("/api/availability", methods=["POST"])
-def api_availability():
-    """
-    ✅ Any member can opt in/out (token protected if AVAIL_TOKEN set)
-    ✅ Still self-only: requester_id must match torn_id
-    """
+
+@app.post("/api/auth")
+def api_auth():
     try:
-        if not token_ok(request):
-            return jsonify({"ok": False, "error": "unauthorized"}), 401
-
         data = request.get_json(force=True, silent=True) or {}
-        torn_id = str(data.get("torn_id") or data.get("id") or "").strip()
-        available = bool(data.get("available", False))
+        admin_key = str(data.get("admin_key", "")).strip()
+        api_key = str(data.get("api_key", "")).strip()
 
-        requester_id = (
-            request.headers.get("X-Requester-Id")
-            or data.get("requester_id")
-            or request.args.get("requester_id")
-            or ""
-        ).strip()
+        if not admin_key:
+            return err("Missing admin key.")
+        if ADMIN_KEYS and admin_key not in ADMIN_KEYS:
+            return err("Invalid admin key.", 403)
+        if not api_key:
+            return err("Missing Torn API key.")
 
-        if not torn_id:
-            return jsonify({"ok": False, "error": "missing id"}), 400
+        me = me_basic(api_key)
+        if not me.get("ok"):
+            return err(me.get("error", "Could not verify Torn API key."), 400)
 
-        # ✅ self-only (prevents toggling others)
-        if requester_id and requester_id != torn_id:
-            return jsonify({"ok": False, "error": "forbidden"}), 403
+        user_id = str(me["player"]["user_id"])
+        name = me["player"]["name"]
+        faction_id = str(me["player"].get("faction_id") or "")
+        faction_name = me["player"].get("faction_name") or ""
 
-        upsert_availability(torn_id, available)
+        upsert_user(
+            user_id=user_id,
+            name=name,
+            api_key=api_key,
+            faction_id=faction_id,
+            faction_name=faction_name,
+        )
 
-        # ✅ update current in-memory STATE instantly (so /state reflects it right away)
-        try:
-            # update the row flag + available_count
-            ac = 0
-            for r in STATE.get("rows") or []:
-                if str(r.get("id")) == torn_id:
-                    r["available"] = bool(available)
-                if bool(r.get("available", False)):
-                    ac += 1
-            STATE["available_count"] = ac
+        token = create_session(user_id)
+        add_notification(
+            user_id,
+            "auth",
+            f"Logged into {APP_NAME} successfully.",
+        )
 
-            # rebuild chain_sitters = all opted-in
-            cs = []
-            for r in STATE.get("rows") or []:
-                if bool(r.get("available", False)):
-                    cs.append({
-                        "id": str(r.get("id")),
-                        "name": r.get("name") or "—",
-                        "available": True,
-                        "status": r.get("status") or "offline",
-                    })
-            cs.sort(key=lambda x: (x.get("name") or ""))
-            STATE["chain_sitters"] = cs
-        except Exception:
-            pass
-
-        STATE["med_deals"] = list_med_deals(MED_DEALS_LIMIT)
-        STATE["updated_at"] = now_iso()
-
-        return jsonify({"ok": True, "id": torn_id, "available": available})
-
+        return ok(
+            token=token,
+            user={
+                "user_id": user_id,
+                "name": name,
+                "faction_id": faction_id,
+                "faction_name": faction_name,
+                "profile_url": profile_url(user_id),
+            },
+        )
     except Exception as e:
-        STATE["last_error"] = {"error": f"OPT API ERROR: {e}"}
-        STATE["updated_at"] = now_iso()
-        return jsonify({"ok": False, "error": str(e)}), 500
+        return err(f"Auth failed: {e}", 500)
 
-@app.route("/api/med_deals", methods=["GET"])
-def api_med_deals_list():
+
+@app.get("/api/state")
+@require_session
+def api_state():
     try:
-        return jsonify({"ok": True, "deals": list_med_deals(MED_DEALS_LIMIT)})
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+        user_id = request.session["user_id"]
+        user = get_user(user_id)
+        if not user:
+            return err("User not found.", 404)
 
-@app.route("/api/med_deals", methods=["POST"])
+        api_key = user["api_key"]
+        faction_id = user["faction_id"] or ""
+        faction_name = user["faction_name"] or ""
+
+        faction = {"ok": False, "members": []}
+        if faction_id:
+            faction = faction_basic(api_key)
+
+        members = []
+        for m in faction.get("members", []):
+            members.append(
+                {
+                    "user_id": str(m.get("user_id", "")),
+                    "name": m.get("name", "Unknown"),
+                    "status": m.get("status", ""),
+                    "position": m.get("position", ""),
+                    "level": m.get("level", ""),
+                    "last_action": m.get("last_action", ""),
+                    "available": int(m.get("available", 1)),
+                    "chain_sitter": int(m.get("chain_sitter", 0)),
+                    "profile_url": profile_url(str(m.get("user_id", ""))),
+                }
+            )
+
+        return ok(
+            me={
+                "user_id": user["user_id"],
+                "name": user["name"],
+                "faction_id": faction_id,
+                "faction_name": faction_name,
+                "profile_url": profile_url(user["user_id"]),
+            },
+            war={
+                "active": True if faction_id else False,
+                "faction_id": faction_id,
+                "faction_name": faction_name,
+                "member_count": len(members),
+            },
+            members=members,
+            med_deals=list_med_deals(user_id),
+            targets=list_targets(user_id),
+            bounties=list_bounties(user_id),
+            notifications=list_notifications(user_id),
+        )
+    except Exception as e:
+        return err(f"Could not load state: {e}", 500)
+
+
+@app.post("/api/availability/set")
+@require_session
+def api_availability_set():
+    try:
+        user_id = request.session["user_id"]
+        data = request.get_json(force=True, silent=True) or {}
+        value = 1 if bool(data.get("available")) else 0
+        set_availability(user_id, value)
+        return ok(message="Availability updated.")
+    except Exception as e:
+        return err(f"Could not update availability: {e}", 500)
+
+
+@app.post("/api/chain-sitter/set")
+@require_session
+def api_chain_sitter_set():
+    try:
+        user_id = request.session["user_id"]
+        data = request.get_json(force=True, silent=True) or {}
+        value = 1 if bool(data.get("enabled")) else 0
+        set_chain_sitter(user_id, value)
+        return ok(message="Chain sitter updated.")
+    except Exception as e:
+        return err(f"Could not update chain sitter: {e}", 500)
+
+
+@app.post("/api/med-deals/add")
+@require_session
 def api_med_deals_add():
     try:
-        if not token_ok(request):
-            return jsonify({"ok": False, "error": "unauthorized"}), 401
-
+        user_id = request.session["user_id"]
         data = request.get_json(force=True, silent=True) or {}
 
-        war = STATE.get("war") or {}
-        data.setdefault("war_opponent_id", war.get("opponent_id"))
-        data.setdefault("war_opponent_name", war.get("opponent"))
+        buyer_name = str(data.get("buyer_name", "")).strip()
+        seller_name = str(data.get("seller_name", "")).strip()
+        amount = int(data.get("amount") or 0)
+        notes = str(data.get("notes", "")).strip()
 
-        enemy = STATE.get("enemy") or {}
-        ef = (enemy.get("faction") or {})
-        if ef.get("name"):
-            snap = ef.get("name")
-            if ef.get("id"):
-                snap = f"{snap} ({ef.get('id')})"
-            data.setdefault("enemy_faction", snap)
+        if not buyer_name and not seller_name:
+            return err("Enter a buyer or seller name.")
+        if amount < 0:
+            return err("Amount must be 0 or more.")
 
-        new_id = add_med_deal(data)
-
-        STATE["med_deals"] = list_med_deals(MED_DEALS_LIMIT)
-        STATE["updated_at"] = now_iso()
-        return jsonify({"ok": True, "id": new_id})
-
-    except ValueError as ve:
-        return jsonify({"ok": False, "error": str(ve)}), 400
+        add_med_deal(user_id, buyer_name, seller_name, amount, notes)
+        return ok(message="Med deal added.")
     except Exception as e:
-        STATE["last_error"] = {"error": f"MED DEALS ADD ERROR: {e}"}
-        STATE["updated_at"] = now_iso()
-        return jsonify({"ok": False, "error": str(e)}), 500
+        return err(f"Could not add med deal: {e}", 500)
 
-@app.route("/api/med_deals/<int:deal_id>", methods=["DELETE"])
-def api_med_deals_delete(deal_id: int):
+
+@app.post("/api/med-deals/delete")
+@require_session
+def api_med_deals_delete():
     try:
-        if not token_ok(request):
-            return jsonify({"ok": False, "error": "unauthorized"}), 401
-
-        requester_id = (
-            request.headers.get("X-Requester-Id")
-            or request.args.get("requester_id")
-            or ""
-        ).strip()
-
-        if not requester_id:
-            return jsonify({"ok": False, "error": "missing requester_id"}), 400
-
-        ok, msg = delete_med_deal(deal_id, requester_id=requester_id)
-        if not ok:
-            code = 404 if msg == "not found" else 403
-            return jsonify({"ok": False, "error": msg}), code
-
-        STATE["med_deals"] = list_med_deals(MED_DEALS_LIMIT)
-        STATE["updated_at"] = now_iso()
-
-        return jsonify({"ok": True, "id": deal_id})
-
+        user_id = request.session["user_id"]
+        data = request.get_json(force=True, silent=True) or {}
+        deal_id = int(data.get("id") or 0)
+        if not deal_id:
+            return err("Missing med deal id.")
+        delete_med_deal(user_id, deal_id)
+        return ok(message="Med deal deleted.")
     except Exception as e:
-        STATE["last_error"] = {"error": f"MED DEALS DELETE ERROR: {e}"}
-        STATE["updated_at"] = now_iso()
-        return jsonify({"ok": False, "error": str(e)}), 500
+        return err(f"Could not delete med deal: {e}", 500)
 
-async def poll_once():
-    if not FACTION_ID or not FACTION_API_KEY:
-        raise RuntimeError("Missing FACTION_ID or FACTION_API_KEY env vars.")
 
-    avail_map = get_availability_map()
+@app.post("/api/targets/add")
+@require_session
+def api_targets_add():
+    try:
+        user_id = request.session["user_id"]
+        data = request.get_json(force=True, silent=True) or {}
 
-    our_payload = await get_faction_core(FACTION_ID, FACTION_API_KEY)
-    if isinstance(our_payload, dict) and our_payload.get("error"):
-        raise RuntimeError(f"Torn API error (core): {our_payload.get('error')}")
+        target_id = str(data.get("target_id", "")).strip()
+        target_name = str(data.get("target_name", "")).strip()
+        notes = str(data.get("notes", "")).strip()
 
-    rows, counts, available_count, header, chain = normalize_faction_rows(our_payload, avail_map=avail_map)
+        if not target_id and not target_name:
+            return err("Enter a target id or name.")
 
-    STATE["rows"] = rows
-    STATE["counts"] = counts
-    STATE["available_count"] = available_count
-    STATE["faction"] = header
-    STATE["chain"] = chain
+        add_target(user_id, target_id, target_name, notes)
+        return ok(message="Target added.")
+    except Exception as e:
+        return err(f"Could not add target: {e}", 500)
 
-    # ✅ CHAIN SITTERS = opted-in members (available==True)
-    cs = []
-    for r in rows:
-        if bool(r.get("available", False)):
-            cs.append({
-                "id": str(r.get("id")),
-                "name": r.get("name") or "—",
-                "available": True,
-                "status": r.get("status") or "offline",
-            })
-    cs.sort(key=lambda x: (x.get("name") or ""))
-    STATE["chain_sitters"] = cs
 
-    war = await get_ranked_war_best(FACTION_ID, FACTION_API_KEY)
-    if isinstance(war, dict) and war.get("error"):
-        war = {}
+@app.post("/api/targets/delete")
+@require_session
+def api_targets_delete():
+    try:
+        user_id = request.session["user_id"]
+        data = request.get_json(force=True, silent=True) or {}
+        target_id = int(data.get("id") or 0)
+        if not target_id:
+            return err("Missing target id.")
+        delete_target(user_id, target_id)
+        return ok(message="Target deleted.")
+    except Exception as e:
+        return err(f"Could not delete target: {e}", 500)
 
-    STATE["war"] = {
-        "opponent": war.get("opponent"),
-        "opponent_id": war.get("opponent_id"),
-        "start": war.get("start"),
-        "end": war.get("end"),
-        "target": war.get("target"),
-        "score": war.get("score"),
-        "enemy_score": war.get("enemy_score"),
-    }
 
-    opp_id = war.get("opponent_id")
-    if opp_id:
-        enemy_payload = await get_faction_core(str(opp_id), FACTION_API_KEY)
-        if isinstance(enemy_payload, dict) and enemy_payload.get("error"):
-            STATE["enemy"] = {
-                "supported": True,
-                "reason": f"Enemy fetch error: {enemy_payload.get('error')}",
-                "faction": {"name": None, "tag": None, "respect": None, "id": str(opp_id)},
-                "rows": [],
-                "counts": {"online": 0, "idle": 0, "offline": 0, "hospital": 0},
-                "updated_at": now_iso(),
-            }
-        else:
-            erows, ecounts, _, eheader, _ = normalize_faction_rows(enemy_payload, avail_map={})
-            eheader["id"] = str(opp_id)
-            STATE["enemy"] = {
-                "supported": True,
-                "reason": None,
-                "faction": eheader,
-                "rows": erows,
-                "counts": ecounts,
-                "updated_at": now_iso(),
-            }
-    else:
-        STATE["enemy"] = {
-            "supported": True,
-            "reason": None,
-            "faction": {"name": None, "tag": None, "respect": None, "id": None},
-            "rows": [],
-            "counts": {"online": 0, "idle": 0, "offline": 0, "hospital": 0},
-            "updated_at": None,
-        }
+@app.post("/api/bounties/add")
+@require_session
+def api_bounties_add():
+    try:
+        user_id = request.session["user_id"]
+        data = request.get_json(force=True, silent=True) or {}
 
-    STATE["med_deals"] = list_med_deals(MED_DEALS_LIMIT)
-    STATE["updated_at"] = now_iso()
-    STATE["last_error"] = None
+        target_id = str(data.get("target_id", "")).strip()
+        target_name = str(data.get("target_name", "")).strip()
+        reward_text = str(data.get("reward_text", "")).strip()
 
-async def poll_loop():
-    while True:
-        try:
-            await poll_once()
-        except Exception as e:
-            STATE["last_error"] = {"error": str(e)}
-            STATE["updated_at"] = now_iso()
-        await asyncio.sleep(POLL_SECONDS)
+        if not target_id and not target_name:
+            return err("Enter a target id or name.")
+        if not reward_text:
+            return err("Enter a reward.")
 
-def start_poll_thread():
-    def runner():
-        asyncio.run(poll_loop())
-    threading.Thread(target=runner, daemon=True).start()
+        add_bounty(user_id, target_id, target_name, reward_text)
+        return ok(message="Bounty added.")
+    except Exception as e:
+        return err(f"Could not add bounty: {e}", 500)
 
-@app.before_request
-def boot_once():
-    global BOOTED
-    if request.path in ("/health", "/ping"):
-        return
-    if BOOTED:
-        return
-    with BOOT_LOCK:
-        if BOOTED:
-            return
-        try:
-            init_db()
-            init_med_deals_db()
-            start_poll_thread()
-            BOOTED = True
-        except Exception as e:
-            STATE["last_error"] = {"error": f"BOOT ERROR: {e}"}
-            STATE["updated_at"] = now_iso()
-            BOOTED = True
+
+@app.post("/api/bounties/delete")
+@require_session
+def api_bounties_delete():
+    try:
+        user_id = request.session["user_id"]
+        data = request.get_json(force=True, silent=True) or {}
+        bounty_id = int(data.get("id") or 0)
+        if not bounty_id:
+            return err("Missing bounty id.")
+        delete_bounty(user_id, bounty_id)
+        return ok(message="Bounty deleted.")
+    except Exception as e:
+        return err(f"Could not delete bounty: {e}", 500)
+
+
+@app.get("/api/notifications")
+@require_session
+def api_notifications():
+    try:
+        user_id = request.session["user_id"]
+        return ok(notifications=list_notifications(user_id))
+    except Exception as e:
+        return err(f"Could not load notifications: {e}", 500)
+
+
+@app.post("/api/notifications/seen")
+@require_session
+def api_notifications_seen():
+    try:
+        user_id = request.session["user_id"]
+        mark_notifications_seen(user_id)
+        return ok(message="Notifications marked seen.")
+    except Exception as e:
+        return err(f"Could not update notifications: {e}", 500)
+
+
+@app.errorhandler(404)
+def not_found(_e):
+    return err("404 Not Found: The requested URL was not found on the server.", 404)
+
+
+@app.errorhandler(Exception)
+def handle_exception(e):
+    return err(f"Unhandled error: {e}", 500)
+
 
 if __name__ == "__main__":
     init_db()
-    init_med_deals_db()
-    start_poll_thread()
-    port = int(os.getenv("PORT", "10000"))
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", "10000")), debug=False)
+else:
+    init_db()
