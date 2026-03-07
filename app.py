@@ -29,16 +29,19 @@ from db import (
     add_notification,
     mark_notifications_seen,
 )
-from torn_api import me_basic, faction_basic, profile_url, attack_url, bounty_url
+from torn_api import (
+    me_basic,
+    faction_basic,
+    ranked_war_summary,
+    profile_url,
+    attack_url,
+    bounty_url,
+)
 
 load_dotenv()
 
 APP_NAME = "War Hub"
-ADMIN_KEYS = {
-    k.strip()
-    for k in os.getenv("ADMIN_KEYS", "").split(",")
-    if k.strip()
-}
+ADMIN_KEYS = {k.strip() for k in os.getenv("ADMIN_KEYS", "").split(",") if k.strip()}
 
 app = Flask(__name__, static_folder="static")
 
@@ -85,7 +88,7 @@ def _merge_faction_members(faction_id: str, members: list) -> Dict[str, Any]:
     merged = []
     chain_sitters = []
     available_count = 0
-    local_linked_count = 0
+    linked_user_count = 0
 
     for m in members:
         uid = str(m.get("user_id") or "")
@@ -93,10 +96,10 @@ def _merge_faction_members(faction_id: str, members: list) -> Dict[str, Any]:
 
         available = int(local["available"]) if local else 1
         chain_sitter = int(local["chain_sitter"]) if local else 0
-        linked = bool(local)
+        linked_user = bool(local)
 
-        if linked:
-            local_linked_count += 1
+        if linked_user:
+            linked_user_count += 1
         if available:
             available_count += 1
 
@@ -109,7 +112,7 @@ def _merge_faction_members(faction_id: str, members: list) -> Dict[str, Any]:
             "last_action": m.get("last_action", ""),
             "available": available,
             "chain_sitter": chain_sitter,
-            "linked_user": linked,
+            "linked_user": linked_user,
             "profile_url": profile_url(uid),
             "attack_url": attack_url(uid),
             "bounty_url": bounty_url(uid),
@@ -117,13 +120,15 @@ def _merge_faction_members(faction_id: str, members: list) -> Dict[str, Any]:
         merged.append(item)
 
         if chain_sitter:
-            chain_sitters.append({
-                "user_id": uid,
-                "name": item["name"],
-                "level": item["level"],
-                "profile_url": item["profile_url"],
-                "attack_url": item["attack_url"],
-            })
+            chain_sitters.append(
+                {
+                    "user_id": uid,
+                    "name": item["name"],
+                    "level": item["level"],
+                    "profile_url": item["profile_url"],
+                    "attack_url": item["attack_url"],
+                }
+            )
 
     merged.sort(key=lambda x: (0 if x["available"] else 1, (x["name"] or "").lower()))
     chain_sitters.sort(key=lambda x: (x["name"] or "").lower())
@@ -132,7 +137,7 @@ def _merge_faction_members(faction_id: str, members: list) -> Dict[str, Any]:
         "members": merged,
         "chain_sitters": chain_sitters,
         "available_count": available_count,
-        "local_linked_count": local_linked_count,
+        "linked_user_count": linked_user_count,
     }
 
 
@@ -146,6 +151,7 @@ def root():
             "/health",
             "/api/auth",
             "/api/state",
+            "/static/war-bot.user.js",
         ],
     )
 
@@ -192,11 +198,7 @@ def api_auth():
         )
 
         token = create_session(user_id)
-        add_notification(
-            user_id,
-            "auth",
-            f"Logged into {APP_NAME} successfully.",
-        )
+        add_notification(user_id, "auth", f"Logged into {APP_NAME} successfully.")
 
         return ok(
             token=token,
@@ -229,11 +231,8 @@ def api_state():
             "ok": True,
             "faction_id": faction_id,
             "faction_name": faction_name,
-            "enemy_faction_name": "",
-            "enemy_faction_id": "",
             "members": [],
         }
-
         if faction_id:
             faction = faction_basic(api_key)
             if not faction.get("ok"):
@@ -244,10 +243,11 @@ def api_state():
             faction.get("members", []),
         )
 
-        members = merged["members"]
-        chain_sitters = merged["chain_sitters"]
-        available_count = merged["available_count"]
-        local_linked_count = merged["local_linked_count"]
+        war_summary = ranked_war_summary(
+            api_key=api_key,
+            my_faction_id=str(faction.get("faction_id", faction_id) or ""),
+            my_faction_name=str(faction.get("faction_name", faction_name) or ""),
+        )
 
         return ok(
             me={
@@ -260,18 +260,30 @@ def api_state():
                 "chain_sitter": int(user.get("chain_sitter", 0)),
             },
             war={
-                "active": bool(faction.get("faction_id")),
+                "active": bool(war_summary.get("active")) or bool(faction.get("faction_id")),
                 "faction_id": faction.get("faction_id", faction_id),
                 "faction_name": faction.get("faction_name", faction_name),
-                "enemy_faction_id": faction.get("enemy_faction_id", ""),
-                "enemy_faction_name": faction.get("enemy_faction_name", ""),
-                "member_count": len(members),
-                "available_count": available_count,
-                "chain_sitter_count": len(chain_sitters),
-                "linked_user_count": local_linked_count,
+                "enemy_faction_id": war_summary.get("enemy_faction_id", ""),
+                "enemy_faction_name": war_summary.get("enemy_faction_name", ""),
+                "member_count": len(merged["members"]),
+                "available_count": merged["available_count"],
+                "chain_sitter_count": len(merged["chain_sitters"]),
+                "linked_user_count": merged["linked_user_count"],
+                "war_id": war_summary.get("war_id", ""),
+                "war_type": war_summary.get("war_type", ""),
+                "score_us": war_summary.get("score_us", 0),
+                "score_them": war_summary.get("score_them", 0),
+                "lead": war_summary.get("lead", 0),
+                "target_score": war_summary.get("target_score", 0),
+                "remaining_to_target": war_summary.get("remaining_to_target", 0),
+                "start": war_summary.get("start", 0),
+                "end": war_summary.get("end", 0),
+                "status_text": war_summary.get("status_text", ""),
+                "source_ok": bool(war_summary.get("source_ok")),
+                "source_note": war_summary.get("source_note", ""),
             },
-            members=members,
-            chain_sitters=chain_sitters,
+            members=merged["members"],
+            chain_sitters=merged["chain_sitters"],
             med_deals=list_med_deals(user_id),
             targets=list_targets(user_id),
             bounties=list_bounties(user_id),
@@ -371,10 +383,10 @@ def api_targets_delete():
     try:
         user_id = request.session["user_id"]
         data = request.get_json(force=True, silent=True) or {}
-        target_id = int(data.get("id") or 0)
-        if not target_id:
+        target_row_id = int(data.get("id") or 0)
+        if not target_row_id:
             return err("Missing target id.")
-        delete_target(user_id, target_id)
+        delete_target(user_id, target_row_id)
         return ok(message="Target deleted.")
     except Exception as e:
         return err(f"Could not delete target: {e}", 500)
