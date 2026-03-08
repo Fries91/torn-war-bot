@@ -1,27 +1,27 @@
 // ==UserScript==
 // @name         War Hub 🛡️
 // @namespace    fries91-war-hub
-// @version      1.2.0
+// @version      1.2.1
 // @description  War Hub by Fries91. T.S.E style auth/state flow. Draggable shield, PDA friendly overlay, merged faction statuses, chain sitters, med deals, targets, bounties.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
 // @downloadURL  https://torn-war-bot.onrender.com/static/war-bot.user.js
-// @updateURL   https://torn-war-bot.onrender.com/static/war-bot.user.js
+// @updateURL    https://torn-war-bot.onrender.com/static/war-bot.user.js
 // @run-at       document-idle
 // @grant        GM_addStyle
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        GM_deleteValue
 // @grant        GM_xmlhttpRequest
-// @connect      https://torn-war-bot.onrender.com
+// @connect      torn-war-bot.onrender.com
 // ==/UserScript==
 
 (function () {
   "use strict";
 
   // ================= USER CONFIG =================
-  const BASE_URL = "https://YOUR-RENDER-DOMAIN.onrender.com/static/war-bot.user.js";
-  const ADMIN_KEY = "666,613,925,001";
+  const BASE_URL = "https://torn-war-bot.onrender.com";
+  const ADMIN_KEY = "666";
   // ==============================================
 
   const K_API_KEY = "warhub_api_key_v1";
@@ -278,6 +278,13 @@
     .pill.gold { background: rgba(190,145,20,.25); color: #ffe084; }
     .pill.gray { background: rgba(255,255,255,.08); color: #ddd; }
 
+    .warhub-tos {
+      font-size: 11px;
+      line-height: 1.45;
+      opacity: .86;
+      white-space: normal;
+    }
+
     @media (max-width: 700px) {
       #warhub-overlay {
         width: calc(100vw - 16px);
@@ -360,7 +367,10 @@
 
   async function login() {
     const apiKey = (GM_getValue(K_API_KEY, "") || "").trim();
-    if (!apiKey) return false;
+    if (!apiKey) {
+      setStatus("Save your Torn API key in Settings first.", true);
+      return false;
+    }
 
     const res = await req("POST", "/api/auth", {
       api_key: apiKey,
@@ -626,6 +636,17 @@
           <button class="warhub-btn alt" id="wh-logout">Clear Session</button>
         </div>
       </div>
+
+      <div class="warhub-card">
+        <h3>Terms of Service</h3>
+        <div class="warhub-tos">
+          By using War Hub, you agree that this tool is provided as-is for faction coordination and convenience.
+          You are responsible for your own Torn account, API key, and any actions taken through links or quick actions.
+          Do not share your personal API key with anyone you do not trust.
+          Access may be removed for abuse, misuse, harassment, or attempts to interfere with the service.
+          Features may change, be updated, or be removed at any time.
+        </div>
+      </div>
     `;
   }
 
@@ -807,9 +828,21 @@
 
     const saveSettings = overlay.querySelector("#wh-save-settings");
     if (saveSettings) {
-      saveSettings.addEventListener("click", () => {
-        GM_setValue(K_API_KEY, val("#wh-api-key"));
-        setStatus("API key saved.");
+      saveSettings.addEventListener("click", async () => {
+        const newKey = val("#wh-api-key");
+        if (!newKey) {
+          setStatus("Enter your Torn API key first.", true);
+          return;
+        }
+
+        GM_setValue(K_API_KEY, newKey);
+        GM_deleteValue(K_SESSION);
+        setStatus("API key saved. Logging in...");
+        const okLogin = await login();
+        if (okLogin) {
+          setStatus("API key saved and logged in.");
+          await loadState();
+        }
       });
     }
 
