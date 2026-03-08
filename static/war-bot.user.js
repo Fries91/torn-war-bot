@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         War Hub ⚔️
 // @namespace    fries91-war-hub
-// @version      1.5.4
-// @description  War Hub by Fries91. Smaller draggable ⚔️ icon, draggable overlay, fixed enemy faction detection, tighter PDA friendly layout.
+// @version      1.5.5
+// @description  War Hub by Fries91. PDA friendly draggable ⚔️ icon, draggable overlay, quick links restored, bounty tab removed.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
 // @downloadURL  https://torn-war-bot.onrender.com/static/war-bot.user.js
@@ -86,8 +86,8 @@
       z-index: 2147483646 !important;
       right: 12px;
       top: 170px;
-      width: min(94vw, 438px);
-      max-height: 76vh;
+      width: min(94vw, 430px);
+      max-height: 78vh;
       overflow: hidden;
       border-radius: 14px;
       background: linear-gradient(180deg, #161616, #0c0c0c);
@@ -177,8 +177,9 @@
 
     .warhub-body {
       padding: 8px;
-      max-height: calc(76vh - 104px);
+      max-height: calc(78vh - 104px);
       overflow: auto;
+      -webkit-overflow-scrolling: touch;
     }
 
     .warhub-card {
@@ -201,6 +202,10 @@
 
     .warhub-grid.two {
       grid-template-columns: 1fr 1fr;
+    }
+
+    .warhub-grid.three {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
     }
 
     .warhub-input, .warhub-textarea, .warhub-select {
@@ -228,6 +233,9 @@
       font-weight: 800;
       cursor: pointer;
       font-size: 11px;
+      text-align: center;
+      text-decoration: none;
+      display: inline-block;
     }
 
     .warhub-btn.alt {
@@ -311,35 +319,6 @@
       white-space: normal;
     }
 
-    .warhub-overview-grid {
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 7px;
-    }
-
-    .warhub-stat {
-      background: rgba(255,255,255,.04);
-      border: 1px solid rgba(255,255,255,.07);
-      border-radius: 11px;
-      padding: 8px;
-      min-width: 0;
-    }
-
-    .warhub-stat-label {
-      font-size: 9px;
-      opacity: .72;
-      text-transform: uppercase;
-      letter-spacing: .45px;
-      margin-bottom: 3px;
-    }
-
-    .warhub-stat-value {
-      font-size: 13px;
-      font-weight: 800;
-      line-height: 1.25;
-      word-break: break-word;
-    }
-
     .warhub-score-grid {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -395,14 +374,25 @@
       word-break: break-word;
     }
 
+    .warhub-quick-links {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 7px;
+    }
+
+    .warhub-quick-links .warhub-btn {
+      width: 100%;
+      box-sizing: border-box;
+    }
+
     @media (max-width: 700px) {
       #warhub-overlay {
-        width: calc(100vw - 14px) !important;
-        left: 7px !important;
+        width: calc(100vw - 12px) !important;
+        left: 6px !important;
         right: auto !important;
-        top: 58px !important;
+        top: 54px !important;
         bottom: auto !important;
-        max-height: calc(100vh - 124px) !important;
+        max-height: calc(100vh - 118px) !important;
       }
 
       #warhub-shield {
@@ -413,12 +403,14 @@
       }
 
       .warhub-body {
-        max-height: calc(100vh - 182px);
+        max-height: calc(100vh - 175px);
       }
 
       .warhub-grid.two,
-      .warhub-overview-grid {
-        grid-template-columns: 1fr 1fr;
+      .warhub-grid.three,
+      .warhub-score-grid,
+      .warhub-quick-links {
+        grid-template-columns: 1fr;
       }
 
       .warhub-toprow {
@@ -431,12 +423,6 @@
     }
 
     @media (max-width: 430px) {
-      .warhub-overview-grid,
-      .warhub-grid.two,
-      .warhub-score-grid {
-        grid-template-columns: 1fr;
-      }
-
       #warhub-shield {
         width: 38px;
         height: 38px;
@@ -669,6 +655,7 @@
       myFaction.id ??
       myFaction.faction_id ??
       me.faction_id ??
+      war.faction_id ??
       ""
     );
 
@@ -845,18 +832,8 @@
     }
   }
 
-  function statCard(label, value) {
-    return `
-      <div class="warhub-stat">
-        <div class="warhub-stat-label">${esc(label)}</div>
-        <div class="warhub-stat-value">${esc(value)}</div>
-      </div>
-    `;
-  }
-
   function renderWarTab() {
     const ctx = resolveWarContext();
-    const me = ctx.me || {};
     const war = ctx.war || {};
     const statusText = war.status_text || (war.active ? "War active" : "No active war");
 
@@ -883,25 +860,14 @@
             <div class="warhub-score-sub">${esc(statusText)}</div>
           </div>
         </div>
-
-        <div class="warhub-overview-grid" style="margin-top:9px;">
-          ${statCard("You", me.name || "-")}
-          ${statCard("Enemy Faction", ctx.enemyFactionName || "-")}
-          ${statCard("Enemy ID", ctx.enemyFactionId || "-")}
-          ${statCard("Members", ctx.members.length)}
-          ${statCard("Enemies", ctx.enemies.length)}
-          ${statCard("Available", war.available_count || 0)}
-          ${statCard("Chain Sitters", war.chain_sitter_count || 0)}
-          ${statCard("Linked Users", war.linked_user_count || 0)}
-          ${statCard("Status", statusText)}
-        </div>
       </div>
 
       <div class="warhub-card">
-        <h3>My Status</h3>
-        <div style="margin-bottom:6px;">
-          <span class="pill ${Number(me.available) ? "green" : "red"}">${Number(me.available) ? "Available" : "Unavailable"}</span>
-          <span class="pill ${Number(me.chain_sitter) ? "gold" : "gray"}">${Number(me.chain_sitter) ? "Chain Sit In" : "Chain Sit Out"}</span>
+        <h3>Quick Links</h3>
+        <div class="warhub-quick-links">
+          <a class="warhub-btn" href="https://www.torn.com/factions.php?step=your#/war/rank" target="_blank" rel="noreferrer">Faction War</a>
+          <a class="warhub-btn" href="https://www.torn.com/bounties.php" target="_blank" rel="noreferrer">Bounties</a>
+          <a class="warhub-btn" href="https://www.torn.com/hospitalview.php" target="_blank" rel="noreferrer">Hospital</a>
         </div>
       </div>
     `;
@@ -1102,39 +1068,6 @@
     `;
   }
 
-  function renderBountiesTab() {
-    const items = state?.bounties || [];
-    return `
-      <div class="warhub-card">
-        <h3>Add Bounty</h3>
-        <div class="warhub-grid two">
-          <input id="wh-bounty-id" class="warhub-input" placeholder="Target ID">
-          <input id="wh-bounty-name" class="warhub-input" placeholder="Target name">
-        </div>
-        <div style="margin-top:7px;">
-          <input id="wh-bounty-reward" class="warhub-input" placeholder="Reward text">
-        </div>
-        <div style="margin-top:7px;">
-          <button class="warhub-btn" id="wh-add-bounty">Add Bounty</button>
-        </div>
-      </div>
-
-      <div class="warhub-card">
-        <h3>Saved Bounties</h3>
-        ${items.length ? items.map(x => `
-          <div class="warhub-list-item">
-            <div><strong>${esc(x.target_name || x.target_id || "Unknown")}</strong></div>
-            <div class="warhub-small">ID: ${esc(x.target_id || "-")}</div>
-            <div class="warhub-small">Reward: ${esc(x.reward_text || "")}</div>
-            <div style="margin-top:7px;">
-              <button class="warhub-btn alt wh-del-bounty" data-id="${x.id}">Delete</button>
-            </div>
-          </div>
-        `).join("") : `<div class="warhub-empty">No bounties saved.</div>`}
-      </div>
-    `;
-  }
-
   function renderSettingsTab() {
     const apiKey = GM_getValue(K_API_KEY, "") || "";
     return `
@@ -1189,7 +1122,6 @@
       case "chainsitters": return renderChainSittersTab();
       case "med": return renderMedDealsTab();
       case "targets": return renderTargetsTab();
-      case "bounties": return renderBountiesTab();
       case "notifications": return renderNotificationsTab();
       case "settings": return renderSettingsTab();
       case "war":
@@ -1223,7 +1155,6 @@
         ${tabBtn("chainsitters", "Chain Sitters")}
         ${tabBtn("med", "Med Deals")}
         ${tabBtn("targets", "Targets")}
-        ${tabBtn("bounties", "Bounties")}
         ${tabBtn("notifications", `Notes${unreadCount() ? ` (${unreadCount()})` : ""}`)}
         ${tabBtn("settings", "Settings")}
       </div>
@@ -1267,13 +1198,13 @@
     if (!shield || !overlay) return;
 
     const sr = shield.getBoundingClientRect();
-    const overlayWidth = Math.min(window.innerWidth - 16, 438);
+    const overlayWidth = Math.min(window.innerWidth - 16, 430);
     let left = sr.right - overlayWidth;
     let top = sr.bottom + 8;
 
     if (window.innerWidth <= 700) {
-      left = 7;
-      top = 58;
+      left = 6;
+      top = 54;
     }
 
     clampElementPosition(overlay, left, top);
@@ -1355,23 +1286,6 @@
     overlay.querySelectorAll(".wh-del-target").forEach(btn => {
       btn.addEventListener("click", async () => {
         await doAction("POST", "/api/targets/delete", { id: Number(btn.dataset.id) }, "Target deleted.");
-      });
-    });
-
-    const addBounty = overlay.querySelector("#wh-add-bounty");
-    if (addBounty) {
-      addBounty.addEventListener("click", async () => {
-        await doAction("POST", "/api/bounties/add", {
-          target_id: val("#wh-bounty-id"),
-          target_name: val("#wh-bounty-name"),
-          reward_text: val("#wh-bounty-reward"),
-        }, "Bounty added.");
-      });
-    }
-
-    overlay.querySelectorAll(".wh-del-bounty").forEach(btn => {
-      btn.addEventListener("click", async () => {
-        await doAction("POST", "/api/bounties/delete", { id: Number(btn.dataset.id) }, "Bounty deleted.");
       });
     });
 
