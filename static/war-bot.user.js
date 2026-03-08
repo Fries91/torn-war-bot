@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         War Hub ⚔️
 // @namespace    fries91-war-hub
-// @version      2.1.0
-// @description  War Hub by Fries91. Ultimate overlay with restored tabs, draggable icon, draggable overlay, PDA friendly, quick actions, notes, assignments, targets, med deals, hospital view, analytics, notifications, and settings.
+// @version      2.2.0
+// @description  War Hub by Fries91. Ultimate overlay with restored tabs, draggable icon, draggable overlay, PDA friendly, server-backed med deals/targets/assignments/notes, hospital view, analytics, notifications, and settings.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
 // @downloadURL  https://torn-war-bot.onrender.com/static/war-bot.user.js
@@ -30,9 +30,6 @@
   const K_OVERLAY_POS = "warhub_overlay_pos_v2";
   const K_REFRESH = "warhub_refresh_ms_v2";
   const K_NOTES = "warhub_notes_v2";
-  const K_ASSIGNMENTS = "warhub_assignments_v2";
-  const K_LOCAL_TARGETS = "warhub_local_targets_v2";
-  const K_LOCAL_MEDS = "warhub_local_meds_v2";
   const K_LOCAL_NOTIFICATIONS = "warhub_local_notifications_v2";
 
   const TAB_ORDER = [
@@ -91,6 +88,7 @@
       pointer-events: auto !important;
     }
     #warhub-shield.dragging { cursor: grabbing; }
+
     #warhub-badge {
       position: fixed !important;
       z-index: 2147483647 !important;
@@ -108,6 +106,7 @@
       display: none;
       pointer-events: none;
     }
+
     #warhub-overlay {
       position: fixed !important;
       z-index: 2147483646 !important;
@@ -129,6 +128,7 @@
       flex-direction: column;
     }
     #warhub-overlay.open { display: flex !important; }
+
     .warhub-head {
       padding: 10px 12px 9px;
       border-bottom: 1px solid rgba(255,255,255,.08);
@@ -141,14 +141,17 @@
       flex: 0 0 auto;
     }
     .warhub-head.dragging { cursor: grabbing; }
+
     .warhub-toprow {
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 10px;
     }
+
     .warhub-title { font-weight: 800; font-size: 16px; letter-spacing: .2px; }
     .warhub-sub { opacity: .72; font-size: 11px; margin-top: 2px; }
+
     .warhub-close {
       border: 0;
       border-radius: 9px;
@@ -160,6 +163,7 @@
       font-size: 12px;
       flex: 0 0 auto;
     }
+
     .warhub-tabs {
       display: flex;
       gap: 6px;
@@ -172,6 +176,7 @@
       flex: 0 0 auto;
       -webkit-overflow-scrolling: touch;
     }
+
     .warhub-tab {
       border: 0;
       border-radius: 999px;
@@ -185,6 +190,7 @@
       flex: 0 0 auto;
     }
     .warhub-tab.active { background: linear-gradient(180deg, #d23333, #831515); }
+
     .warhub-body {
       padding: 8px;
       overflow-y: auto;
@@ -192,6 +198,7 @@
       -webkit-overflow-scrolling: touch;
       flex: 1 1 auto;
     }
+
     .warhub-status {
       display: none;
       margin-bottom: 8px;
@@ -202,9 +209,11 @@
     }
     .warhub-status.show { display: block; }
     .warhub-status.err { background: rgba(185,52,52,.22); color: #ffdcdc; }
+
     .warhub-grid { display: grid; gap: 8px; }
     .warhub-grid.two { grid-template-columns: repeat(2, minmax(0,1fr)); }
     .warhub-grid.three { grid-template-columns: repeat(3, minmax(0,1fr)); }
+
     .warhub-card {
       border: 1px solid rgba(255,255,255,.07);
       background: rgba(255,255,255,.03);
@@ -212,12 +221,14 @@
       padding: 10px;
       margin-bottom: 8px;
     }
+
     .warhub-card h3 {
       margin: 0 0 8px;
       font-size: 13px;
       font-weight: 800;
       letter-spacing: .2px;
     }
+
     .warhub-metric {
       border-radius: 10px;
       background: rgba(255,255,255,.05);
@@ -226,7 +237,9 @@
     }
     .warhub-metric .k { opacity: .7; font-size: 10px; text-transform: uppercase; letter-spacing: .45px; }
     .warhub-metric .v { font-size: 16px; font-weight: 800; margin-top: 4px; }
+
     .warhub-list { display: grid; gap: 6px; }
+
     .warhub-list-item {
       border-radius: 10px;
       background: rgba(255,255,255,.04);
@@ -234,6 +247,7 @@
       display: grid;
       gap: 4px;
     }
+
     .warhub-row {
       display: flex;
       align-items: center;
@@ -241,10 +255,12 @@
       gap: 8px;
       flex-wrap: wrap;
     }
+
     .warhub-name { font-weight: 700; }
     .warhub-meta { opacity: .76; font-size: 11px; }
     .warhub-empty { opacity: .75; font-size: 12px; }
     .warhub-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+
     .warhub-btn, .warhub-input, .warhub-select, .warhub-textarea {
       font: inherit;
       border-radius: 10px;
@@ -252,24 +268,39 @@
       background: rgba(255,255,255,.05);
       color: #fff;
     }
+
     .warhub-btn {
       padding: 7px 10px;
       cursor: pointer;
       font-size: 12px;
       font-weight: 700;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
     }
+
     .warhub-btn.primary { background: linear-gradient(180deg, #cc3737, #821616); border-color: rgba(255,255,255,.12); }
     .warhub-btn.good { background: linear-gradient(180deg, #238c52, #15603a); }
     .warhub-btn.warn { background: linear-gradient(180deg, #af7b22, #775114); }
     .warhub-btn.small { padding: 5px 8px; font-size: 11px; }
+
     .warhub-input, .warhub-select, .warhub-textarea {
       width: 100%;
       padding: 8px 10px;
       box-sizing: border-box;
       font-size: 12px;
     }
+
     .warhub-textarea { min-height: 94px; resize: vertical; }
-    .warhub-label { font-size: 11px; opacity: .74; margin-bottom: 4px; display: block; }
+
+    .warhub-label {
+      font-size: 11px;
+      opacity: .74;
+      margin-bottom: 4px;
+      display: block;
+    }
+
     .warhub-pill {
       display: inline-flex;
       align-items: center;
@@ -284,13 +315,11 @@
     .warhub-pill.idle { background: rgba(197,141,46,.22); color: #ffe3a5; }
     .warhub-pill.offline { background: rgba(113,113,113,.20); color: #dadada; }
     .warhub-pill.hosp { background: rgba(181,62,62,.24); color: #ffd0d0; }
+
     .warhub-divider { height: 1px; background: rgba(255,255,255,.07); margin: 8px 0; }
     .warhub-mini { font-size: 11px; opacity: .78; }
-    .warhub-link {
-      color: #fff;
-      text-decoration: none;
-      border-bottom: 1px dashed rgba(255,255,255,.25);
-    }
+    .warhub-link { color: #fff; text-decoration: none; }
+
     @media (max-width: 700px) {
       #warhub-overlay {
         width: min(98vw, 98vw);
@@ -312,7 +341,7 @@
       .replace(/&/g, "&amp;")
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;")
-      .replace(/\"/g, "&quot;")
+      .replace(/"/g, "&quot;")
       .replace(/'/g, "&#39;");
   }
 
@@ -325,6 +354,12 @@
     if (v == null || v === "") return "—";
     if (typeof v === "number") return `${v}s`;
     return String(v);
+  }
+
+  function fmtHosp(v, txt) {
+    if (txt) return txt;
+    const n = Number(v);
+    return Number.isFinite(n) && n > 0 ? `${n}s` : "—";
   }
 
   function fmtTs(v) {
@@ -344,12 +379,6 @@
 
   function getNotes() { return String(GM_getValue(K_NOTES, "") || ""); }
   function setNotes(v) { GM_setValue(K_NOTES, String(v || "")); }
-  function getAssignments() { return arr(GM_getValue(K_ASSIGNMENTS, [])); }
-  function setAssignments(v) { GM_setValue(K_ASSIGNMENTS, arr(v)); }
-  function getLocalTargets() { return arr(GM_getValue(K_LOCAL_TARGETS, [])); }
-  function setLocalTargets(v) { GM_setValue(K_LOCAL_TARGETS, arr(v)); }
-  function getLocalMeds() { return arr(GM_getValue(K_LOCAL_MEDS, [])); }
-  function setLocalMeds(v) { GM_setValue(K_LOCAL_MEDS, arr(v)); }
   function getLocalNotifications() { return arr(GM_getValue(K_LOCAL_NOTIFICATIONS, [])); }
   function setLocalNotifications(v) { GM_setValue(K_LOCAL_NOTIFICATIONS, arr(v)); }
 
@@ -435,12 +464,13 @@
     const enemyFaction = s.enemy_faction || s.opponent || war.enemy_faction || {};
     const members = arr(s.members || faction.members || s.member_list);
     const enemies = arr(s.enemies || enemyFaction.members || s.enemy_members);
-    const hospital = arr(s.hospital || s.enemy_hospital || s.hospitalized || []).map((x) => ({ side: x.side || "enemy", ...x }));
+    const hospital = s.hospital || {};
     const medDeals = arr(s.med_deals || s.medDeals || s.deals);
     const targets = arr(s.targets || s.smart_targets || s.assignable_targets);
     const assignments = arr(s.assignments || s.target_assignments);
-    const notifications = arr(s.notifications || s.notes || s.alerts);
+    const notifications = arr(s.notifications || s.alerts);
     const chainSitters = arr(s.chain_sitters || s.chainSitters || s.chain_helpers);
+    const notes = arr(s.war_notes || s.notes || []);
 
     return {
       ...s,
@@ -456,6 +486,7 @@
       assignments,
       notifications,
       chainSitters,
+      notes,
     };
   }
 
@@ -479,7 +510,7 @@
 
   async function loadAnalytics() {
     const res = await req("GET", "/api/analytics");
-    if (res.ok) analyticsCache = res.data || {};
+    if (res.ok) analyticsCache = res.data?.analytics || res.data || {};
   }
 
   async function doAction(method, path, body, okMsg, reload = true) {
@@ -493,44 +524,59 @@
     return res;
   }
 
-  function byStatus(list, status) {
-    return list.filter((x) => String(x.status || x.online_status || "").toLowerCase().includes(status));
+  function byOnlineState(list, status) {
+    return list.filter((x) => String(x.online_state || x.online_status || x.status || "").toLowerCase().includes(status));
   }
 
   function sortHosp(list) {
-    return [...list].sort((a, b) => Number(a.hosp_time || a.hospital_time || a.hospital_seconds || 0) - Number(b.hosp_time || b.hospital_time || b.hospital_seconds || 0));
+    return [...list].sort((a, b) => Number(a.hospital_seconds || a.hosp_time || a.hospital_time || 0) - Number(b.hospital_seconds || b.hosp_time || b.hospital_time || 0));
   }
 
   function memberRow(x, enemy = false) {
     const id = x.user_id || x.id || x.player_id || "";
     const name = x.name || x.player_name || `ID ${id}`;
-    const status = String(x.status || x.online_status || "offline").toLowerCase();
-    const hosp = x.hosp_time || x.hospital_time || x.hospital_seconds || "";
+    const onlineState = String(x.online_state || x.online_status || x.status || "offline").toLowerCase();
+    const hosp = x.hospital_seconds || x.hosp_time || x.hospital_time || 0;
+    const hospText = x.hospital_text || "";
     const last = x.last_action || x.last_action_relative || x.last || "—";
-    const energy = x.energy ?? x.e ?? "—";
-    const pill = hosp ? `<span class="warhub-pill hosp">Hosp ${esc(fmtTime(hosp))}</span>` : status.includes("online") ? `<span class="warhub-pill online">Online</span>` : status.includes("idle") ? `<span class="warhub-pill idle">Idle</span>` : `<span class="warhub-pill offline">Offline</span>`;
-    const attackUrl = id ? `https://www.torn.com/loader.php?sid=attack&user2ID=${id}` : "#";
+    const level = x.level ? `Lvl ${x.level}` : "";
+    const lifeCur = Number(x.life_current || 0);
+    const lifeMax = Number(x.life_max || 0);
+    const lifeText = lifeMax > 0 ? `${lifeCur.toLocaleString()}/${lifeMax.toLocaleString()}` : "—";
+    const attackUrl = x.attack_url || (id ? `https://www.torn.com/loader.php?sid=attack&user2ID=${id}` : "#");
+
+    const pill =
+      Number(hosp) > 0
+        ? `<span class="warhub-pill hosp">Hosp ${esc(fmtHosp(hosp, hospText))}</span>`
+        : onlineState.includes("online")
+          ? `<span class="warhub-pill online">Online</span>`
+          : onlineState.includes("idle")
+            ? `<span class="warhub-pill idle">Idle</span>`
+            : `<span class="warhub-pill offline">Offline</span>`;
+
     return `
       <div class="warhub-list-item">
         <div class="warhub-row">
           <div>
             <div class="warhub-name">${esc(name)} ${id ? `<span class="warhub-mini">[${esc(id)}]</span>` : ""}</div>
-            <div class="warhub-meta">Energy: ${esc(energy)} • Last: ${esc(last)}</div>
+            <div class="warhub-meta">${esc(level)}${level ? " • " : ""}Life: ${esc(lifeText)} • Last: ${esc(last)}</div>
           </div>
           <div class="warhub-actions">
             ${pill}
-            ${enemy && id ? `<a class="warhub-btn small primary warhub-link-btn" href="${attackUrl}" target="_blank" rel="noreferrer">Attack</a>` : ""}
+            ${enemy && id ? `<a class="warhub-btn small primary warhub-link" href="${esc(attackUrl)}" target="_blank" rel="noreferrer">Attack</a>` : ""}
           </div>
         </div>
       </div>
     `;
   }
 
-  function targetRow(x) {
-    const id = x.target_id || x.id || x.user_id || "";
+  function targetRow(x, isLive = false) {
+    const rowId = x.id || "";
+    const id = x.target_id || x.user_id || "";
     const name = x.name || x.target_name || `Target ${id}`;
     const reason = x.reason || x.note || x.priority || "";
-    const attackUrl = id ? `https://www.torn.com/loader.php?sid=attack&user2ID=${id}` : "#";
+    const attackUrl = x.attack_url || (id ? `https://www.torn.com/loader.php?sid=attack&user2ID=${id}` : "#");
+
     return `
       <div class="warhub-list-item">
         <div class="warhub-row">
@@ -539,8 +585,30 @@
             <div class="warhub-meta">${esc(reason || "No note")}</div>
           </div>
           <div class="warhub-actions">
-            ${id ? `<a class="warhub-btn small primary" href="${attackUrl}" target="_blank" rel="noreferrer">Attack</a>` : ""}
+            ${id ? `<a class="warhub-btn small primary warhub-link" href="${esc(attackUrl)}" target="_blank" rel="noreferrer">Attack</a>` : ""}
             <button class="warhub-btn small" data-fill-assignment="${esc(String(id))}|${esc(name)}">Assign</button>
+            ${isLive && rowId ? `<button class="warhub-btn small warn" data-del-target-live="${esc(String(rowId))}">Delete</button>` : ""}
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  function noteRow(x) {
+    const id = x.id || "";
+    const targetId = x.target_id || "";
+    const author = x.created_by_name || "Unknown";
+    const message = x.text || x.message || x.note || "";
+    return `
+      <div class="warhub-list-item">
+        <div class="warhub-row">
+          <div>
+            <div class="warhub-name">${esc(author)}${targetId ? ` <span class="warhub-mini">on [${esc(targetId)}]</span>` : ""}</div>
+            <div class="warhub-meta">${esc(message)}</div>
+            <div class="warhub-mini">${esc(fmtTs(x.created_at || ""))}</div>
+          </div>
+          <div class="warhub-actions">
+            ${id ? `<button class="warhub-btn small warn" data-del-note="${esc(String(id))}">Delete</button>` : ""}
           </div>
         </div>
       </div>
@@ -552,9 +620,10 @@
     const me = state?.me || {};
     const faction = state?.faction || {};
     const enemyFaction = state?.enemyFaction || {};
-    const scoreSelf = war.score || war.our_score || faction.score || 0;
-    const scoreEnemy = war.enemy_score || enemyFaction.score || 0;
-    const currentWar = war.id || war.war_id || war.start || enemyFaction.id;
+    const scoreSelf = war.score || war.our_score || war.score_us || 0;
+    const scoreEnemy = war.enemy_score || war.score_them || enemyFaction.score || 0;
+    const currentWar = war.id || war.war_id || "";
+    const chainCount = war.chain || war.chain_us || 0;
 
     return `
       <div class="warhub-grid two">
@@ -562,18 +631,19 @@
           <h3>Overview</h3>
           <div class="warhub-grid two">
             <div class="warhub-metric"><div class="k">You</div><div class="v">${esc(me.name || "—")}</div></div>
-            <div class="warhub-metric"><div class="k">Faction</div><div class="v">${esc(faction.name || "—")}</div></div>
-            <div class="warhub-metric"><div class="k">Enemy</div><div class="v">${esc(enemyFaction.name || (currentWar ? "Enemy loaded" : "Currently not in a war"))}</div></div>
+            <div class="warhub-metric"><div class="k">Faction</div><div class="v">${esc(faction.name || faction.faction_name || "—")}</div></div>
+            <div class="warhub-metric"><div class="k">Enemy</div><div class="v">${esc(enemyFaction.name || enemyFaction.faction_name || (currentWar ? "Enemy loaded" : "Currently not in a war"))}</div></div>
             <div class="warhub-metric"><div class="k">War ID</div><div class="v">${esc(currentWar || "—")}</div></div>
           </div>
         </div>
+
         <div class="warhub-card">
           <h3>Score</h3>
           <div class="warhub-grid two">
             <div class="warhub-metric"><div class="k">Our Score</div><div class="v">${fmtNum(scoreSelf)}</div></div>
             <div class="warhub-metric"><div class="k">Enemy Score</div><div class="v">${fmtNum(scoreEnemy)}</div></div>
-            <div class="warhub-metric"><div class="k">Chain</div><div class="v">${fmtNum(war.chain || state?.chain || 0)}</div></div>
-            <div class="warhub-metric"><div class="k">Cooldown</div><div class="v">${esc(fmtTime(war.cooldown || state?.cooldown || "—"))}</div></div>
+            <div class="warhub-metric"><div class="k">Lead</div><div class="v">${fmtNum(war.lead || (Number(scoreSelf) - Number(scoreEnemy)))}</div></div>
+            <div class="warhub-metric"><div class="k">Chain</div><div class="v">${fmtNum(chainCount)}</div></div>
           </div>
         </div>
       </div>
@@ -585,9 +655,9 @@
           <button class="warhub-btn" id="wh-unavailable">Unavailable</button>
           <button class="warhub-btn good" id="wh-opt-in">Chain Sit In</button>
           <button class="warhub-btn warn" id="wh-opt-out">Chain Sit Out</button>
-          ${enemyFaction.id ? `<a class="warhub-btn primary" href="https://www.torn.com/factions.php?step=profile&ID=${esc(enemyFaction.id)}" target="_blank" rel="noreferrer">Enemy Faction</a>` : ""}
-          <a class="warhub-btn" href="https://www.torn.com/factions.php?step=your" target="_blank" rel="noreferrer">Faction</a>
-          <a class="warhub-btn" href="https://www.torn.com/hospitalview.php" target="_blank" rel="noreferrer">Hospital</a>
+          ${enemyFaction.id ? `<a class="warhub-btn primary warhub-link" href="https://www.torn.com/factions.php?step=profile&ID=${esc(enemyFaction.id)}" target="_blank" rel="noreferrer">Enemy Faction</a>` : ""}
+          <a class="warhub-btn warhub-link" href="https://www.torn.com/factions.php?step=your" target="_blank" rel="noreferrer">Faction</a>
+          <a class="warhub-btn warhub-link" href="https://www.torn.com/hospitalview.php" target="_blank" rel="noreferrer">Hospital</a>
         </div>
       </div>
 
@@ -595,16 +665,19 @@
         <div class="warhub-card">
           <h3>Online Counts</h3>
           <div class="warhub-grid three">
-            <div class="warhub-metric"><div class="k">Online</div><div class="v">${fmtNum(byStatus(state?.members || [], "online").length)}</div></div>
-            <div class="warhub-metric"><div class="k">Idle</div><div class="v">${fmtNum(byStatus(state?.members || [], "idle").length)}</div></div>
-            <div class="warhub-metric"><div class="k">Offline</div><div class="v">${fmtNum(byStatus(state?.members || [], "offline").length)}</div></div>
+            <div class="warhub-metric"><div class="k">Online</div><div class="v">${fmtNum(byOnlineState(state?.members || [], "online").length)}</div></div>
+            <div class="warhub-metric"><div class="k">Idle</div><div class="v">${fmtNum(byOnlineState(state?.members || [], "idle").length)}</div></div>
+            <div class="warhub-metric"><div class="k">Offline</div><div class="v">${fmtNum(byOnlineState(state?.members || [], "offline").length)}</div></div>
           </div>
         </div>
+
         <div class="warhub-card">
           <h3>Enemy Snapshot</h3>
           <div class="warhub-grid two">
             <div class="warhub-metric"><div class="k">Enemy Members</div><div class="v">${fmtNum(arr(state?.enemies).length)}</div></div>
-            <div class="warhub-metric"><div class="k">Enemy Hospital</div><div class="v">${fmtNum(sortHosp(arr(state?.enemies).filter(x => x.hosp_time || x.hospital_time || x.hospital_seconds)).length)}</div></div>
+            <div class="warhub-metric"><div class="k">Enemy Hospital</div><div class="v">${fmtNum(sortHosp(arr(state?.enemies).filter(x => Number(x.hospital_seconds || 0) > 0)).length)}</div></div>
+            <div class="warhub-metric"><div class="k">ETA To Target</div><div class="v">${esc(war.eta_to_target_us_text || "—")}</div></div>
+            <div class="warhub-metric"><div class="k">Pace / Hour</div><div class="v">${esc(String(war.pace_per_hour_us || "0"))}</div></div>
           </div>
         </div>
       </div>
@@ -636,8 +709,10 @@
   }
 
   function renderHospitalTab() {
-    const enemies = sortHosp(arr(state?.enemies).filter(x => x.hosp_time || x.hospital_time || x.hospital_seconds));
-    const ours = sortHosp(arr(state?.members).filter(x => x.hosp_time || x.hospital_time || x.hospital_seconds));
+    const hospital = state?.hospital || {};
+    const enemies = sortHosp(arr(hospital.enemy_faction || state?.enemies).filter(x => Number(x.hospital_seconds || 0) > 0));
+    const ours = sortHosp(arr(hospital.our_faction || state?.members).filter(x => Number(x.hospital_seconds || 0) > 0));
+
     return `
       <div class="warhub-grid two">
         <div class="warhub-card">
@@ -655,12 +730,13 @@
   function renderChainTab() {
     const me = state?.me || {};
     const sitters = arr(state?.chainSitters);
+
     return `
       <div class="warhub-card">
         <h3>Chain Control</h3>
         <div class="warhub-grid two">
           <div class="warhub-metric"><div class="k">Your Availability</div><div class="v">${me.available ? "Available" : "Unavailable"}</div></div>
-          <div class="warhub-metric"><div class="k">Chain Sitter</div><div class="v">${me.chain_sitter || me.chainSitter ? "Enabled" : "Disabled"}</div></div>
+          <div class="warhub-metric"><div class="k">Chain Sitter</div><div class="v">${me.chain_sitter ? "Enabled" : "Disabled"}</div></div>
         </div>
         <div class="warhub-divider"></div>
         <div class="warhub-actions">
@@ -670,38 +746,60 @@
           <button class="warhub-btn warn" id="wh-opt-out">Opt Out</button>
         </div>
       </div>
+
       <div class="warhub-card">
         <h3>Chain Sitters</h3>
-        ${sitters.length ? `<div class="warhub-list">${sitters.map((x) => `<div class="warhub-list-item"><div class="warhub-name">${esc(x.name || x.user_name || `ID ${x.user_id || x.id || "?"}`)}</div><div class="warhub-meta">${esc(x.note || x.status || "Ready")}</div></div>`).join("")}</div>` : `<div class="warhub-empty">No chain sitter list returned yet.</div>`}
+        ${sitters.length ? `<div class="warhub-list">${sitters.map((x) => memberRow(x, false)).join("")}</div>` : `<div class="warhub-empty">No chain sitter list returned yet.</div>`}
       </div>
     `;
   }
 
   function renderMedDealsTab() {
     const live = arr(state?.medDeals);
-    const local = getLocalMeds();
-    const all = [...live, ...local];
+
     return `
       <div class="warhub-card">
         <h3>Add Med Deal</h3>
         <div class="warhub-grid two">
-          <div><label class="warhub-label">Name</label><input id="wh-med-name" class="warhub-input" placeholder="Player name"></div>
-          <div><label class="warhub-label">Cost / Terms</label><input id="wh-med-cost" class="warhub-input" placeholder="Example: 2x FAK or $500k"></div>
+          <div>
+            <label class="warhub-label">Seller / Enemy Faction</label>
+            <input id="wh-med-name" class="warhub-input" placeholder="Enemy faction or seller name">
+          </div>
+          <div>
+            <label class="warhub-label">Amount</label>
+            <input id="wh-med-cost" class="warhub-input" placeholder="Example: 2">
+          </div>
         </div>
-        <div style="margin-top:8px;"><label class="warhub-label">Note</label><input id="wh-med-note" class="warhub-input" placeholder="Optional"></div>
-        <div class="warhub-actions" style="margin-top:8px;"><button class="warhub-btn primary" id="wh-add-med">Save Med Deal</button></div>
+        <div style="margin-top:8px;">
+          <label class="warhub-label">Note</label>
+          <input id="wh-med-note" class="warhub-input" placeholder="Optional">
+        </div>
+        <div class="warhub-actions" style="margin-top:8px;">
+          <button class="warhub-btn primary" id="wh-add-med">Save Med Deal</button>
+        </div>
       </div>
+
       <div class="warhub-card">
         <h3>Med Deals</h3>
-        ${all.length ? `<div class="warhub-list">${all.map((x, i) => `<div class="warhub-list-item"><div class="warhub-row"><div><div class="warhub-name">${esc(x.name || x.player || "Unknown")}</div><div class="warhub-meta">${esc(x.cost || x.price || "—")} • ${esc(x.note || x.terms || "")}</div></div>${x.__local ? `<button class="warhub-btn small" data-del-med="${i}">Delete</button>` : `<span class="warhub-pill">Live</span>`}</div></div>`).join("")}</div>` : `<div class="warhub-empty">No med deals yet.</div>`}
+        ${live.length ? `<div class="warhub-list">${live.map((x) => `
+          <div class="warhub-list-item">
+            <div class="warhub-row">
+              <div>
+                <div class="warhub-name">${esc(x.name || x.player || "Unknown")}</div>
+                <div class="warhub-meta">${esc(x.cost || x.price || "—")} • ${esc(x.note || x.terms || "")}</div>
+              </div>
+              <div class="warhub-actions">
+                ${x.id ? `<button class="warhub-btn small warn" data-del-med-live="${esc(String(x.id))}">Delete</button>` : ""}
+              </div>
+            </div>
+          </div>
+        `).join("")}</div>` : `<div class="warhub-empty">No med deals yet.</div>`}
       </div>
     `;
   }
 
   function renderTargetsTab() {
     const live = arr(state?.targets);
-    const local = getLocalTargets();
-    const all = [...live, ...local];
     const enemyOptions = arr(state?.enemies).map((x) => {
       const id = x.user_id || x.id || x.player_id || "";
       const name = x.name || x.player_name || `ID ${id}`;
@@ -724,70 +822,174 @@
             <input id="wh-target-note" class="warhub-input" placeholder="Example: Low life / easy chain hit">
           </div>
         </div>
-        <div class="warhub-actions" style="margin-top:8px;"><button class="warhub-btn primary" id="wh-add-target">Save Target</button></div>
+        <div class="warhub-actions" style="margin-top:8px;">
+          <button class="warhub-btn primary" id="wh-add-target">Save Target</button>
+        </div>
       </div>
+
       <div class="warhub-card">
         <h3>Targets</h3>
-        ${all.length ? `<div class="warhub-list">${all.map((x, i) => `${targetRow(x)}${x.__local ? `<div class="warhub-actions" style="margin-top:6px;"><button class="warhub-btn small" data-del-target="${i}">Delete</button></div>` : ""}`).join("")}</div>` : `<div class="warhub-empty">No targets saved yet.</div>`}
+        ${live.length ? `<div class="warhub-list">${live.map((x) => targetRow(x, true)).join("")}</div>` : `<div class="warhub-empty">No targets saved yet.</div>`}
       </div>
     `;
   }
 
   function renderAssignmentsTab() {
-    const rows = [...arr(state?.assignments), ...getAssignments()];
+    const rows = arr(state?.assignments);
+    const warId = state?.war?.war_id || state?.war?.id || "";
+    const membersOptions = arr(state?.members).map((x) => {
+      const id = x.user_id || "";
+      const name = x.name || `ID ${id}`;
+      return `<option value="${esc(String(id))}|${esc(name)}">${esc(name)}${id ? ` [${esc(id)}]` : ""}</option>`;
+    }).join("");
+
     return `
       <div class="warhub-card">
         <h3>Assign Target</h3>
+        ${warId ? `<div class="warhub-mini" style="margin-bottom:8px;">War ID: ${esc(warId)}</div>` : `<div class="warhub-mini" style="margin-bottom:8px;">Not currently in a ranked war.</div>`}
         <div class="warhub-grid two">
-          <div><label class="warhub-label">Member</label><input id="wh-assignee" class="warhub-input" placeholder="Who should hit"></div>
-          <div><label class="warhub-label">Target</label><input id="wh-assignment-target" class="warhub-input" placeholder="Target name or ID"></div>
+          <div>
+            <label class="warhub-label">Faction Member</label>
+            <select id="wh-assignee-pick" class="warhub-select">
+              <option value="">Pick member</option>
+              ${membersOptions}
+            </select>
+          </div>
+          <div>
+            <label class="warhub-label">Target</label>
+            <input id="wh-assignment-target" class="warhub-input" placeholder="Target name or ID">
+          </div>
         </div>
-        <div style="margin-top:8px;"><label class="warhub-label">Note</label><input id="wh-assignment-note" class="warhub-input" placeholder="Optional assignment note"></div>
-        <div class="warhub-actions" style="margin-top:8px;"><button class="warhub-btn primary" id="wh-save-assignment">Save Assignment</button></div>
+        <div class="warhub-grid two" style="margin-top:8px;">
+          <div>
+            <label class="warhub-label">Priority</label>
+            <select id="wh-assignment-priority" class="warhub-select">
+              <option value="high">High</option>
+              <option value="normal" selected>Normal</option>
+              <option value="low">Low</option>
+            </select>
+          </div>
+          <div>
+            <label class="warhub-label">Note</label>
+            <input id="wh-assignment-note" class="warhub-input" placeholder="Optional assignment note">
+          </div>
+        </div>
+        <div class="warhub-actions" style="margin-top:8px;">
+          <button class="warhub-btn primary" id="wh-save-assignment">Save Assignment</button>
+        </div>
       </div>
+
       <div class="warhub-card">
         <h3>Assignments</h3>
-        ${rows.length ? `<div class="warhub-list">${rows.map((x, i) => `<div class="warhub-list-item"><div class="warhub-row"><div><div class="warhub-name">${esc(x.assignee || x.member || x.name || "Unknown")}</div><div class="warhub-meta">Target: ${esc(x.target || x.target_name || x.target_id || "—")} • ${esc(x.note || "")}</div></div>${x.__local ? `<button class="warhub-btn small" data-del-assignment="${i}">Delete</button>` : `<span class="warhub-pill">Live</span>`}</div></div>`).join("")}</div>` : `<div class="warhub-empty">No assignments yet.</div>`}
+        ${rows.length ? `<div class="warhub-list">${rows.map((x) => `
+          <div class="warhub-list-item">
+            <div class="warhub-row">
+              <div>
+                <div class="warhub-name">${esc(x.assignee || x.assigned_to_name || x.member || "Unknown")}</div>
+                <div class="warhub-meta">Target: ${esc(x.target || x.target_name || x.target_id || "—")} • ${esc(x.priority || "normal")} • ${esc(x.note || "")}</div>
+              </div>
+              <div class="warhub-actions">
+                ${x.target_attack_url ? `<a class="warhub-btn small primary warhub-link" href="${esc(x.target_attack_url)}" target="_blank" rel="noreferrer">Attack</a>` : ""}
+                ${x.id ? `<button class="warhub-btn small warn" data-del-assignment-live="${esc(String(x.id))}">Delete</button>` : ""}
+              </div>
+            </div>
+          </div>
+        `).join("")}</div>` : `<div class="warhub-empty">No assignments yet.</div>`}
       </div>
     `;
   }
 
   function renderNotesTab() {
+    const serverNotes = arr(state?.notes);
+    const warId = state?.war?.war_id || state?.war?.id || "";
+
     return `
       <div class="warhub-card">
         <h3>War Notes</h3>
-        <label class="warhub-label">Saved locally in the script so you do not lose your overlay notes again.</label>
+        ${warId ? `<div class="warhub-mini" style="margin-bottom:8px;">War ID: ${esc(warId)}</div>` : `<div class="warhub-mini" style="margin-bottom:8px;">No active war id detected.</div>`}
+        <label class="warhub-label">Quick personal note</label>
         <textarea id="wh-notes" class="warhub-textarea" placeholder="Paste plans, timers, targets, med deal notes...">${esc(getNotes())}</textarea>
         <div class="warhub-actions" style="margin-top:8px;">
-          <button class="warhub-btn primary" id="wh-save-notes">Save Notes</button>
-          <button class="warhub-btn" id="wh-clear-notes">Clear</button>
+          <button class="warhub-btn" id="wh-save-notes">Save Local Note</button>
+          <button class="warhub-btn" id="wh-clear-notes">Clear Local</button>
         </div>
+
+        <div class="warhub-divider"></div>
+
+        <div class="warhub-grid two">
+          <div>
+            <label class="warhub-label">Target ID</label>
+            <input id="wh-note-target-id" class="warhub-input" placeholder="Enemy target id">
+          </div>
+          <div>
+            <label class="warhub-label">Server War Note</label>
+            <input id="wh-note-text" class="warhub-input" placeholder="Shared war note">
+          </div>
+        </div>
+
+        <div class="warhub-actions" style="margin-top:8px;">
+          <button class="warhub-btn primary" id="wh-add-server-note">Save Shared Note</button>
+        </div>
+      </div>
+
+      <div class="warhub-card">
+        <h3>Shared Notes</h3>
+        ${serverNotes.length ? `<div class="warhub-list">${serverNotes.map((x) => noteRow(x)).join("")}</div>` : `<div class="warhub-empty">No shared war notes yet.</div>`}
       </div>
     `;
   }
 
   function renderAnalyticsTab() {
-    const a = analyticsCache || {};
+    const a = analyticsCache || state?.analytics || {};
+    const snaps = arr(a.snapshots);
+
     return `
       <div class="warhub-card">
         <h3>Analytics</h3>
         <div class="warhub-grid two">
-          <div class="warhub-metric"><div class="k">Total Members</div><div class="v">${fmtNum(a.total_members || arr(state?.members).length)}</div></div>
-          <div class="warhub-metric"><div class="k">Total Enemies</div><div class="v">${fmtNum(a.total_enemies || arr(state?.enemies).length)}</div></div>
-          <div class="warhub-metric"><div class="k">Online Members</div><div class="v">${fmtNum(a.online_members || byStatus(arr(state?.members), "online").length)}</div></div>
-          <div class="warhub-metric"><div class="k">Enemy In Hosp</div><div class="v">${fmtNum(a.enemy_hospital || sortHosp(arr(state?.enemies).filter(x => x.hosp_time || x.hospital_time || x.hospital_seconds)).length)}</div></div>
+          <div class="warhub-metric"><div class="k">Lead</div><div class="v">${fmtNum(a.lead || 0)}</div></div>
+          <div class="warhub-metric"><div class="k">Target Score</div><div class="v">${fmtNum(a.target_score || state?.war?.target_score || 0)}</div></div>
+          <div class="warhub-metric"><div class="k">Pace / Hour Us</div><div class="v">${esc(String(a.pace_per_hour_us || 0))}</div></div>
+          <div class="warhub-metric"><div class="k">Pace / Hour Them</div><div class="v">${esc(String(a.pace_per_hour_them || 0))}</div></div>
+          <div class="warhub-metric"><div class="k">ETA</div><div class="v">${esc(a.eta_to_target_us_text || "—")}</div></div>
+          <div class="warhub-metric"><div class="k">Snapshots</div><div class="v">${fmtNum(snaps.length)}</div></div>
         </div>
+      </div>
+
+      <div class="warhub-card">
+        <h3>Recent Snapshots</h3>
+        ${snaps.length ? `<div class="warhub-list">${snaps.map((x) => `
+          <div class="warhub-list-item">
+            <div class="warhub-row">
+              <div>
+                <div class="warhub-name">Us ${fmtNum(x.score_us)} • Them ${fmtNum(x.score_them)}</div>
+                <div class="warhub-meta">Lead ${fmtNum(x.lead)} • Target ${fmtNum(x.target_score)}</div>
+              </div>
+              <div class="warhub-mini">${esc(fmtTs(x.created_at || ""))}</div>
+            </div>
+          </div>
+        `).join("")}</div>` : `<div class="warhub-empty">No recent analytics snapshots.</div>`}
       </div>
     `;
   }
 
   function renderNotificationsTab() {
     const items = mergedNotifications();
+
     return `
       <div class="warhub-card">
         <h3>Alerts</h3>
-        ${items.length ? `<div class="warhub-list">${items.map((x) => `<div class="warhub-list-item"><div class="warhub-name">${esc(x.kind || x.title || "Alert")}</div><div class="warhub-meta">${esc(x.text || x.message || x.note || "")}</div><div class="warhub-mini">${esc(fmtTs(x.created_at || x.time || x.ts || ""))}</div></div>`).join("")}</div>` : `<div class="warhub-empty">No alerts yet.</div>`}
-        <div class="warhub-actions" style="margin-top:8px;"><button class="warhub-btn" id="wh-clear-alerts">Clear Local Alerts</button></div>
+        ${items.length ? `<div class="warhub-list">${items.map((x) => `
+          <div class="warhub-list-item">
+            <div class="warhub-name">${esc(x.kind || x.title || "Alert")}</div>
+            <div class="warhub-meta">${esc(x.text || x.message || x.note || "")}</div>
+            <div class="warhub-mini">${esc(fmtTs(x.created_at || x.time || x.ts || ""))}</div>
+          </div>
+        `).join("")}</div>` : `<div class="warhub-empty">No alerts yet.</div>`}
+        <div class="warhub-actions" style="margin-top:8px;">
+          <button class="warhub-btn" id="wh-mark-alerts-seen">Mark Server Alerts Seen</button>
+          <button class="warhub-btn" id="wh-clear-alerts">Clear Local Alerts</button>
+        </div>
       </div>
     `;
   }
@@ -803,6 +1005,7 @@
         </div>
         <div class="warhub-actions" style="margin-top:8px;"><button class="warhub-btn primary" id="wh-save-settings">Save + Login</button></div>
       </div>
+
       <div class="warhub-card">
         <h3>Refresh</h3>
         <div class="warhub-grid two">
@@ -1035,6 +1238,62 @@
     if (input) input.value = value;
   }
 
+  async function addTargetServer(targetId, targetName, note) {
+    return req("POST", "/api/targets/add", {
+      target_id: targetId || "",
+      target_name: targetName || "",
+      notes: note || "",
+    });
+  }
+
+  async function deleteTargetServer(id) {
+    return req("POST", "/api/targets/delete", { id });
+  }
+
+  async function addMedDealServer(sellerName, amount, notes) {
+    return req("POST", "/api/med-deals/add", {
+      seller_name: sellerName || "",
+      amount: Number(amount || 0),
+      notes: notes || "",
+    });
+  }
+
+  async function deleteMedDealServer(id) {
+    return req("POST", "/api/med-deals/delete", { id });
+  }
+
+  async function assignTargetServer({ warId, targetId, targetName, assignedToUserId, assignedToName, priority, note }) {
+    return req("POST", "/api/targets/assign", {
+      war_id: warId,
+      target_id: targetId || "",
+      target_name: targetName || "",
+      assigned_to_user_id: assignedToUserId || "",
+      assigned_to_name: assignedToName || "",
+      priority: priority || "normal",
+      note: note || "",
+    });
+  }
+
+  async function deleteAssignmentServer(id) {
+    return req("POST", "/api/targets/unassign", { id });
+  }
+
+  async function addServerNote(warId, targetId, note) {
+    return req("POST", "/api/targets/note", {
+      war_id: warId,
+      target_id: targetId || "",
+      note: note || "",
+    });
+  }
+
+  async function deleteServerNote(id) {
+    return req("POST", "/api/targets/note/delete", { id });
+  }
+
+  async function markNotificationsSeen() {
+    return req("POST", "/api/notifications/seen", {});
+  }
+
   function bindOverlayEvents() {
     overlay.querySelectorAll(".warhub-tab").forEach((btn) => {
       btn.addEventListener("click", async () => {
@@ -1054,12 +1313,15 @@
     overlay.querySelector("#wh-available")?.addEventListener("click", async () => {
       await doAction("POST", "/api/availability/set", { available: true }, "Set to available.");
     });
+
     overlay.querySelector("#wh-unavailable")?.addEventListener("click", async () => {
       await doAction("POST", "/api/availability/set", { available: false }, "Set to unavailable.");
     });
+
     overlay.querySelector("#wh-opt-in")?.addEventListener("click", async () => {
       await doAction("POST", "/api/chain-sitter/set", { enabled: true }, "Chain sitter enabled.");
     });
+
     overlay.querySelector("#wh-opt-out")?.addEventListener("click", async () => {
       await doAction("POST", "/api/chain-sitter/set", { enabled: false }, "Chain sitter disabled.");
     });
@@ -1103,42 +1365,21 @@
       setStatus("Overlay position reset.");
     });
 
-    overlay.querySelector("#wh-logout")?.addEventListener("click", () => {
+    overlay.querySelector("#wh-logout")?.addEventListener("click", async () => {
+      await req("POST", "/api/logout", {});
       GM_deleteValue(K_SESSION);
       setStatus("Logged out.");
     });
 
     overlay.querySelector("#wh-save-notes")?.addEventListener("click", () => {
       setNotes(overlay.querySelector("#wh-notes")?.value || "");
-      setStatus("Notes saved.");
+      setStatus("Local note saved.");
     });
 
     overlay.querySelector("#wh-clear-notes")?.addEventListener("click", () => {
       setNotes("");
       renderBody();
-      setStatus("Notes cleared.");
-    });
-
-    overlay.querySelector("#wh-save-assignment")?.addEventListener("click", () => {
-      const assignee = String(overlay.querySelector("#wh-assignee")?.value || "").trim();
-      const target = String(overlay.querySelector("#wh-assignment-target")?.value || "").trim();
-      const note = String(overlay.querySelector("#wh-assignment-note")?.value || "").trim();
-      if (!assignee || !target) return setStatus("Enter assignee and target first.", true);
-      const rows = getAssignments();
-      rows.unshift({ assignee, target, note, __local: true, created_at: new Date().toISOString() });
-      setAssignments(rows.slice(0, 100));
-      renderBody();
-      setStatus("Assignment saved locally.");
-    });
-
-    overlay.querySelectorAll("[data-del-assignment]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const idx = Number(btn.getAttribute("data-del-assignment"));
-        const rows = getAssignments();
-        rows.splice(idx, 1);
-        setAssignments(rows);
-        renderBody();
-      });
+      setStatus("Local note cleared.");
     });
 
     overlay.querySelectorAll("[data-fill-assignment]").forEach((btn) => {
@@ -1152,48 +1393,131 @@
       });
     });
 
-    overlay.querySelector("#wh-add-target")?.addEventListener("click", () => {
+    overlay.querySelector("#wh-add-target")?.addEventListener("click", async () => {
       const raw = String(overlay.querySelector("#wh-target-pick")?.value || "");
       const note = String(overlay.querySelector("#wh-target-note")?.value || "").trim();
       if (!raw) return setStatus("Pick an enemy first.", true);
       const [id, name] = raw.split("|");
-      const rows = getLocalTargets();
-      rows.unshift({ id, target_id: id, name, reason: note, __local: true, created_at: new Date().toISOString() });
-      setLocalTargets(rows.slice(0, 100));
+      const res = await addTargetServer(id, name, note);
+      if (!res.ok) return setStatus(res.error || "Could not add target.", true);
+      await loadState(true);
       renderBody();
-      setStatus("Target saved locally.");
+      setStatus("Target saved.");
     });
 
-    overlay.querySelectorAll("[data-del-target]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const idx = Number(btn.getAttribute("data-del-target"));
-        const rows = getLocalTargets();
-        rows.splice(idx, 1);
-        setLocalTargets(rows);
+    overlay.querySelectorAll("[data-del-target-live]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const id = Number(btn.getAttribute("data-del-target-live") || 0);
+        if (!id) return;
+        const res = await deleteTargetServer(id);
+        if (!res.ok) return setStatus(res.error || "Could not delete target.", true);
+        await loadState(true);
         renderBody();
+        setStatus("Target deleted.");
       });
     });
 
-    overlay.querySelector("#wh-add-med")?.addEventListener("click", () => {
-      const name = String(overlay.querySelector("#wh-med-name")?.value || "").trim();
-      const cost = String(overlay.querySelector("#wh-med-cost")?.value || "").trim();
+    overlay.querySelector("#wh-add-med")?.addEventListener("click", async () => {
+      const seller = String(overlay.querySelector("#wh-med-name")?.value || "").trim();
+      const amount = String(overlay.querySelector("#wh-med-cost")?.value || "").trim();
       const note = String(overlay.querySelector("#wh-med-note")?.value || "").trim();
-      if (!name || !cost) return setStatus("Enter a player name and cost first.", true);
-      const rows = getLocalMeds();
-      rows.unshift({ name, cost, note, __local: true, created_at: new Date().toISOString() });
-      setLocalMeds(rows.slice(0, 100));
+      if (!seller) return setStatus("Enter seller or enemy faction first.", true);
+      const res = await addMedDealServer(seller, amount, note);
+      if (!res.ok) return setStatus(res.error || "Could not add med deal.", true);
+      await loadState(true);
       renderBody();
-      setStatus("Med deal saved locally.");
+      setStatus("Med deal saved.");
     });
 
-    overlay.querySelectorAll("[data-del-med]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const idx = Number(btn.getAttribute("data-del-med"));
-        const rows = getLocalMeds();
-        rows.splice(idx, 1);
-        setLocalMeds(rows);
+    overlay.querySelectorAll("[data-del-med-live]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const id = Number(btn.getAttribute("data-del-med-live") || 0);
+        if (!id) return;
+        const res = await deleteMedDealServer(id);
+        if (!res.ok) return setStatus(res.error || "Could not delete med deal.", true);
+        await loadState(true);
         renderBody();
+        setStatus("Med deal deleted.");
       });
+    });
+
+    overlay.querySelector("#wh-save-assignment")?.addEventListener("click", async () => {
+      const warId = String(state?.war?.war_id || state?.war?.id || "").trim();
+      const assigneeRaw = String(overlay.querySelector("#wh-assignee-pick")?.value || "").trim();
+      const targetText = String(overlay.querySelector("#wh-assignment-target")?.value || "").trim();
+      const priority = String(overlay.querySelector("#wh-assignment-priority")?.value || "normal").trim();
+      const note = String(overlay.querySelector("#wh-assignment-note")?.value || "").trim();
+
+      if (!warId) return setStatus("No active war id found.", true);
+      if (!assigneeRaw) return setStatus("Pick a faction member first.", true);
+      if (!targetText) return setStatus("Enter target first.", true);
+
+      const [assignedToUserId, assignedToName] = assigneeRaw.split("|");
+      const m = targetText.match(/\[(\d+)\]\s*$/);
+      const targetId = m ? m[1] : "";
+      const targetName = targetText.replace(/\s*\[\d+\]\s*$/, "").trim() || targetText;
+
+      const res = await assignTargetServer({
+        warId,
+        targetId,
+        targetName,
+        assignedToUserId,
+        assignedToName,
+        priority,
+        note,
+      });
+
+      if (!res.ok) return setStatus(res.error || "Could not save assignment.", true);
+      await loadState(true);
+      renderBody();
+      setStatus("Assignment saved.");
+    });
+
+    overlay.querySelectorAll("[data-del-assignment-live]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const id = Number(btn.getAttribute("data-del-assignment-live") || 0);
+        if (!id) return;
+        const res = await deleteAssignmentServer(id);
+        if (!res.ok) return setStatus(res.error || "Could not delete assignment.", true);
+        await loadState(true);
+        renderBody();
+        setStatus("Assignment deleted.");
+      });
+    });
+
+    overlay.querySelector("#wh-add-server-note")?.addEventListener("click", async () => {
+      const warId = String(state?.war?.war_id || state?.war?.id || "").trim();
+      const targetId = String(overlay.querySelector("#wh-note-target-id")?.value || "").trim();
+      const note = String(overlay.querySelector("#wh-note-text")?.value || "").trim();
+      if (!warId) return setStatus("No active war id found.", true);
+      if (!targetId) return setStatus("Enter target id first.", true);
+      if (!note) return setStatus("Enter note text first.", true);
+
+      const res = await addServerNote(warId, targetId, note);
+      if (!res.ok) return setStatus(res.error || "Could not save note.", true);
+      await loadState(true);
+      renderBody();
+      setStatus("Shared note saved.");
+    });
+
+    overlay.querySelectorAll("[data-del-note]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const id = Number(btn.getAttribute("data-del-note") || 0);
+        if (!id) return;
+        const res = await deleteServerNote(id);
+        if (!res.ok) return setStatus(res.error || "Could not delete note.", true);
+        await loadState(true);
+        renderBody();
+        setStatus("Shared note deleted.");
+      });
+    });
+
+    overlay.querySelector("#wh-mark-alerts-seen")?.addEventListener("click", async () => {
+      const res = await markNotificationsSeen();
+      if (!res.ok) return setStatus(res.error || "Could not mark alerts seen.", true);
+      await loadState(true);
+      renderBody();
+      setStatus("Server alerts marked seen.");
     });
 
     overlay.querySelector("#wh-clear-alerts")?.addEventListener("click", () => {
@@ -1301,8 +1625,20 @@
 
   const observer = new MutationObserver(() => ensureMounted());
   observer.observe(document.documentElement || document.body, { childList: true, subtree: true });
-  window.addEventListener("resize", () => { clampToViewport(shield); if (isOpen) clampToViewport(overlay); updateBadge(); });
-  window.addEventListener("orientationchange", () => { setTimeout(() => { clampToViewport(shield); if (isOpen) clampToViewport(overlay); updateBadge(); }, 150); });
+
+  window.addEventListener("resize", () => {
+    clampToViewport(shield);
+    if (isOpen) clampToViewport(overlay);
+    updateBadge();
+  });
+
+  window.addEventListener("orientationchange", () => {
+    setTimeout(() => {
+      clampToViewport(shield);
+      if (isOpen) clampToViewport(overlay);
+      updateBadge();
+    }, 150);
+  });
 
   boot();
 })();
