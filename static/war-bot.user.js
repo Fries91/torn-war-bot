@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         War Hub 🛡️
 // @namespace    fries91-war-hub
-// @version      1.5.0
+// @version      1.5.2
 // @description  War Hub by Fries91. Draggable shield, draggable overlay, members/enemies organization, target enemy dropdown, PDA friendly.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -274,13 +274,6 @@
       display: block;
     }
 
-    .warhub-kv {
-      display: grid;
-      grid-template-columns: 130px 1fr;
-      gap: 6px 10px;
-      font-size: 13px;
-    }
-
     .warhub-empty {
       opacity: .65;
       font-size: 12px;
@@ -346,10 +339,58 @@
       word-break: break-word;
     }
 
-    .warhub-quick-grid {
+    .warhub-score-grid {
       display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 8px;
+      margin-top: 8px;
+    }
+
+    .warhub-score-box {
+      border-radius: 14px;
+      padding: 12px 10px;
+      border: 1px solid rgba(255,255,255,.08);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.05);
+      min-width: 0;
+    }
+
+    .warhub-score-box.us {
+      background: linear-gradient(180deg, rgba(26,120,52,.34), rgba(10,46,20,.55));
+      border-color: rgba(94,214,130,.28);
+    }
+
+    .warhub-score-box.them {
+      background: linear-gradient(180deg, rgba(150,28,28,.34), rgba(60,10,10,.58));
+      border-color: rgba(255,120,120,.24);
+    }
+
+    .warhub-score-box.lead {
+      background: linear-gradient(180deg, rgba(180,138,22,.34), rgba(70,48,8,.58));
+      border-color: rgba(255,214,102,.24);
+    }
+
+    .warhub-score-label {
+      font-size: 10px;
+      opacity: .78;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      margin-bottom: 4px;
+      font-weight: 800;
+    }
+
+    .warhub-score-value {
+      font-size: 20px;
+      font-weight: 900;
+      line-height: 1.1;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .warhub-score-sub {
+      margin-top: 4px;
+      font-size: 11px;
+      opacity: .78;
     }
 
     @media (max-width: 700px) {
@@ -374,7 +415,6 @@
       }
 
       .warhub-grid.two,
-      .warhub-quick-grid,
       .warhub-overview-grid {
         grid-template-columns: 1fr 1fr;
       }
@@ -390,8 +430,8 @@
 
     @media (max-width: 430px) {
       .warhub-overview-grid,
-      .warhub-quick-grid,
-      .warhub-grid.two {
+      .warhub-grid.two,
+      .warhub-score-grid {
         grid-template-columns: 1fr;
       }
 
@@ -636,34 +676,37 @@
 
     return `
       <div class="warhub-card">
-        <h3>Quick Actions</h3>
-        <div class="warhub-quick-grid">
-          <button class="warhub-btn" id="wh-available-yes">Available</button>
-          <button class="warhub-btn alt" id="wh-available-no">Unavailable</button>
-          <button class="warhub-btn" id="wh-chain-on">Chain Sit In</button>
-          <button class="warhub-btn alt" id="wh-chain-off">Chain Sit Out</button>
-          <button class="warhub-btn" id="warhub-refresh-btn">Refresh</button>
-          <button class="warhub-btn alt" id="warhub-seen-btn">Mark notices seen</button>
-        </div>
-      </div>
-
-      <div class="warhub-card">
         <h3>War Overview</h3>
-        <div class="warhub-overview-grid">
+
+        <div class="warhub-score-grid">
+          <div class="warhub-score-box us">
+            <div class="warhub-score-label">Our Score</div>
+            <div class="warhub-score-value">${esc(war.score_us || 0)}</div>
+            <div class="warhub-score-sub">${esc(factionName)}</div>
+          </div>
+
+          <div class="warhub-score-box them">
+            <div class="warhub-score-label">Their Score</div>
+            <div class="warhub-score-value">${esc(war.score_them || 0)}</div>
+            <div class="warhub-score-sub">${esc(enemyName)}</div>
+          </div>
+
+          <div class="warhub-score-box lead">
+            <div class="warhub-score-label">Lead</div>
+            <div class="warhub-score-value">${esc(war.lead || 0)}</div>
+            <div class="warhub-score-sub">${esc(statusText)}</div>
+          </div>
+        </div>
+
+        <div class="warhub-overview-grid" style="margin-top:10px;">
           ${statCard("You", me.name || "-")}
-          ${statCard("Faction", factionName)}
           ${statCard("Faction ID", war.faction_id || "-")}
-          ${statCard("Enemy", enemyName)}
           ${statCard("Enemy ID", war.enemy_faction_id || "-")}
-          ${statCard("Status", statusText)}
           ${statCard("Members", war.member_count || 0)}
           ${statCard("Enemies", war.enemy_member_count || 0)}
           ${statCard("Available", war.available_count || 0)}
           ${statCard("Chain Sitters", war.chain_sitter_count || 0)}
           ${statCard("Linked Users", war.linked_user_count || 0)}
-          ${statCard("Our Score", war.score_us || 0)}
-          ${statCard("Their Score", war.score_them || 0)}
-          ${statCard("Lead", war.lead || 0)}
         </div>
       </div>
 
@@ -1061,16 +1104,6 @@
       });
     }
 
-    const refreshBtn = overlay.querySelector("#warhub-refresh-btn");
-    if (refreshBtn) refreshBtn.addEventListener("click", loadState);
-
-    const seenBtn = overlay.querySelector("#warhub-seen-btn");
-    if (seenBtn) {
-      seenBtn.addEventListener("click", async () => {
-        await doAction("POST", "/api/notifications/seen", {}, "Notifications updated.");
-      });
-    }
-
     const targetSelect = overlay.querySelector("#wh-target-select");
     if (targetSelect) {
       targetSelect.addEventListener("change", () => {
@@ -1192,34 +1225,6 @@
         positionOverlayNearShield();
         clampToViewport(overlay);
         setStatus("Overlay reset.");
-      });
-    }
-
-    const availYes = overlay.querySelector("#wh-available-yes");
-    if (availYes) {
-      availYes.addEventListener("click", async () => {
-        await doAction("POST", "/api/availability/set", { available: true }, "Marked available.");
-      });
-    }
-
-    const availNo = overlay.querySelector("#wh-available-no");
-    if (availNo) {
-      availNo.addEventListener("click", async () => {
-        await doAction("POST", "/api/availability/set", { available: false }, "Marked unavailable.");
-      });
-    }
-
-    const chainOn = overlay.querySelector("#wh-chain-on");
-    if (chainOn) {
-      chainOn.addEventListener("click", async () => {
-        await doAction("POST", "/api/chain-sitter/set", { enabled: true }, "Chain sitter enabled.");
-      });
-    }
-
-    const chainOff = overlay.querySelector("#wh-chain-off");
-    if (chainOff) {
-      chainOff.addEventListener("click", async () => {
-        await doAction("POST", "/api/chain-sitter/set", { enabled: false }, "Chain sitter disabled.");
       });
     }
   }
