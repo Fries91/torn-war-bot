@@ -1,4 +1,5 @@
 import re
+import time
 import requests
 from typing import Any, Dict, List, Tuple
 
@@ -257,6 +258,27 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
         out["source_note"] = last_note or out["source_note"]
         return out
 
+    def _extract_factions(war: Dict[str, Any]) -> Dict[str, Any]:
+        factions = war.get("factions") or war.get("participants") or {}
+        return factions if isinstance(factions, dict) else {}
+
+    def _is_active_war(war: Dict[str, Any]) -> bool:
+        raw = " ".join([
+            str(war.get("status") or ""),
+            str(war.get("state") or ""),
+        ]).strip().lower()
+
+        if any(x in raw for x in ["active", "running", "ongoing", "started", "live"]):
+            return True
+        if any(x in raw for x in ["ended", "finished", "complete", "completed", "expired"]):
+            return False
+
+        end_val = war.get("end") or war.get("end_time") or war.get("ends") or 0
+        if isinstance(end_val, (int, float)) and int(end_val) > 0:
+            return int(end_val) > int(time.time())
+
+        return True
+
     chosen_war_id = ""
     chosen_war = None
 
@@ -264,15 +286,30 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
         if not isinstance(war, dict):
             continue
 
-        factions = war.get("factions") or war.get("participants") or {}
-        if not isinstance(factions, dict):
+        factions = _extract_factions(war)
+        if not factions:
             continue
 
         faction_keys = [str(k) for k in factions.keys()]
-        if my_faction_id and str(my_faction_id) in faction_keys:
+        if my_faction_id and str(my_faction_id) in faction_keys and _is_active_war(war):
             chosen_war_id = str(war_id)
             chosen_war = war
             break
+
+    if not chosen_war:
+        for war_id, war in chosen_container.items():
+            if not isinstance(war, dict):
+                continue
+
+            factions = _extract_factions(war)
+            if not factions:
+                continue
+
+            faction_keys = [str(k) for k in factions.keys()]
+            if my_faction_id and str(my_faction_id) in faction_keys:
+                chosen_war_id = str(war_id)
+                chosen_war = war
+                break
 
     if not chosen_war:
         first_key = next(iter(chosen_container.keys()), "")
@@ -286,25 +323,31 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
         return out
 
     war = chosen_war
-    factions = war.get("factions") or war.get("participants") or {}
+    factions = _extract_factions(war)
 
     my_side = None
     enemy_side = None
+
     for fid, fdata in factions.items():
         fid_s = str(fid)
         if my_faction_id and fid_s == str(my_faction_id):
             my_side = (fid_s, fdata)
-        else:
-            enemy_side = (fid_s, fdata)
+
+    if my_side:
+        for fid, fdata in factions.items():
+            fid_s = str(fid)
+            if fid_s != my_side[0]:
+                enemy_side = (fid_s, fdata)
+                break
 
     if my_side is None and len(factions) >= 1:
         first_fid = next(iter(factions.keys()))
         my_side = (str(first_fid), factions[first_fid])
 
-    if enemy_side is None:
         for fid, fdata in factions.items():
-            if my_side and str(fid) != my_side[0]:
-                enemy_side = (str(fid), fdata)
+            fid_s = str(fid)
+            if fid_s != my_side[0]:
+                enemy_side = (fid_s, fdata)
                 break
 
     my_id = my_side[0] if my_side else str(my_faction_id or "")
@@ -354,15 +397,6 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
 
     enemy_members = []
     enemy_name = _side_name(enemy_data, "") or str(enemy_data.get("name") or "")
-
-    if not enemy_id and len(factions) == 2:
-        for fid, fdata in factions.items():
-            fid_s = str(fid)
-            if fid_s != str(my_id):
-                enemy_id = fid_s
-                enemy_data = fdata
-                enemy_name = _side_name(enemy_data, "") or str(enemy_data.get("name") or "")
-                break
 
     if enemy_id:
         enemy_faction = faction_basic(api_key, faction_id=str(enemy_id))
