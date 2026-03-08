@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         War Hub ⚔️
 // @namespace    fries91-war-hub
-// @version      1.5.5
-// @description  War Hub by Fries91. PDA friendly draggable ⚔️ icon, draggable overlay, quick links restored, bounty tab removed.
+// @version      1.6.0
+// @description  War Hub by Fries91. PDA friendly draggable ⚔️ icon, draggable overlay, quick links linked to user actions, hospital tab, faction-wide med deals.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
 // @downloadURL  https://torn-war-bot.onrender.com/static/war-bot.user.js
@@ -219,6 +219,10 @@
       font-size: 12px;
     }
 
+    .warhub-input[readonly] {
+      opacity: .9;
+    }
+
     .warhub-textarea {
       min-height: 72px;
       resize: vertical;
@@ -240,6 +244,18 @@
 
     .warhub-btn.alt {
       background: rgba(255,255,255,.08);
+    }
+
+    .warhub-btn.green {
+      background: linear-gradient(180deg, #2ea44f, #1c6b33);
+    }
+
+    .warhub-btn.gray {
+      background: linear-gradient(180deg, #535353, #2d2d2d);
+    }
+
+    .warhub-btn.gold {
+      background: linear-gradient(180deg, #c89726, #7c5910);
     }
 
     .warhub-row {
@@ -376,13 +392,41 @@
 
     .warhub-quick-links {
       display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
+      grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 7px;
     }
 
     .warhub-quick-links .warhub-btn {
       width: 100%;
       box-sizing: border-box;
+    }
+
+    .warhub-meta-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 7px;
+      margin-top: 7px;
+    }
+
+    .warhub-mini {
+      border-radius: 10px;
+      padding: 8px;
+      background: rgba(255,255,255,.04);
+      border: 1px solid rgba(255,255,255,.06);
+    }
+
+    .warhub-mini .label {
+      font-size: 9px;
+      opacity: .74;
+      text-transform: uppercase;
+      font-weight: 800;
+      margin-bottom: 4px;
+    }
+
+    .warhub-mini .value {
+      font-size: 12px;
+      font-weight: 800;
+      word-break: break-word;
     }
 
     @media (max-width: 700px) {
@@ -409,7 +453,8 @@
       .warhub-grid.two,
       .warhub-grid.three,
       .warhub-score-grid,
-      .warhub-quick-links {
+      .warhub-quick-links,
+      .warhub-meta-grid {
         grid-template-columns: 1fr;
       }
 
@@ -568,6 +613,17 @@
     return `${m}m`;
   }
 
+  function fmtDate(tsOrText) {
+    if (tsOrText == null || tsOrText === "") return "-";
+    if (typeof tsOrText === "number" || /^\d+$/.test(String(tsOrText))) {
+      const d = new Date(Number(tsOrText) * 1000);
+      if (!Number.isNaN(d.getTime())) return d.toLocaleString();
+    }
+    const d = new Date(tsOrText);
+    if (!Number.isNaN(d.getTime())) return d.toLocaleString();
+    return String(tsOrText);
+  }
+
   function memberStatusPill(m) {
     const s = String(
       m.online_state ||
@@ -586,7 +642,7 @@
     const pills = [
       memberStatusPill(m),
       `<span class="pill ${Number(m.available) ? "green" : "red"}">${Number(m.available) ? "Available" : "Unavailable"}</span>`,
-      `<span class="pill ${Number(m.chain_sitter) ? "gold" : "gray"}">${Number(m.chain_sitter) ? "Chain Sit" : "No Chain Sit"}</span>`,
+      `<span class="pill ${Number(m.chain_sitter) ? "gold" : "gray"}">${Number(m.chain_sitter) ? "Opted In" : "Opted Out"}</span>`,
       `<span class="pill ${m.linked_user ? "gray" : "red"}">${m.linked_user ? "Linked" : "Not Linked"}</span>`
     ];
     return pills.join("");
@@ -836,6 +892,8 @@
     const ctx = resolveWarContext();
     const war = ctx.war || {};
     const statusText = war.status_text || (war.active ? "War active" : "No active war");
+    const medDeals = state?.med_deals || [];
+    const me = state?.me || {};
 
     return `
       <div class="warhub-card">
@@ -860,15 +918,51 @@
             <div class="warhub-score-sub">${esc(statusText)}</div>
           </div>
         </div>
+
+        <div class="warhub-meta-grid">
+          <div class="warhub-mini">
+            <div class="label">Target Score</div>
+            <div class="value">${esc(fmtNum(war.target_score || 0))}</div>
+          </div>
+          <div class="warhub-mini">
+            <div class="label">Remaining</div>
+            <div class="value">${esc(fmtNum(war.remaining_to_target || 0))}</div>
+          </div>
+          <div class="warhub-mini">
+            <div class="label">Start</div>
+            <div class="value">${esc(fmtDate(war.start || ""))}</div>
+          </div>
+          <div class="warhub-mini">
+            <div class="label">End</div>
+            <div class="value">${esc(fmtDate(war.end || ""))}</div>
+          </div>
+        </div>
       </div>
 
       <div class="warhub-card">
         <h3>Quick Links</h3>
-        <div class="warhub-quick-links">
-          <a class="warhub-btn" href="https://www.torn.com/factions.php?step=your#/war/rank" target="_blank" rel="noreferrer">Faction War</a>
-          <a class="warhub-btn" href="https://www.torn.com/bounties.php" target="_blank" rel="noreferrer">Bounties</a>
-          <a class="warhub-btn" href="https://www.torn.com/hospitalview.php" target="_blank" rel="noreferrer">Hospital</a>
+        <div class="warhub-small" style="margin-bottom:8px;">
+          Linked to <strong>${esc(me.name || "you")}</strong>
         </div>
+        <div class="warhub-quick-links">
+          <button class="warhub-btn gold" id="wh-opt-in">Opt In</button>
+          <button class="warhub-btn gray" id="wh-opt-out">Opt Out</button>
+          <button class="warhub-btn green" id="wh-available">Available</button>
+          <button class="warhub-btn alt" id="wh-unavailable">Unavailable</button>
+        </div>
+      </div>
+
+      <div class="warhub-card">
+        <h3>Faction Med Deals</h3>
+        ${medDeals.length ? medDeals.map(x => `
+          <div class="warhub-list-item">
+            <div><strong>${esc(x.buyer_name || "-")}</strong> ⇄ <strong>${esc(x.seller_name || "-")}</strong></div>
+            <div class="warhub-small">Amount: ${esc(x.amount || 0)}</div>
+            ${x.creator_name ? `<div class="warhub-small">Added by: ${esc(x.creator_name)}</div>` : ""}
+            ${x.notes ? `<div class="warhub-small">${esc(x.notes)}</div>` : ""}
+            <div class="warhub-small">${esc(fmtDate(x.created_at || ""))}</div>
+          </div>
+        `).join("") : `<div class="warhub-empty">No faction med deals yet.</div>`}
       </div>
     `;
   }
@@ -950,6 +1044,26 @@
     `;
   }
 
+  function renderHospitalTab() {
+    const hospital = state?.hospital || {};
+    const ours = Array.isArray(hospital.our_faction) ? hospital.our_faction : [];
+    const enemies = Array.isArray(hospital.enemy_faction) ? hospital.enemy_faction : [];
+
+    return `
+      <div class="warhub-card">
+        <h3>Our Faction Hospital</h3>
+        <div class="warhub-small">Lowest time first.</div>
+        ${ours.length ? ours.map(x => renderMemberRow(x, false)).join("") : `<div class="warhub-empty">No one from your faction is in hospital.</div>`}
+      </div>
+
+      <div class="warhub-card">
+        <h3>Enemy Faction Hospital</h3>
+        <div class="warhub-small">Lowest time first.</div>
+        ${enemies.length ? enemies.map(x => renderMemberRow(x, true)).join("") : `<div class="warhub-empty">No enemy members in hospital found.</div>`}
+      </div>
+    `;
+  }
+
   function renderChainSittersTab() {
     const items = state?.chain_sitters || [];
     return `
@@ -964,19 +1078,39 @@
               <a class="warhub-link" href="${esc(x.attack_url || `https://www.torn.com/loader.php?sid=attack&user2ID=${encodeURIComponent(x.user_id || x.id || "")}`)}" target="_blank" rel="noreferrer">Attack</a>
             </div>
           </div>
-        `).join("") : `<div class="warhub-empty">No one has opted into chain sitting yet.</div>`}
+        `).join("") : `<div class="warhub-empty">No one has opted in yet.</div>`}
       </div>
     `;
   }
 
+  function renderEnemyFactionOptions() {
+    const opts = [];
+    const warOpts = state?.war?.enemy_faction_options || [];
+    for (const x of warOpts) {
+      const id = x.faction_id || x.id || "";
+      const name = x.faction_name || x.name || (id ? `Faction ${id}` : "");
+      if (name) opts.push({ id, name });
+    }
+
+    const rows = [`<option value="">Pick enemy faction</option>`];
+    for (const x of opts) {
+      rows.push(`<option value="${esc(x.name)}" data-id="${esc(x.id)}">${esc(x.name)}${x.id ? ` [${esc(x.id)}]` : ""}</option>`);
+    }
+    return rows.join("");
+  }
+
   function renderMedDealsTab() {
     const items = state?.med_deals || [];
+    const me = state?.me || {};
+
     return `
       <div class="warhub-card">
         <h3>Add Med Deal</h3>
         <div class="warhub-grid two">
-          <input id="wh-buyer" class="warhub-input" placeholder="Buyer name">
-          <input id="wh-seller" class="warhub-input" placeholder="Seller name">
+          <input id="wh-buyer" class="warhub-input" placeholder="Buyer name" value="${esc(me.name || "")}" readonly>
+          <select id="wh-seller-faction" class="warhub-select">
+            ${renderEnemyFactionOptions()}
+          </select>
           <input id="wh-amount" class="warhub-input" placeholder="Amount" type="number" min="0">
           <div></div>
         </div>
@@ -989,13 +1123,14 @@
       </div>
 
       <div class="warhub-card">
-        <h3>Saved Med Deals</h3>
+        <h3>Faction Med Deals</h3>
         ${items.length ? items.map(x => `
           <div class="warhub-list-item">
             <div><strong>${esc(x.buyer_name || "-")}</strong> ⇄ <strong>${esc(x.seller_name || "-")}</strong></div>
             <div class="warhub-small">Amount: ${esc(x.amount || 0)}</div>
-            <div class="warhub-small">${esc(x.notes || "")}</div>
-            <div class="warhub-small">${esc(x.created_at || "")}</div>
+            ${x.creator_name ? `<div class="warhub-small">Added by: ${esc(x.creator_name)}</div>` : ""}
+            ${x.notes ? `<div class="warhub-small">${esc(x.notes || "")}</div>` : ""}
+            <div class="warhub-small">${esc(fmtDate(x.created_at || ""))}</div>
             <div style="margin-top:7px;">
               <button class="warhub-btn alt wh-del-med" data-id="${x.id}">Delete</button>
             </div>
@@ -1108,7 +1243,7 @@
           <div class="warhub-list-item">
             <div><strong>${esc(x.kind || "notice")}</strong></div>
             <div>${esc(x.text || "")}</div>
-            <div class="warhub-small">${esc(x.created_at || "")}</div>
+            <div class="warhub-small">${esc(fmtDate(x.created_at || ""))}</div>
           </div>
         `).join("") : `<div class="warhub-empty">No notifications yet.</div>`}
       </div>
@@ -1119,6 +1254,7 @@
     switch (currentTab) {
       case "members": return renderMembersTab();
       case "enemies": return renderEnemiesTab();
+      case "hospital": return renderHospitalTab();
       case "chainsitters": return renderChainSittersTab();
       case "med": return renderMedDealsTab();
       case "targets": return renderTargetsTab();
@@ -1152,6 +1288,7 @@
         ${tabBtn("war", "War")}
         ${tabBtn("members", "Members")}
         ${tabBtn("enemies", "Enemies")}
+        ${tabBtn("hospital", "Hospital")}
         ${tabBtn("chainsitters", "Chain Sitters")}
         ${tabBtn("med", "Med Deals")}
         ${tabBtn("targets", "Targets")}
@@ -1254,12 +1391,44 @@
       });
     }
 
+    const quickOptIn = overlay.querySelector("#wh-opt-in");
+    if (quickOptIn) {
+      quickOptIn.addEventListener("click", async () => {
+        await doAction("POST", "/api/chain-sitter/set", { enabled: true }, "Opted in.");
+      });
+    }
+
+    const quickOptOut = overlay.querySelector("#wh-opt-out");
+    if (quickOptOut) {
+      quickOptOut.addEventListener("click", async () => {
+        await doAction("POST", "/api/chain-sitter/set", { enabled: false }, "Opted out.");
+      });
+    }
+
+    const quickAvailable = overlay.querySelector("#wh-available");
+    if (quickAvailable) {
+      quickAvailable.addEventListener("click", async () => {
+        await doAction("POST", "/api/availability/set", { available: true }, "Set to available.");
+      });
+    }
+
+    const quickUnavailable = overlay.querySelector("#wh-unavailable");
+    if (quickUnavailable) {
+      quickUnavailable.addEventListener("click", async () => {
+        await doAction("POST", "/api/availability/set", { available: false }, "Set to unavailable.");
+      });
+    }
+
     const addMed = overlay.querySelector("#wh-add-med");
     if (addMed) {
       addMed.addEventListener("click", async () => {
+        const sellerSel = overlay.querySelector("#wh-seller-faction");
+        const selectedOpt = sellerSel ? sellerSel.options[sellerSel.selectedIndex] : null;
+        const sellerName = selectedOpt ? String(selectedOpt.value || "").trim() : "";
+
         await doAction("POST", "/api/med-deals/add", {
-          buyer_name: val("#wh-buyer"),
-          seller_name: val("#wh-seller"),
+          seller_name: sellerName,
+          seller_faction_name: sellerName,
           amount: Number(val("#wh-amount") || 0),
           notes: val("#wh-med-notes"),
         }, "Med deal added.");
