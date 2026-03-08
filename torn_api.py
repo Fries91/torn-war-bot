@@ -38,7 +38,6 @@ def _extract_hospital_seconds_from_text(text: str) -> int:
     if not s:
         return 0
 
-    # examples like "3h 20m", "12m", "1h", "2d 3h"
     total = 0
     matches = re.findall(r"(\d+)\s*([dhms])", s)
     if matches:
@@ -158,7 +157,6 @@ def faction_basic(api_key: str, faction_id: str = "") -> Dict[str, Any]:
             },
         )
         if not res["ok"]:
-            # try lowercase id too
             res = _safe_get(
                 f"{API_BASE}/faction/",
                 {
@@ -355,13 +353,25 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
         status_text = "Active war" if (enemy_id or score_us or score_them) else "No active ranked war found."
 
     enemy_members = []
-    enemy_name = _side_name(enemy_data, "")
+    enemy_name = _side_name(enemy_data, "") or str(enemy_data.get("name") or "")
+
+    if not enemy_id and len(factions) == 2:
+        for fid, fdata in factions.items():
+            fid_s = str(fid)
+            if fid_s != str(my_id):
+                enemy_id = fid_s
+                enemy_data = fdata
+                enemy_name = _side_name(enemy_data, "") or str(enemy_data.get("name") or "")
+                break
 
     if enemy_id:
         enemy_faction = faction_basic(api_key, faction_id=str(enemy_id))
         if enemy_faction.get("ok"):
             enemy_name = enemy_faction.get("faction_name") or enemy_name
             enemy_members = enemy_faction.get("members", [])
+
+    if not enemy_name and enemy_id:
+        enemy_name = f"Faction {enemy_id}"
 
     return {
         "ok": True,
