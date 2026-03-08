@@ -1,0 +1,32 @@
+#warhub-overlay {
+    position: fixed;
+    top: 120px;
+    right: 20px;
+    width: 420px;
+    max-height: 80vh;
+    background: #111;
+    color: #eee;
+    border: 2px solid #b00;
+    border-radius: 10px;
+    z-index: 9999;
+    overflow: auto;
+}
+
+#warhub-overlay h2 {
+    background: #b00;
+    padding: 8px;
+    margin: 0;
+}
+
+.warhub-member {
+    padding: 6px;
+    border-bottom: 1px solid #333;
+}
+
+.warhub-online {
+    color: #3cff00;
+}
+
+.warhub-hospital {
+    color: #ff5555;
+}
