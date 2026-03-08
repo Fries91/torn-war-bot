@@ -1,7 +1,7 @@
 import os
 from datetime import datetime, timezone
 from functools import wraps
-from typing import Any, Dict, Optional, List
+from typing import Any, Dict, Optional, List, Tuple
 
 from dotenv import load_dotenv
 from flask import Flask, jsonify, request, send_from_directory
@@ -28,6 +28,18 @@ from db import (
     list_notifications,
     add_notification,
     mark_notifications_seen,
+    save_war_snapshot,
+    list_recent_war_snapshots,
+    get_enemy_state_map,
+    upsert_enemy_state,
+    list_target_assignments_for_war,
+    upsert_target_assignment,
+    delete_target_assignment,
+    list_war_notes,
+    upsert_war_note,
+    delete_war_note,
+    get_user_setting,
+    set_user_setting,
 )
 from torn_api import (
     me_basic,
@@ -42,12 +54,17 @@ load_dotenv()
 
 APP_NAME = "War Hub"
 ADMIN_KEYS = {k.strip() for k in os.getenv("ADMIN_KEYS", "").split(",") if k.strip()}
+DEFAULT_REFRESH_SECONDS = int(os.getenv("DEFAULT_REFRESH_SECONDS", "30"))
 
 app = Flask(__name__, static_folder="static")
 
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def now_ts() -> int:
+    return int(datetime.now(timezone.utc).timestamp())
 
 
 def ok(data: Optional[Dict[str, Any]] = None, **kwargs):
@@ -80,6 +97,40 @@ def require_session(fn):
         return fn(*args, **kwargs)
 
     return wrapper
+
+
+def _to_int(value: Any, default: int = 0) -> int:
+    try:
+        if value is None or value == "":
+            return default
+        return int(value)
+    except Exception:
+        return default
+
+
+def _seconds_to_text(seconds: int) -> str:
+    seconds = max(0, int(seconds or 0))
+    if seconds <= 0:
+        return "0s"
+
+    days = seconds // 86400
+    seconds %= 86400
+    hours = seconds // 3600
+    seconds %= 3600
+    mins = seconds // 60
+    secs = seconds % 60
+
+    parts: List[str] = []
+    if days:
+        parts.append(f"{days}d")
+    if hours:
+        parts.append(f"{hours}h")
+    if mins:
+        parts.append(f"{mins}m")
+    if secs and not parts:
+        parts.append(f"{secs}s")
+
+    return " ".join(parts[:3])
 
 
 def _parse_minutes_from_member(member: Dict[str, Any]) -> int:
@@ -229,6 +280,7 @@ def _merge_faction_members(faction_id: str, members: list) -> Dict[str, Any]:
             "position": m.get("position", ""),
             "online_state": m.get("online_state", activity_bucket),
             "hospital_seconds": int(m.get("hospital_seconds") or 0),
+            "hospital_text": _seconds_to_text(int(m.get("hospital_seconds") or 0)),
             "available": available,
             "chain_sitter": chain_sitter,
             "linked_user": linked_user,
@@ -248,6 +300,7 @@ def _merge_faction_members(faction_id: str, members: list) -> Dict[str, Any]:
                     "level": item["level"],
                     "online_state": item["online_state"],
                     "hospital_seconds": item["hospital_seconds"],
+                    "hospital_text": item["hospital_text"],
                     "profile_url": item["profile_url"],
                     "attack_url": item["attack_url"],
                 }
@@ -294,6 +347,7 @@ def _decorate_enemy_members(enemy_members: list) -> Dict[str, Any]:
                 "position": m.get("position", ""),
                 "online_state": m.get("online_state", activity_bucket),
                 "hospital_seconds": int(m.get("hospital_seconds") or 0),
+                "hospital_text": _seconds_to_text(int(m.get("hospital_seconds") or 0)),
                 "activity_bucket": activity_bucket,
                 "activity_minutes": activity_minutes,
                 "profile_url": profile_url(uid),
@@ -311,6 +365,184 @@ def _decorate_enemy_members(enemy_members: list) -> Dict[str, Any]:
     }
 
 
+def _safe_name_map(rows: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+    out: Dict[str, Dict[str, Any]] = {}
+    for row in rows:
+        uid = str(row.get("user_id") or "")
+        if uid:
+            out[uid] = row
+    return out
+
+
+def _rank_enemy_targets(enemy_members: List[Dict[str, Any]], assignments: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    assigned_ids = {str(a.get("target_id") or "") for a in assignments if str(a.get("target_id") or "")}
+    ranked: List[Dict[str, Any]] = []
+
+    for m in enemy_members:
+        score = 0
+        online_state = str(m.get("online_state") or "").lower()
+        hospital_seconds = int(m.get("hospital_seconds") or 0)
+        level = _to_int(m.get("level"), 0)
+        uid = str(m.get("user_id") or "")
+
+        if online_state == "online":
+            score += 100
+        elif online_state == "idle":
+            score += 70
+        elif online_state == "offline":
+            score += 25
+
+        if hospital_seconds > 0:
+            if hospital_seconds <= 300:
+                score += 35
+            elif hospital_seconds <= 900:
+                score += 10
+            else:
+                score -= 80
+
+        if level > 0:
+            score += max(0, 60 - min(level, 60))
+
+        if uid in assigned_ids:
+            score -= 40
+
+        ranked.append(
+            {
+                **m,
+                "priority_score": score,
+                "is_assigned": uid in assigned_ids,
+            }
+        )
+
+    ranked.sort(
+        key=lambda x: (
+            -int(x.get("priority_score") or 0),
+            int(x.get("hospital_seconds") or 0),
+            (x.get("name") or "").lower(),
+        )
+    )
+    return ranked
+
+
+def _calc_pace_and_estimate(war_id: str, score_us: int, score_them: int, target_score: int) -> Dict[str, Any]:
+    if not war_id:
+        return {
+            "lead": score_us - score_them,
+            "pace_per_hour_us": 0.0,
+            "pace_per_hour_them": 0.0,
+            "eta_to_target_us_seconds": 0,
+            "eta_to_target_us_text": "",
+            "snapshot_count": 0,
+        }
+
+    rows = list_recent_war_snapshots(war_id, limit=20)
+    if not rows:
+        return {
+            "lead": score_us - score_them,
+            "pace_per_hour_us": 0.0,
+            "pace_per_hour_them": 0.0,
+            "eta_to_target_us_seconds": 0,
+            "eta_to_target_us_text": "",
+            "snapshot_count": 0,
+        }
+
+    first = rows[-1]
+    last = rows[0]
+
+    first_us = _to_int(first.get("score_us"), score_us)
+    first_them = _to_int(first.get("score_them"), score_them)
+    last_us = _to_int(last.get("score_us"), score_us)
+    last_them = _to_int(last.get("score_them"), score_them)
+
+    first_ts = _to_int(first.get("ts"), 0)
+    last_ts = _to_int(last.get("ts"), 0)
+
+    elapsed = max(0, last_ts - first_ts)
+    us_gain = max(0, last_us - first_us)
+    them_gain = max(0, last_them - first_them)
+
+    pace_us = round((us_gain / elapsed) * 3600, 2) if elapsed > 0 else 0.0
+    pace_them = round((them_gain / elapsed) * 3600, 2) if elapsed > 0 else 0.0
+
+    eta_seconds = 0
+    eta_text = ""
+    if target_score > 0 and pace_us > 0:
+        remaining = max(0, target_score - score_us)
+        if remaining > 0:
+            eta_seconds = int(remaining / (pace_us / 3600)) if pace_us > 0 else 0
+            eta_text = _seconds_to_text(eta_seconds)
+        else:
+            eta_text = "Reached"
+
+    return {
+        "lead": score_us - score_them,
+        "pace_per_hour_us": pace_us,
+        "pace_per_hour_them": pace_them,
+        "eta_to_target_us_seconds": eta_seconds,
+        "eta_to_target_us_text": eta_text,
+        "snapshot_count": len(rows),
+    }
+
+
+def _emit_enemy_hospital_alerts(user_id: str, war_id: str, enemies: List[Dict[str, Any]]) -> None:
+    if not war_id:
+        return
+
+    prev_map = get_enemy_state_map(war_id)
+    for enemy in enemies:
+        uid = str(enemy.get("user_id") or "")
+        if not uid:
+            continue
+
+        cur_hosp = int(enemy.get("hospital_seconds") or 0)
+        cur_state = str(enemy.get("online_state") or "")
+        prev = prev_map.get(uid)
+        prev_hosp = int(prev.get("hospital_seconds") or 0) if prev else 0
+
+        if prev and prev_hosp > 0 and cur_hosp == 0:
+            add_notification(user_id, "enemy_out", f'{enemy.get("name", "Enemy")} left hospital.')
+
+        upsert_enemy_state(
+            war_id=war_id,
+            user_id=uid,
+            name=str(enemy.get("name") or "Unknown"),
+            online_state=cur_state,
+            hospital_seconds=cur_hosp,
+        )
+
+
+def _decorate_assignments(assignments: List[Dict[str, Any]], enemy_map: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
+    out = []
+    for row in assignments:
+        target_id = str(row.get("target_id") or "")
+        enemy = enemy_map.get(target_id, {})
+        out.append(
+            {
+                **row,
+                "target_profile_url": profile_url(target_id) if target_id else "",
+                "target_attack_url": attack_url(target_id) if target_id else "",
+                "target_bounty_url": bounty_url(target_id) if target_id else "",
+                "online_state": enemy.get("online_state", ""),
+                "hospital_seconds": int(enemy.get("hospital_seconds") or 0),
+                "hospital_text": _seconds_to_text(int(enemy.get("hospital_seconds") or 0)),
+                "level": enemy.get("level", row.get("target_level", "")),
+            }
+        )
+    return out
+
+
+def _top_lists(our_members: List[Dict[str, Any]], enemy_members: List[Dict[str, Any]]) -> Dict[str, Any]:
+    online_ours = [m for m in our_members if str(m.get("online_state") or "") == "online"]
+    online_enemies = [m for m in enemy_members if str(m.get("online_state") or "") == "online"]
+    hospital_enemies = [m for m in enemy_members if int(m.get("hospital_seconds") or 0) > 0]
+
+    return {
+        "online_members": sorted(online_ours, key=lambda x: (x.get("name") or "").lower())[:10],
+        "online_enemies": sorted(online_enemies, key=lambda x: (x.get("name") or "").lower())[:10],
+        "hospital_enemies": sorted(hospital_enemies, key=lambda x: int(x.get("hospital_seconds") or 10**9))[:10],
+    }
+
+
 @app.route("/")
 def root():
     return ok(
@@ -325,6 +557,13 @@ def root():
             "/api/chain-sitter/set",
             "/api/med-deals/add",
             "/api/med-deals/delete",
+            "/api/targets/add",
+            "/api/targets/delete",
+            "/api/targets/assign",
+            "/api/targets/unassign",
+            "/api/targets/note",
+            "/api/analytics",
+            "/api/settings",
             "/static/war-bot.user.js",
         ],
     )
@@ -371,6 +610,11 @@ def api_auth():
             faction_name=faction_name,
         )
 
+        if get_user_setting(user_id, "refresh_seconds") is None:
+            set_user_setting(user_id, "refresh_seconds", str(DEFAULT_REFRESH_SECONDS))
+        if get_user_setting(user_id, "alerts_enabled") is None:
+            set_user_setting(user_id, "alerts_enabled", "1")
+
         token = create_session(user_id)
         add_notification(user_id, "auth", f"Logged into {APP_NAME} successfully.")
 
@@ -413,7 +657,7 @@ def api_state():
                 return err(faction.get("error", "Could not load faction."), 500)
 
         merged = _merge_faction_members(
-            faction.get("faction_id", faction_id),
+            str(faction.get("faction_id", faction_id) or ""),
             faction.get("members", []),
         )
 
@@ -426,8 +670,13 @@ def api_state():
         enemy_info = _decorate_enemy_members(war_summary.get("enemy_members", []))
 
         state_faction_id = str(faction.get("faction_id", faction_id) or "")
+        state_faction_name = str(faction.get("faction_name", faction_name) or "")
         enemy_faction_name = str(war_summary.get("enemy_faction_name", "") or "").strip()
         enemy_faction_id = str(war_summary.get("enemy_faction_id", "") or "").strip()
+        war_id = str(war_summary.get("war_id", "") or "")
+        score_us = _to_int(war_summary.get("score_us"), 0)
+        score_them = _to_int(war_summary.get("score_them"), 0)
+        target_score = _to_int(war_summary.get("target_score"), 0)
 
         enemy_faction_options: List[Dict[str, str]] = []
         if enemy_faction_name or enemy_faction_id:
@@ -438,12 +687,42 @@ def api_state():
                 }
             )
 
+        if war_id:
+            save_war_snapshot(
+                war_id=war_id,
+                faction_id=state_faction_id,
+                faction_name=state_faction_name,
+                enemy_faction_id=enemy_faction_id,
+                enemy_faction_name=enemy_faction_name,
+                score_us=score_us,
+                score_them=score_them,
+                target_score=target_score,
+                lead=score_us - score_them,
+                start_ts=_to_int(war_summary.get("start"), 0),
+                end_ts=_to_int(war_summary.get("end"), 0),
+                status_text=str(war_summary.get("status_text") or ""),
+            )
+
+        _emit_enemy_hospital_alerts(user_id, war_id, enemy_info["members"])
+
+        assignments = list_target_assignments_for_war(war_id) if war_id else []
+        enemy_map = _safe_name_map(enemy_info["members"])
+        assignments = _decorate_assignments(assignments, enemy_map)
+
+        ranked_targets = _rank_enemy_targets(enemy_info["members"], assignments)
+        notes = list_war_notes(war_id) if war_id else []
+        pace = _calc_pace_and_estimate(war_id, score_us, score_them, target_score)
+        tops = _top_lists(merged["members"], enemy_info["members"])
+
+        refresh_seconds = _to_int(get_user_setting(user_id, "refresh_seconds"), DEFAULT_REFRESH_SECONDS)
+        alerts_enabled = _to_int(get_user_setting(user_id, "alerts_enabled"), 1)
+
         return ok(
             me={
                 "user_id": user["user_id"],
                 "name": user["name"],
                 "faction_id": state_faction_id,
-                "faction_name": faction.get("faction_name", faction_name),
+                "faction_name": state_faction_name,
                 "profile_url": profile_url(user["user_id"]),
                 "available": int(user.get("available", 1)),
                 "chain_sitter": int(user.get("chain_sitter", 0)),
@@ -466,10 +745,14 @@ def api_state():
                     "payload": {"available": False},
                 },
             },
+            settings={
+                "refresh_seconds": refresh_seconds,
+                "alerts_enabled": alerts_enabled,
+            },
             war={
-                "active": bool(war_summary.get("active")) or bool(state_faction_id),
+                "active": bool(war_summary.get("active")),
                 "faction_id": state_faction_id,
-                "faction_name": faction.get("faction_name", faction_name),
+                "faction_name": state_faction_name,
                 "enemy_faction_id": enemy_faction_id,
                 "enemy_faction_name": enemy_faction_name,
                 "enemy_faction_options": enemy_faction_options,
@@ -486,28 +769,48 @@ def api_state():
                 "enemy_idle_count": enemy_info["counts"]["idle"],
                 "enemy_offline_count": enemy_info["counts"]["offline"],
                 "enemy_hospital_count": enemy_info["counts"]["hospital"],
-                "war_id": war_summary.get("war_id", ""),
+                "war_id": war_id,
                 "war_type": war_summary.get("war_type", ""),
-                "score_us": war_summary.get("score_us", 0),
-                "score_them": war_summary.get("score_them", 0),
-                "lead": war_summary.get("lead", 0),
-                "target_score": war_summary.get("target_score", 0),
-                "remaining_to_target": war_summary.get("remaining_to_target", 0),
-                "start": war_summary.get("start", 0),
-                "end": war_summary.get("end", 0),
+                "score_us": score_us,
+                "score_them": score_them,
+                "lead": score_us - score_them,
+                "target_score": target_score,
+                "remaining_to_target": max(0, target_score - score_us) if target_score else 0,
+                "start": _to_int(war_summary.get("start"), 0),
+                "end": _to_int(war_summary.get("end"), 0),
                 "status_text": war_summary.get("status_text", ""),
                 "source_ok": bool(war_summary.get("source_ok")),
                 "source_note": war_summary.get("source_note", ""),
+                "pace_per_hour_us": pace["pace_per_hour_us"],
+                "pace_per_hour_them": pace["pace_per_hour_them"],
+                "eta_to_target_us_seconds": pace["eta_to_target_us_seconds"],
+                "eta_to_target_us_text": pace["eta_to_target_us_text"],
+                "snapshot_count": pace["snapshot_count"],
             },
             members=merged["members"],
             chain_sitters=merged["chain_sitters"],
             enemies=enemy_info["members"],
             enemy_options=enemy_info["members"],
+            top_targets=ranked_targets[:15],
+            target_assignments=assignments,
+            war_notes=notes,
+            top_lists=tops,
             hospital={
                 "our_faction": merged["hospital_members"],
                 "enemy_faction": enemy_info["hospital_members"],
                 "our_count": len(merged["hospital_members"]),
                 "enemy_count": len(enemy_info["hospital_members"]),
+            },
+            analytics={
+                "lead": pace["lead"],
+                "pace_per_hour_us": pace["pace_per_hour_us"],
+                "pace_per_hour_them": pace["pace_per_hour_them"],
+                "eta_to_target_us_seconds": pace["eta_to_target_us_seconds"],
+                "eta_to_target_us_text": pace["eta_to_target_us_text"],
+                "our_online": merged["counts"]["online"],
+                "enemy_online": enemy_info["counts"]["online"],
+                "our_hospital": merged["counts"]["hospital"],
+                "enemy_hospital": enemy_info["counts"]["hospital"],
             },
             med_deals=list_med_deals_for_faction(state_faction_id),
             targets=list_targets(user_id),
@@ -516,6 +819,85 @@ def api_state():
         )
     except Exception as e:
         return err(f"Could not load state: {e}", 500)
+
+
+@app.get("/api/analytics")
+@require_session
+def api_analytics():
+    try:
+        user_id = request.session["user_id"]
+        user = get_user(user_id)
+        if not user:
+            return err("User not found.", 404)
+
+        api_key = user["api_key"]
+        faction_id = str(user.get("faction_id") or "")
+        faction_name = str(user.get("faction_name") or "")
+
+        war_summary = ranked_war_summary(
+            api_key=api_key,
+            my_faction_id=faction_id,
+            my_faction_name=faction_name,
+        )
+
+        war_id = str(war_summary.get("war_id") or "")
+        score_us = _to_int(war_summary.get("score_us"), 0)
+        score_them = _to_int(war_summary.get("score_them"), 0)
+        target_score = _to_int(war_summary.get("target_score"), 0)
+        pace = _calc_pace_and_estimate(war_id, score_us, score_them, target_score)
+        snapshots = list_recent_war_snapshots(war_id, limit=25) if war_id else []
+
+        return ok(
+            analytics={
+                "war_id": war_id,
+                "score_us": score_us,
+                "score_them": score_them,
+                "lead": pace["lead"],
+                "target_score": target_score,
+                "pace_per_hour_us": pace["pace_per_hour_us"],
+                "pace_per_hour_them": pace["pace_per_hour_them"],
+                "eta_to_target_us_seconds": pace["eta_to_target_us_seconds"],
+                "eta_to_target_us_text": pace["eta_to_target_us_text"],
+                "snapshots": snapshots,
+            }
+        )
+    except Exception as e:
+        return err(f"Could not load analytics: {e}", 500)
+
+
+@app.get("/api/settings")
+@require_session
+def api_settings_get():
+    try:
+        user_id = request.session["user_id"]
+        return ok(
+            settings={
+                "refresh_seconds": _to_int(get_user_setting(user_id, "refresh_seconds"), DEFAULT_REFRESH_SECONDS),
+                "alerts_enabled": _to_int(get_user_setting(user_id, "alerts_enabled"), 1),
+            }
+        )
+    except Exception as e:
+        return err(f"Could not load settings: {e}", 500)
+
+
+@app.post("/api/settings")
+@require_session
+def api_settings_set():
+    try:
+        user_id = request.session["user_id"]
+        data = request.get_json(force=True, silent=True) or {}
+
+        if "refresh_seconds" in data:
+            refresh_seconds = max(10, min(300, _to_int(data.get("refresh_seconds"), DEFAULT_REFRESH_SECONDS)))
+            set_user_setting(user_id, "refresh_seconds", str(refresh_seconds))
+
+        if "alerts_enabled" in data:
+            alerts_enabled = 1 if bool(data.get("alerts_enabled")) else 0
+            set_user_setting(user_id, "alerts_enabled", str(alerts_enabled))
+
+        return ok(message="Settings updated.")
+    except Exception as e:
+        return err(f"Could not update settings: {e}", 500)
 
 
 @app.post("/api/availability/set")
@@ -554,10 +936,7 @@ def api_med_deals_add():
             return err("User not found.", 404)
 
         data = request.get_json(force=True, silent=True) or {}
-
-        # Buyer name is always linked to the logged-in user.
         buyer_name = str(user.get("name") or "").strip()
-
         seller_name = str(data.get("seller_name", "")).strip()
         amount = int(data.get("amount") or 0)
         notes = str(data.get("notes", "")).strip()
@@ -582,7 +961,6 @@ def api_med_deals_add():
         )
 
         add_notification(user_id, "med_deal", f"Med deal added: {buyer_name} vs {seller_name}.")
-
         return ok(message="Med deal added.")
     except Exception as e:
         return err(f"Could not add med deal: {e}", 500)
@@ -644,6 +1022,111 @@ def api_targets_delete():
         return ok(message="Target deleted.")
     except Exception as e:
         return err(f"Could not delete target: {e}", 500)
+
+
+@app.post("/api/targets/assign")
+@require_session
+def api_targets_assign():
+    try:
+        user_id = request.session["user_id"]
+        user = get_user(user_id)
+        if not user:
+            return err("User not found.", 404)
+
+        data = request.get_json(force=True, silent=True) or {}
+
+        war_id = str(data.get("war_id", "")).strip()
+        target_id = str(data.get("target_id", "")).strip()
+        target_name = str(data.get("target_name", "")).strip()
+        assigned_to_user_id = str(data.get("assigned_to_user_id", user_id)).strip()
+        assigned_to_name = str(data.get("assigned_to_name", user.get("name") or "")).strip()
+        priority = str(data.get("priority", "normal")).strip()
+        note = str(data.get("note", "")).strip()
+
+        if not war_id:
+            return err("Missing war id.")
+        if not target_id and not target_name:
+            return err("Missing target.")
+
+        upsert_target_assignment(
+            war_id=war_id,
+            target_id=target_id,
+            target_name=target_name,
+            assigned_to_user_id=assigned_to_user_id,
+            assigned_to_name=assigned_to_name,
+            assigned_by_user_id=user_id,
+            assigned_by_name=str(user.get("name") or "").strip(),
+            priority=priority,
+            note=note,
+        )
+
+        add_notification(user_id, "target_assign", f"Assigned target: {target_name or target_id}.")
+        return ok(message="Target assigned.")
+    except Exception as e:
+        return err(f"Could not assign target: {e}", 500)
+
+
+@app.post("/api/targets/unassign")
+@require_session
+def api_targets_unassign():
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        assignment_id = _to_int(data.get("id"), 0)
+        if not assignment_id:
+            return err("Missing assignment id.")
+
+        delete_target_assignment(assignment_id)
+        return ok(message="Target assignment removed.")
+    except Exception as e:
+        return err(f"Could not remove assignment: {e}", 500)
+
+
+@app.post("/api/targets/note")
+@require_session
+def api_targets_note():
+    try:
+        user_id = request.session["user_id"]
+        user = get_user(user_id)
+        if not user:
+            return err("User not found.", 404)
+
+        data = request.get_json(force=True, silent=True) or {}
+        war_id = str(data.get("war_id", "")).strip()
+        target_id = str(data.get("target_id", "")).strip()
+        note = str(data.get("note", "")).strip()
+
+        if not war_id:
+            return err("Missing war id.")
+        if not target_id:
+            return err("Missing target id.")
+        if not note:
+            return err("Missing note.")
+
+        upsert_war_note(
+            war_id=war_id,
+            target_id=target_id,
+            note=note,
+            created_by_user_id=user_id,
+            created_by_name=str(user.get("name") or "").strip(),
+        )
+
+        return ok(message="Note saved.")
+    except Exception as e:
+        return err(f"Could not save note: {e}", 500)
+
+
+@app.post("/api/targets/note/delete")
+@require_session
+def api_targets_note_delete():
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        note_id = _to_int(data.get("id"), 0)
+        if not note_id:
+            return err("Missing note id.")
+        delete_war_note(note_id)
+        return ok(message="Note deleted.")
+    except Exception as e:
+        return err(f"Could not delete note: {e}", 500)
 
 
 @app.post("/api/bounties/add")
