@@ -272,6 +272,7 @@ def _merge_faction_members(faction_id: str, members: List[Dict[str, Any]]) -> Di
 
         item = {
             "user_id": uid,
+            "id": uid,
             "name": m.get("name", "Unknown"),
             "level": m.get("level", ""),
             "status": m.get("status", ""),
@@ -279,6 +280,7 @@ def _merge_faction_members(faction_id: str, members: List[Dict[str, Any]]) -> Di
             "last_action": m.get("last_action", ""),
             "position": m.get("position", ""),
             "online_state": m.get("online_state", activity_bucket),
+            "online_status": m.get("online_state", activity_bucket),
             "hospital_seconds": int(m.get("hospital_seconds") or 0),
             "hospital_text": _seconds_to_text(int(m.get("hospital_seconds") or 0)),
             "available": available,
@@ -298,9 +300,11 @@ def _merge_faction_members(faction_id: str, members: List[Dict[str, Any]]) -> Di
             chain_sitters.append(
                 {
                     "user_id": uid,
+                    "id": uid,
                     "name": item["name"],
                     "level": item["level"],
                     "online_state": item["online_state"],
+                    "online_status": item["online_status"],
                     "hospital_seconds": item["hospital_seconds"],
                     "hospital_text": item["hospital_text"],
                     "profile_url": item["profile_url"],
@@ -341,13 +345,17 @@ def _decorate_enemy_members(enemy_members: List[Dict[str, Any]]) -> Dict[str, An
         decorated.append(
             {
                 "user_id": uid,
+                "id": uid,
+                "target_id": uid,
                 "name": m.get("name", "Unknown"),
+                "target_name": m.get("name", "Unknown"),
                 "level": m.get("level", ""),
                 "status": m.get("status", ""),
                 "status_detail": m.get("status_detail", ""),
                 "last_action": m.get("last_action", ""),
                 "position": m.get("position", ""),
                 "online_state": m.get("online_state", activity_bucket),
+                "online_status": m.get("online_state", activity_bucket),
                 "hospital_seconds": int(m.get("hospital_seconds") or 0),
                 "hospital_text": _seconds_to_text(int(m.get("hospital_seconds") or 0)),
                 "activity_bucket": activity_bucket,
@@ -534,10 +542,13 @@ def _decorate_assignments(assignments: List[Dict[str, Any]], enemy_map: Dict[str
         out.append(
             {
                 **row,
+                "assignee": row.get("assigned_to_name", ""),
+                "target": row.get("target_name") or target_id,
                 "target_profile_url": profile_url(target_id) if target_id else "",
                 "target_attack_url": attack_url(target_id) if target_id else "",
                 "target_bounty_url": bounty_url(target_id) if target_id else "",
                 "online_state": enemy.get("online_state", ""),
+                "online_status": enemy.get("online_status", ""),
                 "hospital_seconds": int(enemy.get("hospital_seconds") or 0),
                 "hospital_text": _seconds_to_text(int(enemy.get("hospital_seconds") or 0)),
                 "level": enemy.get("level", row.get("target_level", "")),
@@ -556,6 +567,68 @@ def _top_lists(our_members: List[Dict[str, Any]], enemy_members: List[Dict[str, 
         "online_enemies": sorted(online_enemies, key=lambda x: (x.get("name") or "").lower())[:10],
         "hospital_enemies": sorted(hospital_enemies, key=lambda x: int(x.get("hospital_seconds") or 10**9))[:10],
     }
+
+
+def _serialize_med_deals(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    out = []
+    for row in rows:
+        seller = str(row.get("seller_name") or "").strip()
+        buyer = str(row.get("buyer_name") or "").strip()
+        amount = _to_int(row.get("amount"), 0)
+        note = str(row.get("notes") or "").strip()
+
+        display_name = seller or buyer or "Unknown"
+        cost_text = str(amount) if amount else ""
+
+        out.append(
+            {
+                **row,
+                "name": display_name,
+                "player": display_name,
+                "cost": cost_text,
+                "price": cost_text,
+                "note": note,
+                "terms": note,
+            }
+        )
+    return out
+
+
+def _serialize_targets(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    out = []
+    for row in rows:
+        tid = str(row.get("target_id") or "").strip()
+        tname = str(row.get("target_name") or "").strip()
+        notes = str(row.get("notes") or "").strip()
+        out.append(
+            {
+                **row,
+                "id": row.get("id"),
+                "target_id": tid,
+                "user_id": tid,
+                "name": tname or tid,
+                "target_name": tname or tid,
+                "reason": notes,
+                "note": notes,
+                "attack_url": attack_url(tid) if tid else "",
+                "profile_url": profile_url(tid) if tid else "",
+                "bounty_url": bounty_url(tid) if tid else "",
+            }
+        )
+    return out
+
+
+def _serialize_notes(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    out = []
+    for row in rows:
+        out.append(
+            {
+                **row,
+                "text": row.get("note", ""),
+                "message": row.get("note", ""),
+            }
+        )
+    return out
 
 
 @app.route("/")
@@ -642,6 +715,7 @@ def api_auth():
 
         return ok(
             token=token,
+            session_token=token,
             user={
                 "user_id": user_id,
                 "name": name,
@@ -767,12 +841,16 @@ def api_state():
         assignments = _decorate_assignments(assignments, enemy_map)
 
         ranked_targets = _rank_enemy_targets(enemy_info["members"], assignments)
-        notes = list_war_notes(war_id) if war_id else []
+        notes = _serialize_notes(list_war_notes(war_id) if war_id else [])
         pace = _calc_pace_and_estimate(war_id, score_us, score_them, target_score)
         tops = _top_lists(merged["members"], enemy_info["members"])
 
         refresh_seconds = _to_int(get_user_setting(user_id, "refresh_seconds"), DEFAULT_REFRESH_SECONDS)
         alerts_enabled = _to_int(get_user_setting(user_id, "alerts_enabled"), 1)
+
+        med_deals = _serialize_med_deals(list_med_deals_for_faction(state_faction_id))
+        targets = _serialize_targets(list_targets(user_id))
+        notifications = list_notifications(user_id)
 
         return ok(
             me={
@@ -783,6 +861,20 @@ def api_state():
                 "profile_url": profile_url(user["user_id"]),
                 "available": int(user.get("available", 1)),
                 "chain_sitter": int(user.get("chain_sitter", 0)),
+            },
+            faction={
+                "id": state_faction_id,
+                "faction_id": state_faction_id,
+                "name": state_faction_name,
+                "faction_name": state_faction_name,
+                "members": merged["members"],
+            },
+            enemy_faction={
+                "id": enemy_faction_id,
+                "faction_id": enemy_faction_id,
+                "name": enemy_faction_name,
+                "faction_name": enemy_faction_name,
+                "members": enemy_info["members"],
             },
             quick_links={
                 "opt_in": {
@@ -808,10 +900,19 @@ def api_state():
             },
             war={
                 "active": bool(war_summary.get("active")),
+                "id": war_id,
+                "war_id": war_id,
                 "faction_id": state_faction_id,
                 "faction_name": state_faction_name,
                 "enemy_faction_id": enemy_faction_id,
                 "enemy_faction_name": enemy_faction_name,
+                "enemy_faction": {
+                    "id": enemy_faction_id,
+                    "faction_id": enemy_faction_id,
+                    "name": enemy_faction_name,
+                    "faction_name": enemy_faction_name,
+                    "members": enemy_info["members"],
+                },
                 "enemy_faction_options": enemy_faction_options,
                 "member_count": len(merged["members"]),
                 "available_count": merged["available_count"],
@@ -826,13 +927,16 @@ def api_state():
                 "enemy_idle_count": enemy_info["counts"]["idle"],
                 "enemy_offline_count": enemy_info["counts"]["offline"],
                 "enemy_hospital_count": enemy_info["counts"]["hospital"],
-                "war_id": war_id,
                 "war_type": war_summary.get("war_type", ""),
+                "score": score_us,
+                "our_score": score_us,
                 "score_us": score_us,
+                "enemy_score": score_them,
                 "score_them": score_them,
                 "lead": score_us - score_them,
                 "target_score": target_score,
                 "remaining_to_target": max(0, target_score - score_us) if target_score else 0,
+                "chain": _to_int(war_summary.get("chain_us"), 0),
                 "chain_us": _to_int(war_summary.get("chain_us"), 0),
                 "chain_them": _to_int(war_summary.get("chain_them"), 0),
                 "start": _to_int(war_summary.get("start"), 0),
@@ -852,7 +956,9 @@ def api_state():
             enemy_options=enemy_info["members"],
             top_targets=ranked_targets[:15],
             target_assignments=assignments,
+            assignments=assignments,
             war_notes=notes,
+            notes=notes,
             top_lists=tops,
             hospital={
                 "our_faction": merged["hospital_members"],
@@ -870,11 +976,14 @@ def api_state():
                 "enemy_online": enemy_info["counts"]["online"],
                 "our_hospital": merged["counts"]["hospital"],
                 "enemy_hospital": enemy_info["counts"]["hospital"],
+                "total_members": len(merged["members"]),
+                "total_enemies": len(enemy_info["members"]),
+                "online_members": merged["counts"]["online"],
             },
-            med_deals=list_med_deals_for_faction(state_faction_id),
-            targets=list_targets(user_id),
+            med_deals=med_deals,
+            targets=targets,
             bounties=list_bounties(user_id),
-            notifications=list_notifications(user_id),
+            notifications=notifications,
         )
     except Exception as e:
         return err(f"Could not load state: {e}", 500)
