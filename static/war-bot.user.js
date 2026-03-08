@@ -1,10 +1,12 @@
 // ==UserScript==
-// @name         War Hub 🛡️
+// @name         7DS*: War Hub 🛡️
 // @namespace    fries91-war-hub
-// @version      1.1.0
-// @description  War Hub by Fries91. Upgraded war state, merged faction statuses, chain sitters, war overview, PDA friendly.
+// @version      1.2.0
+// @description  War Hub by Fries91. T.S.E style auth/state flow. Draggable shield, PDA friendly overlay, merged faction statuses, chain sitters, med deals, targets, bounties.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
+// @downloadURL  https://YOUR-RENDER-DOMAIN.onrender.com/static/war-bot.user.js
+// @updateURL    https://YOUR-RENDER-DOMAIN.onrender.com/static/war-bot.user.js
 // @run-at       document-idle
 // @grant        GM_addStyle
 // @grant        GM_getValue
@@ -17,8 +19,10 @@
 (function () {
   "use strict";
 
+  // ================= USER CONFIG =================
   const BASE_URL = "https://YOUR-RENDER-DOMAIN.onrender.com";
   const ADMIN_KEY = "REPLACE_WITH_ADMIN_KEY";
+  // ==============================================
 
   const K_API_KEY = "warhub_api_key_v1";
   const K_SESSION = "warhub_session_v1";
@@ -35,18 +39,18 @@
     #warhub-shield {
       position: fixed;
       z-index: 2147483647;
-      width: 48px;
-      height: 48px;
-      border-radius: 14px;
+      width: 44px;
+      height: 44px;
+      border-radius: 13px;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 24px;
+      font-size: 23px;
       cursor: move;
       user-select: none;
       box-shadow: 0 8px 22px rgba(0,0,0,.45);
       border: 1px solid rgba(255,255,255,.10);
-      background: radial-gradient(circle at top, rgba(190,25,25,.95), rgba(80,8,8,.95));
+      background: radial-gradient(circle at top, rgba(190,25,25,.96), rgba(78,8,8,.96));
       color: #fff;
       top: 120px;
       right: 14px;
@@ -73,7 +77,7 @@
       position: fixed;
       z-index: 2147483646;
       right: 12px;
-      top: 176px;
+      top: 172px;
       width: min(95vw, 440px);
       max-height: 74vh;
       overflow: hidden;
@@ -96,13 +100,13 @@
 
     .warhub-title {
       font-weight: 800;
-      font-size: 18px;
+      font-size: 17px;
       letter-spacing: .2px;
     }
 
     .warhub-sub {
       font-size: 11px;
-      opacity: .7;
+      opacity: .74;
       margin-top: 2px;
     }
 
@@ -150,7 +154,7 @@
 
     .warhub-body {
       padding: 10px;
-      max-height: calc(74vh - 118px);
+      max-height: calc(74vh - 114px);
       overflow: auto;
     }
 
@@ -280,7 +284,7 @@
         right: 8px;
         left: 8px;
         top: auto;
-        bottom: 76px;
+        bottom: 72px;
         max-height: 68vh;
       }
 
@@ -397,6 +401,14 @@
     }
   }
 
+  function memberPills(m) {
+    return `
+      <span class="pill ${Number(m.available) ? "green" : "red"}">${Number(m.available) ? "Available" : "Unavailable"}</span>
+      <span class="pill ${Number(m.chain_sitter) ? "gold" : "gray"}">${Number(m.chain_sitter) ? "Chain Sit" : "No Chain Sit"}</span>
+      <span class="pill ${m.linked_user ? "gray" : "red"}">${m.linked_user ? "Linked" : "Not Linked"}</span>
+    `;
+  }
+
   function renderWarTab() {
     const me = state?.me || {};
     const war = state?.war || {};
@@ -445,14 +457,6 @@
           <button class="warhub-btn alt" id="warhub-seen-btn">Mark notices seen</button>
         </div>
       </div>
-    `;
-  }
-
-  function memberPills(m) {
-    return `
-      <span class="pill ${Number(m.available) ? "green" : "red"}">${Number(m.available) ? "Available" : "Unavailable"}</span>
-      <span class="pill ${Number(m.chain_sitter) ? "gold" : "gray"}">${Number(m.chain_sitter) ? "Chain Sit" : "No Chain Sit"}</span>
-      <span class="pill ${m.linked_user ? "gray" : "red"}">${m.linked_user ? "Linked" : "Not Linked"}</span>
     `;
   }
 
@@ -813,8 +817,8 @@
     if (relogin) {
       relogin.addEventListener("click", async () => {
         GM_deleteValue(K_SESSION);
-        const ok = await login();
-        if (ok) {
+        const okLogin = await login();
+        if (okLogin) {
           setStatus("Logged in.");
           await loadState();
         }
