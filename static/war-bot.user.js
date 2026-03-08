@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         War Hub ⚔️
 // @namespace    fries91-war-hub
-// @version      1.6.5
-// @description  War Hub by Fries91. Tampermonkey + PDA friendly draggable icon, draggable overlay, proper scrolling, hospital tab, faction-wide med deals, admin key in settings, enemy not-in-war notices, and war banner.
+// @version      2.0.0
+// @description  War Hub by Fries91. Tampermonkey + PDA friendly draggable icon, draggable overlay, war overview, members, enemies, hospital, chain sitters, med deals, smart targets, assignments, notes, analytics, notifications, and settings.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
 // @downloadURL  https://torn-war-bot.onrender.com/static/war-bot.user.js
@@ -28,11 +28,14 @@
   const K_TAB = "warhub_tab_v1";
   const K_SHIELD_POS = "warhub_shield_pos_v1";
   const K_OVERLAY_POS = "warhub_overlay_pos_v1";
+  const K_REFRESH = "warhub_refresh_ms_v1";
 
   let state = null;
+  let analyticsCache = null;
   let isOpen = !!GM_getValue(K_OPEN, false);
   let currentTab = GM_getValue(K_TAB, "war");
   let overlay, badge, shield;
+  let pollTimer = null;
 
   GM_addStyle(`
     #warhub-shield {
@@ -60,9 +63,7 @@
       bottom: auto;
     }
 
-    #warhub-shield.dragging {
-      cursor: grabbing;
-    }
+    #warhub-shield.dragging { cursor: grabbing; }
 
     #warhub-badge {
       position: fixed !important;
@@ -87,9 +88,9 @@
       z-index: 2147483646 !important;
       right: 12px;
       top: 170px;
-      width: min(94vw, 430px);
-      height: min(82vh, 760px);
-      max-height: 82vh;
+      width: min(95vw, 460px);
+      height: min(84vh, 800px);
+      max-height: 84vh;
       overflow: hidden;
       border-radius: 14px;
       background: linear-gradient(180deg, #161616, #0c0c0c);
@@ -103,9 +104,7 @@
       flex-direction: column;
     }
 
-    #warhub-overlay.open {
-      display: flex !important;
-    }
+    #warhub-overlay.open { display: flex !important; }
 
     .warhub-head {
       padding: 10px 12px 9px;
@@ -119,21 +118,10 @@
       flex: 0 0 auto;
     }
 
-    .warhub-head.dragging {
-      cursor: grabbing;
-    }
+    .warhub-head.dragging { cursor: grabbing; }
 
-    .warhub-title {
-      font-weight: 800;
-      font-size: 16px;
-      letter-spacing: .2px;
-    }
-
-    .warhub-sub {
-      font-size: 10px;
-      opacity: .74;
-      margin-top: 1px;
-    }
+    .warhub-title { font-weight: 800; font-size: 16px; letter-spacing: .2px; }
+    .warhub-sub { font-size: 10px; opacity: .74; margin-top: 1px; }
 
     .warhub-toprow {
       display: flex;
@@ -180,9 +168,7 @@
       flex: 0 0 auto;
     }
 
-    .warhub-tab.active {
-      background: linear-gradient(180deg, #d23333, #831515);
-    }
+    .warhub-tab.active { background: linear-gradient(180deg, #d23333, #831515); }
 
     .warhub-body {
       padding: 8px;
@@ -203,23 +189,11 @@
       margin-bottom: 8px;
     }
 
-    .warhub-card h3 {
-      margin: 0 0 7px;
-      font-size: 12px;
-    }
+    .warhub-card h3 { margin: 0 0 7px; font-size: 12px; }
 
-    .warhub-grid {
-      display: grid;
-      gap: 7px;
-    }
-
-    .warhub-grid.two {
-      grid-template-columns: 1fr 1fr;
-    }
-
-    .warhub-grid.three {
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-    }
+    .warhub-grid { display: grid; gap: 7px; }
+    .warhub-grid.two { grid-template-columns: 1fr 1fr; }
+    .warhub-grid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 
     .warhub-input, .warhub-textarea, .warhub-select {
       width: 100%;
@@ -232,14 +206,8 @@
       font-size: 12px;
     }
 
-    .warhub-input[readonly] {
-      opacity: .9;
-    }
-
-    .warhub-textarea {
-      min-height: 72px;
-      resize: vertical;
-    }
+    .warhub-input[readonly] { opacity: .9; }
+    .warhub-textarea { min-height: 72px; resize: vertical; }
 
     .warhub-btn {
       border: 0;
@@ -255,21 +223,10 @@
       display: inline-block;
     }
 
-    .warhub-btn.alt {
-      background: rgba(255,255,255,.08);
-    }
-
-    .warhub-btn.green {
-      background: linear-gradient(180deg, #2ea44f, #1c6b33);
-    }
-
-    .warhub-btn.gray {
-      background: linear-gradient(180deg, #535353, #2d2d2d);
-    }
-
-    .warhub-btn.gold {
-      background: linear-gradient(180deg, #c89726, #7c5910);
-    }
+    .warhub-btn.alt { background: rgba(255,255,255,.08); }
+    .warhub-btn.green { background: linear-gradient(180deg, #2ea44f, #1c6b33); }
+    .warhub-btn.gray { background: linear-gradient(180deg, #535353, #2d2d2d); }
+    .warhub-btn.gold { background: linear-gradient(180deg, #c89726, #7c5910); }
 
     .warhub-row {
       display: flex;
@@ -287,17 +244,8 @@
       margin-bottom: 7px;
     }
 
-    .warhub-small {
-      font-size: 10px;
-      opacity: .75;
-    }
-
-    .warhub-link {
-      color: #ff8d8d;
-      text-decoration: none;
-      font-weight: 700;
-      font-size: 11px;
-    }
+    .warhub-small { font-size: 10px; opacity: .75; }
+    .warhub-link { color: #ff8d8d; text-decoration: none; font-weight: 700; font-size: 11px; }
 
     .warhub-status {
       padding: 7px 9px;
@@ -308,15 +256,8 @@
       display: none;
     }
 
-    .warhub-status.show {
-      display: block;
-    }
-
-    .warhub-empty {
-      opacity: .65;
-      font-size: 11px;
-      padding: 5px 2px;
-    }
+    .warhub-status.show { display: block; }
+    .warhub-empty { opacity: .65; font-size: 11px; padding: 5px 2px; }
 
     .pill {
       display: inline-block;
@@ -456,6 +397,40 @@
       box-shadow: inset 0 1px 0 rgba(255,255,255,.05);
     }
 
+    .warhub-kv {
+      display: grid;
+      grid-template-columns: 110px 1fr;
+      gap: 6px;
+      font-size: 11px;
+      align-items: start;
+      margin-bottom: 5px;
+    }
+
+    .warhub-kv .k { opacity: .7; font-weight: 700; }
+    .warhub-kv .v { word-break: break-word; }
+
+    .warhub-inline-actions {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin-top: 7px;
+    }
+
+    .warhub-note-box {
+      margin-top: 7px;
+      padding: 7px;
+      border-radius: 9px;
+      background: rgba(255,255,255,.04);
+      border: 1px solid rgba(255,255,255,.07);
+    }
+
+    .warhub-chart-row {
+      padding: 6px 0;
+      border-bottom: 1px solid rgba(255,255,255,.06);
+    }
+
+    .warhub-chart-row:last-child { border-bottom: 0; }
+
     @media (max-width: 700px) {
       #warhub-overlay {
         width: calc(100vw - 12px) !important;
@@ -478,17 +453,13 @@
       .warhub-grid.three,
       .warhub-score-grid,
       .warhub-quick-links,
-      .warhub-meta-grid {
+      .warhub-meta-grid,
+      .warhub-kv {
         grid-template-columns: 1fr;
       }
 
-      .warhub-toprow {
-        align-items: flex-start;
-      }
-
-      .warhub-row {
-        justify-content: flex-start;
-      }
+      .warhub-toprow { align-items: flex-start; }
+      .warhub-row { justify-content: flex-start; }
     }
 
     @media (max-width: 430px) {
@@ -631,7 +602,6 @@
     const d = Math.floor(s / 86400);
     const h = Math.floor((s % 86400) / 3600);
     const m = Math.floor((s % 3600) / 60);
-
     if (d > 0) return `${d}d ${h}h`;
     if (h > 0) return `${h}h ${m}m`;
     return `${m}m`;
@@ -658,7 +628,7 @@
 
     if (s === "online") return `<span class="pill green">Online</span>`;
     if (s === "idle") return `<span class="pill blue">Idle</span>`;
-    if (s === "hospital") return `<span class="pill red">Hospital ${esc(formatHosp(m.hospital_seconds || m.hospital_time_left || 0))}</span>`;
+    if (s === "hospital") return `<span class="pill red">Hospital ${esc(formatHosp(m.hospital_seconds || 0))}</span>`;
     return `<span class="pill gray">Offline</span>`;
   }
 
@@ -673,7 +643,10 @@
   }
 
   function enemyPills(m) {
-    return memberStatusPill(m);
+    const parts = [memberStatusPill(m)];
+    if (m.is_assigned) parts.push(`<span class="pill gold">Assigned</span>`);
+    if (m.priority_score != null) parts.push(`<span class="pill gray">Score ${esc(m.priority_score)}</span>`);
+    return parts.join("");
   }
 
   function groupMembers(arr) {
@@ -683,180 +656,29 @@
     const hospital = [];
 
     for (const m of arr || []) {
-      const s = String(
-        m.online_state ||
-        m.status_type ||
-        m.status ||
-        "offline"
-      ).toLowerCase();
-
+      const s = String(m.online_state || m.status_type || m.status || "offline").toLowerCase();
       if (s === "online") online.push(m);
       else if (s === "idle") idle.push(m);
       else if (s === "hospital") hospital.push(m);
       else offline.push(m);
     }
 
-    hospital.sort((a, b) => Number(a.hospital_seconds || a.hospital_time_left || 0) - Number(b.hospital_seconds || b.hospital_time_left || 0));
+    hospital.sort((a, b) => Number(a.hospital_seconds || 0) - Number(b.hospital_seconds || 0));
     return { online, idle, offline, hospital };
-  }
-
-  function extractFactionId(obj) {
-    if (!obj || typeof obj !== "object") return "";
-    return String(obj.id ?? obj.faction_id ?? obj.ID ?? obj.factionID ?? "");
-  }
-
-  function extractFactionName(obj) {
-    if (!obj || typeof obj !== "object") return "";
-    return String(obj.name ?? obj.faction_name ?? obj.title ?? "");
-  }
-
-  function normalizeMembers(raw) {
-    if (!raw) return [];
-    if (Array.isArray(raw)) return raw;
-    if (Array.isArray(raw.members)) return raw.members;
-    if (typeof raw === "object") return Object.values(raw);
-    return [];
   }
 
   function resolveWarContext() {
     const root = state || {};
-    const war = root.war || root.ranked_war || root.current_war || {};
+    const war = root.war || {};
     const me = root.me || {};
-    const myFaction =
-      root.my_faction ||
-      root.faction ||
-      root.our_faction ||
-      me.faction ||
-      {};
 
-    const myFactionId = String(
-      war.my_faction_id ??
-      root.my_faction_id ??
-      myFaction.id ??
-      myFaction.faction_id ??
-      me.faction_id ??
-      war.faction_id ??
-      ""
-    );
-
-    const myFactionName = String(
-      war.my_faction_name ??
-      war.faction_name ??
-      root.my_faction_name ??
-      myFaction.name ??
-      myFaction.faction_name ??
-      me.faction_name ??
-      "Our Faction"
-    );
-
-    let enemyFaction =
-      war.enemy_faction ||
-      war.opponent_faction ||
-      root.enemy_faction ||
-      root.opponent_faction ||
-      null;
-
-    if (!enemyFaction) {
-      const candidates = [];
-      if (war.factions && Array.isArray(war.factions)) candidates.push(...war.factions);
-      if (war.factions && typeof war.factions === "object") candidates.push(...Object.values(war.factions));
-      if (war.teams && Array.isArray(war.teams)) candidates.push(...war.teams);
-      if (war.teams && typeof war.teams === "object") candidates.push(...Object.values(war.teams));
-
-      enemyFaction = candidates.find(f => {
-        const id = extractFactionId(f);
-        return id && id !== myFactionId;
-      }) || null;
-    }
-
-    if (!enemyFaction) {
-      const left = war.left || war.attacker || war.team1 || war.faction1;
-      const right = war.right || war.defender || war.team2 || war.faction2;
-      const leftId = extractFactionId(left);
-      const rightId = extractFactionId(right);
-
-      if (leftId && rightId) {
-        enemyFaction = leftId === myFactionId ? right : left;
-      }
-    }
-
-    const enemyFactionId = String(
-      war.enemy_faction_id ??
-      root.enemy_faction_id ??
-      extractFactionId(enemyFaction) ??
-      ""
-    );
-
-    let enemyFactionName = String(
-      war.enemy_faction_name ??
-      root.enemy_faction_name ??
-      extractFactionName(enemyFaction) ??
-      ""
-    );
-
-    if (!enemyFactionName || enemyFactionName === myFactionName) {
-      const candidates = [
-        root.enemy_faction_name,
-        war.opponent_faction_name,
-        extractFactionName(enemyFaction),
-        root.opponent_faction_name
-      ].filter(Boolean);
-
-      enemyFactionName = candidates.find(n => String(n) !== myFactionName) || enemyFactionName || "";
-    }
-
-    let members = normalizeMembers(root.members);
-    let enemies = normalizeMembers(root.enemies);
-
-    if ((!enemies || !enemies.length) && root.enemy_members) {
-      enemies = normalizeMembers(root.enemy_members);
-    }
-
-    if ((!enemies || !enemies.length) && enemyFaction && enemyFaction.members) {
-      enemies = normalizeMembers(enemyFaction.members);
-    }
-
-    if (Array.isArray(enemies) && enemies.length && myFactionId) {
-      const looksLikeOwnFaction = enemies.every(m => String(m.faction_id || "") === myFactionId);
-      if (looksLikeOwnFaction) enemies = [];
-    }
-
-    if ((!members || !members.length) && Array.isArray(root.all_members) && myFactionId) {
-      members = root.all_members.filter(m => String(m.faction_id || "") === myFactionId);
-    }
-
-    if ((!enemies || !enemies.length) && Array.isArray(root.all_members) && enemyFactionId) {
-      enemies = root.all_members.filter(m => String(m.faction_id || "") === enemyFactionId);
-    }
-
-    const myScore = asNum(
-      war.score_us ??
-      war.our_score ??
-      war.my_score ??
-      war.faction_score ??
-      war.score1
-    );
-
-    let enemyScore = asNum(
-      war.score_them ??
-      war.enemy_score ??
-      war.their_score ??
-      war.opponent_score ??
-      war.score2
-    );
-
-    if (war.scores && typeof war.scores === "object" && enemyFactionId && war.scores[enemyFactionId] != null) {
-      const item = war.scores[enemyFactionId];
-      enemyScore = asNum(item?.score ?? item);
-    }
-
-    const inWar = !!(
-      war.active ||
-      enemyFactionId ||
-      enemyFactionName ||
-      myScore ||
-      enemyScore
-    );
+    const myFactionId = String(war.faction_id || me.faction_id || "");
+    const myFactionName = String(war.faction_name || me.faction_name || "Our Faction");
+    const enemyFactionId = String(war.enemy_faction_id || "");
+    const enemyFactionName = String(war.enemy_faction_name || "");
+    const members = Array.isArray(root.members) ? root.members : [];
+    const enemies = Array.isArray(root.enemies) ? root.enemies : [];
+    const inWar = !!(war.active || enemyFactionId || enemyFactionName);
 
     return {
       me,
@@ -866,11 +688,11 @@
       myFactionName,
       enemyFactionId,
       enemyFactionName,
-      members: Array.isArray(members) ? members : [],
-      enemies: Array.isArray(enemies) ? enemies : [],
-      myScore,
-      enemyScore,
-      lead: myScore - enemyScore
+      members,
+      enemies,
+      myScore: asNum(war.score_us),
+      enemyScore: asNum(war.score_them),
+      lead: asNum(war.lead)
     };
   }
 
@@ -903,12 +725,19 @@
     return true;
   }
 
+  async function loadAnalytics() {
+    const res = await req("GET", "/api/analytics");
+    if (res && res.ok) analyticsCache = res.analytics || null;
+  }
+
   async function loadState() {
     let res = await req("GET", "/api/state");
     if (res && res.ok) {
       state = res;
+      if (currentTab === "analytics") await loadAnalytics();
       renderBody();
       updateBadge();
+      refreshPoll();
       return;
     }
 
@@ -921,11 +750,24 @@
     res = await req("GET", "/api/state");
     if (res && res.ok) {
       state = res;
+      if (currentTab === "analytics") await loadAnalytics();
       renderBody();
       updateBadge();
+      refreshPoll();
     } else {
       setStatus((res && res.error) || "Could not load state.", true);
     }
+  }
+
+  function refreshPoll() {
+    if (pollTimer) clearInterval(pollTimer);
+    const fromState = asNum(state?.settings?.refresh_seconds || 0);
+    const fallback = asNum(GM_getValue(K_REFRESH, 30000));
+    const ms = Math.max(10000, (fromState > 0 ? fromState * 1000 : fallback));
+    GM_setValue(K_REFRESH, ms);
+    pollTimer = setInterval(() => {
+      loadState().catch(() => {});
+    }, ms);
   }
 
   function renderWarTab() {
@@ -934,6 +776,8 @@
     const statusText = war.status_text || (ctx.inWar ? "War active" : "Currently not in a war");
     const medDeals = state?.med_deals || [];
     const me = state?.me || {};
+    const topLists = state?.top_lists || {};
+    const analytics = state?.analytics || {};
 
     return `
       ${!ctx.inWar ? `<div class="warhub-banner">CURRENTLY NOT IN A WAR</div>` : ""}
@@ -971,6 +815,22 @@
             <div class="value">${esc(fmtNum(war.remaining_to_target || 0))}</div>
           </div>
           <div class="warhub-mini">
+            <div class="label">Our Pace / Hr</div>
+            <div class="value">${esc(String(war.pace_per_hour_us || 0))}</div>
+          </div>
+          <div class="warhub-mini">
+            <div class="label">Their Pace / Hr</div>
+            <div class="value">${esc(String(war.pace_per_hour_them || 0))}</div>
+          </div>
+          <div class="warhub-mini">
+            <div class="label">ETA To Target</div>
+            <div class="value">${esc(war.eta_to_target_us_text || "-")}</div>
+          </div>
+          <div class="warhub-mini">
+            <div class="label">Snapshots</div>
+            <div class="value">${esc(fmtNum(war.snapshot_count || 0))}</div>
+          </div>
+          <div class="warhub-mini">
             <div class="label">Start</div>
             <div class="value">${esc(fmtDate(war.start || ""))}</div>
           </div>
@@ -983,15 +843,36 @@
 
       <div class="warhub-card">
         <h3>Quick Links</h3>
-        <div class="warhub-small" style="margin-bottom:8px;">
-          Linked to <strong>${esc(me.name || "you")}</strong>
-        </div>
+        <div class="warhub-small" style="margin-bottom:8px;">Linked to <strong>${esc(me.name || "you")}</strong></div>
         <div class="warhub-quick-links">
           <button class="warhub-btn gold" id="wh-opt-in">Opt In</button>
           <button class="warhub-btn gray" id="wh-opt-out">Opt Out</button>
           <button class="warhub-btn green" id="wh-available">Available</button>
           <button class="warhub-btn alt" id="wh-unavailable">Unavailable</button>
         </div>
+      </div>
+
+      <div class="warhub-card">
+        <h3>Live Counts</h3>
+        <div class="warhub-meta-grid">
+          <div class="warhub-mini"><div class="label">Our Online</div><div class="value">${esc(fmtNum(analytics.our_online || 0))}</div></div>
+          <div class="warhub-mini"><div class="label">Enemy Online</div><div class="value">${esc(fmtNum(analytics.enemy_online || 0))}</div></div>
+          <div class="warhub-mini"><div class="label">Our Hospital</div><div class="value">${esc(fmtNum(analytics.our_hospital || 0))}</div></div>
+          <div class="warhub-mini"><div class="label">Enemy Hospital</div><div class="value">${esc(fmtNum(analytics.enemy_hospital || 0))}</div></div>
+        </div>
+      </div>
+
+      <div class="warhub-card">
+        <h3>Online Now</h3>
+        <div class="warhub-small">Top 10 quick view lists.</div>
+        <div class="warhub-group-title">Our Members</div>
+        ${(topLists.online_members || []).length
+          ? topLists.online_members.map(m => `<div class="warhub-list-item"><strong>${esc(m.name || "Unknown")}</strong> ${m.level ? `(Lvl ${esc(m.level)})` : ""}</div>`).join("")
+          : `<div class="warhub-empty">No online members.</div>`}
+        <div class="warhub-group-title">Enemies</div>
+        ${(topLists.online_enemies || []).length
+          ? topLists.online_enemies.map(m => `<div class="warhub-list-item"><strong>${esc(m.name || "Unknown")}</strong> ${m.level ? `(Lvl ${esc(m.level)})` : ""}</div>`).join("")
+          : `<div class="warhub-empty">No online enemies.</div>`}
       </div>
 
       <div class="warhub-card">
@@ -1025,10 +906,11 @@
             <div style="margin-top:6px;">${isEnemy ? enemyPills(m) : memberPills(m)}</div>
           </div>
         </div>
-        <div class="warhub-row" style="margin-top:7px;">
+        <div class="warhub-inline-actions">
           <a class="warhub-link" href="${esc(profileUrl)}" target="_blank" rel="noreferrer">Profile</a>
           <a class="warhub-link" href="${esc(attackUrl)}" target="_blank" rel="noreferrer">Attack</a>
           ${id ? `<a class="warhub-link" href="${esc(bountyUrl)}" target="_blank" rel="noreferrer">Bounty</a>` : ""}
+          ${isEnemy && id ? `<button class="warhub-btn alt wh-fill-target" data-id="${esc(id)}" data-name="${esc(name)}">Use In Targets</button>` : ""}
         </div>
       </div>
     `;
@@ -1046,7 +928,6 @@
     const ctx = resolveWarContext();
     const members = ctx.members || [];
     if (!members.length) return `<div class="warhub-empty">No faction members found.</div>`;
-
     const grouped = groupMembers(members);
     return `
       <div class="warhub-card">
@@ -1063,38 +944,23 @@
   function renderEnemiesTab() {
     const ctx = resolveWarContext();
     const enemies = ctx.enemies || [];
-
     if (!ctx.inWar) {
-      return `
-        <div class="warhub-card">
-          <h3>Enemy Members</h3>
-          <div class="warhub-empty">Currently not in a war.</div>
-        </div>
-      `;
+      return `<div class="warhub-card"><h3>Enemy Members</h3><div class="warhub-empty">Currently not in a war.</div></div>`;
     }
-
     if (!enemies.length) {
       return `
         <div class="warhub-card">
           <h3>Enemy Members</h3>
-          <div class="warhub-small">
-            Enemy faction: ${esc(ctx.enemyFactionName || "-")}
-            ${ctx.enemyFactionId ? `[#${esc(ctx.enemyFactionId)}]` : ""}
-          </div>
+          <div class="warhub-small">Enemy faction: ${esc(ctx.enemyFactionName || "-")} ${ctx.enemyFactionId ? `[#${esc(ctx.enemyFactionId)}]` : ""}</div>
           <div class="warhub-empty" style="margin-top:8px;">No enemy members found.</div>
         </div>
       `;
     }
-
     const grouped = groupMembers(enemies);
     return `
       <div class="warhub-card">
         <h3>Enemy Members</h3>
-        <div class="warhub-small">
-          Faction currently at war with you:
-          ${esc(ctx.enemyFactionName || "-")}
-          ${ctx.enemyFactionId ? `[#${esc(ctx.enemyFactionId)}]` : ""}
-        </div>
+        <div class="warhub-small">Faction currently at war with you: ${esc(ctx.enemyFactionName || "-")} ${ctx.enemyFactionId ? `[#${esc(ctx.enemyFactionId)}]` : ""}</div>
         ${renderGroupedMemberSection("Online", grouped.online, true)}
         ${renderGroupedMemberSection("Idle", grouped.idle, true)}
         ${renderGroupedMemberSection("Offline", grouped.offline, true)}
@@ -1110,12 +976,7 @@
     const enemies = Array.isArray(hospital.enemy_faction) ? hospital.enemy_faction : [];
 
     if (!ctx.inWar) {
-      return `
-        <div class="warhub-card">
-          <h3>Hospital</h3>
-          <div class="warhub-empty">Currently not in a war.</div>
-        </div>
-      `;
+      return `<div class="warhub-card"><h3>Hospital</h3><div class="warhub-empty">Currently not in a war.</div></div>`;
     }
 
     return `
@@ -1124,7 +985,6 @@
         <div class="warhub-small">Lowest time first.</div>
         ${ours.length ? ours.map(x => renderMemberRow(x, false)).join("") : `<div class="warhub-empty">No one from your faction is in hospital.</div>`}
       </div>
-
       <div class="warhub-card">
         <h3>Enemy Faction Hospital</h3>
         <div class="warhub-small">Lowest time first.</div>
@@ -1142,7 +1002,7 @@
           <div class="warhub-list-item">
             <div><strong>${esc(x.name)}</strong> ${x.level ? `(Lvl ${esc(x.level)})` : ""}</div>
             <div style="margin-top:6px;">${memberStatusPill(x)}</div>
-            <div class="warhub-row" style="margin-top:7px;">
+            <div class="warhub-inline-actions">
               <a class="warhub-link" href="${esc(x.profile_url || `https://www.torn.com/profiles.php?XID=${encodeURIComponent(x.user_id || x.id || "")}`)}" target="_blank" rel="noreferrer">Profile</a>
               <a class="warhub-link" href="${esc(x.attack_url || `https://www.torn.com/loader.php?sid=attack&user2ID=${encodeURIComponent(x.user_id || x.id || "")}`)}" target="_blank" rel="noreferrer">Attack</a>
             </div>
@@ -1155,7 +1015,6 @@
   function renderEnemyFactionOptions() {
     const ctx = resolveWarContext();
     if (!ctx.inWar) return `<option value="">Currently not in a war</option>`;
-
     const opts = [];
     const warOpts = state?.war?.enemy_faction_options || [];
     for (const x of warOpts) {
@@ -1163,11 +1022,8 @@
       const name = x.faction_name || x.name || (id ? `Faction ${id}` : "");
       if (name) opts.push({ id, name });
     }
-
     const rows = [`<option value="">Pick enemy faction</option>`];
-    for (const x of opts) {
-      rows.push(`<option value="${esc(x.name)}" data-id="${esc(x.id)}">${esc(x.name)}${x.id ? ` [${esc(x.id)}]` : ""}</option>`);
-    }
+    for (const x of opts) rows.push(`<option value="${esc(x.name)}" data-id="${esc(x.id)}">${esc(x.name)}${x.id ? ` [${esc(x.id)}]` : ""}</option>`);
     return rows.join("");
   }
 
@@ -1181,9 +1037,7 @@
         <h3>Add Med Deal</h3>
         <div class="warhub-grid two">
           <input id="wh-buyer" class="warhub-input" placeholder="Buyer name" value="${esc(me.name || "")}" readonly>
-          <select id="wh-seller-faction" class="warhub-select">
-            ${renderEnemyFactionOptions()}
-          </select>
+          <select id="wh-seller-faction" class="warhub-select">${renderEnemyFactionOptions()}</select>
           <input id="wh-amount" class="warhub-input" placeholder="Amount" type="number" min="0">
           <div></div>
         </div>
@@ -1204,9 +1058,7 @@
             ${x.creator_name ? `<div class="warhub-small">Added by: ${esc(x.creator_name)}</div>` : ""}
             ${x.notes ? `<div class="warhub-small">${esc(x.notes || "")}</div>` : ""}
             <div class="warhub-small">${esc(fmtDate(x.created_at || ""))}</div>
-            <div style="margin-top:7px;">
-              <button class="warhub-btn alt wh-del-med" data-id="${x.id}">Delete</button>
-            </div>
+            <div style="margin-top:7px;"><button class="warhub-btn alt wh-del-med" data-id="${x.id}">Delete</button></div>
           </div>
         `).join("") : `<div class="warhub-empty">No med deals yet.</div>`}
       </div>
@@ -1216,16 +1068,13 @@
   function renderEnemyOptions() {
     const ctx = resolveWarContext();
     if (!ctx.inWar) return `<option value="">Currently not in a war</option>`;
-
     const opts = (state?.enemy_options && state.enemy_options.length) ? state.enemy_options : ctx.enemies;
     const rows = [`<option value="">Pick enemy target</option>`];
     for (const e of opts || []) {
       const id = e.user_id || e.id || e.player_id || "";
       const name = e.name || e.user_name || `Player ${id}`;
       const rawState = String(e.online_state || e.status_type || e.status || "offline").toLowerCase();
-      const extra = rawState === "hospital"
-        ? ` | Hospital ${formatHosp(e.hospital_seconds || e.hospital_time_left || 0)}`
-        : ` | ${rawState}`;
+      const extra = rawState === "hospital" ? ` | Hospital ${formatHosp(e.hospital_seconds || 0)}` : ` | ${rawState}`;
       rows.push(`<option value="${esc(id)}" data-name="${esc(name)}">${esc(name)} [${esc(id)}]${extra}</option>`);
     }
     return rows.join("");
@@ -1233,15 +1082,17 @@
 
   function renderTargetsTab() {
     const items = state?.targets || [];
+    const suggestions = state?.top_targets || [];
+    const assignments = state?.target_assignments || [];
+    const notes = state?.war_notes || [];
     const ctx = resolveWarContext();
+    const myName = state?.me?.name || "";
 
     return `
       <div class="warhub-card">
-        <h3>Add Target</h3>
+        <h3>Add Personal Target</h3>
         <div class="warhub-grid">
-          <select id="wh-target-select" class="warhub-select">
-            ${renderEnemyOptions()}
-          </select>
+          <select id="wh-target-select" class="warhub-select">${renderEnemyOptions()}</select>
           <div class="warhub-grid two">
             <input id="wh-target-id" class="warhub-input" placeholder="Target ID">
             <input id="wh-target-name" class="warhub-input" placeholder="Target name">
@@ -1256,7 +1107,46 @@
       </div>
 
       <div class="warhub-card">
-        <h3>Tracked Targets</h3>
+        <h3>Smart Targets</h3>
+        ${ctx.inWar
+          ? (suggestions.length ? suggestions.map(x => `
+            <div class="warhub-list-item">
+              <div><strong>${esc(x.name || x.target_name || "Unknown")}</strong> ${x.level ? `(Lvl ${esc(x.level)})` : ""}</div>
+              <div style="margin-top:6px;">${enemyPills(x)}</div>
+              <div class="warhub-small">Priority Score: ${esc(x.priority_score || 0)}</div>
+              <div class="warhub-inline-actions">
+                <a class="warhub-link" href="${esc(x.attack_url || "#")}" target="_blank" rel="noreferrer">Attack</a>
+                <button class="warhub-btn alt wh-fill-target" data-id="${esc(x.user_id || "")}" data-name="${esc(x.name || "")}">Use</button>
+                <button class="warhub-btn gold wh-assign-target" data-id="${esc(x.user_id || "")}" data-name="${esc(x.name || "")}" data-assigned="${esc(myName)}">Assign To Me</button>
+              </div>
+            </div>
+          `).join("")) : `<div class="warhub-empty">No smart targets available.</div>`)
+          : `<div class="warhub-empty">Currently not in a war.</div>`}
+      </div>
+
+      <div class="warhub-card">
+        <h3>Assigned Targets</h3>
+        ${assignments.length ? assignments.map(x => `
+          <div class="warhub-list-item">
+            <div><strong>${esc(x.target_name || x.target_id || "Unknown")}</strong> ${x.level ? `(Lvl ${esc(x.level)})` : ""}</div>
+            <div style="margin-top:6px;">
+              <span class="pill gold">${esc(x.priority || "normal")}</span>
+              ${memberStatusPill(x)}
+            </div>
+            <div class="warhub-small">Assigned to: ${esc(x.assigned_to_name || "-")}</div>
+            ${x.note ? `<div class="warhub-note-box">${esc(x.note)}</div>` : ""}
+            <div class="warhub-inline-actions">
+              <a class="warhub-link" href="${esc(x.target_attack_url || "#")}" target="_blank" rel="noreferrer">Attack</a>
+              <a class="warhub-link" href="${esc(x.target_profile_url || "#")}" target="_blank" rel="noreferrer">Profile</a>
+              <button class="warhub-btn alt wh-open-note" data-target-id="${esc(x.target_id || "")}" data-target-name="${esc(x.target_name || "")}">Add Note</button>
+              <button class="warhub-btn alt wh-del-assign" data-id="${esc(x.id)}">Unassign</button>
+            </div>
+          </div>
+        `).join("") : `<div class="warhub-empty">No assigned targets yet.</div>`}
+      </div>
+
+      <div class="warhub-card">
+        <h3>Personal Tracked Targets</h3>
         ${items.length ? items.map(x => `
           <div class="warhub-list-item">
             <div class="warhub-row">
@@ -1264,18 +1154,61 @@
                 <div><strong>${esc(x.target_name || x.target_id || "Unknown")}</strong></div>
                 <div class="warhub-small">ID: ${esc(x.target_id || "-")}</div>
               </div>
-              <div class="warhub-row">
-                ${x.target_id ? `<a class="warhub-link" href="https://www.torn.com/loader.php?sid=attack&user2ID=${encodeURIComponent(x.target_id)}" target="_blank" rel="noreferrer">Attack</a>` : ""}
-                ${x.target_id ? `<a class="warhub-link" href="https://www.torn.com/profiles.php?XID=${encodeURIComponent(x.target_id)}" target="_blank" rel="noreferrer">Profile</a>` : ""}
-                ${x.target_id ? `<a class="warhub-link" href="https://www.torn.com/bounties.php#/p=add&userID=${encodeURIComponent(x.target_id)}" target="_blank" rel="noreferrer">Bounty</a>` : ""}
-              </div>
             </div>
             <div class="warhub-small" style="margin-top:6px;">${esc(x.notes || "")}</div>
-            <div style="margin-top:7px;">
+            <div class="warhub-inline-actions">
+              ${x.target_id ? `<a class="warhub-link" href="https://www.torn.com/loader.php?sid=attack&user2ID=${encodeURIComponent(x.target_id)}" target="_blank" rel="noreferrer">Attack</a>` : ""}
+              ${x.target_id ? `<a class="warhub-link" href="https://www.torn.com/profiles.php?XID=${encodeURIComponent(x.target_id)}" target="_blank" rel="noreferrer">Profile</a>` : ""}
+              ${x.target_id ? `<a class="warhub-link" href="https://www.torn.com/bounties.php#/p=add&userID=${encodeURIComponent(x.target_id)}" target="_blank" rel="noreferrer">Bounty</a>` : ""}
+              ${ctx.inWar ? `<button class="warhub-btn gold wh-assign-target" data-id="${esc(x.target_id || "")}" data-name="${esc(x.target_name || "")}" data-assigned="${esc(myName)}">Assign To Me</button>` : ""}
               <button class="warhub-btn alt wh-del-target" data-id="${x.id}">Delete</button>
             </div>
           </div>
         `).join("") : `<div class="warhub-empty">No targets saved.</div>`}
+      </div>
+
+      <div class="warhub-card">
+        <h3>War Notes</h3>
+        ${notes.length ? notes.map(n => `
+          <div class="warhub-list-item">
+            <div><strong>${esc(n.target_id || "Target")}</strong></div>
+            <div class="warhub-note-box">${esc(n.note || "")}</div>
+            <div class="warhub-small">By ${esc(n.created_by_name || "-")} • ${esc(fmtDate(n.created_at || ""))}</div>
+            <div class="warhub-inline-actions">
+              <button class="warhub-btn alt wh-del-note" data-id="${esc(n.id)}">Delete</button>
+            </div>
+          </div>
+        `).join("") : `<div class="warhub-empty">No war notes yet.</div>`}
+      </div>
+    `;
+  }
+
+  function renderAnalyticsTab() {
+    const a = analyticsCache || state?.analytics || {};
+    const snapshots = Array.isArray(a.snapshots) ? a.snapshots : [];
+    return `
+      <div class="warhub-card">
+        <h3>Analytics</h3>
+        <div class="warhub-meta-grid">
+          <div class="warhub-mini"><div class="label">Lead</div><div class="value">${esc(fmtNum(a.lead || 0))}</div></div>
+          <div class="warhub-mini"><div class="label">Target Score</div><div class="value">${esc(fmtNum(a.target_score || state?.war?.target_score || 0))}</div></div>
+          <div class="warhub-mini"><div class="label">Our Pace / Hr</div><div class="value">${esc(String(a.pace_per_hour_us || 0))}</div></div>
+          <div class="warhub-mini"><div class="label">Their Pace / Hr</div><div class="value">${esc(String(a.pace_per_hour_them || 0))}</div></div>
+          <div class="warhub-mini"><div class="label">ETA</div><div class="value">${esc(a.eta_to_target_us_text || "-")}</div></div>
+          <div class="warhub-mini"><div class="label">War ID</div><div class="value">${esc(a.war_id || state?.war?.war_id || "-")}</div></div>
+        </div>
+      </div>
+
+      <div class="warhub-card">
+        <h3>Recent Snapshots</h3>
+        ${snapshots.length ? snapshots.map(s => `
+          <div class="warhub-chart-row">
+            <div class="warhub-kv"><div class="k">Time</div><div class="v">${esc(fmtDate(s.created_at || s.ts || ""))}</div></div>
+            <div class="warhub-kv"><div class="k">Us</div><div class="v">${esc(fmtNum(s.score_us || 0))}</div></div>
+            <div class="warhub-kv"><div class="k">Them</div><div class="v">${esc(fmtNum(s.score_them || 0))}</div></div>
+            <div class="warhub-kv"><div class="k">Lead</div><div class="v">${esc(fmtNum(s.lead || 0))}</div></div>
+          </div>
+        `).join("") : `<div class="warhub-empty">No analytics snapshots yet.</div>`}
       </div>
     `;
   }
@@ -1283,21 +1216,29 @@
   function renderSettingsTab() {
     const apiKey = GM_getValue(K_API_KEY, "") || "";
     const adminKey = GM_getValue(K_ADMIN_KEY, "") || "";
+    const refreshSeconds = state?.settings?.refresh_seconds || 30;
+    const alertsEnabled = Number(state?.settings?.alerts_enabled || 0) ? "checked" : "";
 
     return `
       <div class="warhub-card">
         <h3>Settings</h3>
-        <div class="warhub-small" style="margin-bottom:8px;">
-          Enter your Torn API key and your admin key here.
-        </div>
+        <div class="warhub-small" style="margin-bottom:8px;">Enter your Torn API key and your admin key here.</div>
 
         <div class="warhub-grid">
           <input id="wh-api-key" class="warhub-input" placeholder="Your Torn API key" value="${esc(apiKey)}">
           <input id="wh-admin-key" class="warhub-input" placeholder="Your admin key" value="${esc(adminKey)}">
         </div>
 
-        <div class="warhub-row" style="margin-top:7px;">
+        <div class="warhub-grid two" style="margin-top:7px;">
+          <input id="wh-refresh-seconds" class="warhub-input" type="number" min="10" max="300" value="${esc(refreshSeconds)}" placeholder="Refresh seconds">
+          <label class="warhub-list-item" style="margin:0;">
+            <input id="wh-alerts-enabled" type="checkbox" ${alertsEnabled}> Enable alerts
+          </label>
+        </div>
+
+        <div class="warhub-inline-actions" style="margin-top:7px;">
           <button class="warhub-btn" id="wh-save-settings">Save Keys</button>
+          <button class="warhub-btn gold" id="wh-save-server-settings">Save App Settings</button>
           <button class="warhub-btn alt" id="wh-relogin">Re-login</button>
           <button class="warhub-btn alt" id="wh-logout">Clear Session</button>
           <button class="warhub-btn alt" id="wh-reset-icon">Reset Icon</button>
@@ -1323,6 +1264,9 @@
     return `
       <div class="warhub-card">
         <h3>Notifications</h3>
+        <div class="warhub-inline-actions" style="margin-bottom:7px;">
+          <button class="warhub-btn alt" id="wh-mark-seen">Mark Seen</button>
+        </div>
         ${items.length ? items.map(x => `
           <div class="warhub-list-item">
             <div><strong>${esc(x.kind || "notice")}</strong></div>
@@ -1342,6 +1286,7 @@
       case "chainsitters": return renderChainSittersTab();
       case "med": return renderMedDealsTab();
       case "targets": return renderTargetsTab();
+      case "analytics": return renderAnalyticsTab();
       case "notifications": return renderNotificationsTab();
       case "settings": return renderSettingsTab();
       case "war":
@@ -1376,6 +1321,7 @@
         ${tabBtn("chainsitters", "Chain Sitters")}
         ${tabBtn("med", "Med Deals")}
         ${tabBtn("targets", "Targets")}
+        ${tabBtn("analytics", "Analytics")}
         ${tabBtn("notifications", `Notes${unreadCount() ? ` (${unreadCount()})` : ""}`)}
         ${tabBtn("settings", "Settings")}
       </div>
@@ -1394,12 +1340,8 @@
     isOpen = true;
     GM_setValue(K_OPEN, true);
     overlay.classList.add("open");
-
     const savedOverlay = GM_getValue(K_OVERLAY_POS, null);
-    if (!savedOverlay) {
-      positionOverlayNearShield();
-    }
-
+    if (!savedOverlay) positionOverlayNearShield();
     clampToViewport(overlay);
     renderBody();
   }
@@ -1417,28 +1359,26 @@
 
   function positionOverlayNearShield() {
     if (!shield || !overlay) return;
-
     const sr = shield.getBoundingClientRect();
-    const overlayWidth = Math.min(window.innerWidth - 16, 430);
+    const overlayWidth = Math.min(window.innerWidth - 16, 460);
     let left = sr.right - overlayWidth;
     let top = sr.bottom + 8;
-
     if (window.innerWidth <= 700) {
       left = 6;
       top = 54;
     }
-
     clampElementPosition(overlay, left, top);
   }
 
-  async function doAction(method, path, body, successMsg) {
+  async function doAction(method, path, body, successMsg, reload = true) {
     const res = await req(method, path, body);
     if (!res.ok) {
       setStatus(res.error || "Action failed.", true);
-      return;
+      return null;
     }
     if (successMsg) setStatus(successMsg, false);
-    await loadState();
+    if (reload) await loadState();
+    return res;
   }
 
   function val(sel) {
@@ -1448,20 +1388,19 @@
 
   function bindOverlayEvents() {
     overlay.querySelectorAll(".warhub-tab").forEach(btn => {
-      btn.addEventListener("click", () => {
+      btn.addEventListener("click", async () => {
         currentTab = btn.dataset.tab || "war";
         GM_setValue(K_TAB, currentTab);
+        if (currentTab === "analytics") await loadAnalytics();
         renderBody();
       });
     });
 
     const closeBtn = overlay.querySelector("#warhub-close-btn");
-    if (closeBtn) {
-      closeBtn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        closeOverlay();
-      });
-    }
+    if (closeBtn) closeBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      closeOverlay();
+    });
 
     const targetSelect = overlay.querySelector("#wh-target-select");
     if (targetSelect) {
@@ -1475,49 +1414,48 @@
       });
     }
 
-    const quickOptIn = overlay.querySelector("#wh-opt-in");
-    if (quickOptIn) {
-      quickOptIn.addEventListener("click", async () => {
-        await doAction("POST", "/api/chain-sitter/set", { enabled: true }, "Opted in.");
+    overlay.querySelectorAll(".wh-fill-target").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const idInput = overlay.querySelector("#wh-target-id");
+        const nameInput = overlay.querySelector("#wh-target-name");
+        if (idInput) idInput.value = btn.dataset.id || "";
+        if (nameInput) nameInput.value = btn.dataset.name || "";
+        setStatus("Target filled into form.");
       });
-    }
+    });
+
+    const quickOptIn = overlay.querySelector("#wh-opt-in");
+    if (quickOptIn) quickOptIn.addEventListener("click", async () => {
+      await doAction("POST", "/api/chain-sitter/set", { enabled: true }, "Opted in.");
+    });
 
     const quickOptOut = overlay.querySelector("#wh-opt-out");
-    if (quickOptOut) {
-      quickOptOut.addEventListener("click", async () => {
-        await doAction("POST", "/api/chain-sitter/set", { enabled: false }, "Opted out.");
-      });
-    }
+    if (quickOptOut) quickOptOut.addEventListener("click", async () => {
+      await doAction("POST", "/api/chain-sitter/set", { enabled: false }, "Opted out.");
+    });
 
     const quickAvailable = overlay.querySelector("#wh-available");
-    if (quickAvailable) {
-      quickAvailable.addEventListener("click", async () => {
-        await doAction("POST", "/api/availability/set", { available: true }, "Set to available.");
-      });
-    }
+    if (quickAvailable) quickAvailable.addEventListener("click", async () => {
+      await doAction("POST", "/api/availability/set", { available: true }, "Set to available.");
+    });
 
     const quickUnavailable = overlay.querySelector("#wh-unavailable");
-    if (quickUnavailable) {
-      quickUnavailable.addEventListener("click", async () => {
-        await doAction("POST", "/api/availability/set", { available: false }, "Set to unavailable.");
-      });
-    }
+    if (quickUnavailable) quickUnavailable.addEventListener("click", async () => {
+      await doAction("POST", "/api/availability/set", { available: false }, "Set to unavailable.");
+    });
 
     const addMed = overlay.querySelector("#wh-add-med");
-    if (addMed) {
-      addMed.addEventListener("click", async () => {
-        const sellerSel = overlay.querySelector("#wh-seller-faction");
-        const selectedOpt = sellerSel ? sellerSel.options[sellerSel.selectedIndex] : null;
-        const sellerName = selectedOpt ? String(selectedOpt.value || "").trim() : "";
-
-        await doAction("POST", "/api/med-deals/add", {
-          seller_name: sellerName,
-          seller_faction_name: sellerName,
-          amount: Number(val("#wh-amount") || 0),
-          notes: val("#wh-med-notes"),
-        }, "Med deal added.");
-      });
-    }
+    if (addMed) addMed.addEventListener("click", async () => {
+      const sellerSel = overlay.querySelector("#wh-seller-faction");
+      const selectedOpt = sellerSel ? sellerSel.options[sellerSel.selectedIndex] : null;
+      const sellerName = selectedOpt ? String(selectedOpt.value || "").trim() : "";
+      await doAction("POST", "/api/med-deals/add", {
+        seller_name: sellerName,
+        seller_faction_name: sellerName,
+        amount: Number(val("#wh-amount") || 0),
+        notes: val("#wh-med-notes"),
+      }, "Med deal added.");
+    });
 
     overlay.querySelectorAll(".wh-del-med").forEach(btn => {
       btn.addEventListener("click", async () => {
@@ -1526,15 +1464,13 @@
     });
 
     const addTarget = overlay.querySelector("#wh-add-target");
-    if (addTarget) {
-      addTarget.addEventListener("click", async () => {
-        await doAction("POST", "/api/targets/add", {
-          target_id: val("#wh-target-id"),
-          target_name: val("#wh-target-name"),
-          notes: val("#wh-target-notes"),
-        }, "Target added.");
-      });
-    }
+    if (addTarget) addTarget.addEventListener("click", async () => {
+      await doAction("POST", "/api/targets/add", {
+        target_id: val("#wh-target-id"),
+        target_name: val("#wh-target-name"),
+        notes: val("#wh-target-notes"),
+      }, "Target added.");
+    });
 
     overlay.querySelectorAll(".wh-del-target").forEach(btn => {
       btn.addEventListener("click", async () => {
@@ -1542,74 +1478,114 @@
       });
     });
 
-    const saveSettings = overlay.querySelector("#wh-save-settings");
-    if (saveSettings) {
-      saveSettings.addEventListener("click", async () => {
-        const newApiKey = val("#wh-api-key");
-        const newAdminKey = val("#wh-admin-key");
-
-        if (!newApiKey) {
-          setStatus("Enter your Torn API key first.", true);
+    overlay.querySelectorAll(".wh-assign-target").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const warId = state?.war?.war_id || "";
+        if (!warId) {
+          setStatus("No active war id found.", true);
           return;
         }
-
-        if (!newAdminKey) {
-          setStatus("Enter your admin key first.", true);
-          return;
-        }
-
-        GM_setValue(K_API_KEY, newApiKey);
-        GM_setValue(K_ADMIN_KEY, newAdminKey);
-        GM_deleteValue(K_SESSION);
-
-        setStatus("Keys saved. Logging in...");
-        const okLogin = await login();
-        if (okLogin) {
-          setStatus("Keys saved and logged in.");
-          await loadState();
-        }
+        await doAction("POST", "/api/targets/assign", {
+          war_id: warId,
+          target_id: btn.dataset.id || "",
+          target_name: btn.dataset.name || "",
+          assigned_to_user_id: state?.me?.user_id || "",
+          assigned_to_name: btn.dataset.assigned || state?.me?.name || "",
+          priority: "high",
+          note: "",
+        }, "Target assigned.");
       });
-    }
+    });
+
+    overlay.querySelectorAll(".wh-del-assign").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        await doAction("POST", "/api/targets/unassign", { id: Number(btn.dataset.id) }, "Assignment removed.");
+      });
+    });
+
+    overlay.querySelectorAll(".wh-open-note").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const text = prompt(`Add note for ${btn.dataset.targetName || btn.dataset.targetId || "target"}`);
+        if (!text) return;
+        await doAction("POST", "/api/targets/note", {
+          war_id: state?.war?.war_id || "",
+          target_id: btn.dataset.targetId || "",
+          note: text,
+        }, "Note saved.");
+      });
+    });
+
+    overlay.querySelectorAll(".wh-del-note").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        await doAction("POST", "/api/targets/note/delete", { id: Number(btn.dataset.id) }, "Note deleted.");
+      });
+    });
+
+    const saveSettings = overlay.querySelector("#wh-save-settings");
+    if (saveSettings) saveSettings.addEventListener("click", async () => {
+      const newApiKey = val("#wh-api-key");
+      const newAdminKey = val("#wh-admin-key");
+      if (!newApiKey) return setStatus("Enter your Torn API key first.", true);
+      if (!newAdminKey) return setStatus("Enter your admin key first.", true);
+
+      GM_setValue(K_API_KEY, newApiKey);
+      GM_setValue(K_ADMIN_KEY, newAdminKey);
+      GM_deleteValue(K_SESSION);
+
+      setStatus("Keys saved. Logging in...");
+      const okLogin = await login();
+      if (okLogin) {
+        setStatus("Keys saved and logged in.");
+        await loadState();
+      }
+    });
+
+    const saveServerSettings = overlay.querySelector("#wh-save-server-settings");
+    if (saveServerSettings) saveServerSettings.addEventListener("click", async () => {
+      const refreshSeconds = Math.max(10, Math.min(300, Number(val("#wh-refresh-seconds") || 30)));
+      const alertsEnabled = !!overlay.querySelector("#wh-alerts-enabled")?.checked;
+      await doAction("POST", "/api/settings", {
+        refresh_seconds: refreshSeconds,
+        alerts_enabled: alertsEnabled,
+      }, "App settings saved.");
+    });
 
     const relogin = overlay.querySelector("#wh-relogin");
-    if (relogin) {
-      relogin.addEventListener("click", async () => {
-        GM_deleteValue(K_SESSION);
-        const okLogin = await login();
-        if (okLogin) {
-          setStatus("Logged in.");
-          await loadState();
-        }
-      });
-    }
+    if (relogin) relogin.addEventListener("click", async () => {
+      GM_deleteValue(K_SESSION);
+      const okLogin = await login();
+      if (okLogin) {
+        setStatus("Logged in.");
+        await loadState();
+      }
+    });
 
     const logout = overlay.querySelector("#wh-logout");
-    if (logout) {
-      logout.addEventListener("click", () => {
-        GM_deleteValue(K_SESSION);
-        setStatus("Session cleared.");
-      });
-    }
+    if (logout) logout.addEventListener("click", () => {
+      GM_deleteValue(K_SESSION);
+      setStatus("Session cleared.");
+    });
+
+    const markSeen = overlay.querySelector("#wh-mark-seen");
+    if (markSeen) markSeen.addEventListener("click", async () => {
+      await doAction("POST", "/api/notifications/seen", {}, "Notifications marked seen.");
+    });
 
     const resetIcon = overlay.querySelector("#wh-reset-icon");
-    if (resetIcon) {
-      resetIcon.addEventListener("click", () => {
-        GM_deleteValue(K_SHIELD_POS);
-        resetShieldPosition();
-        updateBadge();
-        setStatus("Icon reset.");
-      });
-    }
+    if (resetIcon) resetIcon.addEventListener("click", () => {
+      GM_deleteValue(K_SHIELD_POS);
+      resetShieldPosition();
+      updateBadge();
+      setStatus("Icon reset.");
+    });
 
     const resetOverlay = overlay.querySelector("#wh-reset-overlay");
-    if (resetOverlay) {
-      resetOverlay.addEventListener("click", () => {
-        GM_deleteValue(K_OVERLAY_POS);
-        positionOverlayNearShield();
-        clampToViewport(overlay);
-        setStatus("Overlay reset.");
-      });
-    }
+    if (resetOverlay) resetOverlay.addEventListener("click", () => {
+      GM_deleteValue(K_OVERLAY_POS);
+      positionOverlayNearShield();
+      clampToViewport(overlay);
+      setStatus("Overlay reset.");
+    });
   }
 
   function bindOverlayDrag() {
@@ -1721,10 +1697,7 @@
       const dx = e.clientX - startX;
       const dy = e.clientY - startY;
 
-      if (!moved && (Math.abs(dx) >= DRAG_THRESHOLD || Math.abs(dy) >= DRAG_THRESHOLD)) {
-        moved = true;
-      }
-
+      if (!moved && (Math.abs(dx) >= DRAG_THRESHOLD || Math.abs(dy) >= DRAG_THRESHOLD)) moved = true;
       if (!moved) return;
 
       e.preventDefault();
@@ -1755,9 +1728,7 @@
         target.closest("input") ||
         target.closest("textarea") ||
         target.closest("select")
-      )) {
-        return;
-      }
+      )) return;
 
       const rect = moveEl.getBoundingClientRect();
       startX = e.clientX;
@@ -1779,9 +1750,7 @@
       document.addEventListener("pointerup", onPointerUp, true);
       document.addEventListener("pointercancel", onPointerCancel, true);
 
-      try {
-        handleEl.setPointerCapture(activePointerId);
-      } catch (_err) {}
+      try { handleEl.setPointerCapture(activePointerId); } catch (_err) {}
 
       e.preventDefault();
       e.stopPropagation();
@@ -1811,9 +1780,7 @@
       if (isOffscreen(shield)) resetShieldPosition();
       clampToViewport(shield);
     }
-    if (overlay && overlay.classList.contains("open")) {
-      clampToViewport(overlay);
-    }
+    if (overlay && overlay.classList.contains("open")) clampToViewport(overlay);
     updateBadge();
   });
 })();
