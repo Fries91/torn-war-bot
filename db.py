@@ -11,6 +11,10 @@ def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _utc_ts() -> int:
+    return int(datetime.now(timezone.utc).timestamp())
+
+
 def _ensure_parent_dir(path: str):
     parent = os.path.dirname(path)
     if parent:
@@ -111,13 +115,86 @@ def init_db():
         )
     """)
 
-    # Backfill / migration-safe columns for faction-wide med deals
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS war_snapshots (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            war_id TEXT DEFAULT '',
+            faction_id TEXT DEFAULT '',
+            faction_name TEXT DEFAULT '',
+            enemy_faction_id TEXT DEFAULT '',
+            enemy_faction_name TEXT DEFAULT '',
+            score_us INTEGER DEFAULT 0,
+            score_them INTEGER DEFAULT 0,
+            target_score INTEGER DEFAULT 0,
+            lead INTEGER DEFAULT 0,
+            start_ts INTEGER DEFAULT 0,
+            end_ts INTEGER DEFAULT 0,
+            ts INTEGER DEFAULT 0,
+            status_text TEXT DEFAULT '',
+            created_at TEXT
+        )
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS enemy_states (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            war_id TEXT DEFAULT '',
+            user_id TEXT DEFAULT '',
+            name TEXT DEFAULT '',
+            online_state TEXT DEFAULT '',
+            hospital_seconds INTEGER DEFAULT 0,
+            updated_at TEXT DEFAULT '',
+            UNIQUE(war_id, user_id)
+        )
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS target_assignments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            war_id TEXT DEFAULT '',
+            target_id TEXT DEFAULT '',
+            target_name TEXT DEFAULT '',
+            assigned_to_user_id TEXT DEFAULT '',
+            assigned_to_name TEXT DEFAULT '',
+            assigned_by_user_id TEXT DEFAULT '',
+            assigned_by_name TEXT DEFAULT '',
+            priority TEXT DEFAULT 'normal',
+            note TEXT DEFAULT '',
+            updated_at TEXT DEFAULT '',
+            created_at TEXT DEFAULT '',
+            UNIQUE(war_id, target_id, assigned_to_user_id)
+        )
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS war_notes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            war_id TEXT DEFAULT '',
+            target_id TEXT DEFAULT '',
+            note TEXT DEFAULT '',
+            created_by_user_id TEXT DEFAULT '',
+            created_by_name TEXT DEFAULT '',
+            created_at TEXT DEFAULT ''
+        )
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS user_settings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT DEFAULT '',
+            key_name TEXT DEFAULT '',
+            value_text TEXT DEFAULT '',
+            updated_at TEXT DEFAULT '',
+            created_at TEXT DEFAULT '',
+            UNIQUE(user_id, key_name)
+        )
+    """)
+
     _ensure_column(cur, "med_deals", "creator_user_id", "creator_user_id TEXT DEFAULT ''")
     _ensure_column(cur, "med_deals", "creator_name", "creator_name TEXT DEFAULT ''")
     _ensure_column(cur, "med_deals", "faction_id", "faction_id TEXT DEFAULT ''")
     _ensure_column(cur, "med_deals", "faction_name", "faction_name TEXT DEFAULT ''")
 
-    # Copy old user_id values into creator_user_id where missing
     cur.execute("""
         UPDATE med_deals
         SET creator_user_id = COALESCE(NULLIF(creator_user_id, ''), user_id)
@@ -127,6 +204,15 @@ def init_db():
         SET creator_name = COALESCE(NULLIF(creator_name, ''), buyer_name)
         WHERE COALESCE(NULLIF(creator_name, ''), '') = ''
     """)
+
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_users_faction_id ON users(faction_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON notifications(user_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_war_snapshots_war_id ON war_snapshots(war_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_enemy_states_war_id ON enemy_states(war_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_target_assignments_war_id ON target_assignments(war_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_war_notes_war_id ON war_notes(war_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_user_settings_user_id ON user_settings(user_id)")
 
     con.commit()
     con.close()
@@ -427,5 +513,300 @@ def mark_notifications_seen(user_id: str):
     con = _con()
     cur = con.cursor()
     cur.execute("UPDATE notifications SET seen = 1 WHERE user_id = ?", (user_id,))
+    con.commit()
+    con.close()
+
+
+def save_war_snapshot(
+    war_id: str,
+    faction_id: str,
+    faction_name: str,
+    enemy_faction_id: str,
+    enemy_faction_name: str,
+    score_us: int,
+    score_them: int,
+    target_score: int,
+    lead: int,
+    start_ts: int,
+    end_ts: int,
+    status_text: str,
+):
+    if not war_id:
+        return
+
+    con = _con()
+    cur = con.cursor()
+    cur.execute("""
+        INSERT INTO war_snapshots (
+            war_id, faction_id, faction_name, enemy_faction_id, enemy_faction_name,
+            score_us, score_them, target_score, lead, start_ts, end_ts, ts, status_text, created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        war_id,
+        faction_id,
+        faction_name,
+        enemy_faction_id,
+        enemy_faction_name,
+        int(score_us or 0),
+        int(score_them or 0),
+        int(target_score or 0),
+        int(lead or 0),
+        int(start_ts or 0),
+        int(end_ts or 0),
+        _utc_ts(),
+        status_text,
+        _utc_now(),
+    ))
+
+    cur.execute("""
+        DELETE FROM war_snapshots
+        WHERE id NOT IN (
+            SELECT id FROM war_snapshots
+            WHERE war_id = ?
+            ORDER BY id DESC
+            LIMIT 200
+        )
+        AND war_id = ?
+    """, (war_id, war_id))
+
+    con.commit()
+    con.close()
+
+
+def list_recent_war_snapshots(war_id: str, limit: int = 20) -> List[Dict[str, Any]]:
+    if not war_id:
+        return []
+    con = _con()
+    cur = con.cursor()
+    cur.execute("""
+        SELECT *
+        FROM war_snapshots
+        WHERE war_id = ?
+        ORDER BY id DESC
+        LIMIT ?
+    """, (war_id, int(limit)))
+    rows = [dict(r) for r in cur.fetchall()]
+    con.close()
+    return rows
+
+
+def get_enemy_state_map(war_id: str) -> Dict[str, Dict[str, Any]]:
+    if not war_id:
+        return {}
+    con = _con()
+    cur = con.cursor()
+    cur.execute("""
+        SELECT * FROM enemy_states
+        WHERE war_id = ?
+    """, (war_id,))
+    rows = [dict(r) for r in cur.fetchall()]
+    con.close()
+    return {str(r["user_id"]): r for r in rows}
+
+
+def upsert_enemy_state(
+    war_id: str,
+    user_id: str,
+    name: str,
+    online_state: str,
+    hospital_seconds: int,
+):
+    if not war_id or not user_id:
+        return
+
+    now = _utc_now()
+    con = _con()
+    cur = con.cursor()
+    cur.execute("""
+        INSERT INTO enemy_states (
+            war_id, user_id, name, online_state, hospital_seconds, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(war_id, user_id) DO UPDATE SET
+            name = excluded.name,
+            online_state = excluded.online_state,
+            hospital_seconds = excluded.hospital_seconds,
+            updated_at = excluded.updated_at
+    """, (
+        war_id,
+        user_id,
+        name,
+        online_state,
+        int(hospital_seconds or 0),
+        now,
+    ))
+    con.commit()
+    con.close()
+
+
+def list_target_assignments_for_war(war_id: str) -> List[Dict[str, Any]]:
+    if not war_id:
+        return []
+    con = _con()
+    cur = con.cursor()
+    cur.execute("""
+        SELECT *
+        FROM target_assignments
+        WHERE war_id = ?
+        ORDER BY
+            CASE
+                WHEN priority = 'high' THEN 0
+                WHEN priority = 'normal' THEN 1
+                WHEN priority = 'low' THEN 2
+                ELSE 3
+            END,
+            LOWER(target_name) ASC,
+            id DESC
+    """, (war_id,))
+    rows = [dict(r) for r in cur.fetchall()]
+    con.close()
+    return rows
+
+
+def upsert_target_assignment(
+    war_id: str,
+    target_id: str,
+    target_name: str,
+    assigned_to_user_id: str,
+    assigned_to_name: str,
+    assigned_by_user_id: str,
+    assigned_by_name: str,
+    priority: str,
+    note: str,
+):
+    now = _utc_now()
+    con = _con()
+    cur = con.cursor()
+    cur.execute("""
+        INSERT INTO target_assignments (
+            war_id,
+            target_id,
+            target_name,
+            assigned_to_user_id,
+            assigned_to_name,
+            assigned_by_user_id,
+            assigned_by_name,
+            priority,
+            note,
+            updated_at,
+            created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(war_id, target_id, assigned_to_user_id) DO UPDATE SET
+            target_name = excluded.target_name,
+            assigned_to_name = excluded.assigned_to_name,
+            assigned_by_user_id = excluded.assigned_by_user_id,
+            assigned_by_name = excluded.assigned_by_name,
+            priority = excluded.priority,
+            note = excluded.note,
+            updated_at = excluded.updated_at
+    """, (
+        war_id,
+        target_id,
+        target_name,
+        assigned_to_user_id,
+        assigned_to_name,
+        assigned_by_user_id,
+        assigned_by_name,
+        priority or "normal",
+        note,
+        now,
+        now,
+    ))
+    con.commit()
+    con.close()
+
+
+def delete_target_assignment(assignment_id: int):
+    con = _con()
+    cur = con.cursor()
+    cur.execute("DELETE FROM target_assignments WHERE id = ?", (int(assignment_id),))
+    con.commit()
+    con.close()
+
+
+def list_war_notes(war_id: str) -> List[Dict[str, Any]]:
+    if not war_id:
+        return []
+    con = _con()
+    cur = con.cursor()
+    cur.execute("""
+        SELECT *
+        FROM war_notes
+        WHERE war_id = ?
+        ORDER BY id DESC
+        LIMIT 100
+    """, (war_id,))
+    rows = [dict(r) for r in cur.fetchall()]
+    con.close()
+    return rows
+
+
+def upsert_war_note(
+    war_id: str,
+    target_id: str,
+    note: str,
+    created_by_user_id: str,
+    created_by_name: str,
+):
+    con = _con()
+    cur = con.cursor()
+    cur.execute("""
+        INSERT INTO war_notes (
+            war_id, target_id, note, created_by_user_id, created_by_name, created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?)
+    """, (
+        war_id,
+        target_id,
+        note,
+        created_by_user_id,
+        created_by_name,
+        _utc_now(),
+    ))
+    con.commit()
+    con.close()
+
+
+def delete_war_note(note_id: int):
+    con = _con()
+    cur = con.cursor()
+    cur.execute("DELETE FROM war_notes WHERE id = ?", (int(note_id),))
+    con.commit()
+    con.close()
+
+
+def get_user_setting(user_id: str, key_name: str) -> Optional[str]:
+    con = _con()
+    cur = con.cursor()
+    cur.execute("""
+        SELECT value_text
+        FROM user_settings
+        WHERE user_id = ? AND key_name = ?
+        LIMIT 1
+    """, (user_id, key_name))
+    row = cur.fetchone()
+    con.close()
+    return str(row["value_text"]) if row else None
+
+
+def set_user_setting(user_id: str, key_name: str, value_text: str):
+    now = _utc_now()
+    con = _con()
+    cur = con.cursor()
+    cur.execute("""
+        INSERT INTO user_settings (user_id, key_name, value_text, updated_at, created_at)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(user_id, key_name) DO UPDATE SET
+            value_text = excluded.value_text,
+            updated_at = excluded.updated_at
+    """, (
+        user_id,
+        key_name,
+        value_text,
+        now,
+        now,
+    ))
     con.commit()
     con.close()
