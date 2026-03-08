@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         War Hub ⚔️
 // @namespace    fries91-war-hub
-// @version      1.6.0
-// @description  War Hub by Fries91. PDA friendly draggable ⚔️ icon, draggable overlay, quick links linked to user actions, hospital tab, faction-wide med deals.
+// @version      1.6.1
+// @description  War Hub by Fries91. PDA friendly draggable ⚔️ icon, draggable overlay, proper scrolling, hospital tab, faction-wide med deals.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
 // @downloadURL  https://torn-war-bot.onrender.com/static/war-bot.user.js
@@ -48,6 +48,7 @@
       cursor: grab;
       user-select: none;
       -webkit-user-select: none;
+      -webkit-touch-callout: none;
       touch-action: none;
       box-shadow: 0 7px 18px rgba(0,0,0,.42);
       border: 1px solid rgba(255,255,255,.10);
@@ -87,7 +88,8 @@
       right: 12px;
       top: 170px;
       width: min(94vw, 430px);
-      max-height: 78vh;
+      height: min(82vh, 760px);
+      max-height: 82vh;
       overflow: hidden;
       border-radius: 14px;
       background: linear-gradient(180deg, #161616, #0c0c0c);
@@ -98,10 +100,11 @@
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       left: auto;
       bottom: auto;
+      flex-direction: column;
     }
 
     #warhub-overlay.open {
-      display: block !important;
+      display: flex !important;
     }
 
     .warhub-head {
@@ -111,7 +114,9 @@
       cursor: grab;
       user-select: none;
       -webkit-user-select: none;
+      -webkit-touch-callout: none;
       touch-action: none;
+      flex: 0 0 auto;
     }
 
     .warhub-head.dragging {
@@ -146,6 +151,7 @@
       font-weight: 700;
       cursor: pointer;
       font-size: 12px;
+      flex: 0 0 auto;
     }
 
     .warhub-tabs {
@@ -153,9 +159,12 @@
       gap: 6px;
       padding: 8px;
       overflow-x: auto;
+      overflow-y: hidden;
       border-bottom: 1px solid rgba(255,255,255,.08);
       background: rgba(255,255,255,.02);
       scrollbar-width: thin;
+      flex: 0 0 auto;
+      -webkit-overflow-scrolling: touch;
     }
 
     .warhub-tab {
@@ -177,9 +186,13 @@
 
     .warhub-body {
       padding: 8px;
-      max-height: calc(78vh - 104px);
-      overflow: auto;
+      overflow-y: auto;
+      overflow-x: hidden;
       -webkit-overflow-scrolling: touch;
+      overscroll-behavior: contain;
+      touch-action: pan-y;
+      flex: 1 1 auto;
+      min-height: 0;
     }
 
     .warhub-card {
@@ -432,11 +445,12 @@
     @media (max-width: 700px) {
       #warhub-overlay {
         width: calc(100vw - 12px) !important;
+        height: calc(100vh - 72px) !important;
+        max-height: calc(100vh - 72px) !important;
         left: 6px !important;
         right: auto !important;
         top: 54px !important;
         bottom: auto !important;
-        max-height: calc(100vh - 118px) !important;
       }
 
       #warhub-shield {
@@ -444,10 +458,6 @@
         top: auto !important;
         bottom: 16px !important;
         left: auto !important;
-      }
-
-      .warhub-body {
-        max-height: calc(100vh - 175px);
       }
 
       .warhub-grid.two,
@@ -1580,7 +1590,7 @@
   }
 
   function makeDraggable(handleEl, moveEl, storageKey, onMoveExtra) {
-    let pointerId = null;
+    let activePointerId = null;
     let startX = 0;
     let startY = 0;
     let startLeft = 0;
@@ -1599,7 +1609,11 @@
     };
 
     const cleanup = () => {
-      pointerId = null;
+      document.removeEventListener("pointermove", onPointerMove, true);
+      document.removeEventListener("pointerup", onPointerUp, true);
+      document.removeEventListener("pointercancel", onPointerCancel, true);
+
+      activePointerId = null;
       dragging = false;
 
       if (moved) {
@@ -1607,7 +1621,7 @@
         setTimeout(() => {
           moveEl.dataset.dragging = "0";
           if (typeof onMoveExtra === "function") onMoveExtra();
-        }, 120);
+        }, 140);
       } else {
         moveEl.dataset.dragging = "0";
         if (typeof onMoveExtra === "function") onMoveExtra();
@@ -1615,6 +1629,39 @@
 
       handleEl.classList.remove("dragging");
       if (moveEl === shield) shield.classList.remove("dragging");
+    };
+
+    const onPointerMove = (e) => {
+      if (!dragging) return;
+      if (activePointerId !== null && e.pointerId !== activePointerId) return;
+
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+
+      if (!moved && (Math.abs(dx) >= DRAG_THRESHOLD || Math.abs(dy) >= DRAG_THRESHOLD)) {
+        moved = true;
+      }
+
+      if (!moved) return;
+
+      e.preventDefault();
+      e.stopPropagation();
+
+      moveEl.dataset.dragging = "1";
+      clampElementPosition(moveEl, startLeft + dx, startTop + dy);
+      if (typeof onMoveExtra === "function") onMoveExtra();
+    };
+
+    const onPointerUp = (e) => {
+      if (activePointerId !== null && e.pointerId !== activePointerId) return;
+      if (moved) savePos();
+      cleanup();
+    };
+
+    const onPointerCancel = (e) => {
+      if (activePointerId !== null && e.pointerId !== activePointerId) return;
+      if (moved) savePos();
+      cleanup();
     };
 
     const onPointerDown = (e) => {
@@ -1634,7 +1681,7 @@
       startY = e.clientY;
       startLeft = rect.left;
       startTop = rect.top;
-      pointerId = e.pointerId;
+      activePointerId = e.pointerId;
       dragging = true;
       moved = false;
       moveEl.dataset.dragging = "0";
@@ -1642,48 +1689,22 @@
       moveEl.style.right = "auto";
       moveEl.style.bottom = "auto";
 
-      try {
-        handleEl.setPointerCapture(pointerId);
-      } catch (_err) {}
-
       handleEl.classList.add("dragging");
       if (moveEl === shield) shield.classList.add("dragging");
-    };
 
-    const onPointerMove = (e) => {
-      if (!dragging || e.pointerId !== pointerId) return;
+      document.addEventListener("pointermove", onPointerMove, true);
+      document.addEventListener("pointerup", onPointerUp, true);
+      document.addEventListener("pointercancel", onPointerCancel, true);
 
-      const dx = e.clientX - startX;
-      const dy = e.clientY - startY;
-
-      if (!moved && (Math.abs(dx) >= DRAG_THRESHOLD || Math.abs(dy) >= DRAG_THRESHOLD)) {
-        moved = true;
-      }
-
-      if (!moved) return;
+      try {
+        handleEl.setPointerCapture(activePointerId);
+      } catch (_err) {}
 
       e.preventDefault();
-      moveEl.dataset.dragging = "1";
-      clampElementPosition(moveEl, startLeft + dx, startTop + dy);
-      if (typeof onMoveExtra === "function") onMoveExtra();
+      e.stopPropagation();
     };
 
-    const onPointerUp = (e) => {
-      if (e.pointerId !== pointerId) return;
-      if (moved) savePos();
-      cleanup();
-    };
-
-    const onPointerCancel = (e) => {
-      if (e.pointerId !== pointerId) return;
-      if (moved) savePos();
-      cleanup();
-    };
-
-    handleEl.addEventListener("pointerdown", onPointerDown, { passive: true });
-    handleEl.addEventListener("pointermove", onPointerMove, { passive: false });
-    handleEl.addEventListener("pointerup", onPointerUp);
-    handleEl.addEventListener("pointercancel", onPointerCancel);
+    handleEl.addEventListener("pointerdown", onPointerDown, { passive: false });
   }
 
   async function boot() {
