@@ -82,17 +82,30 @@ def require_session(fn):
     return wrapper
 
 
-def _parse_minutes_from_text(text: str) -> int:
-    s = str(text or "").strip().lower()
-    if not s:
-        return 10**9
+def _parse_minutes_from_member(member: Dict[str, Any]) -> int:
+    online_state = str(member.get("online_state", "") or "").strip().lower()
+    hospital_seconds = int(member.get("hospital_seconds") or 0)
+    last_action = str(member.get("last_action", "") or "").strip().lower()
+    status = str(member.get("status", "") or "").strip().lower()
+    status_detail = str(member.get("status_detail", "") or "").strip().lower()
+
+    if online_state == "online":
+        return 0
+    if online_state == "idle":
+        return 1
+    if online_state == "hospital":
+        return hospital_seconds if hospital_seconds > 0 else 10**7
+
+    s = " ".join([last_action, status, status_detail]).strip()
 
     if "online" in s:
         return 0
+    if "idle" in s:
+        return 1
     if "offline" in s:
         return 10**8
-    if "idle" in s:
-        return 10**7
+    if "hospital" in s:
+        return hospital_seconds if hospital_seconds > 0 else 10**7
 
     parts = s.replace(",", " ").split()
     total = 0
@@ -116,16 +129,23 @@ def _parse_minutes_from_text(text: str) -> int:
     if found:
         return total
 
-    if "second" in s:
-        return 0
-
-    return 10**6
+    return 10**9
 
 
-def _member_activity_bucket(status_text: str) -> str:
-    s = str(status_text or "").strip().lower()
+def _member_activity_bucket(member: Dict[str, Any]) -> str:
+    online_state = str(member.get("online_state", "") or "").strip().lower()
+    hospital_seconds = int(member.get("hospital_seconds") or 0)
 
-    if "hospital" in s:
+    if online_state in {"online", "idle", "offline", "hospital"}:
+        return online_state
+
+    s = " ".join([
+        str(member.get("status", "") or ""),
+        str(member.get("status_detail", "") or ""),
+        str(member.get("last_action", "") or ""),
+    ]).strip().lower()
+
+    if "hospital" in s or hospital_seconds > 0:
         return "hospital"
     if "online" in s:
         return "online"
@@ -183,9 +203,8 @@ def _merge_faction_members(faction_id: str, members: list) -> Dict[str, Any]:
         if available:
             available_count += 1
 
-        status_text = str(m.get("status", "") or "")
-        activity_bucket = _member_activity_bucket(status_text)
-        activity_minutes = _parse_minutes_from_text(status_text)
+        activity_bucket = _member_activity_bucket(m)
+        activity_minutes = _parse_minutes_from_member(m)
 
         if activity_bucket in counts:
             counts[activity_bucket] += 1
@@ -194,9 +213,12 @@ def _merge_faction_members(faction_id: str, members: list) -> Dict[str, Any]:
             "user_id": uid,
             "name": m.get("name", "Unknown"),
             "level": m.get("level", ""),
-            "status": status_text,
-            "position": m.get("position", ""),
+            "status": m.get("status", ""),
+            "status_detail": m.get("status_detail", ""),
             "last_action": m.get("last_action", ""),
+            "position": m.get("position", ""),
+            "online_state": m.get("online_state", activity_bucket),
+            "hospital_seconds": int(m.get("hospital_seconds") or 0),
             "available": available,
             "chain_sitter": chain_sitter,
             "linked_user": linked_user,
@@ -214,6 +236,8 @@ def _merge_faction_members(faction_id: str, members: list) -> Dict[str, Any]:
                     "user_id": uid,
                     "name": item["name"],
                     "level": item["level"],
+                    "online_state": item["online_state"],
+                    "hospital_seconds": item["hospital_seconds"],
                     "profile_url": item["profile_url"],
                     "attack_url": item["attack_url"],
                 }
@@ -242,9 +266,8 @@ def _decorate_enemy_members(enemy_members: list) -> Dict[str, Any]:
     decorated = []
     for m in enemy_members:
         uid = str(m.get("user_id") or "")
-        status_text = str(m.get("status", "") or "")
-        activity_bucket = _member_activity_bucket(status_text)
-        activity_minutes = _parse_minutes_from_text(status_text)
+        activity_bucket = _member_activity_bucket(m)
+        activity_minutes = _parse_minutes_from_member(m)
 
         if activity_bucket in counts:
             counts[activity_bucket] += 1
@@ -254,9 +277,12 @@ def _decorate_enemy_members(enemy_members: list) -> Dict[str, Any]:
                 "user_id": uid,
                 "name": m.get("name", "Unknown"),
                 "level": m.get("level", ""),
-                "status": status_text,
-                "position": m.get("position", ""),
+                "status": m.get("status", ""),
+                "status_detail": m.get("status_detail", ""),
                 "last_action": m.get("last_action", ""),
+                "position": m.get("position", ""),
+                "online_state": m.get("online_state", activity_bucket),
+                "hospital_seconds": int(m.get("hospital_seconds") or 0),
                 "activity_bucket": activity_bucket,
                 "activity_minutes": activity_minutes,
                 "profile_url": profile_url(uid),
@@ -407,6 +433,7 @@ def api_state():
                 "idle_count": merged["counts"]["idle"],
                 "offline_count": merged["counts"]["offline"],
                 "hospital_count": merged["counts"]["hospital"],
+                "enemy_member_count": len(enemy_info["members"]),
                 "enemy_online_count": enemy_info["counts"]["online"],
                 "enemy_idle_count": enemy_info["counts"]["idle"],
                 "enemy_offline_count": enemy_info["counts"]["offline"],
@@ -427,6 +454,7 @@ def api_state():
             members=merged["members"],
             chain_sitters=merged["chain_sitters"],
             enemies=enemy_info["members"],
+            enemy_options=enemy_info["members"],
             med_deals=list_med_deals(user_id),
             targets=list_targets(user_id),
             bounties=list_bounties(user_id),
