@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         War Hub 🛡️
 // @namespace    fries91-war-hub
-// @version      1.4.1
+// @version      1.5.0
 // @description  War Hub by Fries91. Draggable shield, draggable overlay, members/enemies organization, target enemy dropdown, PDA friendly.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -45,7 +45,7 @@
       align-items: center;
       justify-content: center;
       font-size: 24px;
-      cursor: move;
+      cursor: grab;
       user-select: none;
       -webkit-user-select: none;
       touch-action: none;
@@ -57,6 +57,10 @@
       right: 14px;
       left: auto;
       bottom: auto;
+    }
+
+    #warhub-shield.dragging {
+      cursor: grabbing;
     }
 
     #warhub-badge {
@@ -96,16 +100,22 @@
       bottom: auto;
     }
 
-    #warhub-overlay.open { display: block !important; }
+    #warhub-overlay.open {
+      display: block !important;
+    }
 
     .warhub-head {
       padding: 12px 14px 10px;
       border-bottom: 1px solid rgba(255,255,255,.08);
       background: linear-gradient(180deg, rgba(170,18,18,.30), rgba(20,20,20,.20));
-      cursor: move;
+      cursor: grab;
       user-select: none;
       -webkit-user-select: none;
       touch-action: none;
+    }
+
+    .warhub-head.dragging {
+      cursor: grabbing;
     }
 
     .warhub-title {
@@ -144,6 +154,7 @@
       overflow-x: auto;
       border-bottom: 1px solid rgba(255,255,255,.08);
       background: rgba(255,255,255,.02);
+      scrollbar-width: thin;
     }
 
     .warhub-tab {
@@ -156,6 +167,7 @@
       font-weight: 700;
       white-space: nowrap;
       cursor: pointer;
+      flex: 0 0 auto;
     }
 
     .warhub-tab.active {
@@ -258,7 +270,9 @@
       display: none;
     }
 
-    .warhub-status.show { display: block; }
+    .warhub-status.show {
+      display: block;
+    }
 
     .warhub-kv {
       display: grid;
@@ -303,14 +317,49 @@
       white-space: normal;
     }
 
+    .warhub-overview-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .warhub-stat {
+      background: rgba(255,255,255,.04);
+      border: 1px solid rgba(255,255,255,.07);
+      border-radius: 12px;
+      padding: 10px;
+      min-width: 0;
+    }
+
+    .warhub-stat-label {
+      font-size: 10px;
+      opacity: .72;
+      text-transform: uppercase;
+      letter-spacing: .45px;
+      margin-bottom: 4px;
+    }
+
+    .warhub-stat-value {
+      font-size: 14px;
+      font-weight: 800;
+      line-height: 1.25;
+      word-break: break-word;
+    }
+
+    .warhub-quick-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+
     @media (max-width: 700px) {
       #warhub-overlay {
         width: calc(100vw - 16px) !important;
-        right: 8px !important;
         left: 8px !important;
-        top: auto !important;
-        bottom: 72px !important;
-        max-height: 70vh !important;
+        right: auto !important;
+        top: 64px !important;
+        bottom: auto !important;
+        max-height: calc(100vh - 132px) !important;
       }
 
       #warhub-shield {
@@ -318,6 +367,38 @@
         top: auto !important;
         bottom: 16px !important;
         left: auto !important;
+      }
+
+      .warhub-body {
+        max-height: calc(100vh - 196px);
+      }
+
+      .warhub-grid.two,
+      .warhub-quick-grid,
+      .warhub-overview-grid {
+        grid-template-columns: 1fr 1fr;
+      }
+
+      .warhub-toprow {
+        align-items: flex-start;
+      }
+
+      .warhub-row {
+        justify-content: flex-start;
+      }
+    }
+
+    @media (max-width: 430px) {
+      .warhub-overview-grid,
+      .warhub-quick-grid,
+      .warhub-grid.two {
+        grid-template-columns: 1fr;
+      }
+
+      #warhub-shield {
+        width: 44px;
+        height: 44px;
+        font-size: 23px;
       }
     }
   `);
@@ -415,12 +496,12 @@
     });
   }
 
-  function clampToViewport(el) {
+  function clampElementPosition(el, preferredLeft = null, preferredTop = null) {
     const rect = el.getBoundingClientRect();
-    const margin = 6;
+    const margin = 8;
 
-    let left = rect.left;
-    let top = rect.top;
+    let left = preferredLeft != null ? preferredLeft : rect.left;
+    let top = preferredTop != null ? preferredTop : rect.top;
 
     const maxLeft = Math.max(margin, window.innerWidth - rect.width - margin);
     const maxTop = Math.max(margin, window.innerHeight - rect.height - margin);
@@ -432,6 +513,10 @@
     el.style.top = `${top}px`;
     el.style.right = "auto";
     el.style.bottom = "auto";
+  }
+
+  function clampToViewport(el) {
+    clampElementPosition(el);
   }
 
   function formatHosp(seconds) {
@@ -447,10 +532,10 @@
   }
 
   function memberStatusPill(m) {
-    const state = String(m.online_state || "offline").toLowerCase();
-    if (state === "online") return `<span class="pill green">Online</span>`;
-    if (state === "idle") return `<span class="pill blue">Idle</span>`;
-    if (state === "hospital") return `<span class="pill red">Hospital ${esc(formatHosp(m.hospital_seconds))}</span>`;
+    const s = String(m.online_state || "offline").toLowerCase();
+    if (s === "online") return `<span class="pill green">Online</span>`;
+    if (s === "idle") return `<span class="pill blue">Idle</span>`;
+    if (s === "hospital") return `<span class="pill red">Hospital ${esc(formatHosp(m.hospital_seconds))}</span>`;
     return `<span class="pill gray">Offline</span>`;
   }
 
@@ -532,28 +617,53 @@
     }
   }
 
+  function statCard(label, value) {
+    return `
+      <div class="warhub-stat">
+        <div class="warhub-stat-label">${esc(label)}</div>
+        <div class="warhub-stat-value">${esc(value)}</div>
+      </div>
+    `;
+  }
+
   function renderWarTab() {
     const me = state?.me || {};
     const war = state?.war || {};
 
+    const factionName = war.faction_name || "-";
+    const enemyName = war.enemy_faction_name || "-";
+    const statusText = war.status_text || (war.active ? "Faction loaded" : "No faction found");
+
     return `
       <div class="warhub-card">
+        <h3>Quick Actions</h3>
+        <div class="warhub-quick-grid">
+          <button class="warhub-btn" id="wh-available-yes">Available</button>
+          <button class="warhub-btn alt" id="wh-available-no">Unavailable</button>
+          <button class="warhub-btn" id="wh-chain-on">Chain Sit In</button>
+          <button class="warhub-btn alt" id="wh-chain-off">Chain Sit Out</button>
+          <button class="warhub-btn" id="warhub-refresh-btn">Refresh</button>
+          <button class="warhub-btn alt" id="warhub-seen-btn">Mark notices seen</button>
+        </div>
+      </div>
+
+      <div class="warhub-card">
         <h3>War Overview</h3>
-        <div class="warhub-kv">
-          <div>You</div><div>${esc(me.name || "-")}</div>
-          <div>Faction</div><div>${esc(war.faction_name || "-")}</div>
-          <div>Faction ID</div><div>${esc(war.faction_id || "-")}</div>
-          <div>Enemy</div><div>${esc(war.enemy_faction_name || "-")}</div>
-          <div>Enemy ID</div><div>${esc(war.enemy_faction_id || "-")}</div>
-          <div>Members</div><div>${esc(war.member_count || 0)}</div>
-          <div>Enemies</div><div>${esc(war.enemy_member_count || 0)}</div>
-          <div>Available</div><div>${esc(war.available_count || 0)}</div>
-          <div>Chain Sitters</div><div>${esc(war.chain_sitter_count || 0)}</div>
-          <div>Linked Users</div><div>${esc(war.linked_user_count || 0)}</div>
-          <div>Our Score</div><div>${esc(war.score_us || 0)}</div>
-          <div>Their Score</div><div>${esc(war.score_them || 0)}</div>
-          <div>Lead</div><div>${esc(war.lead || 0)}</div>
-          <div>Status</div><div>${esc(war.status_text || (war.active ? "Faction loaded" : "No faction found"))}</div>
+        <div class="warhub-overview-grid">
+          ${statCard("You", me.name || "-")}
+          ${statCard("Faction", factionName)}
+          ${statCard("Faction ID", war.faction_id || "-")}
+          ${statCard("Enemy", enemyName)}
+          ${statCard("Enemy ID", war.enemy_faction_id || "-")}
+          ${statCard("Status", statusText)}
+          ${statCard("Members", war.member_count || 0)}
+          ${statCard("Enemies", war.enemy_member_count || 0)}
+          ${statCard("Available", war.available_count || 0)}
+          ${statCard("Chain Sitters", war.chain_sitter_count || 0)}
+          ${statCard("Linked Users", war.linked_user_count || 0)}
+          ${statCard("Our Score", war.score_us || 0)}
+          ${statCard("Their Score", war.score_them || 0)}
+          ${statCard("Lead", war.lead || 0)}
         </div>
       </div>
 
@@ -562,20 +672,6 @@
         <div style="margin-bottom:8px;">
           <span class="pill ${Number(me.available) ? "green" : "red"}">${Number(me.available) ? "Available" : "Unavailable"}</span>
           <span class="pill ${Number(me.chain_sitter) ? "gold" : "gray"}">${Number(me.chain_sitter) ? "Chain Sit In" : "Chain Sit Out"}</span>
-        </div>
-        <div class="warhub-row">
-          <button class="warhub-btn" id="wh-available-yes">Available</button>
-          <button class="warhub-btn alt" id="wh-available-no">Unavailable</button>
-          <button class="warhub-btn" id="wh-chain-on">Chain Sit In</button>
-          <button class="warhub-btn alt" id="wh-chain-off">Chain Sit Out</button>
-        </div>
-      </div>
-
-      <div class="warhub-card">
-        <h3>Quick Actions</h3>
-        <div class="warhub-row">
-          <button class="warhub-btn" id="warhub-refresh-btn">Refresh</button>
-          <button class="warhub-btn alt" id="warhub-seen-btn">Mark notices seen</button>
         </div>
       </div>
     `;
@@ -701,7 +797,9 @@
     const opts = state?.enemy_options || [];
     const rows = [`<option value="">Pick enemy target</option>`];
     for (const e of opts) {
-      const extra = e.online_state === "hospital" ? ` | Hospital ${formatHosp(e.hospital_seconds)}` : ` | ${String(e.online_state || "offline")}`;
+      const extra = e.online_state === "hospital"
+        ? ` | Hospital ${formatHosp(e.hospital_seconds)}`
+        : ` | ${String(e.online_state || "offline")}`;
       rows.push(`<option value="${esc(e.user_id)}" data-name="${esc(e.name)}">${esc(e.name)} [${esc(e.user_id)}]${extra}</option>`);
     }
     return rows.join("");
@@ -801,6 +899,7 @@
           <button class="warhub-btn alt" id="wh-relogin">Re-login</button>
           <button class="warhub-btn alt" id="wh-logout">Clear Session</button>
           <button class="warhub-btn alt" id="wh-reset-icon">Reset Icon</button>
+          <button class="warhub-btn alt" id="wh-reset-overlay">Reset Overlay</button>
         </div>
       </div>
 
@@ -893,9 +992,12 @@
     isOpen = true;
     GM_setValue(K_OPEN, true);
     overlay.classList.add("open");
-    if (!GM_getValue(K_OVERLAY_POS, null)) {
+
+    const savedOverlay = GM_getValue(K_OVERLAY_POS, null);
+    if (!savedOverlay) {
       positionOverlayNearShield();
     }
+
     clampToViewport(overlay);
     renderBody();
   }
@@ -913,15 +1015,18 @@
 
   function positionOverlayNearShield() {
     if (!shield || !overlay) return;
+
     const sr = shield.getBoundingClientRect();
-    let left = sr.right - 460;
-    if (window.innerWidth <= 700) left = 8;
+    const overlayWidth = Math.min(window.innerWidth - 16, 460);
+    let left = sr.right - overlayWidth;
     let top = sr.bottom + 8;
 
-    overlay.style.left = `${Math.max(8, left)}px`;
-    overlay.style.top = `${Math.max(8, top)}px`;
-    overlay.style.right = "auto";
-    overlay.style.bottom = "auto";
+    if (window.innerWidth <= 700) {
+      left = 8;
+      top = 64;
+    }
+
+    clampElementPosition(overlay, left, top);
   }
 
   async function doAction(method, path, body, successMsg) {
@@ -949,10 +1054,12 @@
     });
 
     const closeBtn = overlay.querySelector("#warhub-close-btn");
-    if (closeBtn) closeBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      closeOverlay();
-    });
+    if (closeBtn) {
+      closeBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        closeOverlay();
+      });
+    }
 
     const refreshBtn = overlay.querySelector("#warhub-refresh-btn");
     if (refreshBtn) refreshBtn.addEventListener("click", loadState);
@@ -1078,6 +1185,16 @@
       });
     }
 
+    const resetOverlay = overlay.querySelector("#wh-reset-overlay");
+    if (resetOverlay) {
+      resetOverlay.addEventListener("click", () => {
+        GM_deleteValue(K_OVERLAY_POS);
+        positionOverlayNearShield();
+        clampToViewport(overlay);
+        setStatus("Overlay reset.");
+      });
+    }
+
     const availYes = overlay.querySelector("#wh-available-yes");
     if (availYes) {
       availYes.addEventListener("click", async () => {
@@ -1110,7 +1227,9 @@
   function bindOverlayDrag() {
     const handle = overlay.querySelector("#warhub-drag-handle");
     if (!handle) return;
-    makeDraggable(handle, overlay, K_OVERLAY_POS);
+    makeDraggable(handle, overlay, K_OVERLAY_POS, () => {
+      handle.classList.toggle("dragging", overlay.dataset.dragging === "1");
+    });
   }
 
   function mount() {
@@ -1156,58 +1275,54 @@
       toggleOverlay();
     });
 
-    makeDraggable(shield, shield, K_SHIELD_POS, updateBadge);
+    makeDraggable(shield, shield, K_SHIELD_POS, () => {
+      shield.classList.toggle("dragging", shield.dataset.dragging === "1");
+      updateBadge();
+    });
 
     if (isOpen) openOverlay();
     updateBadge();
   }
 
   function makeDraggable(handleEl, moveEl, storageKey, onMoveExtra) {
+    let pointerId = null;
     let startX = 0;
     let startY = 0;
     let startLeft = 0;
     let startTop = 0;
     let dragging = false;
+    let moved = false;
+    const DRAG_THRESHOLD = 6;
 
-    const onMove = (e) => {
-      if (!dragging) return;
-      if ("touches" in e && e.touches.length) e.preventDefault();
-
-      const x = ("touches" in e ? e.touches[0].clientX : e.clientX);
-      const y = ("touches" in e ? e.touches[0].clientY : e.clientY);
-
-      const dx = x - startX;
-      const dy = y - startY;
-
-      moveEl.style.right = "auto";
-      moveEl.style.bottom = "auto";
-      moveEl.style.left = `${startLeft + dx}px`;
-      moveEl.style.top = `${startTop + dy}px`;
-      moveEl.dataset.dragging = "1";
-      clampToViewport(moveEl);
-      if (typeof onMoveExtra === "function") onMoveExtra();
-    };
-
-    const onUp = () => {
-      if (!dragging) return;
-      dragging = false;
-      setTimeout(() => { moveEl.dataset.dragging = "0"; }, 50);
-
+    const savePos = () => {
       GM_setValue(storageKey, {
         left: moveEl.style.left || "",
         top: moveEl.style.top || "",
         right: moveEl.style.right || "",
         bottom: moveEl.style.bottom || "",
       });
-
-      document.removeEventListener("mousemove", onMove);
-      document.removeEventListener("mouseup", onUp);
-      document.removeEventListener("touchmove", onMove);
-      document.removeEventListener("touchend", onUp);
-      document.removeEventListener("touchcancel", onUp);
     };
 
-    const onDown = (e) => {
+    const cleanup = () => {
+      pointerId = null;
+      dragging = false;
+
+      if (moved) {
+        moveEl.dataset.dragging = "1";
+        setTimeout(() => {
+          moveEl.dataset.dragging = "0";
+          if (typeof onMoveExtra === "function") onMoveExtra();
+        }, 120);
+      } else {
+        moveEl.dataset.dragging = "0";
+        if (typeof onMoveExtra === "function") onMoveExtra();
+      }
+
+      handleEl.classList.remove("dragging");
+      if (moveEl === shield) shield.classList.remove("dragging");
+    };
+
+    const onPointerDown = (e) => {
       const target = e.target;
       if (target && (
         target.closest("button") ||
@@ -1220,22 +1335,60 @@
       }
 
       const rect = moveEl.getBoundingClientRect();
-      startX = ("touches" in e ? e.touches[0].clientX : e.clientX);
-      startY = ("touches" in e ? e.touches[0].clientY : e.clientY);
+      startX = e.clientX;
+      startY = e.clientY;
       startLeft = rect.left;
       startTop = rect.top;
+      pointerId = e.pointerId;
       dragging = true;
+      moved = false;
       moveEl.dataset.dragging = "0";
 
-      document.addEventListener("mousemove", onMove);
-      document.addEventListener("mouseup", onUp);
-      document.addEventListener("touchmove", onMove, { passive: false });
-      document.addEventListener("touchend", onUp);
-      document.addEventListener("touchcancel", onUp);
+      moveEl.style.right = "auto";
+      moveEl.style.bottom = "auto";
+
+      try {
+        handleEl.setPointerCapture(pointerId);
+      } catch (_err) {}
+
+      handleEl.classList.add("dragging");
+      if (moveEl === shield) shield.classList.add("dragging");
     };
 
-    handleEl.addEventListener("mousedown", onDown);
-    handleEl.addEventListener("touchstart", onDown, { passive: true });
+    const onPointerMove = (e) => {
+      if (!dragging || e.pointerId !== pointerId) return;
+
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+
+      if (!moved && (Math.abs(dx) >= DRAG_THRESHOLD || Math.abs(dy) >= DRAG_THRESHOLD)) {
+        moved = true;
+      }
+
+      if (!moved) return;
+
+      e.preventDefault();
+      moveEl.dataset.dragging = "1";
+      clampElementPosition(moveEl, startLeft + dx, startTop + dy);
+      if (typeof onMoveExtra === "function") onMoveExtra();
+    };
+
+    const onPointerUp = (e) => {
+      if (e.pointerId !== pointerId) return;
+      if (moved) savePos();
+      cleanup();
+    };
+
+    const onPointerCancel = (e) => {
+      if (e.pointerId !== pointerId) return;
+      if (moved) savePos();
+      cleanup();
+    };
+
+    handleEl.addEventListener("pointerdown", onPointerDown, { passive: true });
+    handleEl.addEventListener("pointermove", onPointerMove, { passive: false });
+    handleEl.addEventListener("pointerup", onPointerUp);
+    handleEl.addEventListener("pointercancel", onPointerCancel);
   }
 
   async function boot() {
@@ -1259,7 +1412,9 @@
       if (isOffscreen(shield)) resetShieldPosition();
       clampToViewport(shield);
     }
-    if (overlay && overlay.classList.contains("open")) clampToViewport(overlay);
+    if (overlay && overlay.classList.contains("open")) {
+      clampToViewport(overlay);
+    }
     updateBadge();
   });
 })();
