@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name         7DS*: War Hub 🛡️
+// @name         War Hub 🛡️
 // @namespace    fries91-war-hub
 // @version      1.2.0
 // @description  War Hub by Fries91. T.S.E style auth/state flow. Draggable shield, PDA friendly overlay, merged faction statuses, chain sitters, med deals, targets, bounties.
@@ -13,15 +13,15 @@
 // @grant        GM_setValue
 // @grant        GM_deleteValue
 // @grant        GM_xmlhttpRequest
-// @connect      YOUR-RENDER-DOMAIN.onrender.com
+// @connect      https://YOUR-RENDER-DOMAIN.onrender.com/static/war-bot.user.js
 // ==/UserScript==
 
 (function () {
   "use strict";
 
   // ================= USER CONFIG =================
-  const BASE_URL = "https://YOUR-RENDER-DOMAIN.onrender.com";
-  const ADMIN_KEY = "REPLACE_WITH_ADMIN_KEY";
+  const BASE_URL = "https://YOUR-RENDER-DOMAIN.onrender.com/static/war-bot.user.js";
+  const ADMIN_KEY = "666,613,925,001";
   // ==============================================
 
   const K_API_KEY = "warhub_api_key_v1";
