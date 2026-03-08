@@ -1,7 +1,7 @@
 import os
 from datetime import datetime, timezone
 from functools import wraps
-from typing import Any, Dict, Optional, List, Tuple
+from typing import Any, Dict, Optional, List
 
 from dotenv import load_dotenv
 from flask import Flask, jsonify, request, send_from_directory
@@ -14,6 +14,7 @@ from db import (
     create_session,
     get_session,
     touch_session,
+    delete_session,
     set_availability,
     set_chain_sitter,
     list_med_deals_for_faction,
@@ -44,6 +45,7 @@ from db import (
 from torn_api import (
     me_basic,
     faction_basic,
+    faction_wars,
     ranked_war_summary,
     profile_url,
     attack_url,
@@ -129,7 +131,6 @@ def _seconds_to_text(seconds: int) -> str:
         parts.append(f"{mins}m")
     if secs and not parts:
         parts.append(f"{secs}s")
-
     return " ".join(parts[:3])
 
 
@@ -207,7 +208,7 @@ def _member_activity_bucket(member: Dict[str, Any]) -> str:
     return "other"
 
 
-def _sort_members(members: list) -> list:
+def _sort_members(members: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     bucket_rank = {
         "online": 0,
         "idle": 1,
@@ -215,7 +216,6 @@ def _sort_members(members: list) -> list:
         "hospital": 3,
         "other": 4,
     }
-
     return sorted(
         members,
         key=lambda x: (
@@ -226,7 +226,7 @@ def _sort_members(members: list) -> list:
     )
 
 
-def _sort_hospital_members(members: list) -> list:
+def _sort_hospital_members(members: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return sorted(
         [m for m in members if str(m.get("activity_bucket", "")) == "hospital"],
         key=lambda x: (
@@ -236,7 +236,7 @@ def _sort_hospital_members(members: list) -> list:
     )
 
 
-def _merge_faction_members(faction_id: str, members: list) -> Dict[str, Any]:
+def _merge_faction_members(faction_id: str, members: List[Dict[str, Any]]) -> Dict[str, Any]:
     local_map = get_user_map_by_faction(faction_id) if faction_id else {}
 
     merged = []
@@ -286,6 +286,8 @@ def _merge_faction_members(faction_id: str, members: list) -> Dict[str, Any]:
             "linked_user": linked_user,
             "activity_bucket": activity_bucket,
             "activity_minutes": activity_minutes,
+            "life_current": _to_int(m.get("life_current"), 0),
+            "life_max": _to_int(m.get("life_max"), 0),
             "profile_url": profile_url(uid),
             "attack_url": attack_url(uid),
             "bounty_url": bounty_url(uid),
@@ -319,7 +321,7 @@ def _merge_faction_members(faction_id: str, members: list) -> Dict[str, Any]:
     }
 
 
-def _decorate_enemy_members(enemy_members: list) -> Dict[str, Any]:
+def _decorate_enemy_members(enemy_members: List[Dict[str, Any]]) -> Dict[str, Any]:
     counts = {
         "online": 0,
         "idle": 0,
@@ -350,6 +352,8 @@ def _decorate_enemy_members(enemy_members: list) -> Dict[str, Any]:
                 "hospital_text": _seconds_to_text(int(m.get("hospital_seconds") or 0)),
                 "activity_bucket": activity_bucket,
                 "activity_minutes": activity_minutes,
+                "life_current": _to_int(m.get("life_current"), 0),
+                "life_max": _to_int(m.get("life_max"), 0),
                 "profile_url": profile_url(uid),
                 "attack_url": attack_url(uid),
                 "bounty_url": bounty_url(uid),
@@ -384,6 +388,9 @@ def _rank_enemy_targets(enemy_members: List[Dict[str, Any]], assignments: List[D
         hospital_seconds = int(m.get("hospital_seconds") or 0)
         level = _to_int(m.get("level"), 0)
         uid = str(m.get("user_id") or "")
+        life_current = _to_int(m.get("life_current"), 0)
+        life_max = max(1, _to_int(m.get("life_max"), 1))
+        life_pct = (life_current / life_max) * 100 if life_max > 0 else 100
 
         if online_state == "online":
             score += 100
@@ -403,6 +410,13 @@ def _rank_enemy_targets(enemy_members: List[Dict[str, Any]], assignments: List[D
         if level > 0:
             score += max(0, 60 - min(level, 60))
 
+        if life_pct <= 25:
+            score += 45
+        elif life_pct <= 50:
+            score += 25
+        elif life_pct <= 75:
+            score += 10
+
         if uid in assigned_ids:
             score -= 40
 
@@ -411,6 +425,7 @@ def _rank_enemy_targets(enemy_members: List[Dict[str, Any]], assignments: List[D
                 **m,
                 "priority_score": score,
                 "is_assigned": uid in assigned_ids,
+                "life_pct": round(life_pct, 1),
             }
         )
 
@@ -552,7 +567,11 @@ def root():
         endpoints=[
             "/health",
             "/api/auth",
+            "/api/logout",
             "/api/state",
+            "/api/wars",
+            "/api/analytics",
+            "/api/settings",
             "/api/availability/set",
             "/api/chain-sitter/set",
             "/api/med-deals/add",
@@ -562,8 +581,11 @@ def root():
             "/api/targets/assign",
             "/api/targets/unassign",
             "/api/targets/note",
-            "/api/analytics",
-            "/api/settings",
+            "/api/targets/note/delete",
+            "/api/bounties/add",
+            "/api/bounties/delete",
+            "/api/notifications",
+            "/api/notifications/seen",
             "/static/war-bot.user.js",
         ],
     )
@@ -630,6 +652,40 @@ def api_auth():
         )
     except Exception as e:
         return err(f"Auth failed: {e}", 500)
+
+
+@app.post("/api/logout")
+@require_session
+def api_logout():
+    try:
+        token = request.headers.get("X-Session-Token", "").strip()
+        if token:
+            delete_session(token)
+        return ok(message="Logged out.")
+    except Exception as e:
+        return err(f"Logout failed: {e}", 500)
+
+
+@app.get("/api/wars")
+@require_session
+def api_wars():
+    try:
+        user_id = request.session["user_id"]
+        user = get_user(user_id)
+        if not user:
+            return err("User not found.", 404)
+
+        res = faction_wars(user["api_key"])
+        if not res.get("ok"):
+            return err(res.get("error", "Could not load wars."), 500)
+
+        return ok(
+            wars=res.get("wars", []),
+            source_ok=bool(res.get("source_ok")),
+            source_note=res.get("source_note", ""),
+        )
+    except Exception as e:
+        return err(f"Could not load wars: {e}", 500)
 
 
 @app.get("/api/state")
@@ -703,7 +759,8 @@ def api_state():
                 status_text=str(war_summary.get("status_text") or ""),
             )
 
-        _emit_enemy_hospital_alerts(user_id, war_id, enemy_info["members"])
+        if _to_int(get_user_setting(user_id, "alerts_enabled"), 1):
+            _emit_enemy_hospital_alerts(user_id, war_id, enemy_info["members"])
 
         assignments = list_target_assignments_for_war(war_id) if war_id else []
         enemy_map = _safe_name_map(enemy_info["members"])
@@ -776,6 +833,8 @@ def api_state():
                 "lead": score_us - score_them,
                 "target_score": target_score,
                 "remaining_to_target": max(0, target_score - score_us) if target_score else 0,
+                "chain_us": _to_int(war_summary.get("chain_us"), 0),
+                "chain_them": _to_int(war_summary.get("chain_them"), 0),
                 "start": _to_int(war_summary.get("start"), 0),
                 "end": _to_int(war_summary.get("end"), 0),
                 "status_text": war_summary.get("status_text", ""),
@@ -1034,7 +1093,6 @@ def api_targets_assign():
             return err("User not found.", 404)
 
         data = request.get_json(force=True, silent=True) or {}
-
         war_id = str(data.get("war_id", "")).strip()
         target_id = str(data.get("target_id", "")).strip()
         target_name = str(data.get("target_name", "")).strip()
