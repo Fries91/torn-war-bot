@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         War Hub 🛡️
 // @namespace    fries91-war-hub
-// @version      1.3.0
+// @version      1.3.1
 // @description  War Hub by Fries91. Draggable shield, draggable overlay, PDA friendly overlay, merged faction statuses, chain sitters, med deals, targets, bounties.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -38,15 +38,15 @@
 
   GM_addStyle(`
     #warhub-shield {
-      position: fixed;
-      z-index: 2147483647;
-      width: 44px;
-      height: 44px;
+      position: fixed !important;
+      z-index: 2147483647 !important;
+      width: 46px;
+      height: 46px;
       border-radius: 13px;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 23px;
+      font-size: 24px;
       cursor: move;
       user-select: none;
       -webkit-user-select: none;
@@ -57,11 +57,13 @@
       color: #fff;
       top: 120px;
       right: 14px;
+      left: auto;
+      bottom: auto;
     }
 
     #warhub-badge {
-      position: fixed;
-      z-index: 2147483647;
+      position: fixed !important;
+      z-index: 2147483647 !important;
       min-width: 18px;
       height: 18px;
       padding: 0 5px;
@@ -78,8 +80,8 @@
     }
 
     #warhub-overlay {
-      position: fixed;
-      z-index: 2147483646;
+      position: fixed !important;
+      z-index: 2147483646 !important;
       right: 12px;
       top: 172px;
       width: min(95vw, 440px);
@@ -92,9 +94,11 @@
       box-shadow: 0 14px 34px rgba(0,0,0,.5);
       display: none;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      left: auto;
+      bottom: auto;
     }
 
-    #warhub-overlay.open { display: block; }
+    #warhub-overlay.open { display: block !important; }
 
     .warhub-head {
       padding: 12px 14px 10px;
@@ -295,18 +299,19 @@
 
     @media (max-width: 700px) {
       #warhub-overlay {
-        width: calc(100vw - 16px);
-        right: 8px;
-        left: 8px;
-        top: auto;
-        bottom: 72px;
-        max-height: 68vh;
+        width: calc(100vw - 16px) !important;
+        right: 8px !important;
+        left: 8px !important;
+        top: auto !important;
+        bottom: 72px !important;
+        max-height: 68vh !important;
       }
 
       #warhub-shield {
         right: 10px !important;
         top: auto !important;
-        bottom: 16px;
+        bottom: 16px !important;
+        left: auto !important;
       }
     }
   `);
@@ -369,15 +374,48 @@
     }
 
     const r = shield.getBoundingClientRect();
-    badge.style.left = `${window.scrollX + r.right - 8}px`;
-    badge.style.top = `${window.scrollY + r.top - 6}px`;
+    badge.style.left = `${Math.max(0, r.right - 8)}px`;
+    badge.style.top = `${Math.max(0, r.top - 6)}px`;
+  }
+
+  function isOffscreen(el) {
+    const rect = el.getBoundingClientRect();
+    return (
+      rect.right < 8 ||
+      rect.bottom < 8 ||
+      rect.left > window.innerWidth - 8 ||
+      rect.top > window.innerHeight - 8 ||
+      rect.width <= 0 ||
+      rect.height <= 0
+    );
+  }
+
+  function resetShieldPosition() {
+    shield.style.left = "auto";
+    shield.style.bottom = "auto";
+    if (window.innerWidth <= 700) {
+      shield.style.right = "10px";
+      shield.style.top = "auto";
+      shield.style.bottom = "16px";
+    } else {
+      shield.style.right = "14px";
+      shield.style.top = "120px";
+    }
+    GM_setValue(K_SHIELD_POS, {
+      left: shield.style.left || "",
+      top: shield.style.top || "",
+      right: shield.style.right || "",
+      bottom: shield.style.bottom || "",
+    });
   }
 
   function clampToViewport(el) {
     const rect = el.getBoundingClientRect();
+    const margin = 6;
+
     let left = rect.left;
     let top = rect.top;
-    const margin = 6;
+
     const maxLeft = Math.max(margin, window.innerWidth - rect.width - margin);
     const maxTop = Math.max(margin, window.innerHeight - rect.height - margin);
 
@@ -659,6 +697,7 @@
           <button class="warhub-btn" id="wh-save-settings">Save API Key</button>
           <button class="warhub-btn alt" id="wh-relogin">Re-login</button>
           <button class="warhub-btn alt" id="wh-logout">Clear Session</button>
+          <button class="warhub-btn alt" id="wh-reset-icon">Reset Icon</button>
         </div>
       </div>
 
@@ -771,10 +810,9 @@
     if (!shield || !overlay) return;
     const sr = shield.getBoundingClientRect();
     let left = sr.right - 440;
-    if (window.innerWidth <= 700) {
-      left = 8;
-    }
+    if (window.innerWidth <= 700) left = 8;
     let top = sr.bottom + 8;
+
     overlay.style.left = `${Math.max(8, left)}px`;
     overlay.style.top = `${Math.max(8, top)}px`;
     overlay.style.right = "auto";
@@ -913,6 +951,16 @@
       });
     }
 
+    const resetIcon = overlay.querySelector("#wh-reset-icon");
+    if (resetIcon) {
+      resetIcon.addEventListener("click", () => {
+        GM_deleteValue(K_SHIELD_POS);
+        resetShieldPosition();
+        updateBadge();
+        setStatus("Icon reset.");
+      });
+    }
+
     const availYes = overlay.querySelector("#wh-available-yes");
     if (availYes) {
       availYes.addEventListener("click", async () => {
@@ -969,6 +1017,8 @@
       if (savedShield.top) shield.style.top = savedShield.top;
       if (savedShield.right) shield.style.right = savedShield.right;
       if (savedShield.bottom) shield.style.bottom = savedShield.bottom;
+    } else {
+      resetShieldPosition();
     }
 
     const savedOverlay = GM_getValue(K_OVERLAY_POS, null);
@@ -978,6 +1028,12 @@
       if (savedOverlay.right) overlay.style.right = savedOverlay.right;
       if (savedOverlay.bottom) overlay.style.bottom = savedOverlay.bottom;
     }
+
+    if (isOffscreen(shield)) {
+      resetShieldPosition();
+    }
+
+    clampToViewport(shield);
 
     shield.addEventListener("click", (e) => {
       if (shield.dataset.dragging === "1") return;
@@ -989,7 +1045,6 @@
     makeDraggable(shield, shield, K_SHIELD_POS, updateBadge);
 
     if (isOpen) openOverlay();
-    clampToViewport(shield);
     updateBadge();
   }
 
@@ -1086,7 +1141,10 @@
   }
 
   window.addEventListener("resize", () => {
-    if (shield) clampToViewport(shield);
+    if (shield) {
+      if (isOffscreen(shield)) resetShieldPosition();
+      clampToViewport(shield);
+    }
     if (overlay && overlay.classList.contains("open")) clampToViewport(overlay);
     updateBadge();
   });
