@@ -1,6 +1,5 @@
-from typing import Any, Dict, List
-
 import requests
+from typing import Any, Dict, List
 
 API_BASE = "https://api.torn.com"
 
@@ -108,4 +107,26 @@ def faction_basic(api_key: str) -> Dict[str, Any]:
         "enemy_faction_name": "",
         "enemy_faction_id": "",
         "members": members,
+    }
+
+
+def ranked_war_summary(api_key: str) -> Dict[str, Any]:
+    """
+    Safe placeholder so app.py can import it even if ranked war data
+    is not wired in yet.
+    """
+    return {
+        "ok": True,
+        "active": False,
+        "our_faction_id": "",
+        "our_faction_name": "",
+        "enemy_faction_id": "",
+        "enemy_faction_name": "",
+        "our_score": 0,
+        "enemy_score": 0,
+        "lead": 0,
+        "start": "",
+        "end": "",
+        "time_left": "",
+        "target": 0,
     }
