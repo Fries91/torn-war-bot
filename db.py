@@ -366,7 +366,6 @@ def add_med_deal(
     faction_name: str,
     buyer_name: str,
     seller_name: str,
-    amount: int,
     notes: str,
 ):
     con = _con()
@@ -393,7 +392,7 @@ def add_med_deal(
         faction_name,
         buyer_name,
         seller_name,
-        amount,
+        0,
         notes,
         _utc_now(),
     ))
