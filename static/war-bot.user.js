@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         War Hub 🛡️
 // @namespace    fries91-war-hub
-// @version      1.3.1
-// @description  War Hub by Fries91. Draggable shield, draggable overlay, PDA friendly overlay, merged faction statuses, chain sitters, med deals, targets, bounties.
+// @version      1.4.1
+// @description  War Hub by Fries91. Draggable shield, draggable overlay, members/enemies organization, target enemy dropdown, PDA friendly.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
 // @downloadURL  https://torn-war-bot.onrender.com/static/war-bot.user.js
@@ -19,10 +19,8 @@
 (function () {
   "use strict";
 
-  // ================= USER CONFIG =================
   const BASE_URL = "https://torn-war-bot.onrender.com";
   const ADMIN_KEY = "666";
-  // ==============================================
 
   const K_API_KEY = "warhub_api_key_v1";
   const K_SESSION = "warhub_session_v1";
@@ -84,8 +82,8 @@
       z-index: 2147483646 !important;
       right: 12px;
       top: 172px;
-      width: min(95vw, 440px);
-      max-height: 74vh;
+      width: min(95vw, 460px);
+      max-height: 76vh;
       overflow: hidden;
       border-radius: 16px;
       background: linear-gradient(180deg, #161616, #0c0c0c);
@@ -166,7 +164,7 @@
 
     .warhub-body {
       padding: 10px;
-      max-height: calc(74vh - 114px);
+      max-height: calc(76vh - 114px);
       overflow: auto;
     }
 
@@ -192,7 +190,7 @@
       grid-template-columns: 1fr 1fr;
     }
 
-    .warhub-input, .warhub-textarea {
+    .warhub-input, .warhub-textarea, .warhub-select {
       width: 100%;
       border: 1px solid rgba(255,255,255,.1);
       background: rgba(0,0,0,.25);
@@ -264,7 +262,7 @@
 
     .warhub-kv {
       display: grid;
-      grid-template-columns: 120px 1fr;
+      grid-template-columns: 130px 1fr;
       gap: 6px 10px;
       font-size: 13px;
     }
@@ -289,6 +287,14 @@
     .pill.red { background: rgba(180,30,30,.24); color: #ff9a9a; }
     .pill.gold { background: rgba(190,145,20,.25); color: #ffe084; }
     .pill.gray { background: rgba(255,255,255,.08); color: #ddd; }
+    .pill.blue { background: rgba(42,112,220,.22); color: #9fc4ff; }
+
+    .warhub-group-title {
+      margin: 10px 0 8px;
+      font-size: 12px;
+      font-weight: 800;
+      opacity: .9;
+    }
 
     .warhub-tos {
       font-size: 11px;
@@ -304,7 +310,7 @@
         left: 8px !important;
         top: auto !important;
         bottom: 72px !important;
-        max-height: 68vh !important;
+        max-height: 70vh !important;
       }
 
       #warhub-shield {
@@ -428,6 +434,58 @@
     el.style.bottom = "auto";
   }
 
+  function formatHosp(seconds) {
+    const s = Number(seconds || 0);
+    if (!s) return "";
+    const d = Math.floor(s / 86400);
+    const h = Math.floor((s % 86400) / 3600);
+    const m = Math.floor((s % 3600) / 60);
+
+    if (d > 0) return `${d}d ${h}h`;
+    if (h > 0) return `${h}h ${m}m`;
+    return `${m}m`;
+  }
+
+  function memberStatusPill(m) {
+    const state = String(m.online_state || "offline").toLowerCase();
+    if (state === "online") return `<span class="pill green">Online</span>`;
+    if (state === "idle") return `<span class="pill blue">Idle</span>`;
+    if (state === "hospital") return `<span class="pill red">Hospital ${esc(formatHosp(m.hospital_seconds))}</span>`;
+    return `<span class="pill gray">Offline</span>`;
+  }
+
+  function memberPills(m) {
+    const pills = [
+      memberStatusPill(m),
+      `<span class="pill ${Number(m.available) ? "green" : "red"}">${Number(m.available) ? "Available" : "Unavailable"}</span>`,
+      `<span class="pill ${Number(m.chain_sitter) ? "gold" : "gray"}">${Number(m.chain_sitter) ? "Chain Sit" : "No Chain Sit"}</span>`,
+      `<span class="pill ${m.linked_user ? "gray" : "red"}">${m.linked_user ? "Linked" : "Not Linked"}</span>`
+    ];
+    return pills.join("");
+  }
+
+  function enemyPills(m) {
+    return memberStatusPill(m);
+  }
+
+  function groupMembers(arr) {
+    const online = [];
+    const idle = [];
+    const offline = [];
+    const hospital = [];
+
+    for (const m of arr || []) {
+      const s = String(m.online_state || "offline").toLowerCase();
+      if (s === "online") online.push(m);
+      else if (s === "idle") idle.push(m);
+      else if (s === "hospital") hospital.push(m);
+      else offline.push(m);
+    }
+
+    hospital.sort((a, b) => Number(a.hospital_seconds || 0) - Number(b.hospital_seconds || 0));
+    return { online, idle, offline, hospital };
+  }
+
   async function login() {
     const apiKey = (GM_getValue(K_API_KEY, "") || "").trim();
     if (!apiKey) {
@@ -474,14 +532,6 @@
     }
   }
 
-  function memberPills(m) {
-    return `
-      <span class="pill ${Number(m.available) ? "green" : "red"}">${Number(m.available) ? "Available" : "Unavailable"}</span>
-      <span class="pill ${Number(m.chain_sitter) ? "gold" : "gray"}">${Number(m.chain_sitter) ? "Chain Sit" : "No Chain Sit"}</span>
-      <span class="pill ${m.linked_user ? "gray" : "red"}">${m.linked_user ? "Linked" : "Not Linked"}</span>
-    `;
-  }
-
   function renderWarTab() {
     const me = state?.me || {};
     const war = state?.war || {};
@@ -493,19 +543,17 @@
           <div>You</div><div>${esc(me.name || "-")}</div>
           <div>Faction</div><div>${esc(war.faction_name || "-")}</div>
           <div>Faction ID</div><div>${esc(war.faction_id || "-")}</div>
+          <div>Enemy</div><div>${esc(war.enemy_faction_name || "-")}</div>
+          <div>Enemy ID</div><div>${esc(war.enemy_faction_id || "-")}</div>
           <div>Members</div><div>${esc(war.member_count || 0)}</div>
+          <div>Enemies</div><div>${esc(war.enemy_member_count || 0)}</div>
           <div>Available</div><div>${esc(war.available_count || 0)}</div>
           <div>Chain Sitters</div><div>${esc(war.chain_sitter_count || 0)}</div>
           <div>Linked Users</div><div>${esc(war.linked_user_count || 0)}</div>
-          <div>Status</div><div>${war.active ? "Faction loaded" : "No faction found"}</div>
-        </div>
-      </div>
-
-      <div class="warhub-card">
-        <h3>Enemy Faction</h3>
-        <div class="warhub-kv">
-          <div>Name</div><div>${esc(war.enemy_faction_name || "Not connected yet")}</div>
-          <div>ID</div><div>${esc(war.enemy_faction_id || "-")}</div>
+          <div>Our Score</div><div>${esc(war.score_us || 0)}</div>
+          <div>Their Score</div><div>${esc(war.score_them || 0)}</div>
+          <div>Lead</div><div>${esc(war.lead || 0)}</div>
+          <div>Status</div><div>${esc(war.status_text || (war.active ? "Faction loaded" : "No faction found"))}</div>
         </div>
       </div>
 
@@ -533,17 +581,14 @@
     `;
   }
 
-  function renderMembersTab() {
-    const members = state?.members || [];
-    if (!members.length) return `<div class="warhub-empty">No members found.</div>`;
-
-    return members.map(m => `
+  function renderMemberRow(m, isEnemy = false) {
+    return `
       <div class="warhub-list-item">
         <div class="warhub-row">
           <div>
             <div><strong>${esc(m.name)}</strong> ${m.level ? `(Lvl ${esc(m.level)})` : ""}</div>
-            <div class="warhub-small">${esc(m.position || "")} • ${esc(m.last_action || m.status || "")}</div>
-            <div style="margin-top:6px;">${memberPills(m)}</div>
+            <div class="warhub-small">${esc(m.position || "")}${m.position ? " • " : ""}${esc(m.last_action || m.status || "")}</div>
+            <div style="margin-top:6px;">${isEnemy ? enemyPills(m) : memberPills(m)}</div>
           </div>
         </div>
         <div class="warhub-row" style="margin-top:8px;">
@@ -552,7 +597,49 @@
           <a class="warhub-link" href="${esc(m.bounty_url)}" target="_blank" rel="noreferrer">Bounty</a>
         </div>
       </div>
-    `).join("");
+    `;
+  }
+
+  function renderGroupedMemberSection(title, arr, isEnemy = false) {
+    if (!arr.length) return "";
+    return `
+      <div class="warhub-group-title">${esc(title)} (${arr.length})</div>
+      ${arr.map(m => renderMemberRow(m, isEnemy)).join("")}
+    `;
+  }
+
+  function renderMembersTab() {
+    const members = state?.members || [];
+    if (!members.length) return `<div class="warhub-empty">No faction members found.</div>`;
+
+    const grouped = groupMembers(members);
+    return `
+      <div class="warhub-card">
+        <h3>Our Members</h3>
+        <div class="warhub-small">Organized by Online, Idle, Offline, then Hospital with lowest hospital time first.</div>
+        ${renderGroupedMemberSection("Online", grouped.online, false)}
+        ${renderGroupedMemberSection("Idle", grouped.idle, false)}
+        ${renderGroupedMemberSection("Offline", grouped.offline, false)}
+        ${renderGroupedMemberSection("Hospital", grouped.hospital, false)}
+      </div>
+    `;
+  }
+
+  function renderEnemiesTab() {
+    const enemies = state?.enemies || [];
+    if (!enemies.length) return `<div class="warhub-empty">No enemy war members found.</div>`;
+
+    const grouped = groupMembers(enemies);
+    return `
+      <div class="warhub-card">
+        <h3>Enemy Members</h3>
+        <div class="warhub-small">Faction currently at war with you, organized by Online, Idle, Offline, then Hospital with lowest hospital time first.</div>
+        ${renderGroupedMemberSection("Online", grouped.online, true)}
+        ${renderGroupedMemberSection("Idle", grouped.idle, true)}
+        ${renderGroupedMemberSection("Offline", grouped.offline, true)}
+        ${renderGroupedMemberSection("Hospital", grouped.hospital, true)}
+      </div>
+    `;
   }
 
   function renderChainSittersTab() {
@@ -563,6 +650,7 @@
         ${items.length ? items.map(x => `
           <div class="warhub-list-item">
             <div><strong>${esc(x.name)}</strong> ${x.level ? `(Lvl ${esc(x.level)})` : ""}</div>
+            <div style="margin-top:6px;">${memberStatusPill(x)}</div>
             <div class="warhub-row" style="margin-top:8px;">
               <a class="warhub-link" href="${esc(x.profile_url)}" target="_blank" rel="noreferrer">Profile</a>
               <a class="warhub-link" href="${esc(x.attack_url)}" target="_blank" rel="noreferrer">Attack</a>
@@ -609,14 +697,29 @@
     `;
   }
 
+  function renderEnemyOptions() {
+    const opts = state?.enemy_options || [];
+    const rows = [`<option value="">Pick enemy target</option>`];
+    for (const e of opts) {
+      const extra = e.online_state === "hospital" ? ` | Hospital ${formatHosp(e.hospital_seconds)}` : ` | ${String(e.online_state || "offline")}`;
+      rows.push(`<option value="${esc(e.user_id)}" data-name="${esc(e.name)}">${esc(e.name)} [${esc(e.user_id)}]${extra}</option>`);
+    }
+    return rows.join("");
+  }
+
   function renderTargetsTab() {
     const items = state?.targets || [];
     return `
       <div class="warhub-card">
         <h3>Add Target</h3>
-        <div class="warhub-grid two">
-          <input id="wh-target-id" class="warhub-input" placeholder="Target ID">
-          <input id="wh-target-name" class="warhub-input" placeholder="Target name">
+        <div class="warhub-grid">
+          <select id="wh-target-select" class="warhub-select">
+            ${renderEnemyOptions()}
+          </select>
+          <div class="warhub-grid two">
+            <input id="wh-target-id" class="warhub-input" placeholder="Target ID">
+            <input id="wh-target-name" class="warhub-input" placeholder="Target name">
+          </div>
         </div>
         <div style="margin-top:8px;">
           <textarea id="wh-target-notes" class="warhub-textarea" placeholder="Notes / reason / score notes"></textarea>
@@ -733,6 +836,7 @@
   function renderTabContent() {
     switch (currentTab) {
       case "members": return renderMembersTab();
+      case "enemies": return renderEnemiesTab();
       case "chainsitters": return renderChainSittersTab();
       case "med": return renderMedDealsTab();
       case "targets": return renderTargetsTab();
@@ -766,6 +870,7 @@
       <div class="warhub-tabs">
         ${tabBtn("war", "War")}
         ${tabBtn("members", "Members")}
+        ${tabBtn("enemies", "Enemies")}
         ${tabBtn("chainsitters", "Chain Sitters")}
         ${tabBtn("med", "Med Deals")}
         ${tabBtn("targets", "Targets")}
@@ -809,7 +914,7 @@
   function positionOverlayNearShield() {
     if (!shield || !overlay) return;
     const sr = shield.getBoundingClientRect();
-    let left = sr.right - 440;
+    let left = sr.right - 460;
     if (window.innerWidth <= 700) left = 8;
     let top = sr.bottom + 8;
 
@@ -856,6 +961,18 @@
     if (seenBtn) {
       seenBtn.addEventListener("click", async () => {
         await doAction("POST", "/api/notifications/seen", {}, "Notifications updated.");
+      });
+    }
+
+    const targetSelect = overlay.querySelector("#wh-target-select");
+    if (targetSelect) {
+      targetSelect.addEventListener("change", () => {
+        const opt = targetSelect.options[targetSelect.selectedIndex];
+        const idInput = overlay.querySelector("#wh-target-id");
+        const nameInput = overlay.querySelector("#wh-target-name");
+        if (!idInput || !nameInput) return;
+        idInput.value = targetSelect.value || "";
+        nameInput.value = opt ? (opt.getAttribute("data-name") || "") : "";
       });
     }
 
@@ -1029,10 +1146,7 @@
       if (savedOverlay.bottom) overlay.style.bottom = savedOverlay.bottom;
     }
 
-    if (isOffscreen(shield)) {
-      resetShieldPosition();
-    }
-
+    if (isOffscreen(shield)) resetShieldPosition();
     clampToViewport(shield);
 
     shield.addEventListener("click", (e) => {
@@ -1077,9 +1191,7 @@
     const onUp = () => {
       if (!dragging) return;
       dragging = false;
-      setTimeout(() => {
-        moveEl.dataset.dragging = "0";
-      }, 50);
+      setTimeout(() => { moveEl.dataset.dragging = "0"; }, 50);
 
       GM_setValue(storageKey, {
         left: moveEl.style.left || "",
@@ -1101,7 +1213,8 @@
         target.closest("button") ||
         target.closest("a") ||
         target.closest("input") ||
-        target.closest("textarea")
+        target.closest("textarea") ||
+        target.closest("select")
       )) {
         return;
       }
@@ -1131,6 +1244,7 @@
       await loadState();
     } catch (e) {
       setStatus(e.message || "Boot failed.", true);
+      renderBody();
     }
   }
 
