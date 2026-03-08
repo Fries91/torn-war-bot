@@ -313,6 +313,14 @@ def touch_session(token: str):
     con.close()
 
 
+def delete_session(token: str):
+    con = _con()
+    cur = con.cursor()
+    cur.execute("DELETE FROM sessions WHERE token = ?", (token,))
+    con.commit()
+    con.close()
+
+
 def set_availability(user_id: str, available: int):
     con = _con()
     cur = con.cursor()
