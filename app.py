@@ -595,19 +595,20 @@ def _serialize_med_deals(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     for row in rows:
         seller = str(row.get("seller_name") or "").strip()
         buyer = str(row.get("buyer_name") or "").strip()
-        amount = _to_int(row.get("amount"), 0)
         note = str(row.get("notes") or "").strip()
-
-        display_name = seller or buyer or "Unknown"
-        cost_text = str(amount) if amount else ""
 
         out.append(
             {
                 **row,
-                "name": display_name,
-                "player": display_name,
-                "cost": cost_text,
-                "price": cost_text,
+                "seller": seller,
+                "seller_name": seller,
+                "buyer": buyer,
+                "buyer_name": buyer,
+                "name": f"{seller} → {buyer}" if seller or buyer else "Unknown",
+                "player": seller or buyer or "Unknown",
+                "cost": "",
+                "price": "",
+                "amount": 0,
                 "note": note,
                 "terms": note,
             }
@@ -849,6 +850,11 @@ def api_state():
                 }
             )
 
+        war_active = bool(war_summary.get("active"))
+        war_status_text = str(war_summary.get("status_text") or "").strip()
+        if not war_active:
+            war_status_text = "Currently not in war"
+
         if war_id:
             save_war_snapshot(
                 war_id=war_id,
@@ -908,6 +914,7 @@ def api_state():
                 "name": enemy_faction_name,
                 "faction_name": enemy_faction_name,
                 "members": enemy_info["members"],
+                "message": "" if war_active else "Currently not in war",
             },
             quick_links={
                 "opt_in": {
@@ -932,7 +939,7 @@ def api_state():
                 "alerts_enabled": alerts_enabled,
             },
             war={
-                "active": bool(war_summary.get("active")),
+                "active": war_active,
                 "id": war_id,
                 "war_id": war_id,
                 "faction_id": state_faction_id,
@@ -974,7 +981,8 @@ def api_state():
                 "chain_them": _to_int(war_summary.get("chain_them"), 0),
                 "start": _to_int(war_summary.get("start"), 0),
                 "end": _to_int(war_summary.get("end"), 0),
-                "status_text": war_summary.get("status_text", ""),
+                "status_text": war_status_text,
+                "message": "" if war_active else "Currently not in war",
                 "source_ok": bool(war_summary.get("source_ok")),
                 "source_note": war_summary.get("source_note", ""),
                 "pace_per_hour_us": pace["pace_per_hour_us"],
@@ -990,6 +998,8 @@ def api_state():
             chain_sitters=merged["chain_sitters"],
             enemies=enemy_info["members"],
             enemy_options=enemy_info["members"],
+            med_deal_buyers=enemy_info["members"] if war_active else [],
+            med_deals_message="" if war_active else "Currently not in war",
             top_targets=ranked_targets[:15],
             target_assignments=assignments,
             assignments=assignments,
@@ -1141,31 +1151,43 @@ def api_med_deals_add():
             return err("User not found.", 404)
 
         data = request.get_json(force=True, silent=True) or {}
-        buyer_name = str(user.get("name") or "").strip()
-        seller_name = str(data.get("seller_name", "")).strip()
-        amount = int(data.get("amount") or 0)
+
+        war_summary = ranked_war_summary(
+            api_key=str(user.get("api_key") or "").strip(),
+            my_faction_id=str(user.get("faction_id") or "").strip(),
+            my_faction_name=str(user.get("faction_name") or "").strip(),
+        )
+
+        if not war_summary.get("active"):
+            return err("Currently not in war.")
+
+        seller_name = str(user.get("name") or "").strip()
+        buyer_name = str(data.get("buyer_name", "")).strip()
         notes = str(data.get("notes", "")).strip()
 
-        if not seller_name:
-            seller_name = str(data.get("seller_faction_name", "")).strip()
+        enemy_members = war_summary.get("enemy_members", []) or []
+        valid_enemy_names = {
+            str(m.get("name") or "").strip()
+            for m in enemy_members
+            if str(m.get("name") or "").strip()
+        }
 
-        if not seller_name:
-            return err("Choose a seller / enemy faction.")
-        if amount < 0:
-            return err("Amount must be 0 or more.")
+        if not buyer_name:
+            return err("Choose a buyer.")
+        if buyer_name not in valid_enemy_names:
+            return err("Buyer must be an active enemy faction member from the current war.")
 
         add_med_deal(
             creator_user_id=user_id,
-            creator_name=str(user.get("name") or "").strip(),
+            creator_name=seller_name,
             faction_id=str(user.get("faction_id") or "").strip(),
             faction_name=str(user.get("faction_name") or "").strip(),
             buyer_name=buyer_name,
             seller_name=seller_name,
-            amount=amount,
             notes=notes,
         )
 
-        add_notification(user_id, "med_deal", f"Med deal added: {buyer_name} vs {seller_name}.")
+        add_notification(user_id, "med_deal", f"Med deal added: {seller_name} → {buyer_name}.")
         return ok(message="Med deal added.")
     except Exception as e:
         return err(f"Could not add med deal: {e}", 500)
