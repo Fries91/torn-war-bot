@@ -82,6 +82,79 @@ def require_session(fn):
     return wrapper
 
 
+def _parse_minutes_from_text(text: str) -> int:
+    s = str(text or "").strip().lower()
+    if not s:
+        return 10**9
+
+    if "online" in s:
+        return 0
+    if "offline" in s:
+        return 10**8
+    if "idle" in s:
+        return 10**7
+
+    parts = s.replace(",", " ").split()
+    total = 0
+    found = False
+
+    for i, tok in enumerate(parts):
+        if not tok.isdigit():
+            continue
+        val = int(tok)
+        nxt = parts[i + 1] if i + 1 < len(parts) else ""
+        if nxt.startswith("min"):
+            total += val
+            found = True
+        elif nxt.startswith("hour") or nxt.startswith("hr"):
+            total += val * 60
+            found = True
+        elif nxt.startswith("day"):
+            total += val * 1440
+            found = True
+
+    if found:
+        return total
+
+    if "second" in s:
+        return 0
+
+    return 10**6
+
+
+def _member_activity_bucket(status_text: str) -> str:
+    s = str(status_text or "").strip().lower()
+
+    if "hospital" in s:
+        return "hospital"
+    if "online" in s:
+        return "online"
+    if "idle" in s:
+        return "idle"
+    if "offline" in s:
+        return "offline"
+    return "other"
+
+
+def _sort_members(members: list) -> list:
+    bucket_rank = {
+        "online": 0,
+        "idle": 1,
+        "offline": 2,
+        "hospital": 3,
+        "other": 4,
+    }
+
+    return sorted(
+        members,
+        key=lambda x: (
+            bucket_rank.get(x.get("activity_bucket", "other"), 9),
+            x.get("activity_minutes", 10**9),
+            (x.get("name") or "").lower(),
+        ),
+    )
+
+
 def _merge_faction_members(faction_id: str, members: list) -> Dict[str, Any]:
     local_map = get_user_map_by_faction(faction_id) if faction_id else {}
 
@@ -89,6 +162,13 @@ def _merge_faction_members(faction_id: str, members: list) -> Dict[str, Any]:
     chain_sitters = []
     available_count = 0
     linked_user_count = 0
+
+    counts = {
+        "online": 0,
+        "idle": 0,
+        "offline": 0,
+        "hospital": 0,
+    }
 
     for m in members:
         uid = str(m.get("user_id") or "")
@@ -103,16 +183,25 @@ def _merge_faction_members(faction_id: str, members: list) -> Dict[str, Any]:
         if available:
             available_count += 1
 
+        status_text = str(m.get("status", "") or "")
+        activity_bucket = _member_activity_bucket(status_text)
+        activity_minutes = _parse_minutes_from_text(status_text)
+
+        if activity_bucket in counts:
+            counts[activity_bucket] += 1
+
         item = {
             "user_id": uid,
             "name": m.get("name", "Unknown"),
             "level": m.get("level", ""),
-            "status": m.get("status", ""),
+            "status": status_text,
             "position": m.get("position", ""),
             "last_action": m.get("last_action", ""),
             "available": available,
             "chain_sitter": chain_sitter,
             "linked_user": linked_user,
+            "activity_bucket": activity_bucket,
+            "activity_minutes": activity_minutes,
             "profile_url": profile_url(uid),
             "attack_url": attack_url(uid),
             "bounty_url": bounty_url(uid),
@@ -130,7 +219,7 @@ def _merge_faction_members(faction_id: str, members: list) -> Dict[str, Any]:
                 }
             )
 
-    merged.sort(key=lambda x: (0 if x["available"] else 1, (x["name"] or "").lower()))
+    merged = _sort_members(merged)
     chain_sitters.sort(key=lambda x: (x["name"] or "").lower())
 
     return {
@@ -138,6 +227,49 @@ def _merge_faction_members(faction_id: str, members: list) -> Dict[str, Any]:
         "chain_sitters": chain_sitters,
         "available_count": available_count,
         "linked_user_count": linked_user_count,
+        "counts": counts,
+    }
+
+
+def _decorate_enemy_members(enemy_members: list) -> Dict[str, Any]:
+    counts = {
+        "online": 0,
+        "idle": 0,
+        "offline": 0,
+        "hospital": 0,
+    }
+
+    decorated = []
+    for m in enemy_members:
+        uid = str(m.get("user_id") or "")
+        status_text = str(m.get("status", "") or "")
+        activity_bucket = _member_activity_bucket(status_text)
+        activity_minutes = _parse_minutes_from_text(status_text)
+
+        if activity_bucket in counts:
+            counts[activity_bucket] += 1
+
+        decorated.append(
+            {
+                "user_id": uid,
+                "name": m.get("name", "Unknown"),
+                "level": m.get("level", ""),
+                "status": status_text,
+                "position": m.get("position", ""),
+                "last_action": m.get("last_action", ""),
+                "activity_bucket": activity_bucket,
+                "activity_minutes": activity_minutes,
+                "profile_url": profile_url(uid),
+                "attack_url": attack_url(uid),
+                "bounty_url": bounty_url(uid),
+            }
+        )
+
+    decorated = _sort_members(decorated)
+
+    return {
+        "members": decorated,
+        "counts": counts,
     }
 
 
@@ -249,6 +381,8 @@ def api_state():
             my_faction_name=str(faction.get("faction_name", faction_name) or ""),
         )
 
+        enemy_info = _decorate_enemy_members(war_summary.get("enemy_members", []))
+
         return ok(
             me={
                 "user_id": user["user_id"],
@@ -269,6 +403,14 @@ def api_state():
                 "available_count": merged["available_count"],
                 "chain_sitter_count": len(merged["chain_sitters"]),
                 "linked_user_count": merged["linked_user_count"],
+                "online_count": merged["counts"]["online"],
+                "idle_count": merged["counts"]["idle"],
+                "offline_count": merged["counts"]["offline"],
+                "hospital_count": merged["counts"]["hospital"],
+                "enemy_online_count": enemy_info["counts"]["online"],
+                "enemy_idle_count": enemy_info["counts"]["idle"],
+                "enemy_offline_count": enemy_info["counts"]["offline"],
+                "enemy_hospital_count": enemy_info["counts"]["hospital"],
                 "war_id": war_summary.get("war_id", ""),
                 "war_type": war_summary.get("war_type", ""),
                 "score_us": war_summary.get("score_us", 0),
@@ -284,6 +426,7 @@ def api_state():
             },
             members=merged["members"],
             chain_sitters=merged["chain_sitters"],
+            enemies=enemy_info["members"],
             med_deals=list_med_deals(user_id),
             targets=list_targets(user_id),
             bounties=list_bounties(user_id),
