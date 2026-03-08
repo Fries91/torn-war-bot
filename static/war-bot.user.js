@@ -5,15 +5,15 @@
 // @description  War Hub by Fries91. T.S.E style auth/state flow. Draggable shield, PDA friendly overlay, merged faction statuses, chain sitters, med deals, targets, bounties.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
-// @downloadURL  https://YOUR-RENDER-DOMAIN.onrender.com/static/war-bot.user.js
-// @updateURL    https://YOUR-RENDER-DOMAIN.onrender.com/static/war-bot.user.js
+// @downloadURL  https://torn-war-bot.onrender.com/static/war-bot.user.js
+// @updateURL   https://torn-war-bot.onrender.com/static/war-bot.user.js
 // @run-at       document-idle
 // @grant        GM_addStyle
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        GM_deleteValue
 // @grant        GM_xmlhttpRequest
-// @connect      https://YOUR-RENDER-DOMAIN.onrender.com/static/war-bot.user.js
+// @connect      https://torn-war-bot.onrender.com
 // ==/UserScript==
 
 (function () {
