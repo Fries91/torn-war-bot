@@ -179,6 +179,19 @@ def init_db():
     """)
 
     cur.execute("""
+        CREATE TABLE IF NOT EXISTS war_terms (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            war_id TEXT DEFAULT '',
+            terms_text TEXT DEFAULT '',
+            updated_by_user_id TEXT DEFAULT '',
+            updated_by_name TEXT DEFAULT '',
+            updated_at TEXT DEFAULT '',
+            created_at TEXT DEFAULT '',
+            UNIQUE(war_id)
+        )
+    """)
+
+    cur.execute("""
         CREATE TABLE IF NOT EXISTS user_settings (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id TEXT DEFAULT '',
@@ -212,6 +225,7 @@ def init_db():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_enemy_states_war_id ON enemy_states(war_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_target_assignments_war_id ON target_assignments(war_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_war_notes_war_id ON war_notes(war_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_war_terms_war_id ON war_terms(war_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_settings_user_id ON user_settings(user_id)")
 
     con.commit()
@@ -781,6 +795,71 @@ def delete_war_note(note_id: int):
     con = _con()
     cur = con.cursor()
     cur.execute("DELETE FROM war_notes WHERE id = ?", (int(note_id),))
+    con.commit()
+    con.close()
+
+
+def get_war_terms(war_id: str) -> Optional[Dict[str, Any]]:
+    if not war_id:
+        return None
+    con = _con()
+    cur = con.cursor()
+    cur.execute("""
+        SELECT *
+        FROM war_terms
+        WHERE war_id = ?
+        LIMIT 1
+    """, (war_id,))
+    row = cur.fetchone()
+    con.close()
+    return _row_to_dict(row)
+
+
+def upsert_war_terms(
+    war_id: str,
+    terms_text: str,
+    updated_by_user_id: str,
+    updated_by_name: str,
+):
+    if not war_id:
+        return
+
+    now = _utc_now()
+    con = _con()
+    cur = con.cursor()
+    cur.execute("""
+        INSERT INTO war_terms (
+            war_id,
+            terms_text,
+            updated_by_user_id,
+            updated_by_name,
+            updated_at,
+            created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(war_id) DO UPDATE SET
+            terms_text = excluded.terms_text,
+            updated_by_user_id = excluded.updated_by_user_id,
+            updated_by_name = excluded.updated_by_name,
+            updated_at = excluded.updated_at
+    """, (
+        war_id,
+        terms_text,
+        updated_by_user_id,
+        updated_by_name,
+        now,
+        now,
+    ))
+    con.commit()
+    con.close()
+
+
+def delete_war_terms(war_id: str):
+    if not war_id:
+        return
+    con = _con()
+    cur = con.cursor()
+    cur.execute("DELETE FROM war_terms WHERE war_id = ?", (war_id,))
     con.commit()
     con.close()
 
