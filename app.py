@@ -58,7 +58,25 @@ from torn_api import (
 load_dotenv()
 
 APP_NAME = "War Hub"
-ADMIN_KEYS = {k.strip() for k in os.getenv("ADMIN_KEYS", "").split(",") if k.strip()}
+
+
+def _parse_admin_keys() -> set[str]:
+    raw_multi = os.getenv("ADMIN_KEYS", "")
+    raw_single = os.getenv("ADMIN_KEY", "")
+
+    raw = raw_multi if raw_multi.strip() else raw_single
+    if not raw.strip():
+        return set()
+
+    keys: set[str] = set()
+    for part in raw.split(","):
+        cleaned = str(part or "").strip().strip('"').strip("'")
+        if cleaned:
+            keys.add(cleaned)
+    return keys
+
+
+ADMIN_KEYS = _parse_admin_keys()
 DEFAULT_REFRESH_SECONDS = int(os.getenv("DEFAULT_REFRESH_SECONDS", "30"))
 
 app = Flask(__name__, static_folder="static")
@@ -640,6 +658,7 @@ def root():
         service=APP_NAME,
         status="online",
         now=utc_now(),
+        admin_keys_loaded=sorted(list(ADMIN_KEYS)),
         endpoints=[
             "/health",
             "/api/auth",
@@ -671,7 +690,12 @@ def root():
 
 @app.route("/health")
 def health():
-    return ok(service=APP_NAME, status="healthy", now=utc_now())
+    return ok(
+        service=APP_NAME,
+        status="healthy",
+        now=utc_now(),
+        admin_keys_loaded=sorted(list(ADMIN_KEYS)),
+    )
 
 
 @app.route("/static/<path:path>")
@@ -683,13 +707,16 @@ def static_proxy(path):
 def api_auth():
     try:
         data = request.get_json(force=True, silent=True) or {}
-        admin_key = str(data.get("admin_key", "")).strip()
+        admin_key = str(data.get("admin_key", "")).strip().strip('"').strip("'")
         api_key = str(data.get("api_key", "")).strip()
 
         if not admin_key:
             return err("Missing admin key.")
         if ADMIN_KEYS and admin_key not in ADMIN_KEYS:
-            return err("Invalid admin key.", 403)
+            return err(
+                f"Invalid admin key. Server loaded these keys: {sorted(list(ADMIN_KEYS))}",
+                403,
+            )
         if not api_key:
             return err("Missing Torn API key.")
 
