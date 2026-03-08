@@ -39,6 +39,9 @@ from db import (
     list_war_notes,
     upsert_war_note,
     delete_war_note,
+    get_war_terms,
+    upsert_war_terms,
+    delete_war_terms,
     get_user_setting,
     set_user_setting,
 )
@@ -655,6 +658,8 @@ def root():
             "/api/targets/unassign",
             "/api/targets/note",
             "/api/targets/note/delete",
+            "/api/war-terms/set",
+            "/api/war-terms/delete",
             "/api/bounties/add",
             "/api/bounties/delete",
             "/api/notifications",
@@ -842,6 +847,7 @@ def api_state():
 
         ranked_targets = _rank_enemy_targets(enemy_info["members"], assignments)
         notes = _serialize_notes(list_war_notes(war_id) if war_id else [])
+        war_terms = get_war_terms(war_id) if war_id else None
         pace = _calc_pace_and_estimate(war_id, score_us, score_them, target_score)
         tops = _top_lists(merged["members"], enemy_info["members"])
 
@@ -949,6 +955,9 @@ def api_state():
                 "eta_to_target_us_seconds": pace["eta_to_target_us_seconds"],
                 "eta_to_target_us_text": pace["eta_to_target_us_text"],
                 "snapshot_count": pace["snapshot_count"],
+                "terms_text": (war_terms or {}).get("terms_text", ""),
+                "terms_updated_by_name": (war_terms or {}).get("updated_by_name", ""),
+                "terms_updated_at": (war_terms or {}).get("updated_at", ""),
             },
             members=merged["members"],
             chain_sitters=merged["chain_sitters"],
@@ -959,6 +968,7 @@ def api_state():
             assignments=assignments,
             war_notes=notes,
             notes=notes,
+            war_terms=war_terms,
             top_lists=tops,
             hospital={
                 "our_faction": merged["hospital_members"],
@@ -1294,6 +1304,53 @@ def api_targets_note_delete():
         return ok(message="Note deleted.")
     except Exception as e:
         return err(f"Could not delete note: {e}", 500)
+
+
+@app.post("/api/war-terms/set")
+@require_session
+def api_war_terms_set():
+    try:
+        user_id = request.session["user_id"]
+        user = get_user(user_id)
+        if not user:
+            return err("User not found.", 404)
+
+        data = request.get_json(force=True, silent=True) or {}
+        war_id = str(data.get("war_id", "")).strip()
+        terms_text = str(data.get("terms_text", "")).strip()
+
+        if not war_id:
+            return err("Missing war id.")
+        if not terms_text:
+            return err("Missing terms text.")
+
+        upsert_war_terms(
+            war_id=war_id,
+            terms_text=terms_text,
+            updated_by_user_id=user_id,
+            updated_by_name=str(user.get("name") or "").strip(),
+        )
+
+        add_notification(user_id, "war_terms", "War terms updated.")
+        return ok(message="War terms updated.")
+    except Exception as e:
+        return err(f"Could not update war terms: {e}", 500)
+
+
+@app.post("/api/war-terms/delete")
+@require_session
+def api_war_terms_delete():
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        war_id = str(data.get("war_id", "")).strip()
+
+        if not war_id:
+            return err("Missing war id.")
+
+        delete_war_terms(war_id)
+        return ok(message="War terms deleted.")
+    except Exception as e:
+        return err(f"Could not delete war terms: {e}", 500)
 
 
 @app.post("/api/bounties/add")
