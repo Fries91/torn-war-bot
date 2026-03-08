@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         War Hub 🛡️
+// @name         War Hub ⚔️
 // @namespace    fries91-war-hub
-// @version      1.5.3
-// @description  War Hub by Fries91. Draggable shield, draggable overlay, members/enemies organization, target enemy dropdown, PDA friendly.
+// @version      1.5.4
+// @description  War Hub by Fries91. Smaller draggable ⚔️ icon, draggable overlay, fixed enemy faction detection, tighter PDA friendly layout.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
 // @downloadURL  https://torn-war-bot.onrender.com/static/war-bot.user.js
@@ -30,7 +30,7 @@
   const K_OVERLAY_POS = "warhub_overlay_pos_v1";
 
   let state = null;
-  let isOpen = GM_getValue(K_OPEN, false);
+  let isOpen = !!GM_getValue(K_OPEN, false);
   let currentTab = GM_getValue(K_TAB, "war");
   let overlay, badge, shield;
 
@@ -38,18 +38,18 @@
     #warhub-shield {
       position: fixed !important;
       z-index: 2147483647 !important;
-      width: 46px;
-      height: 46px;
-      border-radius: 13px;
+      width: 40px;
+      height: 40px;
+      border-radius: 12px;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 24px;
+      font-size: 21px;
       cursor: grab;
       user-select: none;
       -webkit-user-select: none;
       touch-action: none;
-      box-shadow: 0 8px 22px rgba(0,0,0,.45);
+      box-shadow: 0 7px 18px rgba(0,0,0,.42);
       border: 1px solid rgba(255,255,255,.10);
       background: radial-gradient(circle at top, rgba(190,25,25,.96), rgba(78,8,8,.96));
       color: #fff;
@@ -66,14 +66,14 @@
     #warhub-badge {
       position: fixed !important;
       z-index: 2147483647 !important;
-      min-width: 18px;
-      height: 18px;
-      padding: 0 5px;
+      min-width: 16px;
+      height: 16px;
+      padding: 0 4px;
       border-radius: 999px;
       background: #ffd54a;
       color: #111;
-      font-size: 11px;
-      line-height: 18px;
+      font-size: 10px;
+      line-height: 16px;
       text-align: center;
       font-weight: 800;
       box-shadow: 0 3px 12px rgba(0,0,0,.45);
@@ -85,11 +85,11 @@
       position: fixed !important;
       z-index: 2147483646 !important;
       right: 12px;
-      top: 172px;
-      width: min(95vw, 460px);
+      top: 170px;
+      width: min(94vw, 438px);
       max-height: 76vh;
       overflow: hidden;
-      border-radius: 16px;
+      border-radius: 14px;
       background: linear-gradient(180deg, #161616, #0c0c0c);
       color: #f2f2f2;
       border: 1px solid rgba(255,255,255,.08);
@@ -105,7 +105,7 @@
     }
 
     .warhub-head {
-      padding: 12px 14px 10px;
+      padding: 10px 12px 9px;
       border-bottom: 1px solid rgba(255,255,255,.08);
       background: linear-gradient(180deg, rgba(170,18,18,.30), rgba(20,20,20,.20));
       cursor: grab;
@@ -120,14 +120,14 @@
 
     .warhub-title {
       font-weight: 800;
-      font-size: 17px;
+      font-size: 16px;
       letter-spacing: .2px;
     }
 
     .warhub-sub {
-      font-size: 11px;
+      font-size: 10px;
       opacity: .74;
-      margin-top: 2px;
+      margin-top: 1px;
     }
 
     .warhub-toprow {
@@ -139,18 +139,19 @@
 
     .warhub-close {
       border: 0;
-      border-radius: 10px;
+      border-radius: 9px;
       background: rgba(255,255,255,.08);
       color: #fff;
-      padding: 6px 10px;
+      padding: 5px 9px;
       font-weight: 700;
       cursor: pointer;
+      font-size: 12px;
     }
 
     .warhub-tabs {
       display: flex;
       gap: 6px;
-      padding: 10px;
+      padding: 8px;
       overflow-x: auto;
       border-bottom: 1px solid rgba(255,255,255,.08);
       background: rgba(255,255,255,.02);
@@ -162,8 +163,8 @@
       border-radius: 999px;
       background: rgba(255,255,255,.07);
       color: #fff;
-      padding: 7px 11px;
-      font-size: 12px;
+      padding: 6px 10px;
+      font-size: 11px;
       font-weight: 700;
       white-space: nowrap;
       cursor: pointer;
@@ -175,27 +176,27 @@
     }
 
     .warhub-body {
-      padding: 10px;
-      max-height: calc(76vh - 114px);
+      padding: 8px;
+      max-height: calc(76vh - 104px);
       overflow: auto;
     }
 
     .warhub-card {
       background: rgba(255,255,255,.04);
       border: 1px solid rgba(255,255,255,.07);
-      border-radius: 12px;
-      padding: 10px;
-      margin-bottom: 10px;
+      border-radius: 11px;
+      padding: 9px;
+      margin-bottom: 8px;
     }
 
     .warhub-card h3 {
-      margin: 0 0 8px;
-      font-size: 13px;
+      margin: 0 0 7px;
+      font-size: 12px;
     }
 
     .warhub-grid {
       display: grid;
-      gap: 8px;
+      gap: 7px;
     }
 
     .warhub-grid.two {
@@ -207,26 +208,26 @@
       border: 1px solid rgba(255,255,255,.1);
       background: rgba(0,0,0,.25);
       color: #fff;
-      border-radius: 10px;
-      padding: 9px 10px;
+      border-radius: 9px;
+      padding: 8px 9px;
       box-sizing: border-box;
-      font-size: 13px;
+      font-size: 12px;
     }
 
     .warhub-textarea {
-      min-height: 76px;
+      min-height: 72px;
       resize: vertical;
     }
 
     .warhub-btn {
       border: 0;
-      border-radius: 10px;
+      border-radius: 9px;
       background: linear-gradient(180deg, #d23333, #891414);
       color: #fff;
-      padding: 8px 11px;
+      padding: 7px 10px;
       font-weight: 800;
       cursor: pointer;
-      font-size: 12px;
+      font-size: 11px;
     }
 
     .warhub-btn.alt {
@@ -245,12 +246,12 @@
       border: 1px solid rgba(255,255,255,.07);
       background: rgba(255,255,255,.03);
       border-radius: 10px;
-      padding: 9px;
-      margin-bottom: 8px;
+      padding: 8px;
+      margin-bottom: 7px;
     }
 
     .warhub-small {
-      font-size: 11px;
+      font-size: 10px;
       opacity: .75;
     }
 
@@ -258,14 +259,14 @@
       color: #ff8d8d;
       text-decoration: none;
       font-weight: 700;
-      font-size: 12px;
+      font-size: 11px;
     }
 
     .warhub-status {
-      padding: 8px 10px;
+      padding: 7px 9px;
       border-radius: 10px;
-      margin-bottom: 10px;
-      font-size: 12px;
+      margin-bottom: 8px;
+      font-size: 11px;
       background: rgba(255,255,255,.05);
       display: none;
     }
@@ -276,8 +277,8 @@
 
     .warhub-empty {
       opacity: .65;
-      font-size: 12px;
-      padding: 6px 2px;
+      font-size: 11px;
+      padding: 5px 2px;
     }
 
     .pill {
@@ -297,15 +298,15 @@
     .pill.blue { background: rgba(42,112,220,.22); color: #9fc4ff; }
 
     .warhub-group-title {
-      margin: 10px 0 8px;
-      font-size: 12px;
+      margin: 8px 0 7px;
+      font-size: 11px;
       font-weight: 800;
       opacity: .9;
     }
 
     .warhub-tos {
       font-size: 11px;
-      line-height: 1.45;
+      line-height: 1.42;
       opacity: .86;
       white-space: normal;
     }
@@ -313,27 +314,27 @@
     .warhub-overview-grid {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 8px;
+      gap: 7px;
     }
 
     .warhub-stat {
       background: rgba(255,255,255,.04);
       border: 1px solid rgba(255,255,255,.07);
-      border-radius: 12px;
-      padding: 10px;
+      border-radius: 11px;
+      padding: 8px;
       min-width: 0;
     }
 
     .warhub-stat-label {
-      font-size: 10px;
+      font-size: 9px;
       opacity: .72;
       text-transform: uppercase;
       letter-spacing: .45px;
-      margin-bottom: 4px;
+      margin-bottom: 3px;
     }
 
     .warhub-stat-value {
-      font-size: 14px;
+      font-size: 13px;
       font-weight: 800;
       line-height: 1.25;
       word-break: break-word;
@@ -342,13 +343,13 @@
     .warhub-score-grid {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 8px;
-      margin-top: 8px;
+      gap: 7px;
+      margin-top: 7px;
     }
 
     .warhub-score-box {
-      border-radius: 14px;
-      padding: 12px 10px;
+      border-radius: 12px;
+      padding: 10px 9px;
       border: 1px solid rgba(255,255,255,.08);
       box-shadow: inset 0 1px 0 rgba(255,255,255,.05);
       min-width: 0;
@@ -370,7 +371,7 @@
     }
 
     .warhub-score-label {
-      font-size: 10px;
+      font-size: 9px;
       opacity: .78;
       text-transform: uppercase;
       letter-spacing: .5px;
@@ -379,7 +380,7 @@
     }
 
     .warhub-score-value {
-      font-size: 20px;
+      font-size: 18px;
       font-weight: 900;
       line-height: 1.1;
       white-space: nowrap;
@@ -389,18 +390,19 @@
 
     .warhub-score-sub {
       margin-top: 4px;
-      font-size: 11px;
+      font-size: 10px;
       opacity: .78;
+      word-break: break-word;
     }
 
     @media (max-width: 700px) {
       #warhub-overlay {
-        width: calc(100vw - 16px) !important;
-        left: 8px !important;
+        width: calc(100vw - 14px) !important;
+        left: 7px !important;
         right: auto !important;
-        top: 64px !important;
+        top: 58px !important;
         bottom: auto !important;
-        max-height: calc(100vh - 132px) !important;
+        max-height: calc(100vh - 124px) !important;
       }
 
       #warhub-shield {
@@ -411,7 +413,7 @@
       }
 
       .warhub-body {
-        max-height: calc(100vh - 196px);
+        max-height: calc(100vh - 182px);
       }
 
       .warhub-grid.two,
@@ -436,9 +438,9 @@
       }
 
       #warhub-shield {
-        width: 44px;
-        height: 44px;
-        font-size: 23px;
+        width: 38px;
+        height: 38px;
+        font-size: 20px;
       }
     }
   `);
@@ -476,6 +478,15 @@
       .replaceAll('"', "&quot;");
   }
 
+  function asNum(v) {
+    const n = Number(v || 0);
+    return Number.isFinite(n) ? n : 0;
+  }
+
+  function fmtNum(v) {
+    return asNum(v).toLocaleString();
+  }
+
   function setStatus(msg, bad = false) {
     const el = document.querySelector("#warhub-status");
     if (!el) return;
@@ -501,8 +512,8 @@
     }
 
     const r = shield.getBoundingClientRect();
-    badge.style.left = `${Math.max(0, r.right - 8)}px`;
-    badge.style.top = `${Math.max(0, r.top - 6)}px`;
+    badge.style.left = `${Math.max(0, r.right - 7)}px`;
+    badge.style.top = `${Math.max(0, r.top - 5)}px`;
   }
 
   function isOffscreen(el) {
@@ -572,10 +583,16 @@
   }
 
   function memberStatusPill(m) {
-    const s = String(m.online_state || "offline").toLowerCase();
+    const s = String(
+      m.online_state ||
+      m.status_type ||
+      m.status ||
+      "offline"
+    ).toLowerCase();
+
     if (s === "online") return `<span class="pill green">Online</span>`;
     if (s === "idle") return `<span class="pill blue">Idle</span>`;
-    if (s === "hospital") return `<span class="pill red">Hospital ${esc(formatHosp(m.hospital_seconds))}</span>`;
+    if (s === "hospital") return `<span class="pill red">Hospital ${esc(formatHosp(m.hospital_seconds || m.hospital_time_left || 0))}</span>`;
     return `<span class="pill gray">Offline</span>`;
   }
 
@@ -600,15 +617,185 @@
     const hospital = [];
 
     for (const m of arr || []) {
-      const s = String(m.online_state || "offline").toLowerCase();
+      const s = String(
+        m.online_state ||
+        m.status_type ||
+        m.status ||
+        "offline"
+      ).toLowerCase();
+
       if (s === "online") online.push(m);
       else if (s === "idle") idle.push(m);
       else if (s === "hospital") hospital.push(m);
       else offline.push(m);
     }
 
-    hospital.sort((a, b) => Number(a.hospital_seconds || 0) - Number(b.hospital_seconds || 0));
+    hospital.sort((a, b) => Number(a.hospital_seconds || a.hospital_time_left || 0) - Number(b.hospital_seconds || b.hospital_time_left || 0));
     return { online, idle, offline, hospital };
+  }
+
+  function extractFactionId(obj) {
+    if (!obj || typeof obj !== "object") return "";
+    return String(obj.id ?? obj.faction_id ?? obj.ID ?? obj.factionID ?? "");
+  }
+
+  function extractFactionName(obj) {
+    if (!obj || typeof obj !== "object") return "";
+    return String(obj.name ?? obj.faction_name ?? obj.title ?? "");
+  }
+
+  function normalizeMembers(raw) {
+    if (!raw) return [];
+    if (Array.isArray(raw)) return raw;
+    if (Array.isArray(raw.members)) return raw.members;
+    if (typeof raw === "object") return Object.values(raw);
+    return [];
+  }
+
+  function resolveWarContext() {
+    const root = state || {};
+    const war = root.war || root.ranked_war || root.current_war || {};
+    const me = root.me || {};
+    const myFaction =
+      root.my_faction ||
+      root.faction ||
+      root.our_faction ||
+      me.faction ||
+      {};
+
+    const myFactionId = String(
+      war.my_faction_id ??
+      root.my_faction_id ??
+      myFaction.id ??
+      myFaction.faction_id ??
+      me.faction_id ??
+      ""
+    );
+
+    const myFactionName = String(
+      war.my_faction_name ??
+      war.faction_name ??
+      root.my_faction_name ??
+      myFaction.name ??
+      myFaction.faction_name ??
+      me.faction_name ??
+      "Our Faction"
+    );
+
+    let enemyFaction =
+      war.enemy_faction ||
+      war.opponent_faction ||
+      root.enemy_faction ||
+      root.opponent_faction ||
+      null;
+
+    if (!enemyFaction) {
+      const candidates = [];
+      if (war.factions && Array.isArray(war.factions)) candidates.push(...war.factions);
+      if (war.factions && typeof war.factions === "object") candidates.push(...Object.values(war.factions));
+      if (war.teams && Array.isArray(war.teams)) candidates.push(...war.teams);
+      if (war.teams && typeof war.teams === "object") candidates.push(...Object.values(war.teams));
+
+      enemyFaction = candidates.find(f => {
+        const id = extractFactionId(f);
+        return id && id !== myFactionId;
+      }) || null;
+    }
+
+    if (!enemyFaction) {
+      const left = war.left || war.attacker || war.team1 || war.faction1;
+      const right = war.right || war.defender || war.team2 || war.faction2;
+      const leftId = extractFactionId(left);
+      const rightId = extractFactionId(right);
+
+      if (leftId && rightId) {
+        enemyFaction = leftId === myFactionId ? right : left;
+      }
+    }
+
+    const enemyFactionId = String(
+      war.enemy_faction_id ??
+      root.enemy_faction_id ??
+      extractFactionId(enemyFaction) ??
+      ""
+    );
+
+    let enemyFactionName = String(
+      war.enemy_faction_name ??
+      root.enemy_faction_name ??
+      extractFactionName(enemyFaction) ??
+      ""
+    );
+
+    if (!enemyFactionName || enemyFactionName === myFactionName) {
+      const candidates = [
+        root.enemy_faction_name,
+        war.opponent_faction_name,
+        extractFactionName(enemyFaction),
+        root.opponent_faction_name
+      ].filter(Boolean);
+
+      enemyFactionName = candidates.find(n => String(n) !== myFactionName) || enemyFactionName || "Enemy Faction";
+    }
+
+    let members = normalizeMembers(root.members);
+    let enemies = normalizeMembers(root.enemies);
+
+    if ((!enemies || !enemies.length) && root.enemy_members) {
+      enemies = normalizeMembers(root.enemy_members);
+    }
+
+    if ((!enemies || !enemies.length) && enemyFaction && enemyFaction.members) {
+      enemies = normalizeMembers(enemyFaction.members);
+    }
+
+    if (Array.isArray(enemies) && enemies.length && myFactionId) {
+      const looksLikeOwnFaction = enemies.every(m => String(m.faction_id || "") === myFactionId);
+      if (looksLikeOwnFaction) enemies = [];
+    }
+
+    if ((!members || !members.length) && Array.isArray(root.all_members) && myFactionId) {
+      members = root.all_members.filter(m => String(m.faction_id || "") === myFactionId);
+    }
+
+    if ((!enemies || !enemies.length) && Array.isArray(root.all_members) && enemyFactionId) {
+      enemies = root.all_members.filter(m => String(m.faction_id || "") === enemyFactionId);
+    }
+
+    const myScore = asNum(
+      war.score_us ??
+      war.our_score ??
+      war.my_score ??
+      war.faction_score ??
+      war.score1
+    );
+
+    let enemyScore = asNum(
+      war.score_them ??
+      war.enemy_score ??
+      war.their_score ??
+      war.opponent_score ??
+      war.score2
+    );
+
+    if (war.scores && typeof war.scores === "object" && enemyFactionId && war.scores[enemyFactionId] != null) {
+      const item = war.scores[enemyFactionId];
+      enemyScore = asNum(item?.score ?? item);
+    }
+
+    return {
+      me,
+      war,
+      myFactionId,
+      myFactionName,
+      enemyFactionId,
+      enemyFactionName,
+      members: Array.isArray(members) ? members : [],
+      enemies: Array.isArray(enemies) ? enemies : [],
+      myScore,
+      enemyScore,
+      lead: myScore - enemyScore
+    };
   }
 
   async function login() {
@@ -623,12 +810,13 @@
       admin_key: ADMIN_KEY,
     }, false);
 
-    if (!res.ok || !res.token) {
+    const token = res?.token || res?.session_token || "";
+    if (!res.ok || !token) {
       setStatus(res.error || "Login failed.", true);
       return false;
     }
 
-    GM_setValue(K_SESSION, res.token);
+    GM_setValue(K_SESSION, token);
     return true;
   }
 
@@ -667,12 +855,10 @@
   }
 
   function renderWarTab() {
-    const me = state?.me || {};
-    const war = state?.war || {};
-
-    const factionName = war.faction_name || "-";
-    const enemyName = war.enemy_faction_name || "-";
-    const statusText = war.status_text || (war.active ? "Faction loaded" : "No faction found");
+    const ctx = resolveWarContext();
+    const me = ctx.me || {};
+    const war = ctx.war || {};
+    const statusText = war.status_text || (war.active ? "War active" : "No active war");
 
     return `
       <div class="warhub-card">
@@ -681,37 +867,39 @@
         <div class="warhub-score-grid">
           <div class="warhub-score-box us">
             <div class="warhub-score-label">Our Score</div>
-            <div class="warhub-score-value">${esc(war.score_us || 0)}</div>
-            <div class="warhub-score-sub">${esc(factionName)}</div>
+            <div class="warhub-score-value">${esc(fmtNum(ctx.myScore))}</div>
+            <div class="warhub-score-sub">${esc(ctx.myFactionName || "-")}</div>
           </div>
 
           <div class="warhub-score-box them">
             <div class="warhub-score-label">Their Score</div>
-            <div class="warhub-score-value">${esc(war.score_them || 0)}</div>
-            <div class="warhub-score-sub">${esc(enemyName)}</div>
+            <div class="warhub-score-value">${esc(fmtNum(ctx.enemyScore))}</div>
+            <div class="warhub-score-sub">${esc(ctx.enemyFactionName || "-")}</div>
           </div>
 
           <div class="warhub-score-box lead">
             <div class="warhub-score-label">Lead</div>
-            <div class="warhub-score-value">${esc(war.lead || 0)}</div>
+            <div class="warhub-score-value">${esc(fmtNum(ctx.lead))}</div>
             <div class="warhub-score-sub">${esc(statusText)}</div>
           </div>
         </div>
 
-        <div class="warhub-overview-grid" style="margin-top:10px;">
+        <div class="warhub-overview-grid" style="margin-top:9px;">
           ${statCard("You", me.name || "-")}
-          ${statCard("Enemy ID", war.enemy_faction_id || "-")}
-          ${statCard("Members", war.member_count || 0)}
-          ${statCard("Enemies", war.enemy_member_count || 0)}
+          ${statCard("Enemy Faction", ctx.enemyFactionName || "-")}
+          ${statCard("Enemy ID", ctx.enemyFactionId || "-")}
+          ${statCard("Members", ctx.members.length)}
+          ${statCard("Enemies", ctx.enemies.length)}
           ${statCard("Available", war.available_count || 0)}
           ${statCard("Chain Sitters", war.chain_sitter_count || 0)}
           ${statCard("Linked Users", war.linked_user_count || 0)}
+          ${statCard("Status", statusText)}
         </div>
       </div>
 
       <div class="warhub-card">
         <h3>My Status</h3>
-        <div style="margin-bottom:8px;">
+        <div style="margin-bottom:6px;">
           <span class="pill ${Number(me.available) ? "green" : "red"}">${Number(me.available) ? "Available" : "Unavailable"}</span>
           <span class="pill ${Number(me.chain_sitter) ? "gold" : "gray"}">${Number(me.chain_sitter) ? "Chain Sit In" : "Chain Sit Out"}</span>
         </div>
@@ -720,19 +908,25 @@
   }
 
   function renderMemberRow(m, isEnemy = false) {
+    const id = m.user_id || m.id || m.player_id || "";
+    const name = m.name || m.user_name || `Player ${id}`;
+    const profileUrl = m.profile_url || (id ? `https://www.torn.com/profiles.php?XID=${encodeURIComponent(id)}` : "#");
+    const attackUrl = m.attack_url || (id ? `https://www.torn.com/loader.php?sid=attack&user2ID=${encodeURIComponent(id)}` : "#");
+    const bountyUrl = m.bounty_url || (id ? `https://www.torn.com/bounties.php#/p=add&userID=${encodeURIComponent(id)}` : "#");
+
     return `
       <div class="warhub-list-item">
         <div class="warhub-row">
           <div>
-            <div><strong>${esc(m.name)}</strong> ${m.level ? `(Lvl ${esc(m.level)})` : ""}</div>
-            <div class="warhub-small">${esc(m.position || "")}${m.position ? " • " : ""}${esc(m.last_action || m.status || "")}</div>
+            <div><strong>${esc(name)}</strong> ${m.level ? `(Lvl ${esc(m.level)})` : ""}</div>
+            <div class="warhub-small">${esc(m.position || "")}${m.position ? " • " : ""}${esc(m.last_action || m.status || m.online_state || "")}</div>
             <div style="margin-top:6px;">${isEnemy ? enemyPills(m) : memberPills(m)}</div>
           </div>
         </div>
-        <div class="warhub-row" style="margin-top:8px;">
-          <a class="warhub-link" href="${esc(m.profile_url)}" target="_blank" rel="noreferrer">Profile</a>
-          <a class="warhub-link" href="${esc(m.attack_url)}" target="_blank" rel="noreferrer">Attack</a>
-          <a class="warhub-link" href="${esc(m.bounty_url)}" target="_blank" rel="noreferrer">Bounty</a>
+        <div class="warhub-row" style="margin-top:7px;">
+          <a class="warhub-link" href="${esc(profileUrl)}" target="_blank" rel="noreferrer">Profile</a>
+          <a class="warhub-link" href="${esc(attackUrl)}" target="_blank" rel="noreferrer">Attack</a>
+          ${id ? `<a class="warhub-link" href="${esc(bountyUrl)}" target="_blank" rel="noreferrer">Bounty</a>` : ""}
         </div>
       </div>
     `;
@@ -747,7 +941,8 @@
   }
 
   function renderMembersTab() {
-    const members = state?.members || [];
+    const ctx = resolveWarContext();
+    const members = ctx.members || [];
     if (!members.length) return `<div class="warhub-empty">No faction members found.</div>`;
 
     const grouped = groupMembers(members);
@@ -764,14 +959,23 @@
   }
 
   function renderEnemiesTab() {
-    const enemies = state?.enemies || [];
-    if (!enemies.length) return `<div class="warhub-empty">No enemy war members found.</div>`;
+    const ctx = resolveWarContext();
+    const enemies = ctx.enemies || [];
+    if (!enemies.length) {
+      return `
+        <div class="warhub-card">
+          <h3>Enemy Members</h3>
+          <div class="warhub-small">Enemy faction: ${esc(ctx.enemyFactionName || "-")} ${ctx.enemyFactionId ? `[#${esc(ctx.enemyFactionId)}]` : ""}</div>
+          <div class="warhub-empty" style="margin-top:8px;">No enemy war members found.</div>
+        </div>
+      `;
+    }
 
     const grouped = groupMembers(enemies);
     return `
       <div class="warhub-card">
         <h3>Enemy Members</h3>
-        <div class="warhub-small">Faction currently at war with you, organized by Online, Idle, Offline, then Hospital with lowest hospital time first.</div>
+        <div class="warhub-small">Faction currently at war with you: ${esc(ctx.enemyFactionName || "-")} ${ctx.enemyFactionId ? `[#${esc(ctx.enemyFactionId)}]` : ""}</div>
         ${renderGroupedMemberSection("Online", grouped.online, true)}
         ${renderGroupedMemberSection("Idle", grouped.idle, true)}
         ${renderGroupedMemberSection("Offline", grouped.offline, true)}
@@ -789,9 +993,9 @@
           <div class="warhub-list-item">
             <div><strong>${esc(x.name)}</strong> ${x.level ? `(Lvl ${esc(x.level)})` : ""}</div>
             <div style="margin-top:6px;">${memberStatusPill(x)}</div>
-            <div class="warhub-row" style="margin-top:8px;">
-              <a class="warhub-link" href="${esc(x.profile_url)}" target="_blank" rel="noreferrer">Profile</a>
-              <a class="warhub-link" href="${esc(x.attack_url)}" target="_blank" rel="noreferrer">Attack</a>
+            <div class="warhub-row" style="margin-top:7px;">
+              <a class="warhub-link" href="${esc(x.profile_url || `https://www.torn.com/profiles.php?XID=${encodeURIComponent(x.user_id || x.id || "")}`)}" target="_blank" rel="noreferrer">Profile</a>
+              <a class="warhub-link" href="${esc(x.attack_url || `https://www.torn.com/loader.php?sid=attack&user2ID=${encodeURIComponent(x.user_id || x.id || "")}`)}" target="_blank" rel="noreferrer">Attack</a>
             </div>
           </div>
         `).join("") : `<div class="warhub-empty">No one has opted into chain sitting yet.</div>`}
@@ -810,10 +1014,10 @@
           <input id="wh-amount" class="warhub-input" placeholder="Amount" type="number" min="0">
           <div></div>
         </div>
-        <div style="margin-top:8px;">
+        <div style="margin-top:7px;">
           <textarea id="wh-med-notes" class="warhub-textarea" placeholder="Notes"></textarea>
         </div>
-        <div style="margin-top:8px;">
+        <div style="margin-top:7px;">
           <button class="warhub-btn" id="wh-add-med">Add Med Deal</button>
         </div>
       </div>
@@ -826,7 +1030,7 @@
             <div class="warhub-small">Amount: ${esc(x.amount || 0)}</div>
             <div class="warhub-small">${esc(x.notes || "")}</div>
             <div class="warhub-small">${esc(x.created_at || "")}</div>
-            <div style="margin-top:8px;">
+            <div style="margin-top:7px;">
               <button class="warhub-btn alt wh-del-med" data-id="${x.id}">Delete</button>
             </div>
           </div>
@@ -836,13 +1040,17 @@
   }
 
   function renderEnemyOptions() {
-    const opts = state?.enemy_options || [];
+    const ctx = resolveWarContext();
+    const opts = (state?.enemy_options && state.enemy_options.length) ? state.enemy_options : ctx.enemies;
     const rows = [`<option value="">Pick enemy target</option>`];
-    for (const e of opts) {
-      const extra = e.online_state === "hospital"
-        ? ` | Hospital ${formatHosp(e.hospital_seconds)}`
-        : ` | ${String(e.online_state || "offline")}`;
-      rows.push(`<option value="${esc(e.user_id)}" data-name="${esc(e.name)}">${esc(e.name)} [${esc(e.user_id)}]${extra}</option>`);
+    for (const e of opts || []) {
+      const id = e.user_id || e.id || e.player_id || "";
+      const name = e.name || e.user_name || `Player ${id}`;
+      const rawState = String(e.online_state || e.status_type || e.status || "offline").toLowerCase();
+      const extra = rawState === "hospital"
+        ? ` | Hospital ${formatHosp(e.hospital_seconds || e.hospital_time_left || 0)}`
+        : ` | ${rawState}`;
+      rows.push(`<option value="${esc(id)}" data-name="${esc(name)}">${esc(name)} [${esc(id)}]${extra}</option>`);
     }
     return rows.join("");
   }
@@ -861,10 +1069,10 @@
             <input id="wh-target-name" class="warhub-input" placeholder="Target name">
           </div>
         </div>
-        <div style="margin-top:8px;">
+        <div style="margin-top:7px;">
           <textarea id="wh-target-notes" class="warhub-textarea" placeholder="Notes / reason / score notes"></textarea>
         </div>
-        <div style="margin-top:8px;">
+        <div style="margin-top:7px;">
           <button class="warhub-btn" id="wh-add-target">Add Target</button>
         </div>
       </div>
@@ -885,7 +1093,7 @@
               </div>
             </div>
             <div class="warhub-small" style="margin-top:6px;">${esc(x.notes || "")}</div>
-            <div style="margin-top:8px;">
+            <div style="margin-top:7px;">
               <button class="warhub-btn alt wh-del-target" data-id="${x.id}">Delete</button>
             </div>
           </div>
@@ -903,10 +1111,10 @@
           <input id="wh-bounty-id" class="warhub-input" placeholder="Target ID">
           <input id="wh-bounty-name" class="warhub-input" placeholder="Target name">
         </div>
-        <div style="margin-top:8px;">
+        <div style="margin-top:7px;">
           <input id="wh-bounty-reward" class="warhub-input" placeholder="Reward text">
         </div>
-        <div style="margin-top:8px;">
+        <div style="margin-top:7px;">
           <button class="warhub-btn" id="wh-add-bounty">Add Bounty</button>
         </div>
       </div>
@@ -918,7 +1126,7 @@
             <div><strong>${esc(x.target_name || x.target_id || "Unknown")}</strong></div>
             <div class="warhub-small">ID: ${esc(x.target_id || "-")}</div>
             <div class="warhub-small">Reward: ${esc(x.reward_text || "")}</div>
-            <div style="margin-top:8px;">
+            <div style="margin-top:7px;">
               <button class="warhub-btn alt wh-del-bounty" data-id="${x.id}">Delete</button>
             </div>
           </div>
@@ -936,7 +1144,7 @@
           Enter your Torn API key here.
         </div>
         <input id="wh-api-key" class="warhub-input" placeholder="Your Torn API key" value="${esc(apiKey)}">
-        <div class="warhub-row" style="margin-top:8px;">
+        <div class="warhub-row" style="margin-top:7px;">
           <button class="warhub-btn" id="wh-save-settings">Save API Key</button>
           <button class="warhub-btn alt" id="wh-relogin">Re-login</button>
           <button class="warhub-btn alt" id="wh-logout">Clear Session</button>
@@ -1059,13 +1267,13 @@
     if (!shield || !overlay) return;
 
     const sr = shield.getBoundingClientRect();
-    const overlayWidth = Math.min(window.innerWidth - 16, 460);
+    const overlayWidth = Math.min(window.innerWidth - 16, 438);
     let left = sr.right - overlayWidth;
     let top = sr.bottom + 8;
 
     if (window.innerWidth <= 700) {
-      left = 8;
-      top = 64;
+      left = 7;
+      top = 58;
     }
 
     clampElementPosition(overlay, left, top);
@@ -1239,7 +1447,7 @@
   function mount() {
     shield = document.createElement("div");
     shield.id = "warhub-shield";
-    shield.textContent = "🛡️";
+    shield.textContent = "⚔️";
 
     overlay = document.createElement("div");
     overlay.id = "warhub-overlay";
