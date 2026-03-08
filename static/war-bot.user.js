@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         War Hub ⚔️
 // @namespace    fries91-war-hub
-// @version      1.6.1
-// @description  War Hub by Fries91. PDA friendly draggable ⚔️ icon, draggable overlay, proper scrolling, hospital tab, faction-wide med deals.
+// @version      1.6.5
+// @description  War Hub by Fries91. Tampermonkey + PDA friendly draggable icon, draggable overlay, proper scrolling, hospital tab, faction-wide med deals, admin key in settings, enemy not-in-war notices, and war banner.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
 // @downloadURL  https://torn-war-bot.onrender.com/static/war-bot.user.js
@@ -20,9 +20,9 @@
   "use strict";
 
   const BASE_URL = "https://torn-war-bot.onrender.com";
-  const ADMIN_KEY = "666";
 
   const K_API_KEY = "warhub_api_key_v1";
+  const K_ADMIN_KEY = "warhub_admin_key_v1";
   const K_SESSION = "warhub_session_v1";
   const K_OPEN = "warhub_open_v1";
   const K_TAB = "warhub_tab_v1";
@@ -442,6 +442,20 @@
       word-break: break-word;
     }
 
+    .warhub-banner {
+      border-radius: 12px;
+      padding: 12px 10px;
+      margin-bottom: 8px;
+      text-align: center;
+      font-weight: 900;
+      letter-spacing: .6px;
+      font-size: 13px;
+      border: 1px solid rgba(255,120,120,.26);
+      background: linear-gradient(180deg, rgba(170,20,20,.42), rgba(70,8,8,.62));
+      color: #ffd5d5;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.05);
+    }
+
     @media (max-width: 700px) {
       #warhub-overlay {
         width: calc(100vw - 12px) !important;
@@ -788,7 +802,7 @@
         root.opponent_faction_name
       ].filter(Boolean);
 
-      enemyFactionName = candidates.find(n => String(n) !== myFactionName) || enemyFactionName || "Enemy Faction";
+      enemyFactionName = candidates.find(n => String(n) !== myFactionName) || enemyFactionName || "";
     }
 
     let members = normalizeMembers(root.members);
@@ -836,9 +850,18 @@
       enemyScore = asNum(item?.score ?? item);
     }
 
+    const inWar = !!(
+      war.active ||
+      enemyFactionId ||
+      enemyFactionName ||
+      myScore ||
+      enemyScore
+    );
+
     return {
       me,
       war,
+      inWar,
       myFactionId,
       myFactionName,
       enemyFactionId,
@@ -853,14 +876,21 @@
 
   async function login() {
     const apiKey = (GM_getValue(K_API_KEY, "") || "").trim();
+    const adminKey = (GM_getValue(K_ADMIN_KEY, "") || "").trim();
+
     if (!apiKey) {
       setStatus("Save your Torn API key in Settings first.", true);
       return false;
     }
 
+    if (!adminKey) {
+      setStatus("Save your admin key in Settings first.", true);
+      return false;
+    }
+
     const res = await req("POST", "/api/auth", {
       api_key: apiKey,
-      admin_key: ADMIN_KEY,
+      admin_key: adminKey,
     }, false);
 
     const token = res?.token || res?.session_token || "";
@@ -901,11 +931,13 @@
   function renderWarTab() {
     const ctx = resolveWarContext();
     const war = ctx.war || {};
-    const statusText = war.status_text || (war.active ? "War active" : "No active war");
+    const statusText = war.status_text || (ctx.inWar ? "War active" : "Currently not in a war");
     const medDeals = state?.med_deals || [];
     const me = state?.me || {};
 
     return `
+      ${!ctx.inWar ? `<div class="warhub-banner">CURRENTLY NOT IN A WAR</div>` : ""}
+
       <div class="warhub-card">
         <h3>War Overview</h3>
 
@@ -919,7 +951,7 @@
           <div class="warhub-score-box them">
             <div class="warhub-score-label">Their Score</div>
             <div class="warhub-score-value">${esc(fmtNum(ctx.enemyScore))}</div>
-            <div class="warhub-score-sub">${esc(ctx.enemyFactionName || "-")}</div>
+            <div class="warhub-score-sub">${esc(ctx.inWar ? (ctx.enemyFactionName || "-") : "Currently not in a war")}</div>
           </div>
 
           <div class="warhub-score-box lead">
@@ -1031,12 +1063,25 @@
   function renderEnemiesTab() {
     const ctx = resolveWarContext();
     const enemies = ctx.enemies || [];
+
+    if (!ctx.inWar) {
+      return `
+        <div class="warhub-card">
+          <h3>Enemy Members</h3>
+          <div class="warhub-empty">Currently not in a war.</div>
+        </div>
+      `;
+    }
+
     if (!enemies.length) {
       return `
         <div class="warhub-card">
           <h3>Enemy Members</h3>
-          <div class="warhub-small">Enemy faction: ${esc(ctx.enemyFactionName || "-")} ${ctx.enemyFactionId ? `[#${esc(ctx.enemyFactionId)}]` : ""}</div>
-          <div class="warhub-empty" style="margin-top:8px;">No enemy war members found.</div>
+          <div class="warhub-small">
+            Enemy faction: ${esc(ctx.enemyFactionName || "-")}
+            ${ctx.enemyFactionId ? `[#${esc(ctx.enemyFactionId)}]` : ""}
+          </div>
+          <div class="warhub-empty" style="margin-top:8px;">No enemy members found.</div>
         </div>
       `;
     }
@@ -1045,7 +1090,11 @@
     return `
       <div class="warhub-card">
         <h3>Enemy Members</h3>
-        <div class="warhub-small">Faction currently at war with you: ${esc(ctx.enemyFactionName || "-")} ${ctx.enemyFactionId ? `[#${esc(ctx.enemyFactionId)}]` : ""}</div>
+        <div class="warhub-small">
+          Faction currently at war with you:
+          ${esc(ctx.enemyFactionName || "-")}
+          ${ctx.enemyFactionId ? `[#${esc(ctx.enemyFactionId)}]` : ""}
+        </div>
         ${renderGroupedMemberSection("Online", grouped.online, true)}
         ${renderGroupedMemberSection("Idle", grouped.idle, true)}
         ${renderGroupedMemberSection("Offline", grouped.offline, true)}
@@ -1055,9 +1104,19 @@
   }
 
   function renderHospitalTab() {
+    const ctx = resolveWarContext();
     const hospital = state?.hospital || {};
     const ours = Array.isArray(hospital.our_faction) ? hospital.our_faction : [];
     const enemies = Array.isArray(hospital.enemy_faction) ? hospital.enemy_faction : [];
+
+    if (!ctx.inWar) {
+      return `
+        <div class="warhub-card">
+          <h3>Hospital</h3>
+          <div class="warhub-empty">Currently not in a war.</div>
+        </div>
+      `;
+    }
 
     return `
       <div class="warhub-card">
@@ -1069,7 +1128,7 @@
       <div class="warhub-card">
         <h3>Enemy Faction Hospital</h3>
         <div class="warhub-small">Lowest time first.</div>
-        ${enemies.length ? enemies.map(x => renderMemberRow(x, true)).join("") : `<div class="warhub-empty">No enemy members in hospital found.</div>`}
+        ${enemies.length ? enemies.map(x => renderMemberRow(x, true)).join("") : `<div class="warhub-empty">No enemy members in hospital.</div>`}
       </div>
     `;
   }
@@ -1094,6 +1153,9 @@
   }
 
   function renderEnemyFactionOptions() {
+    const ctx = resolveWarContext();
+    if (!ctx.inWar) return `<option value="">Currently not in a war</option>`;
+
     const opts = [];
     const warOpts = state?.war?.enemy_faction_options || [];
     for (const x of warOpts) {
@@ -1112,6 +1174,7 @@
   function renderMedDealsTab() {
     const items = state?.med_deals || [];
     const me = state?.me || {};
+    const ctx = resolveWarContext();
 
     return `
       <div class="warhub-card">
@@ -1125,10 +1188,10 @@
           <div></div>
         </div>
         <div style="margin-top:7px;">
-          <textarea id="wh-med-notes" class="warhub-textarea" placeholder="Notes"></textarea>
+          <textarea id="wh-med-notes" class="warhub-textarea" placeholder="${ctx.inWar ? "Notes" : "Currently not in a war"}"></textarea>
         </div>
         <div style="margin-top:7px;">
-          <button class="warhub-btn" id="wh-add-med">Add Med Deal</button>
+          <button class="warhub-btn" id="wh-add-med" ${ctx.inWar ? "" : "disabled"}>Add Med Deal</button>
         </div>
       </div>
 
@@ -1152,6 +1215,8 @@
 
   function renderEnemyOptions() {
     const ctx = resolveWarContext();
+    if (!ctx.inWar) return `<option value="">Currently not in a war</option>`;
+
     const opts = (state?.enemy_options && state.enemy_options.length) ? state.enemy_options : ctx.enemies;
     const rows = [`<option value="">Pick enemy target</option>`];
     for (const e of opts || []) {
@@ -1168,6 +1233,8 @@
 
   function renderTargetsTab() {
     const items = state?.targets || [];
+    const ctx = resolveWarContext();
+
     return `
       <div class="warhub-card">
         <h3>Add Target</h3>
@@ -1181,10 +1248,10 @@
           </div>
         </div>
         <div style="margin-top:7px;">
-          <textarea id="wh-target-notes" class="warhub-textarea" placeholder="Notes / reason / score notes"></textarea>
+          <textarea id="wh-target-notes" class="warhub-textarea" placeholder="${ctx.inWar ? "Notes / reason / score notes" : "Currently not in a war"}"></textarea>
         </div>
         <div style="margin-top:7px;">
-          <button class="warhub-btn" id="wh-add-target">Add Target</button>
+          <button class="warhub-btn" id="wh-add-target" ${ctx.inWar ? "" : "disabled"}>Add Target</button>
         </div>
       </div>
 
@@ -1215,15 +1282,22 @@
 
   function renderSettingsTab() {
     const apiKey = GM_getValue(K_API_KEY, "") || "";
+    const adminKey = GM_getValue(K_ADMIN_KEY, "") || "";
+
     return `
       <div class="warhub-card">
         <h3>Settings</h3>
         <div class="warhub-small" style="margin-bottom:8px;">
-          Enter your Torn API key here.
+          Enter your Torn API key and your admin key here.
         </div>
-        <input id="wh-api-key" class="warhub-input" placeholder="Your Torn API key" value="${esc(apiKey)}">
+
+        <div class="warhub-grid">
+          <input id="wh-api-key" class="warhub-input" placeholder="Your Torn API key" value="${esc(apiKey)}">
+          <input id="wh-admin-key" class="warhub-input" placeholder="Your admin key" value="${esc(adminKey)}">
+        </div>
+
         <div class="warhub-row" style="margin-top:7px;">
-          <button class="warhub-btn" id="wh-save-settings">Save API Key</button>
+          <button class="warhub-btn" id="wh-save-settings">Save Keys</button>
           <button class="warhub-btn alt" id="wh-relogin">Re-login</button>
           <button class="warhub-btn alt" id="wh-logout">Clear Session</button>
           <button class="warhub-btn alt" id="wh-reset-icon">Reset Icon</button>
@@ -1235,7 +1309,7 @@
         <h3>Terms of Service</h3>
         <div class="warhub-tos">
           By using War Hub, you agree that this tool is provided as-is for faction coordination and convenience.
-          You are responsible for your own Torn account, API key, and any actions taken through links or quick actions.
+          You are responsible for your own Torn account, API key, admin key, and any actions taken through links or quick actions.
           Do not share your personal API key with anyone you do not trust.
           Access may be removed for abuse, misuse, harassment, or attempts to interfere with the service.
           Features may change, be updated, or be removed at any time.
@@ -1471,18 +1545,27 @@
     const saveSettings = overlay.querySelector("#wh-save-settings");
     if (saveSettings) {
       saveSettings.addEventListener("click", async () => {
-        const newKey = val("#wh-api-key");
-        if (!newKey) {
+        const newApiKey = val("#wh-api-key");
+        const newAdminKey = val("#wh-admin-key");
+
+        if (!newApiKey) {
           setStatus("Enter your Torn API key first.", true);
           return;
         }
 
-        GM_setValue(K_API_KEY, newKey);
+        if (!newAdminKey) {
+          setStatus("Enter your admin key first.", true);
+          return;
+        }
+
+        GM_setValue(K_API_KEY, newApiKey);
+        GM_setValue(K_ADMIN_KEY, newAdminKey);
         GM_deleteValue(K_SESSION);
-        setStatus("API key saved. Logging in...");
+
+        setStatus("Keys saved. Logging in...");
         const okLogin = await login();
         if (okLogin) {
-          setStatus("API key saved and logged in.");
+          setStatus("Keys saved and logged in.");
           await loadState();
         }
       });
