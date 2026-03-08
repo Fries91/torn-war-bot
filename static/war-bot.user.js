@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         War Hub ⚔️
 // @namespace    fries91-war-hub
-// @version      2.3.1
+// @version      2.4.0
 // @description  War Hub by Fries91. Ultimate overlay with shared war terms, draggable icon, draggable overlay, PDA friendly, server-backed med deals/targets/assignments/notes, hospital view, analytics, notifications, and settings.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -294,6 +294,11 @@
       font-size: 12px;
     }
 
+    .warhub-input[readonly] {
+      opacity: .9;
+      background: rgba(255,255,255,.035);
+    }
+
     .warhub-textarea { min-height: 94px; resize: vertical; }
 
     .warhub-label {
@@ -484,6 +489,8 @@
     const chainSitters = arr(s.chain_sitters || s.chainSitters || s.chain_helpers);
     const notes = arr(s.war_notes || s.notes || []);
     const warTerms = s.war_terms || null;
+    const medDealBuyers = arr(s.med_deal_buyers || enemies);
+    const medDealsMessage = String(s.med_deals_message || war.message || enemyFaction.message || "").trim();
 
     return {
       ...s,
@@ -501,6 +508,8 @@
       chainSitters,
       notes,
       warTerms,
+      medDealBuyers,
+      medDealsMessage,
     };
   }
 
@@ -536,10 +545,6 @@
     if (okMsg) setStatus(okMsg);
     if (reload) await loadState(true);
     return res;
-  }
-
-  function byOnlineState(list, status) {
-    return list.filter((x) => String(x.online_state || x.online_status || x.status || "").toLowerCase().includes(status));
   }
 
   function sortHosp(list) {
@@ -634,6 +639,7 @@
     const me = state?.me || {};
     const faction = state?.faction || {};
     const enemyFaction = state?.enemyFaction || {};
+    const warActive = !!war.active;
     const scoreSelf = war.score || war.our_score || war.score_us || 0;
     const scoreEnemy = war.enemy_score || war.score_them || enemyFaction.score || 0;
     const currentWar = war.id || war.war_id || "";
@@ -641,8 +647,16 @@
     const sharedTerms = String(war.terms_text || state?.warTerms?.terms_text || "").trim();
     const sharedTermsBy = String(war.terms_updated_by_name || state?.warTerms?.updated_by_name || "").trim();
     const sharedTermsAt = String(war.terms_updated_at || state?.warTerms?.updated_at || "").trim();
+    const warMessage = String(war.message || war.status_text || "").trim() || "Currently not in war";
 
     return `
+      ${!warActive ? `
+      <div class="warhub-card">
+        <h3>Status</h3>
+        <div class="warhub-empty">${esc(warMessage)}</div>
+      </div>
+      ` : ""}
+
       ${sharedTerms ? `
       <div class="warhub-card">
         <h3>War Terms</h3>
@@ -659,7 +673,7 @@
           <div class="warhub-grid two">
             <div class="warhub-metric"><div class="k">You</div><div class="v">${esc(me.name || "—")}</div></div>
             <div class="warhub-metric"><div class="k">Faction</div><div class="v">${esc(faction.name || faction.faction_name || "—")}</div></div>
-            <div class="warhub-metric"><div class="k">Enemy</div><div class="v">${esc(enemyFaction.name || enemyFaction.faction_name || (currentWar ? "Enemy loaded" : "Currently not in a war"))}</div></div>
+            <div class="warhub-metric"><div class="k">Enemy</div><div class="v">${esc(enemyFaction.name || enemyFaction.faction_name || "Currently not in war")}</div></div>
             <div class="warhub-metric"><div class="k">War ID</div><div class="v">${esc(currentWar || "—")}</div></div>
           </div>
         </div>
@@ -686,7 +700,7 @@
     return `
       <div class="warhub-card">
         <h3>Shared War Terms</h3>
-        ${warId ? `<div class="warhub-mini" style="margin-bottom:8px;">War ID: ${esc(warId)}</div>` : `<div class="warhub-mini" style="margin-bottom:8px;">No active war detected.</div>`}
+        ${warId ? `<div class="warhub-mini" style="margin-bottom:8px;">War ID: ${esc(warId)}</div>` : `<div class="warhub-mini" style="margin-bottom:8px;">Currently not in war.</div>`}
         <label class="warhub-label">These terms are shared for everyone in this same war.</label>
         <textarea id="wh-terms-text" class="warhub-textarea">${esc(sharedTerms)}</textarea>
         <div class="warhub-actions" style="margin-top:8px;">
@@ -715,7 +729,7 @@
 
   function renderEnemiesTab() {
     const enemies = arr(state?.enemies);
-    if (!enemies.length) return `<div class="warhub-card"><div class="warhub-empty">Currently not in a war or enemy faction members are unavailable.</div></div>`;
+    if (!enemies.length) return `<div class="warhub-card"><div class="warhub-empty">Currently not in war</div></div>`;
     return `<div class="warhub-card"><h3>Enemy Members</h3><div class="warhub-list">${enemies.map((x) => memberRow(x, true)).join("")}</div></div>`;
   }
 
@@ -723,6 +737,7 @@
     const hospital = state?.hospital || {};
     const enemies = sortHosp(arr(hospital.enemy_faction || state?.enemies).filter(x => Number(x.hospital_seconds || 0) > 0));
     const ours = sortHosp(arr(hospital.our_faction || state?.members).filter(x => Number(x.hospital_seconds || 0) > 0));
+    const warActive = !!state?.war?.active;
 
     return `
       <div class="warhub-grid two">
@@ -732,7 +747,7 @@
         </div>
         <div class="warhub-card">
           <h3>Enemy Hospital</h3>
-          ${enemies.length ? `<div class="warhub-list">${enemies.map((x) => memberRow(x, true)).join("")}</div>` : `<div class="warhub-empty">No enemy hospital data available.</div>`}
+          ${enemies.length ? `<div class="warhub-list">${enemies.map((x) => memberRow(x, true)).join("")}</div>` : `<div class="warhub-empty">${warActive ? "No enemy hospital data available." : "Currently not in war"}</div>`}
         </div>
       </div>
     `;
@@ -766,15 +781,40 @@
 
   function renderMedDealsTab() {
     const live = arr(state?.medDeals);
+    const warActive = !!state?.war?.active;
+    const sellerName = String(state?.me?.name || "").trim();
+    const buyers = arr(state?.medDealBuyers);
+    const medMsg = String(state?.medDealsMessage || "").trim() || "Currently not in war";
+    const buyerOptions = buyers.map((x) => {
+      const id = x.user_id || x.id || x.player_id || "";
+      const name = x.name || x.player_name || `ID ${id}`;
+      return `<option value="${esc(name)}">${esc(name)}${id ? ` [${esc(id)}]` : ""}</option>`;
+    }).join("");
+
     return `
       <div class="warhub-card">
         <h3>Add Med Deal</h3>
+        ${!warActive ? `<div class="warhub-empty" style="margin-bottom:8px;">${esc(medMsg)}</div>` : ""}
         <div class="warhub-grid two">
-          <div><label class="warhub-label">Seller / Enemy Faction</label><input id="wh-med-name" class="warhub-input"></div>
-          <div><label class="warhub-label">Amount</label><input id="wh-med-cost" class="warhub-input"></div>
+          <div>
+            <label class="warhub-label">Seller</label>
+            <input id="wh-med-seller" class="warhub-input" value="${esc(sellerName || "—")}" readonly>
+          </div>
+          <div>
+            <label class="warhub-label">Buyer</label>
+            <select id="wh-med-buyer" class="warhub-select" ${warActive ? "" : "disabled"}>
+              <option value="">${warActive ? "Pick enemy member" : "Currently not in war"}</option>
+              ${buyerOptions}
+            </select>
+          </div>
         </div>
-        <div style="margin-top:8px;"><label class="warhub-label">Note</label><input id="wh-med-note" class="warhub-input"></div>
-        <div class="warhub-actions" style="margin-top:8px;"><button class="warhub-btn primary" id="wh-add-med">Save Med Deal</button></div>
+        <div style="margin-top:8px;">
+          <label class="warhub-label">Note</label>
+          <input id="wh-med-note" class="warhub-input" ${warActive ? "" : "disabled"}>
+        </div>
+        <div class="warhub-actions" style="margin-top:8px;">
+          <button class="warhub-btn primary" id="wh-add-med" ${warActive ? "" : "disabled"}>Save Med Deal</button>
+        </div>
       </div>
 
       <div class="warhub-card">
@@ -783,8 +823,8 @@
           <div class="warhub-list-item">
             <div class="warhub-row">
               <div>
-                <div class="warhub-name">${esc(x.name || x.player || "Unknown")}</div>
-                <div class="warhub-meta">${esc(x.cost || x.price || "—")} • ${esc(x.note || x.terms || "")}</div>
+                <div class="warhub-name">${esc((x.seller_name || x.seller || "Unknown") + " → " + (x.buyer_name || x.buyer || "Unknown"))}</div>
+                <div class="warhub-meta">${esc(x.note || x.terms || x.notes || "") || "No note"}</div>
               </div>
               <div class="warhub-actions">
                 ${x.id ? `<button class="warhub-btn small warn" data-del-med-live="${esc(String(x.id))}">Delete</button>` : ""}
@@ -842,7 +882,7 @@
     return `
       <div class="warhub-card">
         <h3>Assign Target</h3>
-        ${warId ? `<div class="warhub-mini" style="margin-bottom:8px;">War ID: ${esc(warId)}</div>` : `<div class="warhub-mini" style="margin-bottom:8px;">Not currently in a ranked war.</div>`}
+        ${warId ? `<div class="warhub-mini" style="margin-bottom:8px;">War ID: ${esc(warId)}</div>` : `<div class="warhub-mini" style="margin-bottom:8px;">Currently not in war.</div>`}
         <div class="warhub-grid two">
           <div>
             <label class="warhub-label">Faction Member</label>
@@ -1243,10 +1283,9 @@
     return req("POST", "/api/targets/delete", { id });
   }
 
-  async function addMedDealServer(sellerName, amount, notes) {
+  async function addMedDealServer(buyerName, notes) {
     return req("POST", "/api/med-deals/add", {
-      seller_name: sellerName || "",
-      amount: Number(amount || 0),
+      buyer_name: buyerName || "",
       notes: notes || "",
     });
   }
@@ -1441,11 +1480,14 @@
     });
 
     overlay.querySelector("#wh-add-med")?.addEventListener("click", async () => {
-      const seller = cleanInputValue(overlay.querySelector("#wh-med-name")?.value || "");
-      const amount = cleanInputValue(overlay.querySelector("#wh-med-cost")?.value || "");
+      const warActive = !!state?.war?.active;
+      const buyer = cleanInputValue(overlay.querySelector("#wh-med-buyer")?.value || "");
       const note = cleanInputValue(overlay.querySelector("#wh-med-note")?.value || "");
-      if (!seller) return setStatus("Enter seller or enemy faction first.", true);
-      const res = await addMedDealServer(seller, amount, note);
+
+      if (!warActive) return setStatus("Currently not in war.", true);
+      if (!buyer) return setStatus("Pick a buyer first.", true);
+
+      const res = await addMedDealServer(buyer, note);
       if (!res.ok) return setStatus(res.error || "Could not add med deal.", true);
       await loadState(true);
       renderBody();
