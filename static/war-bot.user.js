@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         War Hub 🛡️
 // @namespace    fries91-war-hub
-// @version      1.2.1
-// @description  War Hub by Fries91. T.S.E style auth/state flow. Draggable shield, PDA friendly overlay, merged faction statuses, chain sitters, med deals, targets, bounties.
+// @version      1.3.0
+// @description  War Hub by Fries91. Draggable shield, draggable overlay, PDA friendly overlay, merged faction statuses, chain sitters, med deals, targets, bounties.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
 // @downloadURL  https://torn-war-bot.onrender.com/static/war-bot.user.js
@@ -28,7 +28,8 @@
   const K_SESSION = "warhub_session_v1";
   const K_OPEN = "warhub_open_v1";
   const K_TAB = "warhub_tab_v1";
-  const K_POS = "warhub_pos_v1";
+  const K_SHIELD_POS = "warhub_shield_pos_v1";
+  const K_OVERLAY_POS = "warhub_overlay_pos_v1";
 
   let state = null;
   let isOpen = GM_getValue(K_OPEN, false);
@@ -48,6 +49,8 @@
       font-size: 23px;
       cursor: move;
       user-select: none;
+      -webkit-user-select: none;
+      touch-action: none;
       box-shadow: 0 8px 22px rgba(0,0,0,.45);
       border: 1px solid rgba(255,255,255,.10);
       background: radial-gradient(circle at top, rgba(190,25,25,.96), rgba(78,8,8,.96));
@@ -71,6 +74,7 @@
       font-weight: 800;
       box-shadow: 0 3px 12px rgba(0,0,0,.45);
       display: none;
+      pointer-events: none;
     }
 
     #warhub-overlay {
@@ -96,6 +100,10 @@
       padding: 12px 14px 10px;
       border-bottom: 1px solid rgba(255,255,255,.08);
       background: linear-gradient(180deg, rgba(170,18,18,.30), rgba(20,20,20,.20));
+      cursor: move;
+      user-select: none;
+      -webkit-user-select: none;
+      touch-action: none;
     }
 
     .warhub-title {
@@ -363,6 +371,23 @@
     const r = shield.getBoundingClientRect();
     badge.style.left = `${window.scrollX + r.right - 8}px`;
     badge.style.top = `${window.scrollY + r.top - 6}px`;
+  }
+
+  function clampToViewport(el) {
+    const rect = el.getBoundingClientRect();
+    let left = rect.left;
+    let top = rect.top;
+    const margin = 6;
+    const maxLeft = Math.max(margin, window.innerWidth - rect.width - margin);
+    const maxTop = Math.max(margin, window.innerHeight - rect.height - margin);
+
+    left = Math.min(Math.max(margin, left), maxLeft);
+    top = Math.min(Math.max(margin, top), maxTop);
+
+    el.style.left = `${left}px`;
+    el.style.top = `${top}px`;
+    el.style.right = "auto";
+    el.style.bottom = "auto";
   }
 
   async function login() {
@@ -689,7 +714,7 @@
     if (!overlay) return;
 
     overlay.innerHTML = `
-      <div class="warhub-head">
+      <div class="warhub-head" id="warhub-drag-handle">
         <div class="warhub-toprow">
           <div>
             <div class="warhub-title">War Hub</div>
@@ -717,12 +742,17 @@
     `;
 
     bindOverlayEvents();
+    bindOverlayDrag();
   }
 
   function openOverlay() {
     isOpen = true;
     GM_setValue(K_OPEN, true);
     overlay.classList.add("open");
+    if (!GM_getValue(K_OVERLAY_POS, null)) {
+      positionOverlayNearShield();
+    }
+    clampToViewport(overlay);
     renderBody();
   }
 
@@ -735,6 +765,20 @@
   function toggleOverlay() {
     if (isOpen) closeOverlay();
     else openOverlay();
+  }
+
+  function positionOverlayNearShield() {
+    if (!shield || !overlay) return;
+    const sr = shield.getBoundingClientRect();
+    let left = sr.right - 440;
+    if (window.innerWidth <= 700) {
+      left = 8;
+    }
+    let top = sr.bottom + 8;
+    overlay.style.left = `${Math.max(8, left)}px`;
+    overlay.style.top = `${Math.max(8, top)}px`;
+    overlay.style.right = "auto";
+    overlay.style.bottom = "auto";
   }
 
   async function doAction(method, path, body, successMsg) {
@@ -762,7 +806,10 @@
     });
 
     const closeBtn = overlay.querySelector("#warhub-close-btn");
-    if (closeBtn) closeBtn.addEventListener("click", closeOverlay);
+    if (closeBtn) closeBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      closeOverlay();
+    });
 
     const refreshBtn = overlay.querySelector("#warhub-refresh-btn");
     if (refreshBtn) refreshBtn.addEventListener("click", loadState);
@@ -895,6 +942,12 @@
     }
   }
 
+  function bindOverlayDrag() {
+    const handle = overlay.querySelector("#warhub-drag-handle");
+    if (!handle) return;
+    makeDraggable(handle, overlay, K_OVERLAY_POS);
+  }
+
   function mount() {
     shield = document.createElement("div");
     shield.id = "warhub-shield";
@@ -910,11 +963,20 @@
     document.body.appendChild(shield);
     document.body.appendChild(badge);
 
-    const saved = GM_getValue(K_POS, null);
-    if (saved) {
-      if (saved.left) shield.style.left = saved.left;
-      if (saved.top) shield.style.top = saved.top;
-      if (saved.right) shield.style.right = saved.right;
+    const savedShield = GM_getValue(K_SHIELD_POS, null);
+    if (savedShield) {
+      if (savedShield.left) shield.style.left = savedShield.left;
+      if (savedShield.top) shield.style.top = savedShield.top;
+      if (savedShield.right) shield.style.right = savedShield.right;
+      if (savedShield.bottom) shield.style.bottom = savedShield.bottom;
+    }
+
+    const savedOverlay = GM_getValue(K_OVERLAY_POS, null);
+    if (savedOverlay) {
+      if (savedOverlay.left) overlay.style.left = savedOverlay.left;
+      if (savedOverlay.top) overlay.style.top = savedOverlay.top;
+      if (savedOverlay.right) overlay.style.right = savedOverlay.right;
+      if (savedOverlay.bottom) overlay.style.bottom = savedOverlay.bottom;
     }
 
     shield.addEventListener("click", (e) => {
@@ -924,64 +986,88 @@
       toggleOverlay();
     });
 
-    makeDraggable(shield);
+    makeDraggable(shield, shield, K_SHIELD_POS, updateBadge);
 
     if (isOpen) openOverlay();
+    clampToViewport(shield);
     updateBadge();
   }
 
-  function makeDraggable(el) {
-    let startX = 0, startY = 0, startLeft = 0, startTop = 0, dragging = false;
+  function makeDraggable(handleEl, moveEl, storageKey, onMoveExtra) {
+    let startX = 0;
+    let startY = 0;
+    let startLeft = 0;
+    let startTop = 0;
+    let dragging = false;
 
     const onMove = (e) => {
       if (!dragging) return;
+      if ("touches" in e && e.touches.length) e.preventDefault();
+
       const x = ("touches" in e ? e.touches[0].clientX : e.clientX);
       const y = ("touches" in e ? e.touches[0].clientY : e.clientY);
 
       const dx = x - startX;
       const dy = y - startY;
 
-      el.style.right = "auto";
-      el.style.left = `${Math.max(6, startLeft + dx)}px`;
-      el.style.top = `${Math.max(6, startTop + dy)}px`;
-      el.dataset.dragging = "1";
-      updateBadge();
+      moveEl.style.right = "auto";
+      moveEl.style.bottom = "auto";
+      moveEl.style.left = `${startLeft + dx}px`;
+      moveEl.style.top = `${startTop + dy}px`;
+      moveEl.dataset.dragging = "1";
+      clampToViewport(moveEl);
+      if (typeof onMoveExtra === "function") onMoveExtra();
     };
 
     const onUp = () => {
       if (!dragging) return;
       dragging = false;
-      setTimeout(() => { el.dataset.dragging = "0"; }, 50);
+      setTimeout(() => {
+        moveEl.dataset.dragging = "0";
+      }, 50);
 
-      GM_setValue(K_POS, {
-        right: el.style.right || "",
-        top: el.style.top || "",
-        left: el.style.left || "",
+      GM_setValue(storageKey, {
+        left: moveEl.style.left || "",
+        top: moveEl.style.top || "",
+        right: moveEl.style.right || "",
+        bottom: moveEl.style.bottom || "",
       });
 
       document.removeEventListener("mousemove", onMove);
       document.removeEventListener("mouseup", onUp);
       document.removeEventListener("touchmove", onMove);
       document.removeEventListener("touchend", onUp);
+      document.removeEventListener("touchcancel", onUp);
     };
 
     const onDown = (e) => {
-      const rect = el.getBoundingClientRect();
+      const target = e.target;
+      if (target && (
+        target.closest("button") ||
+        target.closest("a") ||
+        target.closest("input") ||
+        target.closest("textarea")
+      )) {
+        return;
+      }
+
+      const rect = moveEl.getBoundingClientRect();
       startX = ("touches" in e ? e.touches[0].clientX : e.clientX);
       startY = ("touches" in e ? e.touches[0].clientY : e.clientY);
       startLeft = rect.left;
       startTop = rect.top;
       dragging = true;
-      el.dataset.dragging = "0";
+      moveEl.dataset.dragging = "0";
 
       document.addEventListener("mousemove", onMove);
       document.addEventListener("mouseup", onUp);
       document.addEventListener("touchmove", onMove, { passive: false });
       document.addEventListener("touchend", onUp);
+      document.addEventListener("touchcancel", onUp);
     };
 
-    el.addEventListener("mousedown", onDown);
-    el.addEventListener("touchstart", onDown, { passive: true });
+    handleEl.addEventListener("mousedown", onDown);
+    handleEl.addEventListener("touchstart", onDown, { passive: true });
   }
 
   async function boot() {
@@ -999,5 +1085,9 @@
     boot();
   }
 
-  window.addEventListener("resize", updateBadge);
+  window.addEventListener("resize", () => {
+    if (shield) clampToViewport(shield);
+    if (overlay && overlay.classList.contains("open")) clampToViewport(overlay);
+    updateBadge();
+  });
 })();
