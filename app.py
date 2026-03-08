@@ -1,7 +1,7 @@
 import os
 from datetime import datetime, timezone
 from functools import wraps
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, List
 
 from dotenv import load_dotenv
 from flask import Flask, jsonify, request, send_from_directory
@@ -16,7 +16,7 @@ from db import (
     touch_session,
     set_availability,
     set_chain_sitter,
-    list_med_deals,
+    list_med_deals_for_faction,
     add_med_deal,
     delete_med_deal,
     list_targets,
@@ -175,6 +175,16 @@ def _sort_members(members: list) -> list:
     )
 
 
+def _sort_hospital_members(members: list) -> list:
+    return sorted(
+        [m for m in members if str(m.get("activity_bucket", "")) == "hospital"],
+        key=lambda x: (
+            int(x.get("hospital_seconds") or 10**9),
+            (x.get("name") or "").lower(),
+        ),
+    )
+
+
 def _merge_faction_members(faction_id: str, members: list) -> Dict[str, Any]:
     local_map = get_user_map_by_faction(faction_id) if faction_id else {}
 
@@ -252,6 +262,7 @@ def _merge_faction_members(faction_id: str, members: list) -> Dict[str, Any]:
         "available_count": available_count,
         "linked_user_count": linked_user_count,
         "counts": counts,
+        "hospital_members": _sort_hospital_members(merged),
     }
 
 
@@ -296,6 +307,7 @@ def _decorate_enemy_members(enemy_members: list) -> Dict[str, Any]:
     return {
         "members": decorated,
         "counts": counts,
+        "hospital_members": _sort_hospital_members(decorated),
     }
 
 
@@ -309,6 +321,10 @@ def root():
             "/health",
             "/api/auth",
             "/api/state",
+            "/api/availability/set",
+            "/api/chain-sitter/set",
+            "/api/med-deals/add",
+            "/api/med-deals/delete",
             "/static/war-bot.user.js",
         ],
     )
@@ -409,22 +425,54 @@ def api_state():
 
         enemy_info = _decorate_enemy_members(war_summary.get("enemy_members", []))
 
+        state_faction_id = str(faction.get("faction_id", faction_id) or "")
+        enemy_faction_name = str(war_summary.get("enemy_faction_name", "") or "").strip()
+        enemy_faction_id = str(war_summary.get("enemy_faction_id", "") or "").strip()
+
+        enemy_faction_options: List[Dict[str, str]] = []
+        if enemy_faction_name or enemy_faction_id:
+            enemy_faction_options.append(
+                {
+                    "faction_id": enemy_faction_id,
+                    "faction_name": enemy_faction_name or f"Faction {enemy_faction_id}",
+                }
+            )
+
         return ok(
             me={
                 "user_id": user["user_id"],
                 "name": user["name"],
-                "faction_id": faction.get("faction_id", faction_id),
+                "faction_id": state_faction_id,
                 "faction_name": faction.get("faction_name", faction_name),
                 "profile_url": profile_url(user["user_id"]),
                 "available": int(user.get("available", 1)),
                 "chain_sitter": int(user.get("chain_sitter", 0)),
             },
+            quick_links={
+                "opt_in": {
+                    "endpoint": "/api/chain-sitter/set",
+                    "payload": {"enabled": True},
+                },
+                "opt_out": {
+                    "endpoint": "/api/chain-sitter/set",
+                    "payload": {"enabled": False},
+                },
+                "available": {
+                    "endpoint": "/api/availability/set",
+                    "payload": {"available": True},
+                },
+                "unavailable": {
+                    "endpoint": "/api/availability/set",
+                    "payload": {"available": False},
+                },
+            },
             war={
-                "active": bool(war_summary.get("active")) or bool(faction.get("faction_id")),
-                "faction_id": faction.get("faction_id", faction_id),
+                "active": bool(war_summary.get("active")) or bool(state_faction_id),
+                "faction_id": state_faction_id,
                 "faction_name": faction.get("faction_name", faction_name),
-                "enemy_faction_id": war_summary.get("enemy_faction_id", ""),
-                "enemy_faction_name": war_summary.get("enemy_faction_name", ""),
+                "enemy_faction_id": enemy_faction_id,
+                "enemy_faction_name": enemy_faction_name,
+                "enemy_faction_options": enemy_faction_options,
                 "member_count": len(merged["members"]),
                 "available_count": merged["available_count"],
                 "chain_sitter_count": len(merged["chain_sitters"]),
@@ -455,7 +503,13 @@ def api_state():
             chain_sitters=merged["chain_sitters"],
             enemies=enemy_info["members"],
             enemy_options=enemy_info["members"],
-            med_deals=list_med_deals(user_id),
+            hospital={
+                "our_faction": merged["hospital_members"],
+                "enemy_faction": enemy_info["hospital_members"],
+                "our_count": len(merged["hospital_members"]),
+                "enemy_count": len(enemy_info["hospital_members"]),
+            },
+            med_deals=list_med_deals_for_faction(state_faction_id),
             targets=list_targets(user_id),
             bounties=list_bounties(user_id),
             notifications=list_notifications(user_id),
@@ -472,7 +526,7 @@ def api_availability_set():
         data = request.get_json(force=True, silent=True) or {}
         value = 1 if bool(data.get("available")) else 0
         set_availability(user_id, value)
-        return ok(message="Availability updated.")
+        return ok(message="Availability updated.", available=value)
     except Exception as e:
         return err(f"Could not update availability: {e}", 500)
 
@@ -485,7 +539,7 @@ def api_chain_sitter_set():
         data = request.get_json(force=True, silent=True) or {}
         value = 1 if bool(data.get("enabled")) else 0
         set_chain_sitter(user_id, value)
-        return ok(message="Chain sitter updated.")
+        return ok(message="Chain sitter updated.", enabled=value)
     except Exception as e:
         return err(f"Could not update chain sitter: {e}", 500)
 
@@ -495,19 +549,40 @@ def api_chain_sitter_set():
 def api_med_deals_add():
     try:
         user_id = request.session["user_id"]
+        user = get_user(user_id)
+        if not user:
+            return err("User not found.", 404)
+
         data = request.get_json(force=True, silent=True) or {}
 
-        buyer_name = str(data.get("buyer_name", "")).strip()
+        # Buyer name is always linked to the logged-in user.
+        buyer_name = str(user.get("name") or "").strip()
+
         seller_name = str(data.get("seller_name", "")).strip()
         amount = int(data.get("amount") or 0)
         notes = str(data.get("notes", "")).strip()
 
-        if not buyer_name and not seller_name:
-            return err("Enter a buyer or seller name.")
+        if not seller_name:
+            seller_name = str(data.get("seller_faction_name", "")).strip()
+
+        if not seller_name:
+            return err("Choose a seller / enemy faction.")
         if amount < 0:
             return err("Amount must be 0 or more.")
 
-        add_med_deal(user_id, buyer_name, seller_name, amount, notes)
+        add_med_deal(
+            creator_user_id=user_id,
+            creator_name=str(user.get("name") or "").strip(),
+            faction_id=str(user.get("faction_id") or "").strip(),
+            faction_name=str(user.get("faction_name") or "").strip(),
+            buyer_name=buyer_name,
+            seller_name=seller_name,
+            amount=amount,
+            notes=notes,
+        )
+
+        add_notification(user_id, "med_deal", f"Med deal added: {buyer_name} vs {seller_name}.")
+
         return ok(message="Med deal added.")
     except Exception as e:
         return err(f"Could not add med deal: {e}", 500)
@@ -518,11 +593,19 @@ def api_med_deals_add():
 def api_med_deals_delete():
     try:
         user_id = request.session["user_id"]
+        user = get_user(user_id)
+        if not user:
+            return err("User not found.", 404)
+
         data = request.get_json(force=True, silent=True) or {}
         deal_id = int(data.get("id") or 0)
         if not deal_id:
             return err("Missing med deal id.")
-        delete_med_deal(user_id, deal_id)
+
+        delete_med_deal(
+            faction_id=str(user.get("faction_id") or "").strip(),
+            deal_id=deal_id,
+        )
         return ok(message="Med deal deleted.")
     except Exception as e:
         return err(f"Could not delete med deal: {e}", 500)
