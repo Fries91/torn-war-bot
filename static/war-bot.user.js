@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         War Hub ⚔️
 // @namespace    fries91-war-hub
-// @version      2.2.0
-// @description  War Hub by Fries91. Ultimate overlay with restored tabs, draggable icon, draggable overlay, PDA friendly, server-backed med deals/targets/assignments/notes, hospital view, analytics, notifications, and settings.
+// @version      2.3.0
+// @description  War Hub by Fries91. Ultimate overlay with shared war terms, draggable icon, draggable overlay, PDA friendly, server-backed med deals/targets/assignments/notes, hospital view, analytics, notifications, and settings.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
 // @downloadURL  https://torn-war-bot.onrender.com/static/war-bot.user.js
@@ -34,6 +34,7 @@
 
   const TAB_ORDER = [
     ["war", "War"],
+    ["terms", "Terms"],
     ["members", "Members"],
     ["enemies", "Enemies"],
     ["hospital", "Hospital"],
@@ -58,6 +59,7 @@
   let currentTab = GM_getValue(K_TAB, "war");
   let pollTimer = null;
   let loadInFlight = false;
+  let remountTimer = null;
 
   const css = `
     #warhub-shield {
@@ -350,12 +352,6 @@
     return Number.isFinite(n) ? n.toLocaleString() : "—";
   }
 
-  function fmtTime(v) {
-    if (v == null || v === "") return "—";
-    if (typeof v === "number") return `${v}s`;
-    return String(v);
-  }
-
   function fmtHosp(v, txt) {
     if (txt) return txt;
     const n = Number(v);
@@ -471,6 +467,7 @@
     const notifications = arr(s.notifications || s.alerts);
     const chainSitters = arr(s.chain_sitters || s.chainSitters || s.chain_helpers);
     const notes = arr(s.war_notes || s.notes || []);
+    const warTerms = s.war_terms || null;
 
     return {
       ...s,
@@ -487,6 +484,7 @@
       notifications,
       chainSitters,
       notes,
+      warTerms,
     };
   }
 
@@ -624,8 +622,21 @@
     const scoreEnemy = war.enemy_score || war.score_them || enemyFaction.score || 0;
     const currentWar = war.id || war.war_id || "";
     const chainCount = war.chain || war.chain_us || 0;
+    const sharedTerms = String(war.terms_text || state?.warTerms?.terms_text || "").trim();
+    const sharedTermsBy = String(war.terms_updated_by_name || state?.warTerms?.updated_by_name || "").trim();
+    const sharedTermsAt = String(war.terms_updated_at || state?.warTerms?.updated_at || "").trim();
 
     return `
+      ${sharedTerms ? `
+      <div class="warhub-card">
+        <h3>War Terms</h3>
+        <div class="warhub-meta" style="white-space:pre-wrap;">${esc(sharedTerms)}</div>
+        <div class="warhub-mini" style="margin-top:6px;">
+          Updated by ${esc(sharedTermsBy || "Unknown")} • ${esc(fmtTs(sharedTermsAt))}
+        </div>
+      </div>
+      ` : ""}
+
       <div class="warhub-grid two">
         <div class="warhub-card">
           <h3>Overview</h3>
@@ -680,6 +691,42 @@
             <div class="warhub-metric"><div class="k">Pace / Hour</div><div class="v">${esc(String(war.pace_per_hour_us || "0"))}</div></div>
           </div>
         </div>
+      </div>
+    `;
+  }
+
+  function renderTermsTab() {
+    const warId = String(state?.war?.war_id || state?.war?.id || "").trim();
+    const sharedTerms = String(state?.war?.terms_text || state?.warTerms?.terms_text || "").trim();
+    const sharedTermsBy = String(state?.war?.terms_updated_by_name || state?.warTerms?.updated_by_name || "").trim();
+    const sharedTermsAt = String(state?.war?.terms_updated_at || state?.warTerms?.updated_at || "").trim();
+
+    return `
+      <div class="warhub-card">
+        <h3>Shared War Terms</h3>
+        ${warId ? `<div class="warhub-mini" style="margin-bottom:8px;">War ID: ${esc(warId)}</div>` : `<div class="warhub-mini" style="margin-bottom:8px;">No active war detected.</div>`}
+
+        <label class="warhub-label">These terms are shared for everyone in this same war.</label>
+        <textarea id="wh-terms-text" class="warhub-textarea" placeholder="Example:
+No outside hits
+Call targets in Discord
+No mugging
+Save SEs for push">${esc(sharedTerms)}</textarea>
+
+        <div class="warhub-actions" style="margin-top:8px;">
+          <button class="warhub-btn primary" id="wh-save-terms">Save Terms</button>
+          <button class="warhub-btn warn" id="wh-delete-terms">Delete Terms</button>
+        </div>
+      </div>
+
+      <div class="warhub-card">
+        <h3>Current Shared Terms</h3>
+        ${sharedTerms ? `
+          <div class="warhub-meta" style="white-space:pre-wrap;">${esc(sharedTerms)}</div>
+          <div class="warhub-mini" style="margin-top:6px;">
+            Updated by ${esc(sharedTermsBy || "Unknown")} • ${esc(fmtTs(sharedTermsAt))}
+          </div>
+        ` : `<div class="warhub-empty">No war terms saved yet.</div>`}
       </div>
     `;
   }
@@ -1024,6 +1071,7 @@
 
   function renderTabContent() {
     switch (currentTab) {
+      case "terms": return renderTermsTab();
       case "members": return renderMembersTab();
       case "enemies": return renderEnemiesTab();
       case "hospital": return renderHospitalTab();
@@ -1290,6 +1338,19 @@
     return req("POST", "/api/targets/note/delete", { id });
   }
 
+  async function setWarTermsServer(warId, termsText) {
+    return req("POST", "/api/war-terms/set", {
+      war_id: warId,
+      terms_text: termsText || "",
+    });
+  }
+
+  async function deleteWarTermsServer(warId) {
+    return req("POST", "/api/war-terms/delete", {
+      war_id: warId,
+    });
+  }
+
   async function markNotificationsSeen() {
     return req("POST", "/api/notifications/seen", {});
   }
@@ -1512,6 +1573,34 @@
       });
     });
 
+    overlay.querySelector("#wh-save-terms")?.addEventListener("click", async () => {
+      const warId = String(state?.war?.war_id || state?.war?.id || "").trim();
+      const termsText = String(overlay.querySelector("#wh-terms-text")?.value || "").trim();
+
+      if (!warId) return setStatus("No active war id found.", true);
+      if (!termsText) return setStatus("Enter terms first.", true);
+
+      const res = await setWarTermsServer(warId, termsText);
+      if (!res.ok) return setStatus(res.error || "Could not save war terms.", true);
+
+      await loadState(true);
+      renderBody();
+      setStatus("War terms saved.");
+    });
+
+    overlay.querySelector("#wh-delete-terms")?.addEventListener("click", async () => {
+      const warId = String(state?.war?.war_id || state?.war?.id || "").trim();
+
+      if (!warId) return setStatus("No active war id found.", true);
+
+      const res = await deleteWarTermsServer(warId);
+      if (!res.ok) return setStatus(res.error || "Could not delete war terms.", true);
+
+      await loadState(true);
+      renderBody();
+      setStatus("War terms deleted.");
+    });
+
     overlay.querySelector("#wh-mark-alerts-seen")?.addEventListener("click", async () => {
       const res = await markNotificationsSeen();
       if (!res.ok) return setStatus(res.error || "Could not mark alerts seen.", true);
@@ -1591,7 +1680,17 @@
   }
 
   function ensureMounted() {
-    if (mounted && shield && overlay && document.body.contains(shield) && document.body.contains(overlay)) return;
+    if (!document.body) return;
+    const hasShield = !!document.getElementById("warhub-shield");
+    const hasOverlay = !!document.getElementById("warhub-overlay");
+    const hasBadge = !!document.getElementById("warhub-badge");
+
+    if (mounted && hasShield && hasOverlay && hasBadge) {
+      shield = document.getElementById("warhub-shield");
+      overlay = document.getElementById("warhub-overlay");
+      badge = document.getElementById("warhub-badge");
+      return;
+    }
     mount();
   }
 
@@ -1605,6 +1704,16 @@
     }, Math.max(5000, ms));
   }
 
+  function startLightRemountCheck() {
+    if (remountTimer) clearInterval(remountTimer);
+    remountTimer = setInterval(() => {
+      if (!document.getElementById("warhub-shield") || !document.getElementById("warhub-overlay") || !document.getElementById("warhub-badge")) {
+        mounted = false;
+        ensureMounted();
+      }
+    }, 3000);
+  }
+
   async function boot() {
     ensureMounted();
     const token = GM_getValue(K_SESSION, "");
@@ -1614,6 +1723,7 @@
     await loadState(true);
     if (currentTab === "analytics") await loadAnalytics();
     startPolling();
+    startLightRemountCheck();
 
     const localAlerts = getLocalNotifications();
     if (!localAlerts.length) {
@@ -1623,21 +1733,26 @@
     }
   }
 
-  const observer = new MutationObserver(() => ensureMounted());
-  observer.observe(document.documentElement || document.body, { childList: true, subtree: true });
-
   window.addEventListener("resize", () => {
-    clampToViewport(shield);
-    if (isOpen) clampToViewport(overlay);
+    if (shield) clampToViewport(shield);
+    if (isOpen && overlay) clampToViewport(overlay);
     updateBadge();
   });
 
   window.addEventListener("orientationchange", () => {
     setTimeout(() => {
-      clampToViewport(shield);
-      if (isOpen) clampToViewport(overlay);
+      if (shield) clampToViewport(shield);
+      if (isOpen && overlay) clampToViewport(overlay);
       updateBadge();
     }, 150);
+  });
+
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) ensureMounted();
+  });
+
+  window.addEventListener("pageshow", () => {
+    ensureMounted();
   });
 
   boot();
