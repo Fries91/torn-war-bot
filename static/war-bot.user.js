@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         War Hub ⚔️
 // @namespace    fries91-war-hub
-// @version      2.3.0
+// @version      2.3.1
 // @description  War Hub by Fries91. Ultimate overlay with shared war terms, draggable icon, draggable overlay, PDA friendly, server-backed med deals/targets/assignments/notes, hospital view, analytics, notifications, and settings.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -373,6 +373,14 @@
     return Array.isArray(v) ? v : [];
   }
 
+  function cleanInputValue(v) {
+    return String(v || "")
+      .replace(/[\u200B-\u200D\uFEFF]/g, "")
+      .trim()
+      .replace(/^['"]+|['"]+$/g, "")
+      .trim();
+  }
+
   function getNotes() { return String(GM_getValue(K_NOTES, "") || ""); }
   function setNotes(v) { GM_setValue(K_NOTES, String(v || "")); }
   function getLocalNotifications() { return arr(GM_getValue(K_LOCAL_NOTIFICATIONS, [])); }
@@ -400,7 +408,7 @@
 
   function gmXhr(method, path, body) {
     return new Promise((resolve) => {
-      const token = GM_getValue(K_SESSION, "");
+      const token = cleanInputValue(GM_getValue(K_SESSION, ""));
       const url = `${BASE_URL}${path}`;
       const headers = { "Accept": "application/json" };
       if (token) headers["X-Session-Token"] = token;
@@ -428,10 +436,18 @@
     });
   }
 
-  async function login() {
-    const apiKey = String(GM_getValue(K_API_KEY, "") || "").trim();
-    const adminKey = String(GM_getValue(K_ADMIN_KEY, "") || "").trim();
+  async function healthCheck() {
+    return gmXhr("GET", "/health");
+  }
+
+  async function login(showDebug = false) {
+    const apiKey = cleanInputValue(GM_getValue(K_API_KEY, ""));
+    const adminKey = cleanInputValue(GM_getValue(K_ADMIN_KEY, ""));
     if (!apiKey || !adminKey) return false;
+
+    if (showDebug) {
+      setStatus(`Trying login with admin key: ${adminKey}`);
+    }
 
     const res = await gmXhr("POST", "/api/auth", { api_key: apiKey, admin_key: adminKey });
     if (!res.ok) {
@@ -439,14 +455,14 @@
       return false;
     }
     const token = res.data?.token || res.data?.session_token || res.data?.session;
-    if (token) GM_setValue(K_SESSION, token);
+    if (token) GM_setValue(K_SESSION, cleanInputValue(token));
     return !!token;
   }
 
   async function req(method, path, body) {
     let res = await gmXhr(method, path, body);
     if (!res.ok && (res.status === 401 || res.status === 403)) {
-      const ok = await login();
+      const ok = await login(false);
       if (ok) res = await gmXhr(method, path, body);
     }
     return res;
@@ -658,40 +674,6 @@
           </div>
         </div>
       </div>
-
-      <div class="warhub-card">
-        <h3>Quick Actions</h3>
-        <div class="warhub-actions">
-          <button class="warhub-btn good" id="wh-available">Available</button>
-          <button class="warhub-btn" id="wh-unavailable">Unavailable</button>
-          <button class="warhub-btn good" id="wh-opt-in">Chain Sit In</button>
-          <button class="warhub-btn warn" id="wh-opt-out">Chain Sit Out</button>
-          ${enemyFaction.id ? `<a class="warhub-btn primary warhub-link" href="https://www.torn.com/factions.php?step=profile&ID=${esc(enemyFaction.id)}" target="_blank" rel="noreferrer">Enemy Faction</a>` : ""}
-          <a class="warhub-btn warhub-link" href="https://www.torn.com/factions.php?step=your" target="_blank" rel="noreferrer">Faction</a>
-          <a class="warhub-btn warhub-link" href="https://www.torn.com/hospitalview.php" target="_blank" rel="noreferrer">Hospital</a>
-        </div>
-      </div>
-
-      <div class="warhub-grid two">
-        <div class="warhub-card">
-          <h3>Online Counts</h3>
-          <div class="warhub-grid three">
-            <div class="warhub-metric"><div class="k">Online</div><div class="v">${fmtNum(byOnlineState(state?.members || [], "online").length)}</div></div>
-            <div class="warhub-metric"><div class="k">Idle</div><div class="v">${fmtNum(byOnlineState(state?.members || [], "idle").length)}</div></div>
-            <div class="warhub-metric"><div class="k">Offline</div><div class="v">${fmtNum(byOnlineState(state?.members || [], "offline").length)}</div></div>
-          </div>
-        </div>
-
-        <div class="warhub-card">
-          <h3>Enemy Snapshot</h3>
-          <div class="warhub-grid two">
-            <div class="warhub-metric"><div class="k">Enemy Members</div><div class="v">${fmtNum(arr(state?.enemies).length)}</div></div>
-            <div class="warhub-metric"><div class="k">Enemy Hospital</div><div class="v">${fmtNum(sortHosp(arr(state?.enemies).filter(x => Number(x.hospital_seconds || 0) > 0)).length)}</div></div>
-            <div class="warhub-metric"><div class="k">ETA To Target</div><div class="v">${esc(war.eta_to_target_us_text || "—")}</div></div>
-            <div class="warhub-metric"><div class="k">Pace / Hour</div><div class="v">${esc(String(war.pace_per_hour_us || "0"))}</div></div>
-          </div>
-        </div>
-      </div>
     `;
   }
 
@@ -705,14 +687,8 @@
       <div class="warhub-card">
         <h3>Shared War Terms</h3>
         ${warId ? `<div class="warhub-mini" style="margin-bottom:8px;">War ID: ${esc(warId)}</div>` : `<div class="warhub-mini" style="margin-bottom:8px;">No active war detected.</div>`}
-
         <label class="warhub-label">These terms are shared for everyone in this same war.</label>
-        <textarea id="wh-terms-text" class="warhub-textarea" placeholder="Example:
-No outside hits
-Call targets in Discord
-No mugging
-Save SEs for push">${esc(sharedTerms)}</textarea>
-
+        <textarea id="wh-terms-text" class="warhub-textarea">${esc(sharedTerms)}</textarea>
         <div class="warhub-actions" style="margin-top:8px;">
           <button class="warhub-btn primary" id="wh-save-terms">Save Terms</button>
           <button class="warhub-btn warn" id="wh-delete-terms">Delete Terms</button>
@@ -734,25 +710,13 @@ Save SEs for push">${esc(sharedTerms)}</textarea>
   function renderMembersTab() {
     const members = arr(state?.members);
     if (!members.length) return `<div class="warhub-card"><div class="warhub-empty">No member data yet.</div></div>`;
-    return `
-      <div class="warhub-card">
-        <h3>Faction Members</h3>
-        <div class="warhub-list">${members.map((x) => memberRow(x, false)).join("")}</div>
-      </div>
-    `;
+    return `<div class="warhub-card"><h3>Faction Members</h3><div class="warhub-list">${members.map((x) => memberRow(x, false)).join("")}</div></div>`;
   }
 
   function renderEnemiesTab() {
     const enemies = arr(state?.enemies);
-    if (!enemies.length) {
-      return `<div class="warhub-card"><div class="warhub-empty">Currently not in a war or enemy faction members are unavailable.</div></div>`;
-    }
-    return `
-      <div class="warhub-card">
-        <h3>Enemy Members</h3>
-        <div class="warhub-list">${enemies.map((x) => memberRow(x, true)).join("")}</div>
-      </div>
-    `;
+    if (!enemies.length) return `<div class="warhub-card"><div class="warhub-empty">Currently not in a war or enemy faction members are unavailable.</div></div>`;
+    return `<div class="warhub-card"><h3>Enemy Members</h3><div class="warhub-list">${enemies.map((x) => memberRow(x, true)).join("")}</div></div>`;
   }
 
   function renderHospitalTab() {
@@ -793,7 +757,6 @@ Save SEs for push">${esc(sharedTerms)}</textarea>
           <button class="warhub-btn warn" id="wh-opt-out">Opt Out</button>
         </div>
       </div>
-
       <div class="warhub-card">
         <h3>Chain Sitters</h3>
         ${sitters.length ? `<div class="warhub-list">${sitters.map((x) => memberRow(x, false)).join("")}</div>` : `<div class="warhub-empty">No chain sitter list returned yet.</div>`}
@@ -803,27 +766,15 @@ Save SEs for push">${esc(sharedTerms)}</textarea>
 
   function renderMedDealsTab() {
     const live = arr(state?.medDeals);
-
     return `
       <div class="warhub-card">
         <h3>Add Med Deal</h3>
         <div class="warhub-grid two">
-          <div>
-            <label class="warhub-label">Seller / Enemy Faction</label>
-            <input id="wh-med-name" class="warhub-input" placeholder="Enemy faction or seller name">
-          </div>
-          <div>
-            <label class="warhub-label">Amount</label>
-            <input id="wh-med-cost" class="warhub-input" placeholder="Example: 2">
-          </div>
+          <div><label class="warhub-label">Seller / Enemy Faction</label><input id="wh-med-name" class="warhub-input"></div>
+          <div><label class="warhub-label">Amount</label><input id="wh-med-cost" class="warhub-input"></div>
         </div>
-        <div style="margin-top:8px;">
-          <label class="warhub-label">Note</label>
-          <input id="wh-med-note" class="warhub-input" placeholder="Optional">
-        </div>
-        <div class="warhub-actions" style="margin-top:8px;">
-          <button class="warhub-btn primary" id="wh-add-med">Save Med Deal</button>
-        </div>
+        <div style="margin-top:8px;"><label class="warhub-label">Note</label><input id="wh-med-note" class="warhub-input"></div>
+        <div class="warhub-actions" style="margin-top:8px;"><button class="warhub-btn primary" id="wh-add-med">Save Med Deal</button></div>
       </div>
 
       <div class="warhub-card">
@@ -866,12 +817,10 @@ Save SEs for push">${esc(sharedTerms)}</textarea>
           </div>
           <div>
             <label class="warhub-label">Reason / Priority</label>
-            <input id="wh-target-note" class="warhub-input" placeholder="Example: Low life / easy chain hit">
+            <input id="wh-target-note" class="warhub-input">
           </div>
         </div>
-        <div class="warhub-actions" style="margin-top:8px;">
-          <button class="warhub-btn primary" id="wh-add-target">Save Target</button>
-        </div>
+        <div class="warhub-actions" style="margin-top:8px;"><button class="warhub-btn primary" id="wh-add-target">Save Target</button></div>
       </div>
 
       <div class="warhub-card">
@@ -904,7 +853,7 @@ Save SEs for push">${esc(sharedTerms)}</textarea>
           </div>
           <div>
             <label class="warhub-label">Target</label>
-            <input id="wh-assignment-target" class="warhub-input" placeholder="Target name or ID">
+            <input id="wh-assignment-target" class="warhub-input">
           </div>
         </div>
         <div class="warhub-grid two" style="margin-top:8px;">
@@ -918,12 +867,10 @@ Save SEs for push">${esc(sharedTerms)}</textarea>
           </div>
           <div>
             <label class="warhub-label">Note</label>
-            <input id="wh-assignment-note" class="warhub-input" placeholder="Optional assignment note">
+            <input id="wh-assignment-note" class="warhub-input">
           </div>
         </div>
-        <div class="warhub-actions" style="margin-top:8px;">
-          <button class="warhub-btn primary" id="wh-save-assignment">Save Assignment</button>
-        </div>
+        <div class="warhub-actions" style="margin-top:8px;"><button class="warhub-btn primary" id="wh-save-assignment">Save Assignment</button></div>
       </div>
 
       <div class="warhub-card">
@@ -955,7 +902,7 @@ Save SEs for push">${esc(sharedTerms)}</textarea>
         <h3>War Notes</h3>
         ${warId ? `<div class="warhub-mini" style="margin-bottom:8px;">War ID: ${esc(warId)}</div>` : `<div class="warhub-mini" style="margin-bottom:8px;">No active war id detected.</div>`}
         <label class="warhub-label">Quick personal note</label>
-        <textarea id="wh-notes" class="warhub-textarea" placeholder="Paste plans, timers, targets, med deal notes...">${esc(getNotes())}</textarea>
+        <textarea id="wh-notes" class="warhub-textarea">${esc(getNotes())}</textarea>
         <div class="warhub-actions" style="margin-top:8px;">
           <button class="warhub-btn" id="wh-save-notes">Save Local Note</button>
           <button class="warhub-btn" id="wh-clear-notes">Clear Local</button>
@@ -964,19 +911,11 @@ Save SEs for push">${esc(sharedTerms)}</textarea>
         <div class="warhub-divider"></div>
 
         <div class="warhub-grid two">
-          <div>
-            <label class="warhub-label">Target ID</label>
-            <input id="wh-note-target-id" class="warhub-input" placeholder="Enemy target id">
-          </div>
-          <div>
-            <label class="warhub-label">Server War Note</label>
-            <input id="wh-note-text" class="warhub-input" placeholder="Shared war note">
-          </div>
+          <div><label class="warhub-label">Target ID</label><input id="wh-note-target-id" class="warhub-input"></div>
+          <div><label class="warhub-label">Server War Note</label><input id="wh-note-text" class="warhub-input"></div>
         </div>
 
-        <div class="warhub-actions" style="margin-top:8px;">
-          <button class="warhub-btn primary" id="wh-add-server-note">Save Shared Note</button>
-        </div>
+        <div class="warhub-actions" style="margin-top:8px;"><button class="warhub-btn primary" id="wh-add-server-note">Save Shared Note</button></div>
       </div>
 
       <div class="warhub-card">
@@ -1002,27 +941,11 @@ Save SEs for push">${esc(sharedTerms)}</textarea>
           <div class="warhub-metric"><div class="k">Snapshots</div><div class="v">${fmtNum(snaps.length)}</div></div>
         </div>
       </div>
-
-      <div class="warhub-card">
-        <h3>Recent Snapshots</h3>
-        ${snaps.length ? `<div class="warhub-list">${snaps.map((x) => `
-          <div class="warhub-list-item">
-            <div class="warhub-row">
-              <div>
-                <div class="warhub-name">Us ${fmtNum(x.score_us)} • Them ${fmtNum(x.score_them)}</div>
-                <div class="warhub-meta">Lead ${fmtNum(x.lead)} • Target ${fmtNum(x.target_score)}</div>
-              </div>
-              <div class="warhub-mini">${esc(fmtTs(x.created_at || ""))}</div>
-            </div>
-          </div>
-        `).join("")}</div>` : `<div class="warhub-empty">No recent analytics snapshots.</div>`}
-      </div>
     `;
   }
 
   function renderNotificationsTab() {
     const items = mergedNotifications();
-
     return `
       <div class="warhub-card">
         <h3>Alerts</h3>
@@ -1043,21 +966,37 @@ Save SEs for push">${esc(sharedTerms)}</textarea>
 
   function renderSettingsTab() {
     const refreshMs = Number(GM_getValue(K_REFRESH, 25000) || 25000);
+    const savedAdmin = cleanInputValue(GM_getValue(K_ADMIN_KEY, ""));
+    const savedApi = cleanInputValue(GM_getValue(K_API_KEY, ""));
+
     return `
       <div class="warhub-card">
         <h3>Keys</h3>
         <div class="warhub-grid two">
-          <div><label class="warhub-label">Torn API Key</label><input id="wh-api-key" class="warhub-input" value="${esc(GM_getValue(K_API_KEY, ""))}" placeholder="Paste your API key"></div>
-          <div><label class="warhub-label">Admin Key</label><input id="wh-admin-key" class="warhub-input" value="${esc(GM_getValue(K_ADMIN_KEY, ""))}" placeholder="Paste your admin key"></div>
+          <div>
+            <label class="warhub-label">Torn API Key</label>
+            <input id="wh-api-key" class="warhub-input" autocomplete="off" autocapitalize="off" spellcheck="false" value="${esc(savedApi)}" placeholder="Paste your API key">
+          </div>
+          <div>
+            <label class="warhub-label">Admin Key</label>
+            <input id="wh-admin-key" class="warhub-input" autocomplete="off" autocapitalize="off" spellcheck="false" value="${esc(savedAdmin)}" placeholder="Paste your admin key">
+          </div>
         </div>
-        <div class="warhub-actions" style="margin-top:8px;"><button class="warhub-btn primary" id="wh-save-settings">Save + Login</button></div>
+        <div class="warhub-mini" style="margin-top:8px;">
+          Saved admin key right now: <b>${esc(savedAdmin || "(empty)")}</b>
+        </div>
+        <div class="warhub-actions" style="margin-top:8px;">
+          <button class="warhub-btn primary" id="wh-save-settings">Save + Login</button>
+          <button class="warhub-btn" id="wh-test-health">Test Health</button>
+          <button class="warhub-btn warn" id="wh-clear-keys">Clear Saved Keys</button>
+        </div>
       </div>
 
       <div class="warhub-card">
         <h3>Refresh</h3>
         <div class="warhub-grid two">
           <div><label class="warhub-label">Refresh milliseconds</label><input id="wh-refresh-ms" class="warhub-input" value="${esc(refreshMs)}"></div>
-          <div><label class="warhub-label">Session</label><div class="warhub-mini">${GM_getValue(K_SESSION, "") ? "Session saved" : "No session yet"}</div></div>
+          <div><label class="warhub-label">Session</label><div class="warhub-mini">${cleanInputValue(GM_getValue(K_SESSION, "")) ? "Session saved" : "No session yet"}</div></div>
         </div>
         <div class="warhub-actions" style="margin-top:8px;">
           <button class="warhub-btn" id="wh-save-refresh">Save Refresh</button>
@@ -1216,6 +1155,12 @@ Save SEs for push">${esc(sharedTerms)}</textarea>
       right: shield.style.right || "",
       bottom: shield.style.bottom || "",
     });
+  }
+
+  function clearSavedKeys() {
+    GM_deleteValue(K_API_KEY);
+    GM_deleteValue(K_ADMIN_KEY);
+    GM_deleteValue(K_SESSION);
   }
 
   function makeDraggable(handleEl, moveEl, saveFn, extra) {
@@ -1388,18 +1333,35 @@ Save SEs for push">${esc(sharedTerms)}</textarea>
     });
 
     overlay.querySelector("#wh-save-settings")?.addEventListener("click", async () => {
-      const api = String(overlay.querySelector("#wh-api-key")?.value || "").trim();
-      const admin = String(overlay.querySelector("#wh-admin-key")?.value || "").trim();
+      const api = cleanInputValue(overlay.querySelector("#wh-api-key")?.value || "");
+      const admin = cleanInputValue(overlay.querySelector("#wh-admin-key")?.value || "");
+
       if (!api) return setStatus("Enter your Torn API key first.", true);
       if (!admin) return setStatus("Enter your admin key first.", true);
+
       GM_setValue(K_API_KEY, api);
       GM_setValue(K_ADMIN_KEY, admin);
       GM_deleteValue(K_SESSION);
-      setStatus("Keys saved. Logging in...");
-      const ok = await login();
+
+      setStatus(`Saved admin key as: ${admin}. Logging in...`);
+      const ok = await login(true);
       if (!ok) return;
+
       setStatus("Logged in.");
       await loadState(true);
+      renderBody();
+    });
+
+    overlay.querySelector("#wh-test-health")?.addEventListener("click", async () => {
+      const res = await healthCheck();
+      if (!res.ok) return setStatus(res.error || "Health check failed.", true);
+      const keys = arr(res.data?.admin_keys_loaded).join(", ") || "(none)";
+      setStatus(`Server health OK. Loaded admin keys: ${keys}`);
+    });
+
+    overlay.querySelector("#wh-clear-keys")?.addEventListener("click", () => {
+      clearSavedKeys();
+      setStatus("Saved API key, admin key, and session cleared.");
       renderBody();
     });
 
@@ -1456,7 +1418,7 @@ Save SEs for push">${esc(sharedTerms)}</textarea>
 
     overlay.querySelector("#wh-add-target")?.addEventListener("click", async () => {
       const raw = String(overlay.querySelector("#wh-target-pick")?.value || "");
-      const note = String(overlay.querySelector("#wh-target-note")?.value || "").trim();
+      const note = cleanInputValue(overlay.querySelector("#wh-target-note")?.value || "");
       if (!raw) return setStatus("Pick an enemy first.", true);
       const [id, name] = raw.split("|");
       const res = await addTargetServer(id, name, note);
@@ -1479,9 +1441,9 @@ Save SEs for push">${esc(sharedTerms)}</textarea>
     });
 
     overlay.querySelector("#wh-add-med")?.addEventListener("click", async () => {
-      const seller = String(overlay.querySelector("#wh-med-name")?.value || "").trim();
-      const amount = String(overlay.querySelector("#wh-med-cost")?.value || "").trim();
-      const note = String(overlay.querySelector("#wh-med-note")?.value || "").trim();
+      const seller = cleanInputValue(overlay.querySelector("#wh-med-name")?.value || "");
+      const amount = cleanInputValue(overlay.querySelector("#wh-med-cost")?.value || "");
+      const note = cleanInputValue(overlay.querySelector("#wh-med-note")?.value || "");
       if (!seller) return setStatus("Enter seller or enemy faction first.", true);
       const res = await addMedDealServer(seller, amount, note);
       if (!res.ok) return setStatus(res.error || "Could not add med deal.", true);
@@ -1503,11 +1465,11 @@ Save SEs for push">${esc(sharedTerms)}</textarea>
     });
 
     overlay.querySelector("#wh-save-assignment")?.addEventListener("click", async () => {
-      const warId = String(state?.war?.war_id || state?.war?.id || "").trim();
-      const assigneeRaw = String(overlay.querySelector("#wh-assignee-pick")?.value || "").trim();
-      const targetText = String(overlay.querySelector("#wh-assignment-target")?.value || "").trim();
-      const priority = String(overlay.querySelector("#wh-assignment-priority")?.value || "normal").trim();
-      const note = String(overlay.querySelector("#wh-assignment-note")?.value || "").trim();
+      const warId = cleanInputValue(state?.war?.war_id || state?.war?.id || "");
+      const assigneeRaw = cleanInputValue(overlay.querySelector("#wh-assignee-pick")?.value || "");
+      const targetText = cleanInputValue(overlay.querySelector("#wh-assignment-target")?.value || "");
+      const priority = cleanInputValue(overlay.querySelector("#wh-assignment-priority")?.value || "normal");
+      const note = cleanInputValue(overlay.querySelector("#wh-assignment-note")?.value || "");
 
       if (!warId) return setStatus("No active war id found.", true);
       if (!assigneeRaw) return setStatus("Pick a faction member first.", true);
@@ -1547,9 +1509,9 @@ Save SEs for push">${esc(sharedTerms)}</textarea>
     });
 
     overlay.querySelector("#wh-add-server-note")?.addEventListener("click", async () => {
-      const warId = String(state?.war?.war_id || state?.war?.id || "").trim();
-      const targetId = String(overlay.querySelector("#wh-note-target-id")?.value || "").trim();
-      const note = String(overlay.querySelector("#wh-note-text")?.value || "").trim();
+      const warId = cleanInputValue(state?.war?.war_id || state?.war?.id || "");
+      const targetId = cleanInputValue(overlay.querySelector("#wh-note-target-id")?.value || "");
+      const note = cleanInputValue(overlay.querySelector("#wh-note-text")?.value || "");
       if (!warId) return setStatus("No active war id found.", true);
       if (!targetId) return setStatus("Enter target id first.", true);
       if (!note) return setStatus("Enter note text first.", true);
@@ -1574,28 +1536,22 @@ Save SEs for push">${esc(sharedTerms)}</textarea>
     });
 
     overlay.querySelector("#wh-save-terms")?.addEventListener("click", async () => {
-      const warId = String(state?.war?.war_id || state?.war?.id || "").trim();
-      const termsText = String(overlay.querySelector("#wh-terms-text")?.value || "").trim();
-
+      const warId = cleanInputValue(state?.war?.war_id || state?.war?.id || "");
+      const termsText = cleanInputValue(overlay.querySelector("#wh-terms-text")?.value || "");
       if (!warId) return setStatus("No active war id found.", true);
       if (!termsText) return setStatus("Enter terms first.", true);
-
       const res = await setWarTermsServer(warId, termsText);
       if (!res.ok) return setStatus(res.error || "Could not save war terms.", true);
-
       await loadState(true);
       renderBody();
       setStatus("War terms saved.");
     });
 
     overlay.querySelector("#wh-delete-terms")?.addEventListener("click", async () => {
-      const warId = String(state?.war?.war_id || state?.war?.id || "").trim();
-
+      const warId = cleanInputValue(state?.war?.war_id || state?.war?.id || "");
       if (!warId) return setStatus("No active war id found.", true);
-
       const res = await deleteWarTermsServer(warId);
       if (!res.ok) return setStatus(res.error || "Could not delete war terms.", true);
-
       await loadState(true);
       renderBody();
       setStatus("War terms deleted.");
@@ -1716,10 +1672,14 @@ Save SEs for push">${esc(sharedTerms)}</textarea>
 
   async function boot() {
     ensureMounted();
-    const token = GM_getValue(K_SESSION, "");
-    if (!token && GM_getValue(K_API_KEY, "") && GM_getValue(K_ADMIN_KEY, "")) {
-      await login();
+    const token = cleanInputValue(GM_getValue(K_SESSION, ""));
+    const savedApi = cleanInputValue(GM_getValue(K_API_KEY, ""));
+    const savedAdmin = cleanInputValue(GM_getValue(K_ADMIN_KEY, ""));
+
+    if (!token && savedApi && savedAdmin) {
+      // no noisy auto login failure loop
     }
+
     await loadState(true);
     if (currentTab === "analytics") await loadAnalytics();
     startPolling();
