@@ -28,6 +28,17 @@ def _row_to_dict(row) -> Optional[Dict[str, Any]]:
     return dict(row) if row else None
 
 
+def _table_columns(cur, table_name: str) -> List[str]:
+    cur.execute(f"PRAGMA table_info({table_name})")
+    return [str(r["name"]) for r in cur.fetchall()]
+
+
+def _ensure_column(cur, table_name: str, column_name: str, column_sql: str):
+    cols = _table_columns(cur, table_name)
+    if column_name not in cols:
+        cur.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_sql}")
+
+
 def init_db():
     con = _con()
     cur = con.cursor()
@@ -98,6 +109,23 @@ def init_db():
             seen INTEGER DEFAULT 0,
             created_at TEXT
         )
+    """)
+
+    # Backfill / migration-safe columns for faction-wide med deals
+    _ensure_column(cur, "med_deals", "creator_user_id", "creator_user_id TEXT DEFAULT ''")
+    _ensure_column(cur, "med_deals", "creator_name", "creator_name TEXT DEFAULT ''")
+    _ensure_column(cur, "med_deals", "faction_id", "faction_id TEXT DEFAULT ''")
+    _ensure_column(cur, "med_deals", "faction_name", "faction_name TEXT DEFAULT ''")
+
+    # Copy old user_id values into creator_user_id where missing
+    cur.execute("""
+        UPDATE med_deals
+        SET creator_user_id = COALESCE(NULLIF(creator_user_id, ''), user_id)
+    """)
+    cur.execute("""
+        UPDATE med_deals
+        SET creator_name = COALESCE(NULLIF(creator_name, ''), buyer_name)
+        WHERE COALESCE(NULLIF(creator_name, ''), '') = ''
     """)
 
     con.commit()
@@ -223,13 +251,44 @@ def set_chain_sitter(user_id: str, enabled: int):
     con.close()
 
 
-def add_med_deal(user_id: str, buyer_name: str, seller_name: str, amount: int, notes: str):
+def add_med_deal(
+    creator_user_id: str,
+    creator_name: str,
+    faction_id: str,
+    faction_name: str,
+    buyer_name: str,
+    seller_name: str,
+    amount: int,
+    notes: str,
+):
     con = _con()
     cur = con.cursor()
     cur.execute("""
-        INSERT INTO med_deals (user_id, buyer_name, seller_name, amount, notes, created_at)
-        VALUES (?, ?, ?, ?, ?, ?)
-    """, (user_id, buyer_name, seller_name, amount, notes, _utc_now()))
+        INSERT INTO med_deals (
+            user_id,
+            creator_user_id,
+            creator_name,
+            faction_id,
+            faction_name,
+            buyer_name,
+            seller_name,
+            amount,
+            notes,
+            created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        creator_user_id,
+        creator_user_id,
+        creator_name,
+        faction_id,
+        faction_name,
+        buyer_name,
+        seller_name,
+        amount,
+        notes,
+        _utc_now(),
+    ))
     con.commit()
     con.close()
 
@@ -247,10 +306,30 @@ def list_med_deals(user_id: str) -> List[Dict[str, Any]]:
     return rows
 
 
-def delete_med_deal(user_id: str, deal_id: int):
+def list_med_deals_for_faction(faction_id: str) -> List[Dict[str, Any]]:
+    if not faction_id:
+        return []
+
     con = _con()
     cur = con.cursor()
-    cur.execute("DELETE FROM med_deals WHERE user_id = ? AND id = ?", (user_id, deal_id))
+    cur.execute("""
+        SELECT *
+        FROM med_deals
+        WHERE faction_id = ?
+        ORDER BY id DESC
+    """, (faction_id,))
+    rows = [dict(r) for r in cur.fetchall()]
+    con.close()
+    return rows
+
+
+def delete_med_deal(faction_id: str, deal_id: int):
+    con = _con()
+    cur = con.cursor()
+    cur.execute("""
+        DELETE FROM med_deals
+        WHERE faction_id = ? AND id = ?
+    """, (faction_id, deal_id))
     con.commit()
     con.close()
 
