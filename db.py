@@ -293,6 +293,7 @@ def init_db():
             faction_name TEXT DEFAULT '',
             leader_user_id TEXT DEFAULT '',
             leader_name TEXT DEFAULT '',
+            leader_api_key TEXT DEFAULT '',
             trial_started_at TEXT DEFAULT '',
             trial_expires_at TEXT DEFAULT '',
             paid_until_at TEXT DEFAULT '',
@@ -315,10 +316,13 @@ def init_db():
         CREATE TABLE IF NOT EXISTS faction_members (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             faction_id TEXT NOT NULL,
+            faction_name TEXT DEFAULT '',
             leader_user_id TEXT DEFAULT '',
+            leader_name TEXT DEFAULT '',
             member_user_id TEXT DEFAULT '',
             member_name TEXT DEFAULT '',
             member_api_key TEXT DEFAULT '',
+            position TEXT DEFAULT '',
             enabled INTEGER DEFAULT 1,
             created_at TEXT DEFAULT '',
             updated_at TEXT DEFAULT '',
@@ -351,6 +355,12 @@ def init_db():
     _ensure_column(cur, "user_licenses", "last_payment_note", "last_payment_note TEXT DEFAULT ''")
     _ensure_column(cur, "user_licenses", "last_payment_amount", "last_payment_amount INTEGER DEFAULT 0")
 
+    _ensure_column(cur, "faction_licenses", "leader_api_key", "leader_api_key TEXT DEFAULT ''")
+
+    _ensure_column(cur, "faction_members", "faction_name", "faction_name TEXT DEFAULT ''")
+    _ensure_column(cur, "faction_members", "leader_name", "leader_name TEXT DEFAULT ''")
+    _ensure_column(cur, "faction_members", "position", "position TEXT DEFAULT ''")
+
     cur.execute("""
         UPDATE med_deals
         SET creator_user_id = COALESCE(NULLIF(creator_user_id, ''), user_id)
@@ -376,6 +386,7 @@ def init_db():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_audit_log_user_id ON audit_log(user_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_members_faction_id ON faction_members(faction_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_members_member_user_id ON faction_members(member_user_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_members_enabled ON faction_members(faction_id, enabled)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_payment_history_faction_id ON faction_payment_history(faction_id)")
 
     con.commit()
@@ -895,9 +906,7 @@ def upsert_target_assignment(
     ))
     con.commit()
     con.close()
-
-
-def delete_target_assignment(assignment_id: int):
+    def delete_target_assignment(assignment_id: int):
     con = _con()
     cur = con.cursor()
     cur.execute("DELETE FROM target_assignments WHERE id = ?", (int(assignment_id),))
@@ -1589,9 +1598,7 @@ def get_admin_dashboard_summary() -> Dict[str, Any]:
         "sessions_total": sessions_total,
         "faction_licenses_total": faction_licenses_total,
     }
-
-
-# =========================
+    # =========================
 # FACTION LICENSES
 # =========================
 
@@ -1616,6 +1623,7 @@ def ensure_faction_license(
     faction_name: str = "",
     leader_user_id: str = "",
     leader_name: str = "",
+    leader_api_key: str = "",
 ) -> Dict[str, Any]:
     existing = get_faction_license(faction_id)
     if existing:
@@ -1627,6 +1635,7 @@ def ensure_faction_license(
                 faction_name = CASE WHEN ? != '' THEN ? ELSE faction_name END,
                 leader_user_id = CASE WHEN ? != '' THEN ? ELSE leader_user_id END,
                 leader_name = CASE WHEN ? != '' THEN ? ELSE leader_name END,
+                leader_api_key = CASE WHEN ? != '' THEN ? ELSE leader_api_key END,
                 payment_per_member = CASE WHEN payment_per_member <= 0 THEN ? ELSE payment_per_member END,
                 updated_at = ?
             WHERE faction_id = ?
@@ -1634,6 +1643,7 @@ def ensure_faction_license(
             faction_name, faction_name,
             leader_user_id, leader_user_id,
             leader_name, leader_name,
+            leader_api_key, leader_api_key,
             PAYMENT_PER_MEMBER,
             _utc_now(),
             str(faction_id),
@@ -1651,6 +1661,7 @@ def ensure_faction_license(
             faction_name,
             leader_user_id,
             leader_name,
+            leader_api_key,
             trial_started_at,
             trial_expires_at,
             paid_until_at,
@@ -1667,12 +1678,13 @@ def ensure_faction_license(
             created_at,
             updated_at
         )
-        VALUES (?, ?, ?, ?, '', '', '', 0, 'inactive', 0, 0, 0, ?, 0, '', '', '', ?, ?)
+        VALUES (?, ?, ?, ?, ?, '', '', '', 0, 'inactive', 0, 0, 0, ?, 0, '', '', '', ?, ?)
     """, (
         str(faction_id),
         faction_name or "",
         leader_user_id or "",
         leader_name or "",
+        leader_api_key or "",
         PAYMENT_PER_MEMBER,
         now,
         now,
@@ -1680,6 +1692,22 @@ def ensure_faction_license(
     con.commit()
     con.close()
     return get_faction_license(faction_id) or {}
+
+
+def ensure_faction_license_row(
+    faction_id: str,
+    faction_name: str = "",
+    leader_user_id: str = "",
+    leader_name: str = "",
+    leader_api_key: str = "",
+) -> Dict[str, Any]:
+    return ensure_faction_license(
+        faction_id=faction_id,
+        faction_name=faction_name,
+        leader_user_id=leader_user_id,
+        leader_name=leader_name,
+        leader_api_key=leader_api_key,
+    )
 
 
 def list_faction_members(faction_id: str) -> List[Dict[str, Any]]:
@@ -1714,6 +1742,10 @@ def get_faction_member(faction_id: str, member_user_id: str) -> Optional[Dict[st
     return _row_to_dict(row)
 
 
+def get_faction_member_access(faction_id: str, member_user_id: str) -> Optional[Dict[str, Any]]:
+    return get_faction_member(faction_id, member_user_id)
+
+
 def add_or_update_faction_member(
     faction_id: str,
     leader_user_id: str,
@@ -1721,6 +1753,9 @@ def add_or_update_faction_member(
     member_name: str,
     member_api_key: str,
     enabled: int = 1,
+    faction_name: str = "",
+    leader_name: str = "",
+    position: str = "",
 ) -> Dict[str, Any]:
     now = _utc_now()
     con = _con()
@@ -1728,27 +1763,36 @@ def add_or_update_faction_member(
     cur.execute("""
         INSERT INTO faction_members (
             faction_id,
+            faction_name,
             leader_user_id,
+            leader_name,
             member_user_id,
             member_name,
             member_api_key,
+            position,
             enabled,
             created_at,
             updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(faction_id, member_user_id) DO UPDATE SET
+            faction_name = excluded.faction_name,
             leader_user_id = excluded.leader_user_id,
+            leader_name = excluded.leader_name,
             member_name = excluded.member_name,
             member_api_key = excluded.member_api_key,
+            position = excluded.position,
             enabled = excluded.enabled,
             updated_at = excluded.updated_at
     """, (
         str(faction_id),
+        str(faction_name or ""),
         str(leader_user_id or ""),
+        str(leader_name or ""),
         str(member_user_id),
         str(member_name or ""),
         str(member_api_key or ""),
+        str(position or ""),
         1 if enabled else 0,
         now,
         now,
@@ -1759,7 +1803,43 @@ def add_or_update_faction_member(
     return get_faction_member(faction_id, member_user_id) or {}
 
 
-def set_faction_member_enabled(faction_id: str, member_user_id: str, enabled: int):
+def upsert_faction_member_access(
+    faction_id: str,
+    faction_name: str,
+    leader_user_id: str,
+    leader_name: str,
+    member_user_id: str,
+    member_name: str,
+    member_api_key: str,
+    enabled: int = 1,
+    position: str = "",
+) -> Dict[str, Any]:
+    ensure_faction_license(
+        faction_id=faction_id,
+        faction_name=faction_name,
+        leader_user_id=leader_user_id,
+        leader_name=leader_name,
+    )
+    return add_or_update_faction_member(
+        faction_id=faction_id,
+        leader_user_id=leader_user_id,
+        member_user_id=member_user_id,
+        member_name=member_name,
+        member_api_key=member_api_key,
+        enabled=enabled,
+        faction_name=faction_name,
+        leader_name=leader_name,
+        position=position,
+    )
+
+
+def set_faction_member_enabled(
+    faction_id: str,
+    member_user_id: str,
+    enabled: int,
+    changed_by_user_id: str = "",
+    changed_by_name: str = "",
+):
     con = _con()
     cur = con.cursor()
     cur.execute("""
@@ -1776,6 +1856,13 @@ def set_faction_member_enabled(faction_id: str, member_user_id: str, enabled: in
     con.close()
     recalc_faction_license(faction_id)
 
+    if changed_by_user_id:
+        add_audit_log(
+            changed_by_user_id,
+            "faction_member_enabled_changed",
+            f"faction_id={faction_id} member_user_id={member_user_id} enabled={1 if enabled else 0} changed_by={changed_by_name}",
+        )
+
 
 def delete_faction_member(faction_id: str, member_user_id: str):
     con = _con()
@@ -1787,6 +1874,10 @@ def delete_faction_member(faction_id: str, member_user_id: str):
     con.commit()
     con.close()
     recalc_faction_license(faction_id)
+
+
+def delete_faction_member_access(faction_id: str, member_user_id: str):
+    delete_faction_member(faction_id, member_user_id)
 
 
 def get_enabled_faction_member_count(faction_id: str) -> int:
@@ -1855,8 +1946,15 @@ def start_faction_trial_if_needed(
     faction_name: str,
     leader_user_id: str,
     leader_name: str,
+    leader_api_key: str = "",
 ) -> Dict[str, Any]:
-    row = ensure_faction_license(faction_id, faction_name, leader_user_id, leader_name)
+    row = ensure_faction_license(
+        faction_id=faction_id,
+        faction_name=faction_name,
+        leader_user_id=leader_user_id,
+        leader_name=leader_name,
+        leader_api_key=leader_api_key,
+    )
     if row.get("trial_started_at") and row.get("trial_expires_at"):
         return compute_faction_license_status(faction_id)
 
@@ -1871,6 +1969,7 @@ def start_faction_trial_if_needed(
             faction_name = ?,
             leader_user_id = ?,
             leader_name = ?,
+            leader_api_key = CASE WHEN ? != '' THEN ? ELSE leader_api_key END,
             trial_started_at = ?,
             trial_expires_at = ?,
             payment_required = 0,
@@ -1882,6 +1981,8 @@ def start_faction_trial_if_needed(
         str(faction_name or ""),
         str(leader_user_id or ""),
         str(leader_name or ""),
+        str(leader_api_key or ""),
+        str(leader_api_key or ""),
         now,
         expires,
         PAYMENT_PER_MEMBER,
@@ -1895,7 +1996,7 @@ def start_faction_trial_if_needed(
     return compute_faction_license_status(faction_id)
 
 
-def compute_faction_license_status(faction_id: str) -> Dict[str, Any]:
+def compute_faction_license_status(faction_id: str, viewer_user_id: str = "") -> Dict[str, Any]:
     row = ensure_faction_license(faction_id)
     row = recalc_faction_license(faction_id)
 
@@ -1966,11 +2067,22 @@ def compute_faction_license_status(faction_id: str) -> Dict[str, Any]:
             block_reason = "payment_required"
         message = f"Faction payment required. Send {renewal_cost:,} to {PAYMENT_PLAYER}."
 
+    member_row = get_faction_member(faction_id, viewer_user_id) if viewer_user_id else None
+    viewer_is_leader = bool(
+        viewer_user_id
+        and str(row.get("leader_user_id") or "").strip()
+        and str(row.get("leader_user_id") or "").strip() == str(viewer_user_id).strip()
+    )
+
     return {
         "faction_id": str(faction_id),
         "faction_name": str(row.get("faction_name") or ""),
         "leader_user_id": str(row.get("leader_user_id") or ""),
         "leader_name": str(row.get("leader_name") or ""),
+        "leader_api_key_present": bool(str(row.get("leader_api_key") or "").strip()),
+        "viewer_user_id": str(viewer_user_id or ""),
+        "viewer_is_leader": viewer_is_leader,
+        "viewer_member_enabled": bool(int((member_row or {}).get("enabled") or 0)) if member_row else False,
         "active": active,
         "status": status,
         "trial_started_at": trial_started_at,
@@ -1989,6 +2101,7 @@ def compute_faction_license_status(faction_id: str) -> Dict[str, Any]:
         "enabled_member_count": enabled_member_count,
         "payment_per_member": payment_per_member,
         "renewal_cost": renewal_cost,
+        "next_payment_amount": renewal_cost,
         "last_payment_at": str(row.get("last_payment_at") or ""),
         "last_payment_amount": int(row.get("last_payment_amount") or 0),
         "last_payment_kind": str(row.get("last_payment_kind") or ""),
@@ -2002,7 +2115,7 @@ def renew_faction_after_payment(
     payment_kind: str = "cash",
     note: str = "",
     received_by: str = PAYMENT_PLAYER,
-    extend_days: int = 45,
+    extend_days: int = DEFAULT_PAID_DAYS,
 ) -> Dict[str, Any]:
     row = ensure_faction_license(faction_id)
     row = recalc_faction_license(faction_id)
@@ -2145,6 +2258,7 @@ def get_member_access_record(member_user_id: str) -> Optional[Dict[str, Any]]:
         SELECT *
         FROM faction_members
         WHERE member_user_id = ? AND enabled = 1
+        ORDER BY id DESC
         LIMIT 1
     """, (str(member_user_id),))
     row = cur.fetchone()
@@ -2159,7 +2273,7 @@ def get_faction_license_for_member(member_user_id: str) -> Optional[Dict[str, An
     faction_id = str(member.get("faction_id") or "")
     if not faction_id:
         return None
-    return compute_faction_license_status(faction_id)
+    return compute_faction_license_status(faction_id, viewer_user_id=member_user_id)
 
 
 def member_has_faction_access(member_user_id: str) -> bool:
@@ -2173,4 +2287,44 @@ def get_owner_faction_dashboard(limit: int = 250) -> Dict[str, Any]:
         "payment_player": PAYMENT_PLAYER,
         "payment_per_member": PAYMENT_PER_MEMBER,
         "factions": factions,
+    }
+
+
+def get_faction_admin_dashboard_summary() -> Dict[str, Any]:
+    con = _con()
+    cur = con.cursor()
+
+    cur.execute("SELECT COUNT(*) AS c FROM faction_licenses")
+    faction_licenses_total = int((cur.fetchone() or {"c": 0})["c"])
+
+    cur.execute("SELECT COUNT(*) AS c FROM faction_licenses WHERE status = 'trial'")
+    trials_total = int((cur.fetchone() or {"c": 0})["c"])
+
+    cur.execute("SELECT COUNT(*) AS c FROM faction_licenses WHERE status = 'paid'")
+    paid_total = int((cur.fetchone() or {"c": 0})["c"])
+
+    cur.execute("SELECT COUNT(*) AS c FROM faction_licenses WHERE payment_required = 1")
+    payment_required_total = int((cur.fetchone() or {"c": 0})["c"])
+
+    cur.execute("SELECT COALESCE(SUM(enabled_member_count), 0) AS c FROM faction_licenses")
+    enabled_members_total = int((cur.fetchone() or {"c": 0})["c"])
+
+    cur.execute("SELECT COALESCE(SUM(renewal_cost), 0) AS c FROM faction_licenses")
+    projected_renewal_total = int((cur.fetchone() or {"c": 0})["c"])
+
+    cur.execute("SELECT COUNT(*) AS c FROM faction_members")
+    stored_members_total = int((cur.fetchone() or {"c": 0})["c"])
+
+    con.close()
+
+    return {
+        "payment_player": PAYMENT_PLAYER,
+        "payment_per_member": PAYMENT_PER_MEMBER,
+        "faction_licenses_total": faction_licenses_total,
+        "trials_total": trials_total,
+        "paid_total": paid_total,
+        "payment_required_total": payment_required_total,
+        "enabled_members_total": enabled_members_total,
+        "stored_members_total": stored_members_total,
+        "projected_renewal_total": projected_renewal_total,
     }
