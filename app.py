@@ -156,6 +156,7 @@ except Exception:
     def delete_faction_member_access(faction_id: str, member_user_id: str):
         return _delete_faction_member(faction_id, member_user_id)
 
+
 from torn_api import (
     me_basic,
     faction_basic,
@@ -421,7 +422,12 @@ def _infer_is_leader(faction_payload: Dict[str, Any], user_id: str) -> bool:
     return position == "leader" or position.startswith("leader ")
 
 
-def _get_live_faction_context(api_key: str, user_id: str, fallback_faction_id: str = "", fallback_faction_name: str = "") -> Dict[str, Any]:
+def _get_live_faction_context(
+    api_key: str,
+    user_id: str,
+    fallback_faction_id: str = "",
+    fallback_faction_name: str = "",
+) -> Dict[str, Any]:
     out = {
         "ok": True,
         "faction_id": str(fallback_faction_id or "").strip(),
@@ -460,7 +466,14 @@ def _get_live_faction_context(api_key: str, user_id: str, fallback_faction_id: s
     }
 
 
-def _current_session_context() -> Tuple[Optional[Dict[str, Any]], str, str, Optional[Dict[str, Any]], Optional[Dict[str, Any]], bool]:
+def _current_session_context() -> Tuple[
+    Optional[Dict[str, Any]],
+    str,
+    str,
+    Optional[Dict[str, Any]],
+    Optional[Dict[str, Any]],
+    bool,
+]:
     user_id = str(request.session.get("user_id") or "")
     user = get_user(user_id)
     if not user:
@@ -477,7 +490,9 @@ def _current_session_context() -> Tuple[Optional[Dict[str, Any]], str, str, Opti
     member_row = get_faction_member_access(faction_id, user_id)
 
     return user, faction_id, faction_name, license_status, member_row, is_leader
-    def require_session(fn):
+
+
+def require_session(fn):
     @wraps(fn)
     def wrapper(*args, **kwargs):
         cache_purge_expired()
@@ -504,6 +519,8 @@ def _current_session_context() -> Tuple[Optional[Dict[str, Any]], str, str, Opti
             delete_sessions_for_user(user_id)
             return err("Request origin denied.", 403)
 
+        request.session = sess
+
         user, faction_id, faction_name, license_status, member_row, is_leader = _current_session_context()
         if not user:
             delete_session(token)
@@ -523,7 +540,6 @@ def _current_session_context() -> Tuple[Optional[Dict[str, Any]], str, str, Opti
                 return _member_block_response(faction_id, faction_name, "member_not_enabled", license_status)
 
         touch_session(token)
-        request.session = sess
         request.current_user = user
         request.current_faction_id = faction_id
         request.current_faction_name = faction_name
@@ -544,9 +560,7 @@ def require_leader_session(fn):
         return fn(*args, **kwargs)
 
     return wrapper
-
-
-def _seconds_to_text(seconds: int) -> str:
+    def _seconds_to_text(seconds: int) -> str:
     seconds = max(0, int(seconds or 0))
     if seconds <= 0:
         return "0s"
@@ -1317,7 +1331,10 @@ def api_license_status():
     try:
         faction_id = request.current_faction_id
         faction_name = request.current_faction_name
-        license_status = compute_faction_license_status(faction_id, viewer_user_id=request.current_user["user_id"])
+        license_status = compute_faction_license_status(
+            faction_id,
+            viewer_user_id=request.current_user["user_id"],
+        )
 
         return ok(
             license=license_status,
@@ -1338,7 +1355,10 @@ def api_faction_license():
     try:
         faction_id = request.current_faction_id
         faction_name = request.current_faction_name
-        license_status = compute_faction_license_status(faction_id, viewer_user_id=request.current_user["user_id"])
+        license_status = compute_faction_license_status(
+            faction_id,
+            viewer_user_id=request.current_user["user_id"],
+        )
 
         return ok(
             faction_id=faction_id,
@@ -1690,8 +1710,14 @@ def api_settings_get():
 
         return ok(
             settings={
-                "refresh_seconds": _to_int(get_user_setting(request.current_user["user_id"], "refresh_seconds"), DEFAULT_REFRESH_SECONDS),
-                "alerts_enabled": _to_int(get_user_setting(request.current_user["user_id"], "alerts_enabled"), 1),
+                "refresh_seconds": _to_int(
+                    get_user_setting(request.current_user["user_id"], "refresh_seconds"),
+                    DEFAULT_REFRESH_SECONDS,
+                ),
+                "alerts_enabled": _to_int(
+                    get_user_setting(request.current_user["user_id"], "alerts_enabled"),
+                    1,
+                ),
             },
             faction_license=license_status,
             **_access_payload(license_status),
@@ -1719,9 +1745,7 @@ def api_settings_set():
         return ok(message="Settings updated.")
     except Exception as e:
         return err(f"Could not update settings: {e}", 500)
-
-
-@app.get("/api/faction/members")
+        @app.get("/api/faction/members")
 @require_leader_session
 def api_faction_members_list():
     try:
@@ -1769,7 +1793,10 @@ def api_faction_members_list():
                 }
             )
 
-        license_status = compute_faction_license_status(faction_id, viewer_user_id=str(leader.get("user_id") or ""))
+        license_status = compute_faction_license_status(
+            faction_id,
+            viewer_user_id=str(leader.get("user_id") or ""),
+        )
 
         return ok(
             faction_id=faction_id,
@@ -1848,7 +1875,10 @@ def api_faction_members_upsert():
             position=position,
         )
 
-        license_status = compute_faction_license_status(faction_id, viewer_user_id=str(leader.get("user_id") or ""))
+        license_status = compute_faction_license_status(
+            faction_id,
+            viewer_user_id=str(leader.get("user_id") or ""),
+        )
 
         add_audit_log(
             str(leader.get("user_id") or ""),
@@ -1902,7 +1932,10 @@ def api_faction_members_enable():
         if not enabled:
             delete_sessions_for_user(member_user_id)
 
-        license_status = compute_faction_license_status(faction_id, viewer_user_id=str(leader.get("user_id") or ""))
+        license_status = compute_faction_license_status(
+            faction_id,
+            viewer_user_id=str(leader.get("user_id") or ""),
+        )
 
         add_audit_log(
             str(leader.get("user_id") or ""),
@@ -1952,7 +1985,9 @@ def api_faction_members_delete():
         )
     except Exception as e:
         return err(f"Could not delete faction member access: {e}", 500)
-        @app.post("/api/availability/set")
+
+
+@app.post("/api/availability/set")
 @require_session
 def api_availability_set():
     try:
@@ -1984,7 +2019,6 @@ def api_med_deals_add():
     try:
         user_id = request.current_user["user_id"]
         user = request.current_user
-
         data = request.get_json(force=True, silent=True) or {}
 
         war_summary = ranked_war_summary(
@@ -2225,9 +2259,7 @@ def api_war_terms_delete():
         return ok(message="War terms deleted.")
     except Exception as e:
         return err(f"Could not delete war terms: {e}", 500)
-
-
-@app.post("/api/bounties/add")
+        @app.post("/api/bounties/add")
 @require_session
 def api_bounties_add():
     try:
@@ -2322,7 +2354,11 @@ def api_admin_faction_payment_confirm():
 
         leader_user_id = str(status.get("leader_user_id") or "").strip()
         if leader_user_id:
-            add_notification(leader_user_id, "payment", f"Faction payment confirmed. Access renewed by {received_by}.")
+            add_notification(
+                leader_user_id,
+                "payment",
+                f"Faction payment confirmed. Access renewed by {received_by}.",
+            )
 
         return ok(
             message="Faction payment confirmed and license renewed.",
@@ -2356,7 +2392,11 @@ def api_admin_faction_license_expire():
 
         leader_user_id = str(status.get("leader_user_id") or "").strip()
         if leader_user_id:
-            add_notification(leader_user_id, "license", "Your faction access has expired. Payment is required to continue.")
+            add_notification(
+                leader_user_id,
+                "license",
+                "Your faction access has expired. Payment is required to continue.",
+            )
 
         return ok(
             message="Faction license expired.",
@@ -2399,7 +2439,9 @@ def api_admin_faction_licenses():
         if not allowed:
             return response
         limit = _to_int(request.args.get("limit"), 250)
-        return ok(faction_licenses=list_all_faction_licenses(limit=max(1, min(limit, 1000))))
+        return ok(
+            faction_licenses=list_all_faction_licenses(limit=max(1, min(limit, 1000)))
+        )
     except Exception as e:
         return err(f"Could not load faction licenses: {e}", 500)
 
