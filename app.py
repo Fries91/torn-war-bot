@@ -1,7 +1,7 @@
 import os
 from datetime import datetime, timezone
 from functools import wraps
-from typing import Any, Dict, Optional, List
+from typing import Any, Dict, Optional, List, Tuple
 
 from dotenv import load_dotenv
 from flask import Flask, jsonify, request, send_from_directory
@@ -45,17 +45,23 @@ from db import (
     delete_war_terms,
     get_user_setting,
     set_user_setting,
-    ensure_license_row,
-    start_trial_if_needed,
-    compute_license_status,
-    clear_license_admin_key,
-    renew_after_payment,
-    get_payment_history,
-    force_expire_license,
     add_audit_log,
     cache_purge_expired,
-    list_all_licenses,
-    get_admin_dashboard_summary,
+
+    # faction-license rebuild
+    ensure_faction_license_row,
+    start_faction_trial_if_needed,
+    compute_faction_license_status,
+    renew_faction_after_payment,
+    get_faction_payment_history,
+    force_expire_faction_license,
+    list_all_faction_licenses,
+    get_faction_admin_dashboard_summary,
+    list_faction_members,
+    get_faction_member_access,
+    upsert_faction_member_access,
+    set_faction_member_enabled,
+    delete_faction_member_access,
 )
 from torn_api import (
     me_basic,
@@ -70,8 +76,8 @@ from torn_api import (
 load_dotenv()
 
 APP_NAME = "War Hub"
-PAYMENT_PLAYER = os.getenv("PAYMENT_PLAYER", "Fries91")
-PAYMENT_AMOUNT_XANAX = int(os.getenv("PAYMENT_AMOUNT_XANAX", "50"))
+PAYMENT_PLAYER = str(os.getenv("PAYMENT_PLAYER", "Fries91")).strip() or "Fries91"
+FACTION_MEMBER_PRICE = int(os.getenv("FACTION_MEMBER_PRICE", "2500000"))
 DEFAULT_REFRESH_SECONDS = int(os.getenv("DEFAULT_REFRESH_SECONDS", "30"))
 LICENSE_ADMIN_TOKEN = str(os.getenv("LICENSE_ADMIN_TOKEN", "")).strip()
 ALLOWED_SCRIPT_ORIGINS = {
@@ -80,26 +86,11 @@ ALLOWED_SCRIPT_ORIGINS = {
     "",
 }
 
-
-def _parse_admin_keys() -> set[str]:
-    raw_multi = os.getenv("ADMIN_KEYS", "")
-    raw_single = os.getenv("ADMIN_KEY", "")
-
-    raw = raw_multi if raw_multi.strip() else raw_single
-    if not raw.strip():
-        return set()
-
-    keys: set[str] = set()
-    for part in raw.split(","):
-        cleaned = str(part or "").strip().strip('"').strip("'")
-        if cleaned:
-            keys.add(cleaned)
-    return keys
-
-
-ADMIN_KEYS = _parse_admin_keys()
-
 app = Flask(__name__, static_folder="static")
+
+
+def BASE_URL() -> str:
+    return str(os.getenv("PUBLIC_BASE_URL", "")).strip()
 
 
 def utc_now() -> str:
@@ -133,16 +124,76 @@ def _to_int(value: Any, default: int = 0) -> int:
         return default
 
 
-def _payment_details_payload(user_id: str = "") -> Dict[str, Any]:
-    license_status = compute_license_status(user_id) if user_id else None
+def _safe_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    s = str(value or "").strip().lower()
+    return s in {"1", "true", "yes", "y", "on", "enabled"}
+
+
+def _check_request_origin() -> bool:
+    origin = str(request.headers.get("Origin", "")).strip()
+    referer = str(request.headers.get("Referer", "")).strip()
+
+    if origin and origin not in ALLOWED_SCRIPT_ORIGINS:
+        return False
+
+    allowed_prefixes = (
+        "https://www.torn.com",
+        "https://torn.com",
+    )
+    if BASE_URL():
+        allowed_prefixes = allowed_prefixes + (BASE_URL(),)
+
+    if referer and not any(referer.startswith(x) for x in allowed_prefixes):
+        return False
+
+    return True
+
+
+def _require_license_admin():
+    header_token = str(request.headers.get("X-License-Admin", "")).strip()
+    bearer = str(request.headers.get("Authorization", "")).strip()
+
+    auth_token = header_token
+    if not auth_token and bearer.lower().startswith("bearer "):
+        auth_token = bearer[7:].strip()
+
+    if not LICENSE_ADMIN_TOKEN:
+        return False, err("LICENSE_ADMIN_TOKEN is not configured on the server.", 503)
+
+    if auth_token != LICENSE_ADMIN_TOKEN:
+        return False, err("Unauthorized admin request.", 401)
+
+    return True, None
+
+
+def _payment_details_payload(
+    faction_id: str = "",
+    faction_name: str = "",
+    license_status: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    ls = license_status or {}
+    enabled_members = _to_int(ls.get("enabled_member_count"), 0)
+    next_amount = _to_int(ls.get("next_payment_amount"), enabled_members * FACTION_MEMBER_PRICE)
+    if next_amount <= 0 and enabled_members > 0:
+        next_amount = enabled_members * FACTION_MEMBER_PRICE
+
     return {
         "payment": {
             "required_player": PAYMENT_PLAYER,
-            "required_amount": PAYMENT_AMOUNT_XANAX,
-            "required_kind": "xanax",
-            "message": f"Trial expired. Send {PAYMENT_AMOUNT_XANAX} Xanax to {PAYMENT_PLAYER} to continue access.",
+            "required_amount": next_amount,
+            "required_kind": "cash",
+            "price_per_enabled_member": FACTION_MEMBER_PRICE,
+            "enabled_member_count": enabled_members,
+            "faction_id": faction_id,
+            "faction_name": faction_name,
+            "message": (
+                f"Faction access is billed at {FACTION_MEMBER_PRICE:,} per enabled faction member. "
+                f"Send payment to {PAYMENT_PLAYER}."
+            ),
         },
-        "license": license_status,
+        "license": ls,
     }
 
 
@@ -169,7 +220,10 @@ def _access_payload(license_status: Optional[Dict[str, Any]] = None) -> Dict[str
     message = (
         ls.get("message")
         or ls.get("block_reason")
-        or f"Send {PAYMENT_AMOUNT_XANAX} Xanax to {PAYMENT_PLAYER} to continue access."
+        or (
+            f"Faction access is billed at {FACTION_MEMBER_PRICE:,} per enabled faction member. "
+            f"Send payment to {PAYMENT_PLAYER}."
+        )
     )
 
     return {
@@ -192,55 +246,144 @@ def _access_payload(license_status: Optional[Dict[str, Any]] = None) -> Dict[str
     }
 
 
-def _license_block_response(user_id: str, reason: str = ""):
-    payload = _payment_details_payload(user_id)
-    license_status = payload.get("license") or {}
-    block_reason = reason or str(license_status.get("block_reason") or "license_inactive")
+def _faction_block_response(
+    faction_id: str,
+    faction_name: str,
+    license_status: Optional[Dict[str, Any]] = None,
+    reason: str = "",
+):
+    ls = license_status or compute_faction_license_status(faction_id)
+    block_reason = reason or str(ls.get("block_reason") or "faction_license_inactive")
 
     merged_access = _access_payload({
-        **license_status,
-        "payment_required": True if not license_status.get("active") else bool(license_status.get("payment_required")),
-        "trial_expired": bool(license_status.get("trial_expired")) or not bool(license_status.get("active")),
-        "message": f"Trial expired. Send {PAYMENT_AMOUNT_XANAX} Xanax to {PAYMENT_PLAYER} to continue access.",
+        **ls,
+        "payment_required": True if not ls.get("active") else bool(ls.get("payment_required")),
+        "trial_expired": bool(ls.get("trial_expired")) or not bool(ls.get("active")),
+        "message": (
+            f"Faction license inactive. Billing is {FACTION_MEMBER_PRICE:,} per enabled member. "
+            f"Send payment to {PAYMENT_PLAYER}."
+        ),
     })
 
     return err(
-        f"Access blocked: {block_reason}. Send {PAYMENT_AMOUNT_XANAX} Xanax to {PAYMENT_PLAYER} to continue.",
+        f"Access blocked: {block_reason}. Send payment to {PAYMENT_PLAYER}.",
         403,
-        **payload,
+        **_payment_details_payload(faction_id, faction_name, ls),
         **merged_access,
     )
 
 
-def _require_license_admin():
-    header_token = str(request.headers.get("X-License-Admin", "")).strip()
-    bearer = str(request.headers.get("Authorization", "")).strip()
+def _member_block_response(
+    faction_id: str,
+    faction_name: str,
+    reason: str = "member_not_enabled",
+    license_status: Optional[Dict[str, Any]] = None,
+):
+    ls = license_status or compute_faction_license_status(faction_id)
+    return err(
+        f"Access blocked: {reason}. Your faction leader must enable your access under the active faction license.",
+        403,
+        **_payment_details_payload(faction_id, faction_name, ls),
+        **_access_payload(ls),
+        member_access={
+            "allowed": False,
+            "reason": reason,
+        },
+    )
 
-    auth_token = header_token
-    if not auth_token and bearer.lower().startswith("bearer "):
-        auth_token = bearer[7:].strip()
 
-    if not LICENSE_ADMIN_TOKEN:
-        return False, err("LICENSE_ADMIN_TOKEN is not configured on the server.", 503)
+def _find_live_member_row(
+    faction_members: List[Dict[str, Any]],
+    user_id: str = "",
+    name: str = "",
+) -> Optional[Dict[str, Any]]:
+    uid = str(user_id or "").strip()
+    nm = str(name or "").strip().lower()
 
-    if auth_token != LICENSE_ADMIN_TOKEN:
-        return False, err("Unauthorized admin request.", 401)
+    for row in faction_members:
+        rid = str(row.get("user_id") or "")
+        rname = str(row.get("name") or "").strip().lower()
+        if uid and rid == uid:
+            return row
+        if nm and rname == nm:
+            return row
+    return None
 
-    return True, None
 
-
-def _check_request_origin() -> bool:
-    origin = str(request.headers.get("Origin", "")).strip()
-    referer = str(request.headers.get("Referer", "")).strip()
-    if origin and origin not in ALLOWED_SCRIPT_ORIGINS:
+def _infer_is_leader(faction_payload: Dict[str, Any], user_id: str) -> bool:
+    uid = str(user_id or "").strip()
+    if not uid:
         return False
-    if referer and not any(referer.startswith(x) for x in ("https://www.torn.com", "https://torn.com", BASE_URL())):
+
+    leader_user_id = str(faction_payload.get("leader_user_id") or "").strip()
+    if leader_user_id and leader_user_id == uid:
+        return True
+
+    live_members = faction_payload.get("members", []) or []
+    me_row = _find_live_member_row(live_members, user_id=uid)
+    if not me_row:
         return False
-    return True
+
+    position = str(me_row.get("position") or "").strip().lower()
+    return position == "leader" or position.startswith("leader ")
 
 
-def BASE_URL() -> str:
-    return str(os.getenv("PUBLIC_BASE_URL", "")).strip()
+def _get_live_faction_context(api_key: str, user_id: str, fallback_faction_id: str = "", fallback_faction_name: str = "") -> Dict[str, Any]:
+    out = {
+        "ok": True,
+        "faction_id": str(fallback_faction_id or "").strip(),
+        "faction_name": str(fallback_faction_name or "").strip(),
+        "members": [],
+        "is_leader": False,
+        "my_member": None,
+        "error": "",
+    }
+
+    faction_id = str(fallback_faction_id or "").strip()
+    if not faction_id:
+        return out
+
+    faction = faction_basic(api_key)
+    if not faction.get("ok"):
+        return {
+            **out,
+            "ok": False,
+            "error": faction.get("error", "Could not load faction."),
+        }
+
+    members = faction.get("members", []) or []
+    actual_faction_id = str(faction.get("faction_id", faction_id) or "")
+    actual_faction_name = str(faction.get("faction_name", fallback_faction_name) or "")
+    my_member = _find_live_member_row(members, user_id=user_id)
+
+    return {
+        "ok": True,
+        "faction_id": actual_faction_id,
+        "faction_name": actual_faction_name,
+        "members": members,
+        "is_leader": _infer_is_leader(faction, user_id),
+        "my_member": my_member,
+        "error": "",
+    }
+
+
+def _current_session_context() -> Tuple[Optional[Dict[str, Any]], str, str, Optional[Dict[str, Any]], Optional[Dict[str, Any]], bool]:
+    user_id = str(request.session.get("user_id") or "")
+    user = get_user(user_id)
+    if not user:
+        return None, "", "", None, None, False
+
+    faction_id = str(user.get("faction_id") or "").strip()
+    faction_name = str(user.get("faction_name") or "").strip()
+    if not faction_id:
+        return user, "", faction_name, None, None, False
+
+    license_status = compute_faction_license_status(faction_id, viewer_user_id=user_id)
+    leader_user_id = str(license_status.get("leader_user_id") or "").strip()
+    is_leader = bool(leader_user_id and leader_user_id == user_id)
+    member_row = get_faction_member_access(faction_id, user_id)
+
+    return user, faction_id, faction_name, license_status, member_row, is_leader
 
 
 def require_session(fn):
@@ -262,18 +405,51 @@ def require_session(fn):
             return err("Invalid session user.", 401)
 
         if not _check_request_origin():
-            add_audit_log(user_id, "blocked_request_origin", request.headers.get("Origin", "") or request.headers.get("Referer", ""))
+            add_audit_log(
+                user_id,
+                "blocked_request_origin",
+                request.headers.get("Origin", "") or request.headers.get("Referer", ""),
+            )
             delete_sessions_for_user(user_id)
             return err("Request origin denied.", 403)
 
-        license_status = compute_license_status(user_id)
-        if not bool(license_status.get("active")):
+        user, faction_id, faction_name, license_status, member_row, is_leader = _current_session_context()
+        if not user:
+            delete_session(token)
+            return err("User not found.", 401)
+
+        if not faction_id:
             delete_sessions_for_user(user_id)
-            return _license_block_response(user_id)
+            return err("You must be in a faction to use War Hub.", 403)
+
+        if not bool(license_status and license_status.get("active")):
+            delete_sessions_for_user(user_id)
+            return _faction_block_response(faction_id, faction_name, license_status)
+
+        if not is_leader:
+            if not member_row or not _safe_bool(member_row.get("enabled")):
+                delete_sessions_for_user(user_id)
+                return _member_block_response(faction_id, faction_name, "member_not_enabled", license_status)
 
         touch_session(token)
         request.session = sess
-        request.license_status = license_status
+        request.current_user = user
+        request.current_faction_id = faction_id
+        request.current_faction_name = faction_name
+        request.current_license_status = license_status
+        request.current_member_row = member_row
+        request.current_is_leader = is_leader
+        return fn(*args, **kwargs)
+
+    return wrapper
+
+
+def require_leader_session(fn):
+    @wraps(fn)
+    @require_session
+    def wrapper(*args, **kwargs):
+        if not bool(getattr(request, "current_is_leader", False)):
+            return err("Leader access required.", 403)
         return fn(*args, **kwargs)
 
     return wrapper
@@ -407,6 +583,8 @@ def _sort_hospital_members(members: List[Dict[str, Any]]) -> List[Dict[str, Any]
 
 def _merge_faction_members(faction_id: str, members: List[Dict[str, Any]]) -> Dict[str, Any]:
     local_map = get_user_map_by_faction(faction_id) if faction_id else {}
+    access_rows = list_faction_members(faction_id) if faction_id else []
+    access_map = {str(r.get("member_user_id") or r.get("user_id") or ""): r for r in access_rows}
 
     merged = []
     chain_sitters = []
@@ -423,10 +601,12 @@ def _merge_faction_members(faction_id: str, members: List[Dict[str, Any]]) -> Di
     for m in members:
         uid = str(m.get("user_id") or "")
         local = local_map.get(uid)
+        access_row = access_map.get(uid)
 
         available = int(local["available"]) if local else 1
         chain_sitter = int(local["chain_sitter"]) if local else 0
         linked_user = bool(local)
+        enabled_under_license = 1 if access_row and _safe_bool(access_row.get("enabled")) else 0
 
         if linked_user:
             linked_user_count += 1
@@ -455,6 +635,8 @@ def _merge_faction_members(faction_id: str, members: List[Dict[str, Any]]) -> Di
             "available": available,
             "chain_sitter": chain_sitter,
             "linked_user": linked_user,
+            "enabled_under_license": enabled_under_license,
+            "member_access_enabled": enabled_under_license,
             "activity_bucket": activity_bucket,
             "activity_minutes": activity_minutes,
             "life_current": _to_int(m.get("life_current"), 0),
@@ -614,9 +796,7 @@ def _rank_enemy_targets(enemy_members: List[Dict[str, Any]], assignments: List[D
         )
     )
     return ranked
-
-
-def _calc_pace_and_estimate(war_id: str, score_us: int, score_them: int, target_score: int) -> Dict[str, Any]:
+    def _calc_pace_and_estimate(war_id: str, score_us: int, score_them: int, target_score: int) -> Dict[str, Any]:
     if not war_id:
         return {
             "lead": score_us - score_them,
@@ -812,9 +992,10 @@ def root():
         service=APP_NAME,
         status="online",
         now=utc_now(),
-        admin_keys_loaded=sorted(list(ADMIN_KEYS)),
         license_admin_enabled=bool(LICENSE_ADMIN_TOKEN),
         public_base_url=BASE_URL(),
+        payment_player=PAYMENT_PLAYER,
+        price_per_enabled_member=FACTION_MEMBER_PRICE,
         endpoints=[
             "/health",
             "/api/auth",
@@ -824,6 +1005,11 @@ def root():
             "/api/analytics",
             "/api/settings",
             "/api/license/status",
+            "/api/faction/license",
+            "/api/faction/members",
+            "/api/faction/members/upsert",
+            "/api/faction/members/enable",
+            "/api/faction/members/delete",
             "/api/availability/set",
             "/api/chain-sitter/set",
             "/api/med-deals/add",
@@ -840,6 +1026,11 @@ def root():
             "/api/bounties/delete",
             "/api/notifications",
             "/api/notifications/seen",
+            "/api/admin/faction-payment/confirm",
+            "/api/admin/faction-license/expire",
+            "/api/admin/faction-license/status",
+            "/api/admin/faction-licenses",
+            "/api/admin/faction-dashboard",
             "/api/admin/payment/confirm",
             "/api/admin/license/expire",
             "/api/admin/license/status",
@@ -856,8 +1047,9 @@ def health():
         service=APP_NAME,
         status="healthy",
         now=utc_now(),
-        admin_keys_loaded=sorted(list(ADMIN_KEYS)),
         license_admin_enabled=bool(LICENSE_ADMIN_TOKEN),
+        payment_player=PAYMENT_PLAYER,
+        price_per_enabled_member=FACTION_MEMBER_PRICE,
     )
 
 
@@ -870,9 +1062,7 @@ def static_proxy(path):
 def api_auth():
     try:
         data = request.get_json(force=True, silent=True) or {}
-        admin_key = str(data.get("admin_key", "")).strip().strip('"').strip("'")
         api_key = str(data.get("api_key", "")).strip()
-
         if not api_key:
             return err("Missing Torn API key.")
 
@@ -880,10 +1070,14 @@ def api_auth():
         if not me.get("ok"):
             return err(me.get("error", "Could not verify Torn API key."), 400)
 
-        user_id = str(me["player"]["user_id"])
-        name = me["player"]["name"]
-        faction_id = str(me["player"].get("faction_id") or "")
-        faction_name = me["player"].get("faction_name") or ""
+        player = me.get("player", {}) or {}
+        user_id = str(player.get("user_id") or "").strip()
+        name = str(player.get("name") or "").strip()
+        faction_id = str(player.get("faction_id") or "").strip()
+        faction_name = str(player.get("faction_name") or "").strip()
+
+        if not user_id:
+            return err("Could not determine player id from Torn API.", 400)
 
         upsert_user(
             user_id=user_id,
@@ -893,37 +1087,88 @@ def api_auth():
             faction_name=faction_name,
         )
 
-        ensure_license_row(user_id, admin_key=admin_key)
-        license_status = compute_license_status(user_id)
+        if not faction_id:
+            return err("You must be in a faction to use War Hub.", 403)
 
-        has_trial_started = bool(str(license_status.get("trial_started_at") or "").strip())
-        license_active = bool(license_status.get("active"))
+        live_faction = _get_live_faction_context(api_key, user_id, faction_id, faction_name)
+        if not live_faction.get("ok"):
+            return err(live_faction.get("error", "Could not load faction."), 500)
 
-        if not has_trial_started:
-            if not admin_key:
-                return err(
-                    "Missing admin key for first activation.",
-                    403,
-                    **_payment_details_payload(user_id),
-                    **_access_payload(license_status),
-                )
-            if ADMIN_KEYS and admin_key not in ADMIN_KEYS:
-                return err(
-                    f"Invalid admin key. Server loaded these keys: {sorted(list(ADMIN_KEYS))}",
-                    403,
-                    **_payment_details_payload(user_id),
-                    **_access_payload(license_status),
-                )
-            license_status = start_trial_if_needed(user_id, admin_key=admin_key)
-            license_active = bool(license_status.get("active"))
+        faction_id = str(live_faction.get("faction_id") or faction_id)
+        faction_name = str(live_faction.get("faction_name") or faction_name)
+        is_leader = bool(live_faction.get("is_leader"))
+        my_member = live_faction.get("my_member") or {}
 
-        elif not license_active:
-            clear_license_admin_key(user_id, note="trial_expired")
+        upsert_user(
+            user_id=user_id,
+            name=name,
+            api_key=api_key,
+            faction_id=faction_id,
+            faction_name=faction_name,
+        )
+
+        if is_leader:
+            ensure_faction_license_row(
+                faction_id=faction_id,
+                faction_name=faction_name,
+                leader_user_id=user_id,
+                leader_name=name,
+                leader_api_key=api_key,
+            )
+            start_faction_trial_if_needed(
+                faction_id=faction_id,
+                faction_name=faction_name,
+                leader_user_id=user_id,
+                leader_name=name,
+                leader_api_key=api_key,
+            )
+            upsert_faction_member_access(
+                faction_id=faction_id,
+                faction_name=faction_name,
+                leader_user_id=user_id,
+                leader_name=name,
+                member_user_id=user_id,
+                member_name=name,
+                member_api_key=api_key,
+                enabled=1,
+                position=str(my_member.get("position") or "Leader"),
+            )
+            license_status = compute_faction_license_status(faction_id, viewer_user_id=user_id)
+
+        else:
+            member_row = get_faction_member_access(faction_id, user_id)
+            if not member_row:
+                return _member_block_response(faction_id, faction_name, "member_not_added")
+
+            stored_key = str(member_row.get("member_api_key") or member_row.get("api_key") or "").strip()
+            if stored_key and stored_key != api_key:
+                return _member_block_response(faction_id, faction_name, "member_api_key_mismatch")
+
+            if not _safe_bool(member_row.get("enabled")):
+                return _member_block_response(faction_id, faction_name, "member_not_enabled")
+
+            upsert_faction_member_access(
+                faction_id=faction_id,
+                faction_name=faction_name,
+                leader_user_id=str(member_row.get("leader_user_id") or ""),
+                leader_name=str(member_row.get("leader_name") or ""),
+                member_user_id=user_id,
+                member_name=name,
+                member_api_key=api_key,
+                enabled=1,
+                position=str(my_member.get("position") or member_row.get("position") or ""),
+            )
+            license_status = compute_faction_license_status(faction_id, viewer_user_id=user_id)
+
+        if not bool(license_status.get("active")):
             delete_sessions_for_user(user_id)
-            return _license_block_response(user_id)
+            return _faction_block_response(faction_id, faction_name, license_status)
 
-        if not license_active:
-            return _license_block_response(user_id)
+        if not is_leader:
+            member_row = get_faction_member_access(faction_id, user_id)
+            if not member_row or not _safe_bool(member_row.get("enabled")):
+                delete_sessions_for_user(user_id)
+                return _member_block_response(faction_id, faction_name, "member_not_enabled", license_status)
 
         if get_user_setting(user_id, "refresh_seconds") is None:
             set_user_setting(user_id, "refresh_seconds", str(DEFAULT_REFRESH_SECONDS))
@@ -932,7 +1177,11 @@ def api_auth():
 
         token = create_session(user_id)
         add_notification(user_id, "auth", f"Logged into {APP_NAME} successfully.")
-        add_audit_log(user_id, "login", "auth_success")
+        add_audit_log(
+            user_id,
+            "login",
+            f"auth_success faction={faction_id} leader={1 if is_leader else 0}",
+        )
 
         return ok(
             token=token,
@@ -943,14 +1192,14 @@ def api_auth():
                 "faction_id": faction_id,
                 "faction_name": faction_name,
                 "profile_url": profile_url(user_id),
+                "is_faction_leader": is_leader,
             },
-            license=license_status,
-            payment={
-                "required_player": PAYMENT_PLAYER,
-                "required_amount": PAYMENT_AMOUNT_XANAX,
-                "required_kind": "xanax",
-                "message": f"Send {PAYMENT_AMOUNT_XANAX} Xanax to {PAYMENT_PLAYER} to keep access after the trial.",
+            faction_license=license_status,
+            faction_access={
+                "is_faction_leader": is_leader,
+                "member_enabled": True,
             },
+            payment=_payment_details_payload(faction_id, faction_name, license_status).get("payment"),
             **_access_payload(license_status),
         )
     except Exception as e:
@@ -975,21 +1224,43 @@ def api_logout():
 @require_session
 def api_license_status():
     try:
-        user_id = request.session["user_id"]
-        license_status = compute_license_status(user_id)
+        faction_id = request.current_faction_id
+        faction_name = request.current_faction_name
+        license_status = compute_faction_license_status(faction_id, viewer_user_id=request.current_user["user_id"])
+
         return ok(
             license=license_status,
+            faction_license=license_status,
+            payment=_payment_details_payload(faction_id, faction_name, license_status).get("payment"),
+            payment_history=get_faction_payment_history(faction_id, limit=10),
+            is_faction_leader=bool(request.current_is_leader),
+            member_access=request.current_member_row or {},
             **_access_payload(license_status),
-            payment={
-                "required_player": PAYMENT_PLAYER,
-                "required_amount": PAYMENT_AMOUNT_XANAX,
-                "required_kind": "xanax",
-                "message": f"Send {PAYMENT_AMOUNT_XANAX} Xanax to {PAYMENT_PLAYER} to keep access after the trial.",
-            },
-            payment_history=get_payment_history(user_id, limit=10),
         )
     except Exception as e:
         return err(f"Could not load license status: {e}", 500)
+
+
+@app.get("/api/faction/license")
+@require_session
+def api_faction_license():
+    try:
+        faction_id = request.current_faction_id
+        faction_name = request.current_faction_name
+        license_status = compute_faction_license_status(faction_id, viewer_user_id=request.current_user["user_id"])
+
+        return ok(
+            faction_id=faction_id,
+            faction_name=faction_name,
+            faction_license=license_status,
+            payment=_payment_details_payload(faction_id, faction_name, license_status).get("payment"),
+            payment_history=get_faction_payment_history(faction_id, limit=25),
+            is_faction_leader=bool(request.current_is_leader),
+            member_access=request.current_member_row or {},
+            **_access_payload(license_status),
+        )
+    except Exception as e:
+        return err(f"Could not load faction license: {e}", 500)
 
 
 @app.get("/api/wars")
@@ -1009,8 +1280,8 @@ def api_wars():
             wars=res.get("wars", []),
             source_ok=bool(res.get("source_ok")),
             source_note=res.get("source_note", ""),
-            license=request.license_status,
-            **_access_payload(request.license_status),
+            faction_license=request.current_license_status,
+            **_access_payload(request.current_license_status),
         )
     except Exception as e:
         return err(f"Could not load wars: {e}", 500)
@@ -1025,9 +1296,10 @@ def api_state():
         if not user:
             return err("User not found.", 404)
 
-        api_key = user["api_key"]
-        faction_id = user["faction_id"] or ""
-        faction_name = user["faction_name"] or ""
+        api_key = str(user["api_key"] or "").strip()
+        faction_id = request.current_faction_id
+        faction_name = request.current_faction_name
+        license_status = compute_faction_license_status(faction_id, viewer_user_id=user_id)
 
         faction = {
             "ok": True,
@@ -1111,7 +1383,7 @@ def api_state():
         med_deals = _serialize_med_deals(list_med_deals_for_faction(state_faction_id))
         targets = _serialize_targets(list_targets(user_id))
         notifications = list_notifications(user_id)
-        license_status = compute_license_status(user_id)
+        managed_members = list_faction_members(state_faction_id)
 
         return ok(
             me={
@@ -1122,14 +1394,20 @@ def api_state():
                 "profile_url": profile_url(user["user_id"]),
                 "available": int(user.get("available", 1)),
                 "chain_sitter": int(user.get("chain_sitter", 0)),
+                "is_faction_leader": bool(request.current_is_leader),
             },
+            faction_license=license_status,
             license=license_status,
+            payment=_payment_details_payload(state_faction_id, state_faction_name, license_status).get("payment"),
             **_access_payload(license_status),
-            payment={
-                "required_player": PAYMENT_PLAYER,
-                "required_amount": PAYMENT_AMOUNT_XANAX,
-                "required_kind": "xanax",
-                "message": f"Send {PAYMENT_AMOUNT_XANAX} Xanax to {PAYMENT_PLAYER} to keep access after the trial.",
+            faction_access={
+                "is_faction_leader": bool(request.current_is_leader),
+                "member_access": request.current_member_row or {},
+                "managed_member_count": len(managed_members),
+            },
+            faction_management={
+                "visible": bool(request.current_is_leader),
+                "members": managed_members if request.current_is_leader else [],
             },
             faction={
                 "id": state_faction_id,
@@ -1270,12 +1548,11 @@ def api_state():
 @require_session
 def api_analytics():
     try:
-        user_id = request.session["user_id"]
-        user = get_user(user_id)
+        user = request.current_user
         if not user:
             return err("User not found.", 404)
 
-        api_key = user["api_key"]
+        api_key = str(user.get("api_key") or "").strip()
         faction_id = str(user.get("faction_id") or "")
         faction_name = str(user.get("faction_name") or "")
 
@@ -1305,8 +1582,8 @@ def api_analytics():
                 "eta_to_target_us_text": pace["eta_to_target_us_text"],
                 "snapshots": snapshots,
             },
-            license=request.license_status,
-            **_access_payload(request.license_status),
+            faction_license=request.current_license_status,
+            **_access_payload(request.current_license_status),
         )
     except Exception as e:
         return err(f"Could not load analytics: {e}", 500)
@@ -1316,20 +1593,18 @@ def api_analytics():
 @require_session
 def api_settings_get():
     try:
-        user_id = request.session["user_id"]
+        faction_id = request.current_faction_id
+        faction_name = request.current_faction_name
+        license_status = request.current_license_status
+
         return ok(
             settings={
-                "refresh_seconds": _to_int(get_user_setting(user_id, "refresh_seconds"), DEFAULT_REFRESH_SECONDS),
-                "alerts_enabled": _to_int(get_user_setting(user_id, "alerts_enabled"), 1),
+                "refresh_seconds": _to_int(get_user_setting(request.current_user["user_id"], "refresh_seconds"), DEFAULT_REFRESH_SECONDS),
+                "alerts_enabled": _to_int(get_user_setting(request.current_user["user_id"], "alerts_enabled"), 1),
             },
-            license=request.license_status,
-            **_access_payload(request.license_status),
-            payment={
-                "required_player": PAYMENT_PLAYER,
-                "required_amount": PAYMENT_AMOUNT_XANAX,
-                "required_kind": "xanax",
-                "message": f"Send {PAYMENT_AMOUNT_XANAX} Xanax to {PAYMENT_PLAYER} to keep access after the trial.",
-            },
+            faction_license=license_status,
+            **_access_payload(license_status),
+            payment=_payment_details_payload(faction_id, faction_name, license_status).get("payment"),
         )
     except Exception as e:
         return err(f"Could not load settings: {e}", 500)
@@ -1339,7 +1614,7 @@ def api_settings_get():
 @require_session
 def api_settings_set():
     try:
-        user_id = request.session["user_id"]
+        user_id = request.current_user["user_id"]
         data = request.get_json(force=True, silent=True) or {}
 
         if "refresh_seconds" in data:
@@ -1355,11 +1630,242 @@ def api_settings_set():
         return err(f"Could not update settings: {e}", 500)
 
 
-@app.post("/api/availability/set")
+@app.get("/api/faction/members")
+@require_leader_session
+def api_faction_members_list():
+    try:
+        leader = request.current_user
+        faction_id = request.current_faction_id
+        faction_name = request.current_faction_name
+
+        live_faction = _get_live_faction_context(
+            api_key=str(leader.get("api_key") or "").strip(),
+            user_id=str(leader.get("user_id") or "").strip(),
+            fallback_faction_id=faction_id,
+            fallback_faction_name=faction_name,
+        )
+        if not live_faction.get("ok"):
+            return err(live_faction.get("error", "Could not load faction members."), 500)
+
+        live_members = live_faction.get("members", []) or []
+        stored_members = list_faction_members(faction_id)
+        stored_map = {
+            str(row.get("member_user_id") or row.get("user_id") or ""): row
+            for row in stored_members
+        }
+
+        rows = []
+        enabled_count = 0
+        for m in sorted(live_members, key=lambda x: (str(x.get("name") or "").lower(), str(x.get("user_id") or ""))):
+            uid = str(m.get("user_id") or "")
+            stored = stored_map.get(uid, {})
+            enabled = 1 if stored and _safe_bool(stored.get("enabled")) else 0
+            if enabled:
+                enabled_count += 1
+
+            rows.append(
+                {
+                    "member_user_id": uid,
+                    "user_id": uid,
+                    "name": str(m.get("name") or ""),
+                    "position": str(m.get("position") or ""),
+                    "level": _to_int(m.get("level"), 0),
+                    "enabled": enabled,
+                    "api_key_saved": bool(str(stored.get("member_api_key") or stored.get("api_key") or "").strip()),
+                    "updated_at": stored.get("updated_at", ""),
+                    "added_at": stored.get("created_at", ""),
+                    "profile_url": profile_url(uid),
+                }
+            )
+
+        license_status = compute_faction_license_status(faction_id, viewer_user_id=str(leader.get("user_id") or ""))
+
+        return ok(
+            faction_id=faction_id,
+            faction_name=faction_name,
+            members=rows,
+            enabled_member_count=enabled_count,
+            projected_payment_amount=enabled_count * FACTION_MEMBER_PRICE,
+            price_per_enabled_member=FACTION_MEMBER_PRICE,
+            faction_license=license_status,
+            payment=_payment_details_payload(faction_id, faction_name, license_status).get("payment"),
+            **_access_payload(license_status),
+        )
+    except Exception as e:
+        return err(f"Could not load faction members: {e}", 500)
+
+
+@app.post("/api/faction/members/upsert")
+@require_leader_session
+def api_faction_members_upsert():
+    try:
+        leader = request.current_user
+        faction_id = request.current_faction_id
+        faction_name = request.current_faction_name
+
+        data = request.get_json(force=True, silent=True) or {}
+        member_user_id = str(
+            data.get("member_user_id")
+            or data.get("user_id")
+            or data.get("member_id")
+            or ""
+        ).strip()
+        member_name = str(data.get("member_name") or data.get("name") or "").strip()
+        member_api_key = str(data.get("member_api_key") or data.get("api_key") or "").strip()
+        enabled = 1 if _safe_bool(data.get("enabled", True)) else 0
+
+        if not member_user_id and not member_name:
+            return err("Missing member user_id or member name.")
+
+        live_faction = _get_live_faction_context(
+            api_key=str(leader.get("api_key") or "").strip(),
+            user_id=str(leader.get("user_id") or "").strip(),
+            fallback_faction_id=faction_id,
+            fallback_faction_name=faction_name,
+        )
+        if not live_faction.get("ok"):
+            return err(live_faction.get("error", "Could not load faction members."), 500)
+
+        live_member = _find_live_member_row(
+            live_faction.get("members", []) or [],
+            user_id=member_user_id,
+            name=member_name,
+        )
+        if not live_member:
+            return err("That player is not currently in your faction.", 400)
+
+        member_user_id = str(live_member.get("user_id") or member_user_id).strip()
+        member_name = str(live_member.get("name") or member_name).strip()
+        position = str(live_member.get("position") or "").strip()
+
+        existing = get_faction_member_access(faction_id, member_user_id)
+        if not member_api_key and existing:
+            member_api_key = str(existing.get("member_api_key") or existing.get("api_key") or "").strip()
+
+        if not member_api_key:
+            return err("Missing member API key.", 400)
+
+        upsert_faction_member_access(
+            faction_id=faction_id,
+            faction_name=faction_name,
+            leader_user_id=str(leader.get("user_id") or "").strip(),
+            leader_name=str(leader.get("name") or "").strip(),
+            member_user_id=member_user_id,
+            member_name=member_name,
+            member_api_key=member_api_key,
+            enabled=enabled,
+            position=position,
+        )
+
+        license_status = compute_faction_license_status(faction_id, viewer_user_id=str(leader.get("user_id") or ""))
+
+        add_audit_log(
+            str(leader.get("user_id") or ""),
+            "faction_member_upsert",
+            f"faction={faction_id} member={member_user_id} enabled={enabled}",
+        )
+
+        return ok(
+            message="Faction member access saved.",
+            member={
+                "member_user_id": member_user_id,
+                "name": member_name,
+                "enabled": enabled,
+                "position": position,
+                "profile_url": profile_url(member_user_id),
+            },
+            faction_license=license_status,
+            payment=_payment_details_payload(faction_id, faction_name, license_status).get("payment"),
+            **_access_payload(license_status),
+        )
+    except Exception as e:
+        return err(f"Could not save faction member access: {e}", 500)
+
+
+@app.post("/api/faction/members/enable")
+@require_leader_session
+def api_faction_members_enable():
+    try:
+        leader = request.current_user
+        faction_id = request.current_faction_id
+        faction_name = request.current_faction_name
+
+        data = request.get_json(force=True, silent=True) or {}
+        member_user_id = str(data.get("member_user_id") or data.get("user_id") or "").strip()
+        enabled = 1 if _safe_bool(data.get("enabled", True)) else 0
+
+        if not member_user_id:
+            return err("Missing member_user_id.")
+
+        if member_user_id == str(leader.get("user_id") or "") and not enabled:
+            return err("Leader access cannot be disabled here.", 400)
+
+        set_faction_member_enabled(
+            faction_id=faction_id,
+            member_user_id=member_user_id,
+            enabled=enabled,
+            changed_by_user_id=str(leader.get("user_id") or ""),
+            changed_by_name=str(leader.get("name") or ""),
+        )
+
+        if not enabled:
+            delete_sessions_for_user(member_user_id)
+
+        license_status = compute_faction_license_status(faction_id, viewer_user_id=str(leader.get("user_id") or ""))
+
+        add_audit_log(
+            str(leader.get("user_id") or ""),
+            "faction_member_enable",
+            f"faction={faction_id} member={member_user_id} enabled={enabled}",
+        )
+
+        return ok(
+            message="Faction member access updated.",
+            member_user_id=member_user_id,
+            enabled=enabled,
+            faction_license=license_status,
+            payment=_payment_details_payload(faction_id, faction_name, license_status).get("payment"),
+            **_access_payload(license_status),
+        )
+    except Exception as e:
+        return err(f"Could not update faction member access: {e}", 500)
+
+
+@app.post("/api/faction/members/delete")
+@require_leader_session
+def api_faction_members_delete():
+    try:
+        leader = request.current_user
+        faction_id = request.current_faction_id
+
+        data = request.get_json(force=True, silent=True) or {}
+        member_user_id = str(data.get("member_user_id") or data.get("user_id") or "").strip()
+        if not member_user_id:
+            return err("Missing member_user_id.")
+
+        if member_user_id == str(leader.get("user_id") or ""):
+            return err("Leader access cannot be deleted here.", 400)
+
+        delete_faction_member_access(faction_id=faction_id, member_user_id=member_user_id)
+        delete_sessions_for_user(member_user_id)
+
+        add_audit_log(
+            str(leader.get("user_id") or ""),
+            "faction_member_delete",
+            f"faction={faction_id} member={member_user_id}",
+        )
+
+        return ok(
+            message="Faction member access removed.",
+            member_user_id=member_user_id,
+        )
+    except Exception as e:
+        return err(f"Could not delete faction member access: {e}", 500)
+        @app.post("/api/availability/set")
 @require_session
 def api_availability_set():
     try:
-        user_id = request.session["user_id"]
+        user_id = request.current_user["user_id"]
         data = request.get_json(force=True, silent=True) or {}
         value = 1 if bool(data.get("available")) else 0
         set_availability(user_id, value)
@@ -1372,7 +1878,7 @@ def api_availability_set():
 @require_session
 def api_chain_sitter_set():
     try:
-        user_id = request.session["user_id"]
+        user_id = request.current_user["user_id"]
         data = request.get_json(force=True, silent=True) or {}
         value = 1 if bool(data.get("enabled")) else 0
         set_chain_sitter(user_id, value)
@@ -1385,10 +1891,8 @@ def api_chain_sitter_set():
 @require_session
 def api_med_deals_add():
     try:
-        user_id = request.session["user_id"]
-        user = get_user(user_id)
-        if not user:
-            return err("User not found.", 404)
+        user_id = request.current_user["user_id"]
+        user = request.current_user
 
         data = request.get_json(force=True, silent=True) or {}
 
@@ -1437,11 +1941,7 @@ def api_med_deals_add():
 @require_session
 def api_med_deals_delete():
     try:
-        user_id = request.session["user_id"]
-        user = get_user(user_id)
-        if not user:
-            return err("User not found.", 404)
-
+        user = request.current_user
         data = request.get_json(force=True, silent=True) or {}
         deal_id = int(data.get("id") or 0)
         if not deal_id:
@@ -1460,7 +1960,7 @@ def api_med_deals_delete():
 @require_session
 def api_targets_add():
     try:
-        user_id = request.session["user_id"]
+        user_id = request.current_user["user_id"]
         data = request.get_json(force=True, silent=True) or {}
 
         target_id = str(data.get("target_id", "")).strip()
@@ -1480,7 +1980,7 @@ def api_targets_add():
 @require_session
 def api_targets_delete():
     try:
-        user_id = request.session["user_id"]
+        user_id = request.current_user["user_id"]
         data = request.get_json(force=True, silent=True) or {}
         target_row_id = int(data.get("id") or 0)
         if not target_row_id:
@@ -1495,10 +1995,8 @@ def api_targets_delete():
 @require_session
 def api_targets_assign():
     try:
-        user_id = request.session["user_id"]
-        user = get_user(user_id)
-        if not user:
-            return err("User not found.", 404)
+        user_id = request.current_user["user_id"]
+        user = request.current_user
 
         data = request.get_json(force=True, silent=True) or {}
         war_id = str(data.get("war_id", "")).strip()
@@ -1551,10 +2049,8 @@ def api_targets_unassign():
 @require_session
 def api_targets_note():
     try:
-        user_id = request.session["user_id"]
-        user = get_user(user_id)
-        if not user:
-            return err("User not found.", 404)
+        user_id = request.current_user["user_id"]
+        user = request.current_user
 
         data = request.get_json(force=True, silent=True) or {}
         war_id = str(data.get("war_id", "")).strip()
@@ -1599,10 +2095,8 @@ def api_targets_note_delete():
 @require_session
 def api_war_terms_set():
     try:
-        user_id = request.session["user_id"]
-        user = get_user(user_id)
-        if not user:
-            return err("User not found.", 404)
+        user_id = request.current_user["user_id"]
+        user = request.current_user
 
         data = request.get_json(force=True, silent=True) or {}
         war_id = str(data.get("war_id", "")).strip()
@@ -1646,7 +2140,7 @@ def api_war_terms_delete():
 @require_session
 def api_bounties_add():
     try:
-        user_id = request.session["user_id"]
+        user_id = request.current_user["user_id"]
         data = request.get_json(force=True, silent=True) or {}
 
         target_id = str(data.get("target_id", "")).strip()
@@ -1668,7 +2162,7 @@ def api_bounties_add():
 @require_session
 def api_bounties_delete():
     try:
-        user_id = request.session["user_id"]
+        user_id = request.current_user["user_id"]
         data = request.get_json(force=True, silent=True) or {}
         bounty_id = int(data.get("id") or 0)
         if not bounty_id:
@@ -1683,11 +2177,11 @@ def api_bounties_delete():
 @require_session
 def api_notifications():
     try:
-        user_id = request.session["user_id"]
+        user_id = request.current_user["user_id"]
         return ok(
             notifications=list_notifications(user_id),
-            license=request.license_status,
-            **_access_payload(request.license_status),
+            faction_license=request.current_license_status,
+            **_access_payload(request.current_license_status),
         )
     except Exception as e:
         return err(f"Could not load notifications: {e}", 500)
@@ -1697,12 +2191,145 @@ def api_notifications():
 @require_session
 def api_notifications_seen():
     try:
-        user_id = request.session["user_id"]
+        user_id = request.current_user["user_id"]
         mark_notifications_seen(user_id)
         return ok(message="Notifications marked seen.")
     except Exception as e:
         return err(f"Could not update notifications: {e}", 500)
 
+
+# ----------------------------
+# Owner-only faction admin
+# ----------------------------
+
+@app.post("/api/admin/faction-payment/confirm")
+def api_admin_faction_payment_confirm():
+    try:
+        allowed, response = _require_license_admin()
+        if not allowed:
+            return response
+
+        data = request.get_json(force=True, silent=True) or {}
+        faction_id = str(data.get("faction_id", "")).strip()
+        if not faction_id:
+            return err("Missing faction_id.")
+
+        amount = _to_int(data.get("amount"), 0)
+        payment_kind = str(data.get("payment_kind", "cash")).strip() or "cash"
+        note = str(data.get("note", "")).strip()
+        received_by = str(data.get("received_by", PAYMENT_PLAYER)).strip() or PAYMENT_PLAYER
+        extend_days = _to_int(data.get("extend_days"), 30)
+
+        status = renew_faction_after_payment(
+            faction_id=faction_id,
+            amount=amount,
+            payment_kind=payment_kind,
+            note=note,
+            received_by=received_by,
+            extend_days=max(1, extend_days),
+        )
+
+        leader_user_id = str(status.get("leader_user_id") or "").strip()
+        if leader_user_id:
+            add_notification(leader_user_id, "payment", f"Faction payment confirmed. Access renewed by {received_by}.")
+
+        return ok(
+            message="Faction payment confirmed and license renewed.",
+            faction_license=status,
+            **_access_payload(status),
+            payment_history=get_faction_payment_history(faction_id, limit=25),
+        )
+    except Exception as e:
+        return err(f"Could not confirm faction payment: {e}", 500)
+
+
+@app.post("/api/admin/faction-license/expire")
+def api_admin_faction_license_expire():
+    try:
+        allowed, response = _require_license_admin()
+        if not allowed:
+            return response
+
+        data = request.get_json(force=True, silent=True) or {}
+        faction_id = str(data.get("faction_id", "")).strip()
+        if not faction_id:
+            return err("Missing faction_id.")
+
+        status = force_expire_faction_license(faction_id=faction_id)
+        delete_sessions_for_user(str(status.get("leader_user_id") or "").strip())
+
+        for row in list_faction_members(faction_id):
+            member_user_id = str(row.get("member_user_id") or row.get("user_id") or "").strip()
+            if member_user_id:
+                delete_sessions_for_user(member_user_id)
+
+        leader_user_id = str(status.get("leader_user_id") or "").strip()
+        if leader_user_id:
+            add_notification(leader_user_id, "license", "Your faction access has expired. Payment is required to continue.")
+
+        return ok(
+            message="Faction license expired.",
+            faction_license=status,
+            **_access_payload(status),
+        )
+    except Exception as e:
+        return err(f"Could not expire faction license: {e}", 500)
+
+
+@app.get("/api/admin/faction-license/status")
+def api_admin_faction_license_status():
+    try:
+        allowed, response = _require_license_admin()
+        if not allowed:
+            return response
+
+        faction_id = str(request.args.get("faction_id", "")).strip()
+        if not faction_id:
+            return err("Missing faction_id.")
+
+        license_status = compute_faction_license_status(faction_id)
+        faction_name = str(license_status.get("faction_name") or "")
+
+        return ok(
+            faction_license=license_status,
+            **_access_payload(license_status),
+            payment_history=get_faction_payment_history(faction_id, limit=25),
+            payment=_payment_details_payload(faction_id, faction_name, license_status).get("payment"),
+            members=list_faction_members(faction_id),
+        )
+    except Exception as e:
+        return err(f"Could not load admin faction license status: {e}", 500)
+
+
+@app.get("/api/admin/faction-licenses")
+def api_admin_faction_licenses():
+    try:
+        allowed, response = _require_license_admin()
+        if not allowed:
+            return response
+        limit = _to_int(request.args.get("limit"), 250)
+        return ok(faction_licenses=list_all_faction_licenses(limit=max(1, min(limit, 1000))))
+    except Exception as e:
+        return err(f"Could not load faction licenses: {e}", 500)
+
+
+@app.get("/api/admin/faction-dashboard")
+def api_admin_faction_dashboard():
+    try:
+        allowed, response = _require_license_admin()
+        if not allowed:
+            return response
+        return ok(
+            dashboard=get_faction_admin_dashboard_summary(),
+            faction_licenses=list_all_faction_licenses(limit=100),
+        )
+    except Exception as e:
+        return err(f"Could not load faction admin dashboard: {e}", 500)
+
+
+# ----------------------------
+# Backward-compatible admin aliases
+# ----------------------------
 
 @app.post("/api/admin/payment/confirm")
 def api_admin_payment_confirm():
@@ -1712,18 +2339,24 @@ def api_admin_payment_confirm():
             return response
 
         data = request.get_json(force=True, silent=True) or {}
-        user_id = str(data.get("user_id", "")).strip()
-        amount = _to_int(data.get("amount"), PAYMENT_AMOUNT_XANAX)
-        payment_kind = str(data.get("payment_kind", "xanax")).strip() or "xanax"
+        faction_id = str(data.get("faction_id", "")).strip()
+        if not faction_id:
+            user_id = str(data.get("user_id", "")).strip()
+            if user_id:
+                user = get_user(user_id)
+                faction_id = str((user or {}).get("faction_id") or "").strip()
+
+        if not faction_id:
+            return err("Missing faction_id.")
+
+        amount = _to_int(data.get("amount"), 0)
+        payment_kind = str(data.get("payment_kind", "cash")).strip() or "cash"
         note = str(data.get("note", "")).strip()
         received_by = str(data.get("received_by", PAYMENT_PLAYER)).strip() or PAYMENT_PLAYER
-        extend_days = _to_int(data.get("extend_days"), 45)
+        extend_days = _to_int(data.get("extend_days"), 30)
 
-        if not user_id:
-            return err("Missing user_id.")
-
-        status = renew_after_payment(
-            user_id=user_id,
+        status = renew_faction_after_payment(
+            faction_id=faction_id,
             amount=amount,
             payment_kind=payment_kind,
             note=note,
@@ -1731,12 +2364,12 @@ def api_admin_payment_confirm():
             extend_days=max(1, extend_days),
         )
 
-        add_notification(user_id, "payment", f"Payment confirmed. Access renewed by {received_by}.")
         return ok(
-            message="Payment confirmed and license renewed.",
+            message="Faction payment confirmed and license renewed.",
             license=status,
+            faction_license=status,
             **_access_payload(status),
-            payment_history=get_payment_history(user_id, limit=10),
+            payment_history=get_faction_payment_history(faction_id, limit=25),
         )
     except Exception as e:
         return err(f"Could not confirm payment: {e}", 500)
@@ -1750,16 +2383,27 @@ def api_admin_license_expire():
             return response
 
         data = request.get_json(force=True, silent=True) or {}
-        user_id = str(data.get("user_id", "")).strip()
-        if not user_id:
-            return err("Missing user_id.")
+        faction_id = str(data.get("faction_id", "")).strip()
+        if not faction_id:
+            user_id = str(data.get("user_id", "")).strip()
+            if user_id:
+                user = get_user(user_id)
+                faction_id = str((user or {}).get("faction_id") or "").strip()
 
-        status = force_expire_license(user_id, clear_key=True)
-        delete_sessions_for_user(user_id)
-        add_notification(user_id, "license", "Your access has expired. Payment is required to continue.")
+        if not faction_id:
+            return err("Missing faction_id.")
+
+        status = force_expire_faction_license(faction_id=faction_id)
+
+        for row in list_faction_members(faction_id):
+            member_user_id = str(row.get("member_user_id") or row.get("user_id") or "").strip()
+            if member_user_id:
+                delete_sessions_for_user(member_user_id)
+
         return ok(
-            message="License expired.",
+            message="Faction license expired.",
             license=status,
+            faction_license=status,
             **_access_payload(status),
         )
     except Exception as e:
@@ -1773,21 +2417,25 @@ def api_admin_license_status():
         if not allowed:
             return response
 
-        user_id = str(request.args.get("user_id", "")).strip()
-        if not user_id:
-            return err("Missing user_id.")
+        faction_id = str(request.args.get("faction_id", "")).strip()
+        if not faction_id:
+            user_id = str(request.args.get("user_id", "")).strip()
+            if user_id:
+                user = get_user(user_id)
+                faction_id = str((user or {}).get("faction_id") or "").strip()
 
-        license_status = compute_license_status(user_id)
+        if not faction_id:
+            return err("Missing faction_id.")
+
+        license_status = compute_faction_license_status(faction_id)
+        faction_name = str(license_status.get("faction_name") or "")
+
         return ok(
             license=license_status,
+            faction_license=license_status,
             **_access_payload(license_status),
-            payment_history=get_payment_history(user_id, limit=25),
-            payment={
-                "required_player": PAYMENT_PLAYER,
-                "required_amount": PAYMENT_AMOUNT_XANAX,
-                "required_kind": "xanax",
-                "message": f"Send {PAYMENT_AMOUNT_XANAX} Xanax to {PAYMENT_PLAYER} to keep access after the trial.",
-            },
+            payment_history=get_faction_payment_history(faction_id, limit=25),
+            payment=_payment_details_payload(faction_id, faction_name, license_status).get("payment"),
         )
     except Exception as e:
         return err(f"Could not load admin license status: {e}", 500)
@@ -1800,7 +2448,7 @@ def api_admin_licenses():
         if not allowed:
             return response
         limit = _to_int(request.args.get("limit"), 250)
-        return ok(licenses=list_all_licenses(limit=max(1, min(limit, 1000))))
+        return ok(licenses=list_all_faction_licenses(limit=max(1, min(limit, 1000))))
     except Exception as e:
         return err(f"Could not load licenses: {e}", 500)
 
@@ -1812,8 +2460,8 @@ def api_admin_dashboard():
         if not allowed:
             return response
         return ok(
-            dashboard=get_admin_dashboard_summary(),
-            licenses=list_all_licenses(limit=100),
+            dashboard=get_faction_admin_dashboard_summary(),
+            licenses=list_all_faction_licenses(limit=100),
         )
     except Exception as e:
         return err(f"Could not load admin dashboard: {e}", 500)
