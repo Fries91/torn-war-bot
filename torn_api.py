@@ -1,3 +1,4 @@
+import json
 import os
 import re
 import time
@@ -6,20 +7,58 @@ from typing import Any, Dict, List, Tuple
 import requests
 
 API_BASE = os.getenv("TORN_API_BASE", "https://api.torn.com").rstrip("/")
+TORN_TIMEOUT = int(os.getenv("TORN_TIMEOUT", "30"))
+CACHE_TTL_USER_PROFILE = int(os.getenv("CACHE_TTL_USER_PROFILE", "30"))
+CACHE_TTL_FACTION_BASIC = int(os.getenv("CACHE_TTL_FACTION_BASIC", "20"))
+CACHE_TTL_FACTION_WARS = int(os.getenv("CACHE_TTL_FACTION_WARS", "15"))
+
+try:
+    from db import cache_get, cache_set
+except Exception:
+    def cache_get(_cache_key: str):
+        return None
+
+    def cache_set(_cache_key: str, _payload_text: str, _ttl_seconds: int):
+        return None
 
 
-def _safe_get(url: str, params: Dict[str, Any]) -> Dict[str, Any]:
+def _cache_key(prefix: str, params: Dict[str, Any]) -> str:
+    ordered = "&".join(f"{k}={params[k]}" for k in sorted(params.keys()))
+    return f"{prefix}:{ordered}"
+
+
+def _safe_get(url: str, params: Dict[str, Any], cache_seconds: int = 0, cache_prefix: str = "") -> Dict[str, Any]:
     try:
-        r = requests.get(url, params=params, timeout=30)
+        cache_key = ""
+        if cache_seconds > 0 and cache_prefix:
+            safe_params = {k: v for k, v in params.items() if k != "key"}
+            cache_key = _cache_key(cache_prefix, safe_params)
+            cached = cache_get(cache_key)
+            if cached:
+                try:
+                    data = json.loads(cached)
+                    return {"ok": True, "data": data, "cached": True}
+                except Exception:
+                    pass
+
+        r = requests.get(url, params=params, timeout=TORN_TIMEOUT)
         r.raise_for_status()
         data = r.json()
+
         if isinstance(data, dict) and data.get("error"):
             return {
                 "ok": False,
                 "error": data["error"].get("error", "Torn API error"),
                 "data": data,
             }
-        return {"ok": True, "data": data}
+
+        if cache_seconds > 0 and cache_prefix and cache_key:
+            try:
+                cache_set(cache_key, json.dumps(data), cache_seconds)
+            except Exception:
+                pass
+
+        return {"ok": True, "data": data, "cached": False}
     except Exception as e:
         return {"ok": False, "error": str(e), "data": {}}
 
@@ -90,14 +129,15 @@ def _extract_hospital_until_ts(member: Dict[str, Any], fallback_seconds: int = 0
             status.get("time"),
         ])
 
+    now = int(time.time())
     for value in candidates:
         if isinstance(value, (int, float)) and int(value) > 0:
             ts = int(value)
-            if ts > int(time.time()) - 3600:
+            if ts > now - 3600:
                 return ts
 
     if fallback_seconds > 0:
-        return int(time.time()) + int(fallback_seconds)
+        return now + int(fallback_seconds)
 
     return 0
 
@@ -196,6 +236,8 @@ def me_basic(api_key: str) -> Dict[str, Any]:
             "selections": "profile",
             "key": api_key,
         },
+        cache_seconds=CACHE_TTL_USER_PROFILE,
+        cache_prefix="user_profile",
     )
     if not res["ok"]:
         return {"ok": False, "error": res.get("error", "Could not load user profile.")}
@@ -224,6 +266,8 @@ def faction_basic(api_key: str, faction_id: str = "") -> Dict[str, Any]:
                 "ID": faction_id,
                 "key": api_key,
             },
+            cache_seconds=CACHE_TTL_FACTION_BASIC,
+            cache_prefix="faction_basic",
         )
         if not res["ok"]:
             res = _safe_get(
@@ -233,6 +277,8 @@ def faction_basic(api_key: str, faction_id: str = "") -> Dict[str, Any]:
                     "id": faction_id,
                     "key": api_key,
                 },
+                cache_seconds=CACHE_TTL_FACTION_BASIC,
+                cache_prefix="faction_basic",
             )
         if not res["ok"]:
             return {"ok": False, "members": [], "error": res.get("error", "Could not load faction.")}
@@ -335,6 +381,8 @@ def faction_wars(api_key: str) -> Dict[str, Any]:
                 "selections": selection,
                 "key": api_key,
             },
+            cache_seconds=CACHE_TTL_FACTION_WARS,
+            cache_prefix=f"faction_{selection}",
         )
         if not res["ok"]:
             last_note = res.get("error", "Unknown Torn API error")
