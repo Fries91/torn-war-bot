@@ -7,6 +7,8 @@ from typing import Any, Dict, List, Optional
 DB_PATH = os.getenv("DB_PATH", "war_hub.db")
 TRIAL_DAYS = int(os.getenv("TRIAL_DAYS", "45"))
 DEFAULT_PAID_DAYS = int(os.getenv("DEFAULT_PAID_DAYS", "45"))
+PAYMENT_PLAYER = os.getenv("PAYMENT_PLAYER", "Fries91")
+PAYMENT_AMOUNT_XANAX = int(os.getenv("PAYMENT_AMOUNT_XANAX", "50"))
 
 
 def _utc_now_dt() -> datetime:
@@ -60,6 +62,16 @@ def _parse_iso(value: str) -> Optional[datetime]:
 
 def _future_iso(days: int) -> str:
     return (_utc_now_dt() + timedelta(days=int(days))).isoformat()
+
+
+def _days_left_until(dt: Optional[datetime]) -> Optional[int]:
+    if not dt:
+        return None
+    try:
+        delta = dt - _utc_now_dt()
+        return int(delta.total_seconds() // 86400)
+    except Exception:
+        return None
 
 
 def init_db():
@@ -1116,7 +1128,7 @@ def mark_payment_received(
     amount: int = 50,
     payment_kind: str = "xanax",
     note: str = "",
-    received_by: str = "Fries91",
+    received_by: str = PAYMENT_PLAYER,
     extend_days: int = DEFAULT_PAID_DAYS,
 ) -> Dict[str, Any]:
     ensure_license_row(user_id)
@@ -1147,7 +1159,7 @@ def mark_payment_received(
         payment_kind or "xanax",
         int(amount or 0),
         note or "",
-        received_by or "Fries91",
+        received_by or PAYMENT_PLAYER,
         now,
         now,
     ))
@@ -1226,26 +1238,63 @@ def compute_license_status(user_id: str) -> Dict[str, Any]:
     paid_until_at = str(row.get("paid_until_at") or "")
     admin_key = str(row.get("admin_key") or "")
     admin_key_active = int(row.get("admin_key_active") or 0)
+    raw_payment_required = int(row.get("payment_required") or 0)
 
     trial_expires_dt = _parse_iso(trial_expires_at)
     paid_until_dt = _parse_iso(paid_until_at)
 
+    trial_active = False
+    trial_expired = False
+    paid_active = False
     active = False
     payment_required = False
     block_reason = ""
     status = "inactive"
+    expires_at = ""
+    days_left: Optional[int] = None
+    message = ""
 
     if paid_until_dt and paid_until_dt > now_dt:
+        paid_active = True
         active = True
         status = "paid"
+        expires_at = paid_until_at
+        days_left = _days_left_until(paid_until_dt)
+        message = "Paid access active."
     elif trial_expires_dt and now_dt < trial_expires_dt:
+        trial_active = True
         active = True
         status = "trial"
+        expires_at = trial_expires_at
+        days_left = _days_left_until(trial_expires_dt)
+        message = "Trial active."
     elif trial_expires_dt and now_dt >= trial_expires_dt:
+        trial_expired = True
         active = False
         payment_required = True
         status = "expired"
+        expires_at = trial_expires_at
+        days_left = _days_left_until(trial_expires_dt)
         block_reason = "trial_expired"
+        message = f"Trial expired. Send {PAYMENT_AMOUNT_XANAX} Xanax to {PAYMENT_PLAYER} to continue access."
+    else:
+        active = False
+        status = "inactive"
+        payment_required = False
+        message = "Trial has not started yet."
+
+    if raw_payment_required:
+        active = False
+        payment_required = True
+        if status != "paid":
+            status = "expired" if trial_started_at else "inactive"
+        if trial_started_at and not trial_active and not paid_active:
+            trial_expired = True
+        if not block_reason and trial_started_at:
+            block_reason = "trial_expired"
+        elif not block_reason:
+            block_reason = "payment_required"
+        message = f"Trial expired. Send {PAYMENT_AMOUNT_XANAX} Xanax to {PAYMENT_PLAYER} to continue access."
 
     if status == "expired" and (admin_key or admin_key_active):
         clear_license_admin_key(user_id, note="trial_expired")
@@ -1259,9 +1308,16 @@ def compute_license_status(user_id: str) -> Dict[str, Any]:
         "status": status,
         "trial_started_at": trial_started_at,
         "trial_expires_at": trial_expires_at,
+        "expires_at": expires_at,
         "paid_until_at": paid_until_at,
+        "trial_active": trial_active,
+        "trial_expired": trial_expired,
+        "paid_active": paid_active,
         "payment_required": payment_required,
+        "blocked": (not active) or payment_required or trial_expired,
+        "days_left": days_left,
         "block_reason": block_reason,
+        "message": message,
         "admin_key_present": bool(admin_key),
         "admin_key_active": bool(admin_key_active),
         "last_payment_at": str(row.get("last_payment_at") or ""),
@@ -1277,7 +1333,7 @@ def renew_after_payment(
     amount: int = 50,
     payment_kind: str = "xanax",
     note: str = "",
-    received_by: str = "Fries91",
+    received_by: str = PAYMENT_PLAYER,
     extend_days: int = DEFAULT_PAID_DAYS,
 ) -> Dict[str, Any]:
     return mark_payment_received(
