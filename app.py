@@ -137,13 +137,69 @@ def _payment_details_payload(user_id: str = "") -> Dict[str, Any]:
     }
 
 
+def _access_payload(license_status: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    ls = license_status or {}
+
+    trial_expires_at = (
+        ls.get("trial_expires_at")
+        or ls.get("expires_at")
+        or ""
+    )
+
+    trial_active = bool(ls.get("trial_active"))
+    trial_expired = bool(ls.get("trial_expired"))
+    payment_required = bool(ls.get("payment_required"))
+    blocked = (not bool(ls.get("active", False))) or payment_required or trial_expired
+
+    days_left_raw = ls.get("days_left")
+    try:
+        days_left = int(days_left_raw) if days_left_raw is not None else None
+    except Exception:
+        days_left = None
+
+    message = (
+        ls.get("message")
+        or ls.get("block_reason")
+        or f"Send {PAYMENT_AMOUNT_XANAX} Xanax to {PAYMENT_PLAYER} to continue access."
+    )
+
+    return {
+        "access": {
+            "active": not blocked,
+            "trial_active": trial_active,
+            "trial_expired": trial_expired,
+            "trial_expires_at": trial_expires_at,
+            "payment_required": payment_required,
+            "blocked": blocked,
+            "days_left": days_left,
+            "message": message,
+        },
+        "trial_active": trial_active,
+        "trial_expired": trial_expired,
+        "trial_expires_at": trial_expires_at,
+        "payment_required": payment_required,
+        "blocked": blocked,
+        "days_left": days_left,
+    }
+
+
 def _license_block_response(user_id: str, reason: str = ""):
     payload = _payment_details_payload(user_id)
-    block_reason = reason or str((payload.get("license") or {}).get("block_reason") or "license_inactive")
+    license_status = payload.get("license") or {}
+    block_reason = reason or str(license_status.get("block_reason") or "license_inactive")
+
+    merged_access = _access_payload({
+        **license_status,
+        "payment_required": True if not license_status.get("active") else bool(license_status.get("payment_required")),
+        "trial_expired": bool(license_status.get("trial_expired")) or not bool(license_status.get("active")),
+        "message": f"Trial expired. Send {PAYMENT_AMOUNT_XANAX} Xanax to {PAYMENT_PLAYER} to continue access.",
+    })
+
     return err(
         f"Access blocked: {block_reason}. Send {PAYMENT_AMOUNT_XANAX} Xanax to {PAYMENT_PLAYER} to continue.",
         403,
         **payload,
+        **merged_access,
     )
 
 
@@ -807,12 +863,13 @@ def api_auth():
 
         if not has_trial_started:
             if not admin_key:
-                return err("Missing admin key for first activation.", 403, **_payment_details_payload(user_id))
+                return err("Missing admin key for first activation.", 403, **_payment_details_payload(user_id), **_access_payload(license_status))
             if ADMIN_KEYS and admin_key not in ADMIN_KEYS:
                 return err(
                     f"Invalid admin key. Server loaded these keys: {sorted(list(ADMIN_KEYS))}",
                     403,
                     **_payment_details_payload(user_id),
+                    **_access_payload(license_status),
                 )
             license_status = start_trial_if_needed(user_id, admin_key=admin_key)
             license_active = bool(license_status.get("active"))
@@ -848,7 +905,9 @@ def api_auth():
                 "required_player": PAYMENT_PLAYER,
                 "required_amount": PAYMENT_AMOUNT_XANAX,
                 "required_kind": "xanax",
+                "message": f"Send {PAYMENT_AMOUNT_XANAX} Xanax to {PAYMENT_PLAYER} to keep access after the trial.",
             },
+            **_access_payload(license_status),
         )
     except Exception as e:
         return err(f"Auth failed: {e}", 500)
@@ -871,12 +930,15 @@ def api_logout():
 def api_license_status():
     try:
         user_id = request.session["user_id"]
+        license_status = compute_license_status(user_id)
         return ok(
-            license=compute_license_status(user_id),
+            license=license_status,
+            **_access_payload(license_status),
             payment={
                 "required_player": PAYMENT_PLAYER,
                 "required_amount": PAYMENT_AMOUNT_XANAX,
                 "required_kind": "xanax",
+                "message": f"Send {PAYMENT_AMOUNT_XANAX} Xanax to {PAYMENT_PLAYER} to keep access after the trial.",
             },
             payment_history=get_payment_history(user_id, limit=10),
         )
@@ -902,6 +964,7 @@ def api_wars():
             source_ok=bool(res.get("source_ok")),
             source_note=res.get("source_note", ""),
             license=request.license_status,
+            **_access_payload(request.license_status),
         )
     except Exception as e:
         return err(f"Could not load wars: {e}", 500)
@@ -1015,6 +1078,7 @@ def api_state():
                 "chain_sitter": int(user.get("chain_sitter", 0)),
             },
             license=license_status,
+            **_access_payload(license_status),
             payment={
                 "required_player": PAYMENT_PLAYER,
                 "required_amount": PAYMENT_AMOUNT_XANAX,
@@ -1196,6 +1260,7 @@ def api_analytics():
                 "snapshots": snapshots,
             },
             license=request.license_status,
+            **_access_payload(request.license_status),
         )
     except Exception as e:
         return err(f"Could not load analytics: {e}", 500)
@@ -1212,10 +1277,12 @@ def api_settings_get():
                 "alerts_enabled": _to_int(get_user_setting(user_id, "alerts_enabled"), 1),
             },
             license=request.license_status,
+            **_access_payload(request.license_status),
             payment={
                 "required_player": PAYMENT_PLAYER,
                 "required_amount": PAYMENT_AMOUNT_XANAX,
                 "required_kind": "xanax",
+                "message": f"Send {PAYMENT_AMOUNT_XANAX} Xanax to {PAYMENT_PLAYER} to keep access after the trial.",
             },
         )
     except Exception as e:
@@ -1571,7 +1638,11 @@ def api_bounties_delete():
 def api_notifications():
     try:
         user_id = request.session["user_id"]
-        return ok(notifications=list_notifications(user_id), license=request.license_status)
+        return ok(
+            notifications=list_notifications(user_id),
+            license=request.license_status,
+            **_access_payload(request.license_status),
+        )
     except Exception as e:
         return err(f"Could not load notifications: {e}", 500)
 
@@ -1618,6 +1689,7 @@ def api_admin_payment_confirm():
         return ok(
             message="Payment confirmed and license renewed.",
             license=status,
+            **_access_payload(status),
             payment_history=get_payment_history(user_id, limit=10),
         )
     except Exception as e:
@@ -1639,7 +1711,11 @@ def api_admin_license_expire():
         status = force_expire_license(user_id, clear_key=True)
         delete_sessions_for_user(user_id)
         add_notification(user_id, "license", "Your access has expired. Payment is required to continue.")
-        return ok(message="License expired.", license=status)
+        return ok(
+            message="License expired.",
+            license=status,
+            **_access_payload(status),
+        )
     except Exception as e:
         return err(f"Could not expire license: {e}", 500)
 
@@ -1655,13 +1731,16 @@ def api_admin_license_status():
         if not user_id:
             return err("Missing user_id.")
 
+        license_status = compute_license_status(user_id)
         return ok(
-            license=compute_license_status(user_id),
+            license=license_status,
+            **_access_payload(license_status),
             payment_history=get_payment_history(user_id, limit=25),
             payment={
                 "required_player": PAYMENT_PLAYER,
                 "required_amount": PAYMENT_AMOUNT_XANAX,
                 "required_kind": "xanax",
+                "message": f"Send {PAYMENT_AMOUNT_XANAX} Xanax to {PAYMENT_PLAYER} to keep access after the trial.",
             },
         )
     except Exception as e:
