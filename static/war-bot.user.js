@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         War Hub ⚔️
 // @namespace    fries91-war-hub
-// @version      2.6.0
-// @description  War Hub by Fries91. Trial/payment aware overlay with draggable icon, draggable overlay, PDA friendly, shared war tools, and payment lock handling.
+// @version      2.7.0
+// @description  War Hub by Fries91. Faction-license aware overlay with draggable icon, draggable overlay, PDA friendly, shared war tools, faction member management, and payment lock handling.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
 // @downloadURL  https://torn-war-bot.onrender.com/static/war-bot.user.js
@@ -19,24 +19,26 @@
 (function () {
   "use strict";
 
-  if (window.__WAR_HUB_V260__) return;
-  window.__WAR_HUB_V260__ = true;
+  if (window.__WAR_HUB_V270__) return;
+  window.__WAR_HUB_V270__ = true;
 
   const BASE_URL = "https://torn-war-bot.onrender.com";
 
-  const K_API_KEY = "warhub_api_key_v2";
-  const K_ADMIN_KEY = "warhub_admin_key_v2";
-  const K_SESSION = "warhub_session_v2";
-  const K_OPEN = "warhub_open_v2";
-  const K_TAB = "warhub_tab_v2";
-  const K_SHIELD_POS = "warhub_shield_pos_v2";
-  const K_OVERLAY_POS = "warhub_overlay_pos_v2";
-  const K_REFRESH = "warhub_refresh_ms_v2";
-  const K_NOTES = "warhub_notes_v2";
-  const K_LOCAL_NOTIFICATIONS = "warhub_local_notifications_v2";
-  const K_ACCESS_CACHE = "warhub_access_cache_v2";
+  const K_API_KEY = "warhub_api_key_v3";
+  const K_ADMIN_KEY = "warhub_admin_key_v3";
+  const K_SESSION = "warhub_session_v3";
+  const K_OPEN = "warhub_open_v3";
+  const K_TAB = "warhub_tab_v3";
+  const K_SHIELD_POS = "warhub_shield_pos_v3";
+  const K_OVERLAY_POS = "warhub_overlay_pos_v3";
+  const K_REFRESH = "warhub_refresh_ms_v3";
+  const K_NOTES = "warhub_notes_v3";
+  const K_LOCAL_NOTIFICATIONS = "warhub_local_notifications_v3";
+  const K_ACCESS_CACHE = "warhub_access_cache_v3";
+  const K_OWNER_TOKEN = "warhub_owner_token_v3";
 
-  const PAYMENT_TEXT = "Send 50 Xanax to Fries91";
+  const PAYMENT_PLAYER = "Fries91";
+  const PRICE_PER_MEMBER = 2500000;
 
   const TAB_ORDER = [
     ["war", "War"],
@@ -51,6 +53,8 @@
     ["notes", "Notes"],
     ["analytics", "Analytics"],
     ["notifications", "Alerts"],
+    ["faction", "Faction"],
+    ["owner", "Owner"],
     ["settings", "Settings"],
   ];
 
@@ -124,9 +128,9 @@
       z-index: 2147483646 !important;
       right: 12px !important;
       top: 170px !important;
-      width: min(96vw, 500px) !important;
-      height: min(86vh, 860px) !important;
-      max-height: 86vh !important;
+      width: min(96vw, 520px) !important;
+      height: min(88vh, 900px) !important;
+      max-height: 88vh !important;
       min-height: 420px !important;
       overflow: hidden !important;
       border-radius: 14px !important;
@@ -245,6 +249,7 @@
       line-height: 1.1 !important;
       opacity: 1 !important;
       visibility: visible !important;
+      gap: 6px !important;
     }
     .warhub-tab.active {
       background: linear-gradient(180deg, #d23333, #831515) !important;
@@ -504,6 +509,9 @@
     .warhub-pill.idle { background: rgba(197,141,46,.22) !important; color: #ffe3a5 !important; }
     .warhub-pill.offline { background: rgba(113,113,113,.20) !important; color: #dadada !important; }
     .warhub-pill.hosp { background: rgba(181,62,62,.24) !important; color: #ffd0d0 !important; }
+    .warhub-pill.leader { background: rgba(66,110,185,.24) !important; color: #d3e3ff !important; }
+    .warhub-pill.enabled { background: rgba(35,140,82,.22) !important; color: #b7ffd5 !important; }
+    .warhub-pill.disabled { background: rgba(145,37,37,.24) !important; color: #ffd0d0 !important; }
 
     .warhub-divider {
       height: 1px !important;
@@ -571,6 +579,11 @@
     return Number.isFinite(n) ? n.toLocaleString() : "—";
   }
 
+  function fmtMoney(v) {
+    const n = Number(v);
+    return Number.isFinite(n) ? `$${n.toLocaleString()}` : "—";
+  }
+
   function fmtHosp(v, txt) {
     if (txt) return txt;
     const n = Number(v);
@@ -627,6 +640,14 @@
     GM_setValue(K_LOCAL_NOTIFICATIONS, arr(v));
   }
 
+  function getOwnerToken() {
+    return cleanInputValue(GM_getValue(K_OWNER_TOKEN, ""));
+  }
+
+  function setOwnerToken(v) {
+    GM_setValue(K_OWNER_TOKEN, cleanInputValue(v || ""));
+  }
+
   function mergedNotifications() {
     return [...arr(state?.notifications), ...getLocalNotifications()].slice(0, 50);
   }
@@ -667,6 +688,12 @@
       message: a.message || "",
       source: a.source || "",
       lastSeenAt: a.lastSeenAt || "",
+      factionId: a.factionId || "",
+      factionName: a.factionName || "",
+      isFactionLeader: !!a.isFactionLeader,
+      memberEnabled: !!a.memberEnabled,
+      pricePerMember: Number.isFinite(Number(a.pricePerMember)) ? Number(a.pricePerMember) : PRICE_PER_MEMBER,
+      paymentPlayer: a.paymentPlayer || PAYMENT_PLAYER,
     };
   }
 
@@ -686,16 +713,18 @@
 
   function accessSummaryMessage() {
     if (!accessState) return "";
+    const paymentPlayer = accessState.paymentPlayer || PAYMENT_PLAYER;
+    const ppm = accessState.pricePerMember || PRICE_PER_MEMBER;
     if (accessState.paymentRequired || accessState.blocked || accessState.trialExpired) {
-      return accessState.message || accessState.reason || `Access locked. ${PAYMENT_TEXT}.`;
+      return accessState.message || accessState.reason || `Faction access locked. Payment goes to ${paymentPlayer}.`;
     }
     if (accessState.trialActive) {
       if (accessState.daysLeft != null) {
-        if (accessState.daysLeft <= 0) return `Trial ends today. After that, ${PAYMENT_TEXT}.`;
-        return `Trial active. ${accessState.daysLeft} day${accessState.daysLeft === 1 ? "" : "s"} left.`;
+        if (accessState.daysLeft <= 0) return `Faction trial ends today. Billing is ${fmtMoney(ppm)} per enabled member.`;
+        return `Faction trial active. ${accessState.daysLeft} day${accessState.daysLeft === 1 ? "" : "s"} left.`;
       }
-      if (accessState.expiresAt) return `Trial active until ${fmtTs(accessState.expiresAt)}.`;
-      return "Trial active.";
+      if (accessState.expiresAt) return `Faction trial active until ${fmtTs(accessState.expiresAt)}.`;
+      return "Faction trial active.";
     }
     return "";
   }
@@ -703,6 +732,9 @@
   function getAccessInfo(payload, httpStatus) {
     const d = payload && typeof payload === "object" ? payload : {};
     const access = d.access && typeof d.access === "object" ? d.access : {};
+    const payment = d.payment && typeof d.payment === "object" ? d.payment : {};
+    const factionAccess = d.faction_access && typeof d.faction_access === "object" ? d.faction_access : {};
+    const memberAccess = d.member_access && typeof d.member_access === "object" ? d.member_access : {};
 
     const paymentRequired =
       !!d.payment_required ||
@@ -761,6 +793,7 @@
       d.error ||
       access.reason ||
       access.block_reason ||
+      memberAccess.reason ||
       "";
 
     let message =
@@ -769,6 +802,7 @@
       d.details ||
       access.message ||
       access.notice ||
+      payment.message ||
       "";
 
     let finalBlocked = blocked;
@@ -787,13 +821,13 @@
     }
 
     if ((httpStatus === 402 || httpStatus === 403) && !message) {
-      message = `${PAYMENT_TEXT}.`;
+      message = `Faction access blocked. Payment goes to ${payment.required_player || PAYMENT_PLAYER}.`;
     }
 
     if (finalPaymentRequired && !message) {
-      message = `Trial expired. ${PAYMENT_TEXT}.`;
+      message = `Faction payment required. Payment goes to ${payment.required_player || PAYMENT_PLAYER}.`;
     } else if (finalBlocked && !message) {
-      message = reason || `Access locked. ${PAYMENT_TEXT}.`;
+      message = reason || `Faction access locked.`;
     }
 
     return {
@@ -808,6 +842,12 @@
       message: String(message || ""),
       source: String(accessStatus || ""),
       lastSeenAt: new Date().toISOString(),
+      factionId: d.faction_id || d?.faction?.id || d?.me?.faction_id || "",
+      factionName: d.faction_name || d?.faction?.name || d?.me?.faction_name || "",
+      isFactionLeader: !!d.is_faction_leader || !!factionAccess.is_faction_leader || !!d?.me?.is_faction_leader,
+      memberEnabled: !!memberAccess.enabled || !!factionAccess.member_enabled || !!memberAccess.allowed,
+      pricePerMember: Number(payment.price_per_enabled_member || payment.price_per_member || PRICE_PER_MEMBER) || PRICE_PER_MEMBER,
+      paymentPlayer: String(payment.required_player || PAYMENT_PLAYER),
     };
   }
 
@@ -823,7 +863,7 @@
       return next;
     }
 
-    if (next.trialActive || next.expiresAt || next.daysLeft != null) {
+    if (next.trialActive || next.expiresAt || next.daysLeft != null || next.factionId || next.isFactionLeader) {
       accessState = {
         ...accessState,
         ...next,
@@ -857,16 +897,16 @@
 
   function ensureAllowedOrMessage() {
     if (canUseProtectedFeatures()) return true;
-    setStatus(accessSummaryMessage() || `Access locked. ${PAYMENT_TEXT}.`, true);
+    setStatus(accessSummaryMessage() || `Faction access locked.`, true);
     renderBody();
     return false;
   }
 
-  function gmXhr(method, path, body) {
+  function gmXhr(method, path, body, extraHeaders) {
     return new Promise((resolve) => {
       const token = cleanInputValue(GM_getValue(K_SESSION, ""));
       const url = `${BASE_URL}${path}`;
-      const headers = { "Accept": "application/json" };
+      const headers = { "Accept": "application/json", ...(extraHeaders || {}) };
       if (token) headers["X-Session-Token"] = token;
       if (body != null) headers["Content-Type"] = "application/json";
 
@@ -898,19 +938,18 @@
 
   async function login(showDebug = false) {
     const apiKey = cleanInputValue(GM_getValue(K_API_KEY, ""));
-    const adminKey = cleanInputValue(GM_getValue(K_ADMIN_KEY, ""));
-    if (!apiKey || !adminKey) return false;
+    if (!apiKey) return false;
 
     if (showDebug) {
-      setStatus(`Trying login with admin key: ${adminKey}`);
+      setStatus(`Trying login with saved API key...`);
     }
 
-    const res = await gmXhr("POST", "/api/auth", { api_key: apiKey, admin_key: adminKey });
+    const res = await gmXhr("POST", "/api/auth", { api_key: apiKey });
     updateAccessFromPayload(res.data, res.status, false);
 
     if (!res.ok) {
       if (accessState?.blocked || accessState?.paymentRequired || accessState?.trialExpired) {
-        setStatus(accessSummaryMessage() || `${PAYMENT_TEXT}.`, true);
+        setStatus(accessSummaryMessage() || `Faction access blocked.`, true);
         renderBody();
         return false;
       }
@@ -926,7 +965,7 @@
     }
 
     if (accessState?.blocked || accessState?.paymentRequired || accessState?.trialExpired) {
-      setStatus(accessSummaryMessage() || `${PAYMENT_TEXT}.`, true);
+      setStatus(accessSummaryMessage() || `Faction access blocked.`, true);
       renderBody();
       return false;
     }
@@ -940,8 +979,8 @@
       return {
         ok: false,
         status: 403,
-        data: { ok: false, payment_required: true, message: accessSummaryMessage() || `${PAYMENT_TEXT}.` },
-        error: accessSummaryMessage() || `${PAYMENT_TEXT}.`,
+        data: { ok: false, payment_required: true, message: accessSummaryMessage() || `Faction access blocked.` },
+        error: accessSummaryMessage() || `Faction access blocked.`,
       };
     }
 
@@ -953,7 +992,7 @@
         ok: false,
         status: res.status || 403,
         data: res.data,
-        error: accessSummaryMessage() || res.error || `${PAYMENT_TEXT}.`,
+        error: accessSummaryMessage() || res.error || `Faction access blocked.`,
       };
     }
 
@@ -970,11 +1009,19 @@
         ok: false,
         status: res.status || 403,
         data: res.data,
-        error: accessSummaryMessage() || res.error || `${PAYMENT_TEXT}.`,
+        error: accessSummaryMessage() || res.error || `Faction access blocked.`,
       };
     }
 
     return res;
+  }
+
+  async function ownerReq(method, path, body) {
+    const ownerToken = getOwnerToken();
+    if (!ownerToken) {
+      return { ok: false, status: 401, data: null, error: "Missing owner token." };
+    }
+    return gmXhr(method, path, body, { "X-License-Admin": ownerToken });
   }
 
   function normalizeState(data) {
@@ -995,6 +1042,10 @@
     const warTerms = s.war_terms || null;
     const medDealBuyers = arr(s.med_deal_buyers || enemies);
     const medDealsMessage = String(s.med_deals_message || war.message || enemyFaction.message || "").trim();
+    const factionLicense = s.faction_license || s.license || {};
+    const factionAccess = s.faction_access || {};
+    const factionManagement = s.faction_management || {};
+    const payment = s.payment || {};
 
     updateAccessFromPayload(s, 200, !!cleanInputValue(GM_getValue(K_SESSION, "")));
 
@@ -1016,13 +1067,17 @@
       warTerms,
       medDealBuyers,
       medDealsMessage,
+      factionLicense,
+      factionAccess,
+      factionManagement,
+      payment,
     };
   }
 
   async function loadState(silent = false) {
     if (loadInFlight) return;
     if (!canUseProtectedFeatures()) {
-      if (!silent) setStatus(accessSummaryMessage() || `${PAYMENT_TEXT}.`, true);
+      if (!silent) setStatus(accessSummaryMessage() || `Faction access blocked.`, true);
       renderBody();
       return;
     }
@@ -1087,8 +1142,8 @@
 
   function sortAlphabetical(list) {
     return [...arr(list)].sort((a, b) => {
-      const an = String(a?.name || a?.player_name || "").toLowerCase();
-      const bn = String(b?.name || b?.player_name || "").toLowerCase();
+      const an = String(a?.name || a?.player_name || a?.member_name || "").toLowerCase();
+      const bn = String(b?.name || b?.player_name || b?.member_name || "").toLowerCase();
       return an.localeCompare(bn);
     });
   }
@@ -1121,8 +1176,8 @@
   }
 
   function memberRow(x, enemy = false) {
-    const id = x.user_id || x.id || x.player_id || "";
-    const name = x.name || x.player_name || `ID ${id}`;
+    const id = x.user_id || x.id || x.player_id || x.member_user_id || "";
+    const name = x.name || x.player_name || x.member_name || `ID ${id}`;
     const onlineState = String(x.online_state || x.online_status || x.status || "offline").toLowerCase();
     const hosp = getHospSeconds(x);
     const hospText = x.hospital_text || "";
@@ -1132,6 +1187,8 @@
     const lifeMax = Number(x.life_max || x.maximum_life || 0);
     const lifeText = lifeMax > 0 ? `${lifeCur.toLocaleString()}/${lifeMax.toLocaleString()}` : "—";
     const attackUrl = x.attack_url || (id ? `https://www.torn.com/loader.php?sid=attack&user2ID=${id}` : "#");
+    const enabled = !!x.enabled_under_license || !!x.member_access_enabled || !!x.enabled;
+    const leader = String(x.position || "").toLowerCase().includes("leader");
 
     const pill =
       hosp > 0
@@ -1148,6 +1205,7 @@
           <div>
             <div class="warhub-name">${esc(name)} ${id ? `<span class="warhub-mini">[${esc(id)}]</span>` : ""}</div>
             <div class="warhub-meta">${esc(level)}${level ? " • " : ""}Life: ${esc(lifeText)} • Last: ${esc(last)}</div>
+            ${!enemy ? `<div class="warhub-actions" style="margin-top:4px;">${leader ? `<span class="warhub-pill leader">Leader</span>` : ""}${enabled ? `<span class="warhub-pill enabled">Enabled</span>` : `<span class="warhub-pill disabled">Disabled</span>`}</div>` : ""}
           </div>
           <div class="warhub-actions">
             ${pill}
@@ -1157,8 +1215,7 @@
       </div>
     `;
   }
-
-  function targetRow(x, isLive = false) {
+    function targetRow(x, isLive = false) {
     const rowId = x.id || "";
     const id = x.target_id || x.user_id || "";
     const name = x.name || x.target_name || `Target ${id}`;
@@ -1268,9 +1325,8 @@
     if (accessState.paymentRequired || accessState.blocked || accessState.trialExpired) {
       return `
         <div class="warhub-banner payment">
-          <div style="font-weight:800; margin-bottom:4px;">Payment Required</div>
+          <div style="font-weight:800; margin-bottom:4px;">Faction Payment Required</div>
           <div class="warhub-mini" style="opacity:.95;">${esc(msg)}</div>
-          <div class="warhub-payment-line">${esc(PAYMENT_TEXT)}</div>
         </div>
       `;
     }
@@ -1278,7 +1334,7 @@
     if (accessState.trialActive) {
       return `
         <div class="warhub-banner trial">
-          <div style="font-weight:800; margin-bottom:4px;">Trial Active</div>
+          <div style="font-weight:800; margin-bottom:4px;">Faction Trial Active</div>
           <div class="warhub-mini" style="opacity:.95;">${esc(msg)}</div>
         </div>
       `;
@@ -1287,40 +1343,161 @@
     return "";
   }
 
-  function renderLoginRequiredCard() {
-    const savedAdmin = cleanInputValue(GM_getValue(K_ADMIN_KEY, ""));
+  function renderFactionTab() {
+    const license = state?.factionLicense || {};
+    const members = arr(state?.members);
+    const leader = accessState?.isFactionLeader;
+    const price = accessState?.pricePerMember || PRICE_PER_MEMBER;
+
+    const enabledMembers = members.filter((m) => m.enabled_under_license || m.enabled).length;
+    const cost = enabledMembers * price;
+
+    return `
+      ${renderAccessBanner()}
+      <div class="warhub-card">
+        <h3>Faction License</h3>
+        <div class="warhub-grid two">
+          <div class="warhub-metric">
+            <div class="k">Faction</div>
+            <div class="v">${esc(accessState.factionName || "—")}</div>
+          </div>
+          <div class="warhub-metric">
+            <div class="k">Leader</div>
+            <div class="v">${leader ? "You" : "Faction Leader"}</div>
+          </div>
+          <div class="warhub-metric">
+            <div class="k">Enabled Members</div>
+            <div class="v">${fmtNum(enabledMembers)}</div>
+          </div>
+          <div class="warhub-metric">
+            <div class="k">Cost / Member</div>
+            <div class="v">${fmtMoney(price)}</div>
+          </div>
+          <div class="warhub-metric">
+            <div class="k">Monthly Cost</div>
+            <div class="v">${fmtMoney(cost)}</div>
+          </div>
+          <div class="warhub-metric">
+            <div class="k">Payment Player</div>
+            <div class="v">${esc(accessState.paymentPlayer || PAYMENT_PLAYER)}</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="warhub-card">
+        <h3>Faction Members</h3>
+        <div class="warhub-section-scroll">
+          <div class="warhub-list">
+            ${members.map((m) => memberRow(m, false)).join("")}
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderOwnerTab() {
+    const token = getOwnerToken();
+
+    return `
+      <div class="warhub-card">
+        <h3>License Owner Panel</h3>
+
+        <label class="warhub-label">Owner Token</label>
+        <input id="wh-owner-token" class="warhub-input" value="${esc(token)}">
+
+        <div class="warhub-actions" style="margin-top:8px;">
+          <button class="warhub-btn primary" id="wh-save-owner-token">Save Token</button>
+        </div>
+
+        <div class="warhub-divider"></div>
+
+        <div class="warhub-mini">
+          This tab allows the license owner to manage faction licenses,
+          approve payments, and toggle members.
+        </div>
+
+        <div class="warhub-actions" style="margin-top:10px;">
+          <button class="warhub-btn" id="wh-owner-load">Load Licenses</button>
+        </div>
+
+        <div id="wh-owner-results" style="margin-top:10px;"></div>
+      </div>
+    `;
+  }
+
+  function renderSettingsTab() {
+    const refreshMs = Number(GM_getValue(K_REFRESH, 25000) || 25000);
     const savedApi = cleanInputValue(GM_getValue(K_API_KEY, ""));
     const blocked = accessState.paymentRequired || accessState.blocked || accessState.trialExpired;
 
     return `
       ${renderAccessBanner()}
       <div class="warhub-card">
-        <h3>${blocked ? "Access Locked" : "Login"}</h3>
-        <div class="warhub-mini" style="line-height:1.55; margin-bottom:8px;">
-          ${blocked
-            ? `Your trial has expired or payment is required. ${esc(PAYMENT_TEXT)}. After payment, enter your keys again and log in.`
-            : `Enter your Torn API key and admin key to use War Hub. Trial status will be checked when you log in.`}
-        </div>
-
-        <div class="warhub-grid two">
-          <div>
-            <label class="warhub-label">Torn API Key</label>
-            <input id="wh-api-key" class="warhub-input" autocomplete="off" autocapitalize="off" spellcheck="false" value="${blocked ? "" : esc(savedApi)}" placeholder="Paste your API key" ${blocked ? "disabled" : ""}>
-          </div>
-          <div>
-            <label class="warhub-label">Admin Key</label>
-            <input id="wh-admin-key" class="warhub-input" autocomplete="off" autocapitalize="off" spellcheck="false" value="${blocked ? "" : esc(savedAdmin)}" placeholder="Paste your admin key" ${blocked ? "disabled" : ""}>
-          </div>
-        </div>
-
-        <div class="warhub-payment-line">${esc(PAYMENT_TEXT)}</div>
+        <h3>API Key</h3>
+        <label class="warhub-label">Torn API Key</label>
+        <input id="wh-api-key" class="warhub-input" value="${blocked ? "" : esc(savedApi)}" ${blocked ? "disabled" : ""}>
 
         <div class="warhub-actions" style="margin-top:8px;">
           <button class="warhub-btn primary" id="wh-save-settings" ${blocked ? "disabled" : ""}>Save + Login</button>
-          <button class="warhub-btn" id="wh-test-health">Test Health</button>
-          <button class="warhub-btn warn" id="wh-clear-keys">Clear Saved Keys</button>
+          <button class="warhub-btn warn" id="wh-clear-keys">Clear</button>
         </div>
       </div>
+
+      <div class="warhub-card">
+        <h3>Refresh</h3>
+        <label class="warhub-label">Refresh ms</label>
+        <input id="wh-refresh-ms" class="warhub-input" value="${esc(refreshMs)}">
+
+        <div class="warhub-actions" style="margin-top:8px;">
+          <button class="warhub-btn" id="wh-save-refresh">Save</button>
+          <button class="warhub-btn" id="wh-reset-icon">Reset Icon</button>
+          <button class="warhub-btn" id="wh-reset-overlay">Reset Overlay</button>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderTabContent() {
+    const needsLogin = !cleanInputValue(GM_getValue(K_SESSION, "")) && !state;
+    const blocked = accessState.paymentRequired || accessState.blocked || accessState.trialExpired;
+
+    if (blocked) return renderSettingsTab();
+    if (needsLogin && currentTab !== "settings") return renderSettingsTab();
+
+    switch (currentTab) {
+      case "terms": return renderTermsTab();
+      case "members": return renderMembersTab();
+      case "enemies": return renderEnemiesTab();
+      case "hospital": return renderHospitalTab();
+      case "chain": return renderChainTab();
+      case "meddeals": return renderMedDealsTab();
+      case "targets": return renderTargetsTab();
+      case "assignments": return renderAssignmentsTab();
+      case "notes": return renderNotesTab();
+      case "analytics": return renderAnalyticsTab();
+      case "notifications": return renderNotificationsTab();
+      case "faction": return renderFactionTab();
+      case "owner": return renderOwnerTab();
+      case "settings": return renderSettingsTab();
+      case "war":
+      default: return renderWarTab();
+    }
+  }
+
+  function tabBtn(key, label) {
+    const badgeNum = key === "notifications" ? unreadCount() : 0;
+    const text = badgeNum ? `${label} (${badgeNum})` : label;
+    const blocked = accessState.paymentRequired || accessState.blocked || accessState.trialExpired;
+    const needsLogin = !cleanInputValue(GM_getValue(K_SESSION, "")) && !state;
+    const locked = (blocked || needsLogin) && key !== "settings";
+
+    return `
+      <button
+        type="button"
+        class="warhub-tab ${currentTab === key ? "active" : ""} ${locked ? "locked" : ""}"
+        data-tab="${key}"
+        ${locked ? 'data-locked="1"' : ""}
+      >${text}</button>
     `;
   }
     function renderWarTab() {
@@ -1730,161 +1907,6 @@
     `;
   }
 
-  function renderSettingsTab() {
-    const refreshMs = Number(GM_getValue(K_REFRESH, 25000) || 25000);
-    const savedAdmin = cleanInputValue(GM_getValue(K_ADMIN_KEY, ""));
-    const savedApi = cleanInputValue(GM_getValue(K_API_KEY, ""));
-    const blocked = accessState.paymentRequired || accessState.blocked || accessState.trialExpired;
-
-    return `
-      ${renderAccessBanner()}
-      <div class="warhub-card">
-        <h3>Keys</h3>
-        <div class="warhub-grid two">
-          <div>
-            <label class="warhub-label">Torn API Key</label>
-            <input id="wh-api-key" class="warhub-input" autocomplete="off" autocapitalize="off" spellcheck="false" value="${blocked ? "" : esc(savedApi)}" placeholder="Paste your API key" ${blocked ? "disabled" : ""}>
-          </div>
-          <div>
-            <label class="warhub-label">Admin Key</label>
-            <input id="wh-admin-key" class="warhub-input" autocomplete="off" autocapitalize="off" spellcheck="false" value="${blocked ? "" : esc(savedAdmin)}" placeholder="Paste your admin key" ${blocked ? "disabled" : ""}>
-          </div>
-        </div>
-
-        <div class="warhub-mini" style="margin-top:8px;">
-          Saved admin key right now: <b>${esc(blocked ? "(cleared while blocked)" : (savedAdmin || "(empty)"))}</b>
-        </div>
-
-        <div class="warhub-payment-line">${esc(PAYMENT_TEXT)}</div>
-
-        <div class="warhub-actions" style="margin-top:8px;">
-          <button class="warhub-btn primary" id="wh-save-settings" ${blocked ? "disabled" : ""}>Save + Login</button>
-          <button class="warhub-btn" id="wh-test-health">Test Health</button>
-          <button class="warhub-btn warn" id="wh-clear-keys">Clear Saved Keys</button>
-        </div>
-      </div>
-
-      <div class="warhub-card">
-        <h3>Trial / Payment</h3>
-        <div class="warhub-mini" style="line-height:1.55;">
-          Trial length: <b>45 days</b>.
-          <br><br>
-          ${accessState.trialActive
-            ? `Your trial is active${accessState.daysLeft != null ? ` with <b>${esc(String(accessState.daysLeft))}</b> day${accessState.daysLeft === 1 ? "" : "s"} left` : ""}${accessState.expiresAt ? ` and ends at <b>${esc(fmtTs(accessState.expiresAt))}</b>` : ""}.`
-            : accessState.paymentRequired || accessState.blocked || accessState.trialExpired
-              ? `Your trial has ended or payment is required. Access is locked until payment is made.`
-              : `Your trial/payment status will show here after login.`}
-          <br><br>
-          When access is blocked, this script clears your saved Torn API key, admin key, and session token locally so the overlay cannot keep using an expired or unpaid session.
-          <br><br>
-          Payment instruction: <b>${esc(PAYMENT_TEXT)}</b>.
-        </div>
-      </div>
-
-      <div class="warhub-card">
-        <h3>API Key Storage</h3>
-        <div class="warhub-mini" style="line-height:1.55;">
-          Your <b>Torn API key</b> and <b>admin key</b> are stored locally on your device using your userscript storage
-          (${esc("GM_setValue")}). They are not displayed publicly to other users through the overlay.
-          <br><br>
-          When you press <b>Save + Login</b>, the script sends your API key and admin key to the War Hub server only for
-          authentication. After successful login, the server returns a <b>session token</b>, and the script stores that
-          token locally as well.
-          <br><br>
-          After login, normal requests use the saved <b>session token</b> in the request header instead of repeatedly
-          sending your keys on every action.
-          <br><br>
-          If the server reports your trial has expired or payment is required, the script will immediately clear the saved
-          API key, admin key, and session token from local storage.
-          <br><br>
-          Do not share your API key, admin key, or session token with anyone you do not trust.
-        </div>
-      </div>
-
-      <div class="warhub-card">
-        <h3>Terms of Service</h3>
-        <div class="warhub-mini" style="line-height:1.55;">
-          By using War Hub, you acknowledge and agree that:
-          <br><br>
-          1. You use this script at your own risk.
-          <br>
-          2. You are responsible for the API key and admin key entered into the settings tab.
-          <br>
-          3. You will not redistribute, leak, abuse, reverse engineer, or attempt to damage the service, backend, or shared faction features.
-          <br>
-          4. Shared features such as targets, assignments, med deals, terms, and notes may be visible to other authorized users in the same faction or war context.
-          <br>
-          5. Access to War Hub may be changed, limited, revoked, trial-limited, payment-gated, or updated at any time.
-          <br>
-          6. Features, layout, endpoints, and stored data behavior may change as the project continues to receive upgrades and fixes.
-          <br>
-          7. Abuse, unauthorized sharing, spam, or malicious use may result in access being removed.
-          <br>
-          8. War Hub is an actively evolving tool, and by using it you accept ongoing updates, balancing, fixes, and interface changes.
-        </div>
-      </div>
-
-      <div class="warhub-card">
-        <h3>Refresh</h3>
-        <div class="warhub-grid two">
-          <div>
-            <label class="warhub-label">Refresh milliseconds</label>
-            <input id="wh-refresh-ms" class="warhub-input" value="${esc(refreshMs)}">
-          </div>
-          <div>
-            <label class="warhub-label">Session</label>
-            <div class="warhub-mini">${cleanInputValue(GM_getValue(K_SESSION, "")) ? "Session saved" : "No session yet"}</div>
-          </div>
-        </div>
-        <div class="warhub-actions" style="margin-top:8px;">
-          <button class="warhub-btn" id="wh-save-refresh">Save Refresh</button>
-          <button class="warhub-btn" id="wh-reset-icon">Reset Icon Position</button>
-          <button class="warhub-btn" id="wh-reset-overlay">Reset Overlay Position</button>
-          <button class="warhub-btn warn" id="wh-logout">Log Out</button>
-        </div>
-      </div>
-    `;
-  }
-
-  function renderLockedOrLoginTab() {
-    if (currentTab !== "settings") currentTab = "settings";
-    return renderSettingsTab();
-  }
-
-  function renderTabContent() {
-    const needsLogin = !cleanInputValue(GM_getValue(K_SESSION, "")) && !state;
-    const blocked = accessState.paymentRequired || accessState.blocked || accessState.trialExpired;
-
-    if (blocked) return renderLockedOrLoginTab();
-    if (needsLogin && currentTab !== "settings") return renderLoginRequiredCard();
-
-    switch (currentTab) {
-      case "terms": return renderTermsTab();
-      case "members": return renderMembersTab();
-      case "enemies": return renderEnemiesTab();
-      case "hospital": return renderHospitalTab();
-      case "chain": return renderChainTab();
-      case "meddeals": return renderMedDealsTab();
-      case "targets": return renderTargetsTab();
-      case "assignments": return renderAssignmentsTab();
-      case "notes": return renderNotesTab();
-      case "analytics": return renderAnalyticsTab();
-      case "notifications": return renderNotificationsTab();
-      case "settings": return renderSettingsTab();
-      case "war":
-      default: return renderWarTab();
-    }
-  }
-
-  function tabBtn(key, label) {
-    const badgeNum = key === "notifications" ? unreadCount() : 0;
-    const text = badgeNum ? `${label} (${badgeNum})` : label;
-    const blocked = accessState.paymentRequired || accessState.blocked || accessState.trialExpired;
-    const needsLogin = !cleanInputValue(GM_getValue(K_SESSION, "")) && !state;
-    const locked = (blocked || needsLogin) && key !== "settings";
-    return `<button type="button" class="warhub-tab ${currentTab === key ? "active" : ""} ${locked ? "locked" : ""}" data-tab="${key}" ${locked ? 'data-locked="1"' : ""}>${text}</button>`;
-  }
-
   function renderBody() {
     if (!overlay) return;
     overlay.innerHTML = `
@@ -1959,7 +1981,7 @@
   function positionOverlayNearShield() {
     if (!shield || !overlay) return;
     const sr = shield.getBoundingClientRect();
-    const overlayWidth = Math.min(window.innerWidth - 16, 500);
+    const overlayWidth = Math.min(window.innerWidth - 16, 520);
     let left = sr.right - overlayWidth;
     let top = sr.bottom + 8;
     if (window.innerWidth <= 700) {
@@ -2146,7 +2168,102 @@
   async function markNotificationsSeen() {
     return req("POST", "/api/notifications/seen", {});
   }
-    function bindOverlayEvents() {
+
+  async function loadOwnerDashboard() {
+    const results = overlay?.querySelector("#wh-owner-results");
+    if (results) results.innerHTML = `<div class="warhub-mini">Loading...</div>`;
+
+    const res = await ownerReq("GET", "/api/admin/faction-dashboard");
+    if (!res.ok) {
+      setStatus(res.error || "Could not load owner dashboard.", true);
+      if (results) results.innerHTML = "";
+      return;
+    }
+
+    const dashboard = res.data?.dashboard || {};
+    const licenses = arr(res.data?.faction_licenses || res.data?.licenses || []);
+
+    if (!results) return;
+
+    results.innerHTML = `
+      <div class="warhub-card" style="margin-bottom:8px;">
+        <h3>Owner Summary</h3>
+        <div class="warhub-grid two">
+          <div class="warhub-metric"><div class="k">Faction Licenses</div><div class="v">${fmtNum(dashboard.faction_licenses_total || 0)}</div></div>
+          <div class="warhub-metric"><div class="k">Trials</div><div class="v">${fmtNum(dashboard.trials_total || 0)}</div></div>
+          <div class="warhub-metric"><div class="k">Paid</div><div class="v">${fmtNum(dashboard.paid_total || 0)}</div></div>
+          <div class="warhub-metric"><div class="k">Payment Required</div><div class="v">${fmtNum(dashboard.payment_required_total || 0)}</div></div>
+          <div class="warhub-metric"><div class="k">Enabled Members</div><div class="v">${fmtNum(dashboard.enabled_members_total || 0)}</div></div>
+          <div class="warhub-metric"><div class="k">Projected Renewal</div><div class="v">${fmtMoney(dashboard.projected_renewal_total || 0)}</div></div>
+        </div>
+      </div>
+
+      <div class="warhub-card">
+        <h3>Faction Licenses</h3>
+        ${licenses.length ? `
+          <div class="warhub-section-scroll">
+            <div class="warhub-list">
+              ${licenses.map((x) => {
+                const lic = x.license || x;
+                const fid = x.faction_id || lic.faction_id || "";
+                const fname = x.faction_name || lic.faction_name || "Unknown Faction";
+                const leaderName = x.leader_name || lic.leader_name || "Unknown";
+                const enabledCount = Number(lic.enabled_member_count || x.enabled_member_count || 0);
+                const renewCost = Number(lic.renewal_cost || x.renewal_cost || 0);
+                return `
+                  <div class="warhub-list-item">
+                    <div class="warhub-row">
+                      <div>
+                        <div class="warhub-name">${esc(fname)} ${fid ? `<span class="warhub-mini">[${esc(fid)}]</span>` : ""}</div>
+                        <div class="warhub-meta">Leader: ${esc(leaderName)} • Status: ${esc(lic.status || x.status || "unknown")} • Enabled: ${fmtNum(enabledCount)} • Cost: ${fmtMoney(renewCost)}</div>
+                      </div>
+                      <div class="warhub-actions">
+                        <button class="warhub-btn small good" data-owner-confirm="${esc(String(fid))}|${esc(String(renewCost || 0))}">Confirm Payment</button>
+                        <button class="warhub-btn small warn" data-owner-expire="${esc(String(fid))}">Expire</button>
+                      </div>
+                    </div>
+                  </div>
+                `;
+              }).join("")}
+            </div>
+          </div>
+        ` : `<div class="warhub-empty">No faction licenses returned.</div>`}
+      </div>
+    `;
+
+    results.querySelectorAll("[data-owner-confirm]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const raw = btn.getAttribute("data-owner-confirm") || "";
+        const [factionId, amountRaw] = raw.split("|");
+        const amount = Number(amountRaw || 0) || 0;
+        const res2 = await ownerReq("POST", "/api/admin/faction-payment/confirm", {
+          faction_id: factionId,
+          amount,
+          payment_kind: "cash",
+          note: "Owner confirmed payment",
+          received_by: PAYMENT_PLAYER,
+          extend_days: 30,
+        });
+        if (!res2.ok) return setStatus(res2.error || "Could not confirm payment.", true);
+        setStatus("Faction payment confirmed.");
+        await loadOwnerDashboard();
+      });
+    });
+
+    results.querySelectorAll("[data-owner-expire]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const factionId = btn.getAttribute("data-owner-expire") || "";
+        const res2 = await ownerReq("POST", "/api/admin/faction-license/expire", {
+          faction_id: factionId,
+        });
+        if (!res2.ok) return setStatus(res2.error || "Could not expire faction license.", true);
+        setStatus("Faction license expired.");
+        await loadOwnerDashboard();
+      });
+    });
+  }
+
+  function bindOverlayEvents() {
     overlay.querySelectorAll(".warhub-tab").forEach((btn) => {
       btn.addEventListener("click", async () => {
         const key = btn.dataset.tab || "war";
@@ -2191,20 +2308,16 @@
       if (accessState.paymentRequired || accessState.blocked || accessState.trialExpired) {
         clearBlockedCredentials();
         renderBody();
-        return setStatus(accessSummaryMessage() || `${PAYMENT_TEXT}.`, true);
+        return setStatus(accessSummaryMessage() || `Faction access blocked.`, true);
       }
 
       const api = cleanInputValue(overlay.querySelector("#wh-api-key")?.value || "");
-      const admin = cleanInputValue(overlay.querySelector("#wh-admin-key")?.value || "");
-
       if (!api) return setStatus("Enter your Torn API key first.", true);
-      if (!admin) return setStatus("Enter your admin key first.", true);
 
       GM_setValue(K_API_KEY, api);
-      GM_setValue(K_ADMIN_KEY, admin);
       GM_deleteValue(K_SESSION);
 
-      setStatus(`Saved admin key as: ${admin}. Logging in...`);
+      setStatus(`Logging in...`);
       const ok = await login(true);
       if (!ok) {
         renderBody();
@@ -2216,13 +2329,6 @@
       renderBody();
     });
 
-    overlay.querySelector("#wh-test-health")?.addEventListener("click", async () => {
-      const res = await healthCheck();
-      if (!res.ok) return setStatus(res.error || "Health check failed.", true);
-      const keys = arr(res.data?.admin_keys_loaded).join(", ") || "(none)";
-      setStatus(`Server health OK. Loaded admin keys: ${keys}`);
-    });
-
     overlay.querySelector("#wh-clear-keys")?.addEventListener("click", () => {
       clearSavedKeys();
       accessState = {
@@ -2230,7 +2336,7 @@
         loggedIn: false,
       };
       saveAccessCache();
-      setStatus("Saved API key, admin key, and session cleared.");
+      setStatus("Saved API key and session cleared.");
       renderBody();
     });
 
@@ -2255,18 +2361,6 @@
       positionOverlayNearShield();
       saveOverlayPos();
       setStatus("Overlay position reset.");
-    });
-
-    overlay.querySelector("#wh-logout")?.addEventListener("click", async () => {
-      await req("POST", "/api/logout", {});
-      GM_deleteValue(K_SESSION);
-      accessState = {
-        ...accessState,
-        loggedIn: false,
-      };
-      saveAccessCache();
-      setStatus("Logged out.");
-      renderBody();
     });
 
     overlay.querySelector("#wh-save-notes")?.addEventListener("click", () => {
@@ -2464,6 +2558,16 @@
       updateBadge();
       setStatus("Local alerts cleared.");
     });
+
+    overlay.querySelector("#wh-save-owner-token")?.addEventListener("click", () => {
+      const token = cleanInputValue(overlay.querySelector("#wh-owner-token")?.value || "");
+      setOwnerToken(token);
+      setStatus(token ? "Owner token saved." : "Owner token cleared.");
+    });
+
+    overlay.querySelector("#wh-owner-load")?.addEventListener("click", async () => {
+      await loadOwnerDashboard();
+    });
   }
 
   function mount() {
@@ -2563,14 +2667,9 @@
 
     const token = cleanInputValue(GM_getValue(K_SESSION, ""));
     const savedApi = cleanInputValue(GM_getValue(K_API_KEY, ""));
-    const savedAdmin = cleanInputValue(GM_getValue(K_ADMIN_KEY, ""));
 
-    if ((accessState.paymentRequired || accessState.blocked || accessState.trialExpired) && (token || savedApi || savedAdmin)) {
+    if ((accessState.paymentRequired || accessState.blocked || accessState.trialExpired) && (token || savedApi)) {
       clearBlockedCredentials();
-    }
-
-    if (!token && savedApi && savedAdmin && canUseProtectedFeatures()) {
-      // quiet auto-login will happen through req if needed
     }
 
     await loadState(true);
@@ -2583,7 +2682,7 @@
     if (!localAlerts.length) {
       localAlerts.unshift({
         kind: "Script Ready",
-        text: "Ultimate War Hub loaded.",
+        text: "Faction-license War Hub loaded.",
         created_at: new Date().toISOString()
       });
       setLocalNotifications(localAlerts.slice(0, 20));
@@ -2591,7 +2690,7 @@
     }
 
     if (accessState.paymentRequired || accessState.blocked || accessState.trialExpired) {
-      setStatus(accessSummaryMessage() || `${PAYMENT_TEXT}.`, true);
+      setStatus(accessSummaryMessage() || `Faction access blocked.`, true);
       renderBody();
     }
   }
