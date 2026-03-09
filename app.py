@@ -15,6 +15,7 @@ from db import (
     get_session,
     touch_session,
     delete_session,
+    delete_sessions_for_user,
     set_availability,
     set_chain_sitter,
     list_med_deals_for_faction,
@@ -44,6 +45,13 @@ from db import (
     delete_war_terms,
     get_user_setting,
     set_user_setting,
+    ensure_license_row,
+    start_trial_if_needed,
+    compute_license_status,
+    clear_license_admin_key,
+    renew_after_payment,
+    get_payment_history,
+    force_expire_license,
 )
 from torn_api import (
     me_basic,
@@ -58,6 +66,10 @@ from torn_api import (
 load_dotenv()
 
 APP_NAME = "War Hub"
+PAYMENT_PLAYER = os.getenv("PAYMENT_PLAYER", "Fries91")
+PAYMENT_AMOUNT_XANAX = int(os.getenv("PAYMENT_AMOUNT_XANAX", "50"))
+DEFAULT_REFRESH_SECONDS = int(os.getenv("DEFAULT_REFRESH_SECONDS", "30"))
+LICENSE_ADMIN_TOKEN = str(os.getenv("LICENSE_ADMIN_TOKEN", "")).strip()
 
 
 def _parse_admin_keys() -> set[str]:
@@ -77,7 +89,6 @@ def _parse_admin_keys() -> set[str]:
 
 
 ADMIN_KEYS = _parse_admin_keys()
-DEFAULT_REFRESH_SECONDS = int(os.getenv("DEFAULT_REFRESH_SECONDS", "30"))
 
 app = Flask(__name__, static_folder="static")
 
@@ -104,6 +115,55 @@ def err(message: str, status: int = 400, **kwargs):
     return jsonify(payload), status
 
 
+def _to_int(value: Any, default: int = 0) -> int:
+    try:
+        if value is None or value == "":
+            return default
+        return int(value)
+    except Exception:
+        return default
+
+
+def _payment_details_payload(user_id: str = "") -> Dict[str, Any]:
+    license_status = compute_license_status(user_id) if user_id else None
+    return {
+        "payment": {
+            "required_player": PAYMENT_PLAYER,
+            "required_amount": PAYMENT_AMOUNT_XANAX,
+            "required_kind": "xanax",
+            "message": f"Trial expired. Send {PAYMENT_AMOUNT_XANAX} Xanax to {PAYMENT_PLAYER} to continue access.",
+        },
+        "license": license_status,
+    }
+
+
+def _license_block_response(user_id: str, reason: str = ""):
+    payload = _payment_details_payload(user_id)
+    block_reason = reason or str((payload.get("license") or {}).get("block_reason") or "license_inactive")
+    return err(
+        f"Access blocked: {block_reason}. Send {PAYMENT_AMOUNT_XANAX} Xanax to {PAYMENT_PLAYER} to continue.",
+        403,
+        **payload,
+    )
+
+
+def _require_license_admin():
+    header_token = str(request.headers.get("X-License-Admin", "")).strip()
+    bearer = str(request.headers.get("Authorization", "")).strip()
+
+    auth_token = header_token
+    if not auth_token and bearer.lower().startswith("bearer "):
+        auth_token = bearer[7:].strip()
+
+    if not LICENSE_ADMIN_TOKEN:
+        return False, err("LICENSE_ADMIN_TOKEN is not configured on the server.", 503)
+
+    if auth_token != LICENSE_ADMIN_TOKEN:
+        return False, err("Unauthorized admin request.", 401)
+
+    return True, None
+
+
 def require_session(fn):
     @wraps(fn)
     def wrapper(*args, **kwargs):
@@ -115,20 +175,22 @@ def require_session(fn):
         if not sess:
             return err("Invalid session token.", 401)
 
+        user_id = str(sess.get("user_id") or "").strip()
+        if not user_id:
+            delete_session(token)
+            return err("Invalid session user.", 401)
+
+        license_status = compute_license_status(user_id)
+        if not bool(license_status.get("active")):
+            delete_sessions_for_user(user_id)
+            return _license_block_response(user_id)
+
         touch_session(token)
         request.session = sess
+        request.license_status = license_status
         return fn(*args, **kwargs)
 
     return wrapper
-
-
-def _to_int(value: Any, default: int = 0) -> int:
-    try:
-        if value is None or value == "":
-            return default
-        return int(value)
-    except Exception:
-        return default
 
 
 def _seconds_to_text(seconds: int) -> str:
@@ -660,6 +722,7 @@ def root():
         status="online",
         now=utc_now(),
         admin_keys_loaded=sorted(list(ADMIN_KEYS)),
+        license_admin_enabled=bool(LICENSE_ADMIN_TOKEN),
         endpoints=[
             "/health",
             "/api/auth",
@@ -668,6 +731,7 @@ def root():
             "/api/wars",
             "/api/analytics",
             "/api/settings",
+            "/api/license/status",
             "/api/availability/set",
             "/api/chain-sitter/set",
             "/api/med-deals/add",
@@ -684,6 +748,9 @@ def root():
             "/api/bounties/delete",
             "/api/notifications",
             "/api/notifications/seen",
+            "/api/admin/payment/confirm",
+            "/api/admin/license/expire",
+            "/api/admin/license/status",
             "/static/war-bot.user.js",
         ],
     )
@@ -696,6 +763,7 @@ def health():
         status="healthy",
         now=utc_now(),
         admin_keys_loaded=sorted(list(ADMIN_KEYS)),
+        license_admin_enabled=bool(LICENSE_ADMIN_TOKEN),
     )
 
 
@@ -711,13 +779,6 @@ def api_auth():
         admin_key = str(data.get("admin_key", "")).strip().strip('"').strip("'")
         api_key = str(data.get("api_key", "")).strip()
 
-        if not admin_key:
-            return err("Missing admin key.")
-        if ADMIN_KEYS and admin_key not in ADMIN_KEYS:
-            return err(
-                f"Invalid admin key. Server loaded these keys: {sorted(list(ADMIN_KEYS))}",
-                403,
-            )
         if not api_key:
             return err("Missing Torn API key.")
 
@@ -738,6 +799,32 @@ def api_auth():
             faction_name=faction_name,
         )
 
+        ensure_license_row(user_id, admin_key=admin_key)
+        license_status = compute_license_status(user_id)
+
+        has_trial_started = bool(str(license_status.get("trial_started_at") or "").strip())
+        license_active = bool(license_status.get("active"))
+
+        if not has_trial_started:
+            if not admin_key:
+                return err("Missing admin key for first activation.", 403, **_payment_details_payload(user_id))
+            if ADMIN_KEYS and admin_key not in ADMIN_KEYS:
+                return err(
+                    f"Invalid admin key. Server loaded these keys: {sorted(list(ADMIN_KEYS))}",
+                    403,
+                    **_payment_details_payload(user_id),
+                )
+            license_status = start_trial_if_needed(user_id, admin_key=admin_key)
+            license_active = bool(license_status.get("active"))
+
+        elif not license_active:
+            clear_license_admin_key(user_id, note="trial_expired")
+            delete_sessions_for_user(user_id)
+            return _license_block_response(user_id)
+
+        if not license_active:
+            return _license_block_response(user_id)
+
         if get_user_setting(user_id, "refresh_seconds") is None:
             set_user_setting(user_id, "refresh_seconds", str(DEFAULT_REFRESH_SECONDS))
         if get_user_setting(user_id, "alerts_enabled") is None:
@@ -756,6 +843,12 @@ def api_auth():
                 "faction_name": faction_name,
                 "profile_url": profile_url(user_id),
             },
+            license=license_status,
+            payment={
+                "required_player": PAYMENT_PLAYER,
+                "required_amount": PAYMENT_AMOUNT_XANAX,
+                "required_kind": "xanax",
+            },
         )
     except Exception as e:
         return err(f"Auth failed: {e}", 500)
@@ -771,6 +864,24 @@ def api_logout():
         return ok(message="Logged out.")
     except Exception as e:
         return err(f"Logout failed: {e}", 500)
+
+
+@app.get("/api/license/status")
+@require_session
+def api_license_status():
+    try:
+        user_id = request.session["user_id"]
+        return ok(
+            license=compute_license_status(user_id),
+            payment={
+                "required_player": PAYMENT_PLAYER,
+                "required_amount": PAYMENT_AMOUNT_XANAX,
+                "required_kind": "xanax",
+            },
+            payment_history=get_payment_history(user_id, limit=10),
+        )
+    except Exception as e:
+        return err(f"Could not load license status: {e}", 500)
 
 
 @app.get("/api/wars")
@@ -790,6 +901,7 @@ def api_wars():
             wars=res.get("wars", []),
             source_ok=bool(res.get("source_ok")),
             source_note=res.get("source_note", ""),
+            license=request.license_status,
         )
     except Exception as e:
         return err(f"Could not load wars: {e}", 500)
@@ -890,6 +1002,7 @@ def api_state():
         med_deals = _serialize_med_deals(list_med_deals_for_faction(state_faction_id))
         targets = _serialize_targets(list_targets(user_id))
         notifications = list_notifications(user_id)
+        license_status = compute_license_status(user_id)
 
         return ok(
             me={
@@ -900,6 +1013,13 @@ def api_state():
                 "profile_url": profile_url(user["user_id"]),
                 "available": int(user.get("available", 1)),
                 "chain_sitter": int(user.get("chain_sitter", 0)),
+            },
+            license=license_status,
+            payment={
+                "required_player": PAYMENT_PLAYER,
+                "required_amount": PAYMENT_AMOUNT_XANAX,
+                "required_kind": "xanax",
+                "message": f"Send {PAYMENT_AMOUNT_XANAX} Xanax to {PAYMENT_PLAYER} to keep access after the trial.",
             },
             faction={
                 "id": state_faction_id,
@@ -1074,7 +1194,8 @@ def api_analytics():
                 "eta_to_target_us_seconds": pace["eta_to_target_us_seconds"],
                 "eta_to_target_us_text": pace["eta_to_target_us_text"],
                 "snapshots": snapshots,
-            }
+            },
+            license=request.license_status,
         )
     except Exception as e:
         return err(f"Could not load analytics: {e}", 500)
@@ -1089,7 +1210,13 @@ def api_settings_get():
             settings={
                 "refresh_seconds": _to_int(get_user_setting(user_id, "refresh_seconds"), DEFAULT_REFRESH_SECONDS),
                 "alerts_enabled": _to_int(get_user_setting(user_id, "alerts_enabled"), 1),
-            }
+            },
+            license=request.license_status,
+            payment={
+                "required_player": PAYMENT_PLAYER,
+                "required_amount": PAYMENT_AMOUNT_XANAX,
+                "required_kind": "xanax",
+            },
         )
     except Exception as e:
         return err(f"Could not load settings: {e}", 500)
@@ -1444,7 +1571,7 @@ def api_bounties_delete():
 def api_notifications():
     try:
         user_id = request.session["user_id"]
-        return ok(notifications=list_notifications(user_id))
+        return ok(notifications=list_notifications(user_id), license=request.license_status)
     except Exception as e:
         return err(f"Could not load notifications: {e}", 500)
 
@@ -1458,6 +1585,87 @@ def api_notifications_seen():
         return ok(message="Notifications marked seen.")
     except Exception as e:
         return err(f"Could not update notifications: {e}", 500)
+
+
+@app.post("/api/admin/payment/confirm")
+def api_admin_payment_confirm():
+    try:
+        allowed, response = _require_license_admin()
+        if not allowed:
+            return response
+
+        data = request.get_json(force=True, silent=True) or {}
+        user_id = str(data.get("user_id", "")).strip()
+        amount = _to_int(data.get("amount"), PAYMENT_AMOUNT_XANAX)
+        payment_kind = str(data.get("payment_kind", "xanax")).strip() or "xanax"
+        note = str(data.get("note", "")).strip()
+        received_by = str(data.get("received_by", PAYMENT_PLAYER)).strip() or PAYMENT_PLAYER
+        extend_days = _to_int(data.get("extend_days"), 45)
+
+        if not user_id:
+            return err("Missing user_id.")
+
+        status = renew_after_payment(
+            user_id=user_id,
+            amount=amount,
+            payment_kind=payment_kind,
+            note=note,
+            received_by=received_by,
+            extend_days=max(1, extend_days),
+        )
+
+        add_notification(user_id, "payment", f"Payment confirmed. Access renewed by {received_by}.")
+        return ok(
+            message="Payment confirmed and license renewed.",
+            license=status,
+            payment_history=get_payment_history(user_id, limit=10),
+        )
+    except Exception as e:
+        return err(f"Could not confirm payment: {e}", 500)
+
+
+@app.post("/api/admin/license/expire")
+def api_admin_license_expire():
+    try:
+        allowed, response = _require_license_admin()
+        if not allowed:
+            return response
+
+        data = request.get_json(force=True, silent=True) or {}
+        user_id = str(data.get("user_id", "")).strip()
+        if not user_id:
+            return err("Missing user_id.")
+
+        status = force_expire_license(user_id, clear_key=True)
+        delete_sessions_for_user(user_id)
+        add_notification(user_id, "license", "Your access has expired. Payment is required to continue.")
+        return ok(message="License expired.", license=status)
+    except Exception as e:
+        return err(f"Could not expire license: {e}", 500)
+
+
+@app.get("/api/admin/license/status")
+def api_admin_license_status():
+    try:
+        allowed, response = _require_license_admin()
+        if not allowed:
+            return response
+
+        user_id = str(request.args.get("user_id", "")).strip()
+        if not user_id:
+            return err("Missing user_id.")
+
+        return ok(
+            license=compute_license_status(user_id),
+            payment_history=get_payment_history(user_id, limit=25),
+            payment={
+                "required_player": PAYMENT_PLAYER,
+                "required_amount": PAYMENT_AMOUNT_XANAX,
+                "required_kind": "xanax",
+            },
+        )
+    except Exception as e:
+        return err(f"Could not load admin license status: {e}", 500)
 
 
 @app.errorhandler(404)
