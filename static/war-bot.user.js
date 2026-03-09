@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         War Hub ⚔️
 // @namespace    fries91-war-hub
-// @version      2.5.2
-// @description  War Hub by Fries91. Ultimate overlay with shared war terms, draggable icon, draggable overlay, PDA friendly, server-backed med deals/targets/assignments/notes, hospital view, analytics, notifications, and settings.
+// @version      2.6.0
+// @description  War Hub by Fries91. Trial/payment aware overlay with draggable icon, draggable overlay, PDA friendly, shared war tools, and payment lock handling.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
 // @downloadURL  https://torn-war-bot.onrender.com/static/war-bot.user.js
@@ -19,8 +19,8 @@
 (function () {
   "use strict";
 
-  if (window.__WAR_HUB_V252__) return;
-  window.__WAR_HUB_V252__ = true;
+  if (window.__WAR_HUB_V260__) return;
+  window.__WAR_HUB_V260__ = true;
 
   const BASE_URL = "https://torn-war-bot.onrender.com";
 
@@ -34,6 +34,9 @@
   const K_REFRESH = "warhub_refresh_ms_v2";
   const K_NOTES = "warhub_notes_v2";
   const K_LOCAL_NOTIFICATIONS = "warhub_local_notifications_v2";
+  const K_ACCESS_CACHE = "warhub_access_cache_v2";
+
+  const PAYMENT_TEXT = "Send 50 Xanax to Fries91";
 
   const TAB_ORDER = [
     ["war", "War"],
@@ -65,6 +68,7 @@
   let loadInFlight = false;
   let lastStatusMsg = "";
   let lastStatusErr = false;
+  let accessState = normalizeAccessCache(GM_getValue(K_ACCESS_CACHE, null));
 
   const css = `
     #warhub-shield {
@@ -246,6 +250,9 @@
       background: linear-gradient(180deg, #d23333, #831515) !important;
       color: #fff !important;
     }
+    .warhub-tab.locked {
+      opacity: .55 !important;
+    }
 
     .warhub-body {
       padding: 8px !important;
@@ -271,6 +278,27 @@
     .warhub-status.err {
       background: rgba(185,52,52,.22) !important;
       color: #ffdcdc !important;
+    }
+
+    .warhub-banner {
+      margin-bottom: 8px !important;
+      padding: 10px 12px !important;
+      border-radius: 12px !important;
+      border: 1px solid rgba(255,255,255,.10) !important;
+      background: rgba(255,255,255,.05) !important;
+      color: #fff !important;
+    }
+    .warhub-banner.payment {
+      background: linear-gradient(180deg, rgba(150,43,43,.38), rgba(72,19,19,.26)) !important;
+      border-color: rgba(255,130,130,.22) !important;
+    }
+    .warhub-banner.trial {
+      background: linear-gradient(180deg, rgba(164,116,25,.34), rgba(83,59,12,.22)) !important;
+      border-color: rgba(255,215,118,.22) !important;
+    }
+    .warhub-banner.good {
+      background: linear-gradient(180deg, rgba(35,140,82,.30), rgba(21,96,58,.20)) !important;
+      border-color: rgba(109,214,143,.18) !important;
     }
 
     .warhub-grid { display: grid !important; gap: 8px !important; }
@@ -439,6 +467,7 @@
     .warhub-btn.good { background: linear-gradient(180deg, #238c52, #15603a) !important; }
     .warhub-btn.warn { background: linear-gradient(180deg, #af7b22, #775114) !important; }
     .warhub-btn.small { padding: 5px 8px !important; font-size: 11px !important; }
+    .warhub-btn[disabled] { opacity: .45 !important; cursor: not-allowed !important; }
 
     .warhub-input, .warhub-select, .warhub-textarea {
       width: 100% !important;
@@ -491,6 +520,15 @@
       overflow-x: hidden !important;
       -webkit-overflow-scrolling: touch !important;
       padding-right: 2px !important;
+    }
+
+    .warhub-payment-line {
+      padding: 8px 10px !important;
+      border-radius: 10px !important;
+      background: rgba(255,255,255,.06) !important;
+      font-weight: 800 !important;
+      text-align: center !important;
+      margin-top: 8px !important;
     }
 
     @media (max-width: 700px) {
@@ -550,6 +588,17 @@
     }
   }
 
+  function fmtDaysLeftFromIso(v) {
+    if (!v) return null;
+    try {
+      const ms = new Date(v).getTime() - Date.now();
+      if (!Number.isFinite(ms)) return null;
+      return Math.ceil(ms / 86400000);
+    } catch {
+      return null;
+    }
+  }
+
   function arr(v) {
     return Array.isArray(v) ? v : [];
   }
@@ -604,6 +653,215 @@
     if (lastStatusMsg) setStatus(lastStatusMsg, lastStatusErr);
   }
 
+  function normalizeAccessCache(raw) {
+    const a = raw && typeof raw === "object" ? raw : {};
+    return {
+      loggedIn: !!a.loggedIn,
+      blocked: !!a.blocked,
+      paymentRequired: !!a.paymentRequired,
+      trialActive: !!a.trialActive,
+      trialExpired: !!a.trialExpired,
+      expiresAt: a.expiresAt || "",
+      daysLeft: Number.isFinite(Number(a.daysLeft)) ? Number(a.daysLeft) : null,
+      reason: a.reason || "",
+      message: a.message || "",
+      source: a.source || "",
+      lastSeenAt: a.lastSeenAt || "",
+    };
+  }
+
+  function saveAccessCache() {
+    GM_setValue(K_ACCESS_CACHE, accessState || {});
+  }
+
+  function clearSavedKeys() {
+    GM_deleteValue(K_API_KEY);
+    GM_deleteValue(K_ADMIN_KEY);
+    GM_deleteValue(K_SESSION);
+  }
+
+  function clearBlockedCredentials() {
+    clearSavedKeys();
+  }
+
+  function accessSummaryMessage() {
+    if (!accessState) return "";
+    if (accessState.paymentRequired || accessState.blocked || accessState.trialExpired) {
+      return accessState.message || accessState.reason || `Access locked. ${PAYMENT_TEXT}.`;
+    }
+    if (accessState.trialActive) {
+      if (accessState.daysLeft != null) {
+        if (accessState.daysLeft <= 0) return `Trial ends today. After that, ${PAYMENT_TEXT}.`;
+        return `Trial active. ${accessState.daysLeft} day${accessState.daysLeft === 1 ? "" : "s"} left.`;
+      }
+      if (accessState.expiresAt) return `Trial active until ${fmtTs(accessState.expiresAt)}.`;
+      return "Trial active.";
+    }
+    return "";
+  }
+
+  function getAccessInfo(payload, httpStatus) {
+    const d = payload && typeof payload === "object" ? payload : {};
+    const access = d.access && typeof d.access === "object" ? d.access : {};
+
+    const paymentRequired =
+      !!d.payment_required ||
+      !!d.requires_payment ||
+      !!d.paymentRequired ||
+      !!access.payment_required ||
+      !!access.requires_payment ||
+      !!access.paymentRequired;
+
+    const blocked =
+      !!d.blocked ||
+      !!d.access_blocked ||
+      !!d.locked ||
+      !!d.denied ||
+      !!access.blocked ||
+      !!access.access_blocked ||
+      !!access.locked ||
+      !!access.denied ||
+      paymentRequired;
+
+    const expiresAt =
+      d.trial_expires_at ||
+      d.trialEndsAt ||
+      d.expires_at ||
+      access.trial_expires_at ||
+      access.trialEndsAt ||
+      access.expires_at ||
+      "";
+
+    const explicitDaysLeft = d.trial_days_left ?? d.days_left ?? access.trial_days_left ?? access.days_left;
+    const computedDaysLeft = explicitDaysLeft != null ? Number(explicitDaysLeft) : fmtDaysLeftFromIso(expiresAt);
+
+    const trialExpired =
+      !!d.trial_expired ||
+      !!d.expired ||
+      !!access.trial_expired ||
+      !!access.expired ||
+      ((computedDaysLeft != null && computedDaysLeft < 0) && !paymentRequired ? true : false);
+
+    const trialActive =
+      !!d.trial_active ||
+      !!access.trial_active ||
+      ((computedDaysLeft != null && computedDaysLeft >= 0) && !paymentRequired && !trialExpired);
+
+    const accessStatus = String(
+      d.access_status ||
+      d.status ||
+      access.status ||
+      access.access_status ||
+      ""
+    ).toLowerCase();
+
+    const reason =
+      d.reason ||
+      d.block_reason ||
+      d.error ||
+      access.reason ||
+      access.block_reason ||
+      "";
+
+    let message =
+      d.message ||
+      d.notice ||
+      d.details ||
+      access.message ||
+      access.notice ||
+      "";
+
+    let finalBlocked = blocked;
+    let finalPaymentRequired = paymentRequired;
+    let finalTrialExpired = trialExpired;
+
+    if (accessStatus.includes("payment")) {
+      finalBlocked = true;
+      finalPaymentRequired = true;
+      finalTrialExpired = true;
+    } else if (accessStatus.includes("expired")) {
+      finalBlocked = true;
+      finalTrialExpired = true;
+    } else if (accessStatus.includes("blocked") || accessStatus.includes("locked") || accessStatus.includes("denied")) {
+      finalBlocked = true;
+    }
+
+    if ((httpStatus === 402 || httpStatus === 403) && !message) {
+      message = `${PAYMENT_TEXT}.`;
+    }
+
+    if (finalPaymentRequired && !message) {
+      message = `Trial expired. ${PAYMENT_TEXT}.`;
+    } else if (finalBlocked && !message) {
+      message = reason || `Access locked. ${PAYMENT_TEXT}.`;
+    }
+
+    return {
+      loggedIn: false,
+      blocked: finalBlocked,
+      paymentRequired: finalPaymentRequired,
+      trialActive: !!trialActive && !finalBlocked,
+      trialExpired: finalTrialExpired || finalPaymentRequired,
+      expiresAt: expiresAt || "",
+      daysLeft: Number.isFinite(computedDaysLeft) ? computedDaysLeft : null,
+      reason: String(reason || ""),
+      message: String(message || ""),
+      source: String(accessStatus || ""),
+      lastSeenAt: new Date().toISOString(),
+    };
+  }
+
+  function updateAccessFromPayload(payload, httpStatus, loggedInHint) {
+    const next = getAccessInfo(payload, httpStatus);
+    if (loggedInHint === true && !next.blocked) next.loggedIn = true;
+    if (loggedInHint === false) next.loggedIn = false;
+
+    if (next.blocked || next.paymentRequired || next.trialExpired) {
+      accessState = next;
+      clearBlockedCredentials();
+      saveAccessCache();
+      return next;
+    }
+
+    if (next.trialActive || next.expiresAt || next.daysLeft != null) {
+      accessState = {
+        ...accessState,
+        ...next,
+        loggedIn: loggedInHint === true ? true : accessState.loggedIn,
+        blocked: false,
+        paymentRequired: false,
+        trialExpired: false,
+      };
+      saveAccessCache();
+      return accessState;
+    }
+
+    if (loggedInHint === true) {
+      accessState = {
+        ...accessState,
+        loggedIn: true,
+        blocked: false,
+        paymentRequired: false,
+        trialExpired: false,
+        lastSeenAt: new Date().toISOString(),
+      };
+      saveAccessCache();
+    }
+
+    return accessState;
+  }
+
+  function canUseProtectedFeatures() {
+    return !(accessState?.blocked || accessState?.paymentRequired || accessState?.trialExpired);
+  }
+
+  function ensureAllowedOrMessage() {
+    if (canUseProtectedFeatures()) return true;
+    setStatus(accessSummaryMessage() || `Access locked. ${PAYMENT_TEXT}.`, true);
+    renderBody();
+    return false;
+  }
+
   function gmXhr(method, path, body) {
     return new Promise((resolve) => {
       const token = cleanInputValue(GM_getValue(K_SESSION, ""));
@@ -648,22 +906,74 @@
     }
 
     const res = await gmXhr("POST", "/api/auth", { api_key: apiKey, admin_key: adminKey });
+    updateAccessFromPayload(res.data, res.status, false);
+
     if (!res.ok) {
+      if (accessState?.blocked || accessState?.paymentRequired || accessState?.trialExpired) {
+        setStatus(accessSummaryMessage() || `${PAYMENT_TEXT}.`, true);
+        renderBody();
+        return false;
+      }
       setStatus(res.error || "Login failed.", true);
       return false;
     }
 
     const token = res.data?.token || res.data?.session_token || res.data?.session;
-    if (token) GM_setValue(K_SESSION, cleanInputValue(token));
-    return !!token;
+    if (token) {
+      GM_setValue(K_SESSION, cleanInputValue(token));
+      updateAccessFromPayload(res.data, res.status, true);
+      return true;
+    }
+
+    if (accessState?.blocked || accessState?.paymentRequired || accessState?.trialExpired) {
+      setStatus(accessSummaryMessage() || `${PAYMENT_TEXT}.`, true);
+      renderBody();
+      return false;
+    }
+
+    setStatus("Login failed.", true);
+    return false;
   }
 
   async function req(method, path, body) {
+    if (!canUseProtectedFeatures() && path !== "/health" && path !== "/api/auth") {
+      return {
+        ok: false,
+        status: 403,
+        data: { ok: false, payment_required: true, message: accessSummaryMessage() || `${PAYMENT_TEXT}.` },
+        error: accessSummaryMessage() || `${PAYMENT_TEXT}.`,
+      };
+    }
+
     let res = await gmXhr(method, path, body);
+    updateAccessFromPayload(res.data, res.status, !!cleanInputValue(GM_getValue(K_SESSION, "")));
+
+    if (accessState?.blocked || accessState?.paymentRequired || accessState?.trialExpired) {
+      return {
+        ok: false,
+        status: res.status || 403,
+        data: res.data,
+        error: accessSummaryMessage() || res.error || `${PAYMENT_TEXT}.`,
+      };
+    }
+
     if (!res.ok && (res.status === 401 || res.status === 403)) {
       const ok = await login(false);
-      if (ok) res = await gmXhr(method, path, body);
+      if (ok) {
+        res = await gmXhr(method, path, body);
+        updateAccessFromPayload(res.data, res.status, true);
+      }
     }
+
+    if (accessState?.blocked || accessState?.paymentRequired || accessState?.trialExpired) {
+      return {
+        ok: false,
+        status: res.status || 403,
+        data: res.data,
+        error: accessSummaryMessage() || res.error || `${PAYMENT_TEXT}.`,
+      };
+    }
+
     return res;
   }
 
@@ -685,6 +995,8 @@
     const warTerms = s.war_terms || null;
     const medDealBuyers = arr(s.med_deal_buyers || enemies);
     const medDealsMessage = String(s.med_deals_message || war.message || enemyFaction.message || "").trim();
+
+    updateAccessFromPayload(s, 200, !!cleanInputValue(GM_getValue(K_SESSION, "")));
 
     return {
       ...s,
@@ -709,11 +1021,18 @@
 
   async function loadState(silent = false) {
     if (loadInFlight) return;
+    if (!canUseProtectedFeatures()) {
+      if (!silent) setStatus(accessSummaryMessage() || `${PAYMENT_TEXT}.`, true);
+      renderBody();
+      return;
+    }
+
     loadInFlight = true;
     try {
       const res = await req("GET", "/api/state");
       if (!res.ok) {
         if (!silent) setStatus(res.error || "Could not load state.", true);
+        if (accessState?.blocked || accessState?.paymentRequired || accessState?.trialExpired) renderBody();
         return;
       }
       state = normalizeState(res.data || {});
@@ -726,11 +1045,13 @@
   }
 
   async function loadAnalytics() {
+    if (!canUseProtectedFeatures()) return;
     const res = await req("GET", "/api/analytics");
     if (res.ok) analyticsCache = res.data?.analytics || res.data || {};
   }
 
   async function doAction(method, path, body, okMsg, reload = true) {
+    if (!ensureAllowedOrMessage()) return null;
     const res = await req(method, path, body);
     if (!res.ok) {
       setStatus(res.error || "Action failed.", true);
@@ -899,7 +1220,7 @@
 
   function renderOfflineDropdown(title, list, enemy) {
     return `
-      <details class="warhub-dropdown" ${list.length ? "" : ""}>
+      <details class="warhub-dropdown">
         <summary>
           <div class="warhub-section-title" style="margin-bottom:0;">
             <h3>${esc(title)}</h3>
@@ -940,7 +1261,69 @@
     `;
   }
 
-  function renderWarTab() {
+  function renderAccessBanner() {
+    const msg = accessSummaryMessage();
+    if (!msg) return "";
+
+    if (accessState.paymentRequired || accessState.blocked || accessState.trialExpired) {
+      return `
+        <div class="warhub-banner payment">
+          <div style="font-weight:800; margin-bottom:4px;">Payment Required</div>
+          <div class="warhub-mini" style="opacity:.95;">${esc(msg)}</div>
+          <div class="warhub-payment-line">${esc(PAYMENT_TEXT)}</div>
+        </div>
+      `;
+    }
+
+    if (accessState.trialActive) {
+      return `
+        <div class="warhub-banner trial">
+          <div style="font-weight:800; margin-bottom:4px;">Trial Active</div>
+          <div class="warhub-mini" style="opacity:.95;">${esc(msg)}</div>
+        </div>
+      `;
+    }
+
+    return "";
+  }
+
+  function renderLoginRequiredCard() {
+    const savedAdmin = cleanInputValue(GM_getValue(K_ADMIN_KEY, ""));
+    const savedApi = cleanInputValue(GM_getValue(K_API_KEY, ""));
+    const blocked = accessState.paymentRequired || accessState.blocked || accessState.trialExpired;
+
+    return `
+      ${renderAccessBanner()}
+      <div class="warhub-card">
+        <h3>${blocked ? "Access Locked" : "Login"}</h3>
+        <div class="warhub-mini" style="line-height:1.55; margin-bottom:8px;">
+          ${blocked
+            ? `Your trial has expired or payment is required. ${esc(PAYMENT_TEXT)}. After payment, enter your keys again and log in.`
+            : `Enter your Torn API key and admin key to use War Hub. Trial status will be checked when you log in.`}
+        </div>
+
+        <div class="warhub-grid two">
+          <div>
+            <label class="warhub-label">Torn API Key</label>
+            <input id="wh-api-key" class="warhub-input" autocomplete="off" autocapitalize="off" spellcheck="false" value="${blocked ? "" : esc(savedApi)}" placeholder="Paste your API key" ${blocked ? "disabled" : ""}>
+          </div>
+          <div>
+            <label class="warhub-label">Admin Key</label>
+            <input id="wh-admin-key" class="warhub-input" autocomplete="off" autocapitalize="off" spellcheck="false" value="${blocked ? "" : esc(savedAdmin)}" placeholder="Paste your admin key" ${blocked ? "disabled" : ""}>
+          </div>
+        </div>
+
+        <div class="warhub-payment-line">${esc(PAYMENT_TEXT)}</div>
+
+        <div class="warhub-actions" style="margin-top:8px;">
+          <button class="warhub-btn primary" id="wh-save-settings" ${blocked ? "disabled" : ""}>Save + Login</button>
+          <button class="warhub-btn" id="wh-test-health">Test Health</button>
+          <button class="warhub-btn warn" id="wh-clear-keys">Clear Saved Keys</button>
+        </div>
+      </div>
+    `;
+  }
+    function renderWarTab() {
     const war = state?.war || {};
     const me = state?.me || {};
     const faction = state?.faction || {};
@@ -959,6 +1342,7 @@
     const enemyFactionId = enemyFaction?.id || enemyFaction?.faction_id || "";
 
     return `
+      ${renderAccessBanner()}
       ${!warActive ? `
       <div class="warhub-card">
         <h3>Status</h3>
@@ -1035,6 +1419,7 @@
     const sharedTermsAt = String(state?.war?.terms_updated_at || state?.warTerms?.updated_at || "").trim();
 
     return `
+      ${renderAccessBanner()}
       <div class="warhub-card">
         <h3>Shared War Terms</h3>
         ${warId ? `<div class="warhub-mini" style="margin-bottom:8px;">War ID: ${esc(warId)}</div>` : `<div class="warhub-mini" style="margin-bottom:8px;">Currently not in war.</div>`}
@@ -1059,11 +1444,11 @@
   }
 
   function renderMembersTab() {
-    return renderGroupedRosterTab("Faction Members", arr(state?.members), false);
+    return `${renderAccessBanner()}${renderGroupedRosterTab("Faction Members", arr(state?.members), false)}`;
   }
 
   function renderEnemiesTab() {
-    return renderGroupedRosterTab("Enemy Members", arr(state?.enemies), true);
+    return `${renderAccessBanner()}${renderGroupedRosterTab("Enemy Members", arr(state?.enemies), true)}`;
   }
 
   function renderHospitalTab() {
@@ -1073,6 +1458,7 @@
     const warActive = !!state?.war?.active;
 
     return `
+      ${renderAccessBanner()}
       <div class="warhub-grid two">
         <div class="warhub-card">
           <h3>Our Hospital</h3>
@@ -1091,6 +1477,7 @@
     const sitters = sortAlphabetical(arr(state?.chainSitters));
 
     return `
+      ${renderAccessBanner()}
       <div class="warhub-card">
         <h3>Chain Control</h3>
         <div class="warhub-grid two">
@@ -1125,6 +1512,7 @@
     }).join("");
 
     return `
+      ${renderAccessBanner()}
       <div class="warhub-card">
         <h3>Add Med Deal</h3>
         ${!warActive ? `<div class="warhub-empty" style="margin-bottom:8px;">${esc(medMsg)}</div>` : ""}
@@ -1178,6 +1566,7 @@
     }).join("");
 
     return `
+      ${renderAccessBanner()}
       <div class="warhub-card">
         <h3>Add Target</h3>
         <div class="warhub-grid two">
@@ -1213,6 +1602,7 @@
     }).join("");
 
     return `
+      ${renderAccessBanner()}
       <div class="warhub-card">
         <h3>Assign Target</h3>
         ${warId ? `<div class="warhub-mini" style="margin-bottom:8px;">War ID: ${esc(warId)}</div>` : `<div class="warhub-mini" style="margin-bottom:8px;">Currently not in war.</div>`}
@@ -1271,6 +1661,7 @@
     const warId = state?.war?.war_id || state?.war?.id || "";
 
     return `
+      ${renderAccessBanner()}
       <div class="warhub-card">
         <h3>War Notes</h3>
         ${warId ? `<div class="warhub-mini" style="margin-bottom:8px;">War ID: ${esc(warId)}</div>` : `<div class="warhub-mini" style="margin-bottom:8px;">No active war id detected.</div>`}
@@ -1303,6 +1694,7 @@
     const snaps = arr(a.snapshots);
 
     return `
+      ${renderAccessBanner()}
       <div class="warhub-card">
         <h3>Analytics</h3>
         <div class="warhub-grid two">
@@ -1320,6 +1712,7 @@
   function renderNotificationsTab() {
     const items = mergedNotifications();
     return `
+      ${renderAccessBanner()}
       <div class="warhub-card">
         <h3>Alerts</h3>
         ${items.length ? `<div class="warhub-section-scroll"><div class="warhub-list">${items.map((x) => `
@@ -1341,29 +1734,50 @@
     const refreshMs = Number(GM_getValue(K_REFRESH, 25000) || 25000);
     const savedAdmin = cleanInputValue(GM_getValue(K_ADMIN_KEY, ""));
     const savedApi = cleanInputValue(GM_getValue(K_API_KEY, ""));
+    const blocked = accessState.paymentRequired || accessState.blocked || accessState.trialExpired;
 
     return `
+      ${renderAccessBanner()}
       <div class="warhub-card">
         <h3>Keys</h3>
         <div class="warhub-grid two">
           <div>
             <label class="warhub-label">Torn API Key</label>
-            <input id="wh-api-key" class="warhub-input" autocomplete="off" autocapitalize="off" spellcheck="false" value="${esc(savedApi)}" placeholder="Paste your API key">
+            <input id="wh-api-key" class="warhub-input" autocomplete="off" autocapitalize="off" spellcheck="false" value="${blocked ? "" : esc(savedApi)}" placeholder="Paste your API key" ${blocked ? "disabled" : ""}>
           </div>
           <div>
             <label class="warhub-label">Admin Key</label>
-            <input id="wh-admin-key" class="warhub-input" autocomplete="off" autocapitalize="off" spellcheck="false" value="${esc(savedAdmin)}" placeholder="Paste your admin key">
+            <input id="wh-admin-key" class="warhub-input" autocomplete="off" autocapitalize="off" spellcheck="false" value="${blocked ? "" : esc(savedAdmin)}" placeholder="Paste your admin key" ${blocked ? "disabled" : ""}>
           </div>
         </div>
 
         <div class="warhub-mini" style="margin-top:8px;">
-          Saved admin key right now: <b>${esc(savedAdmin || "(empty)")}</b>
+          Saved admin key right now: <b>${esc(blocked ? "(cleared while blocked)" : (savedAdmin || "(empty)"))}</b>
         </div>
 
+        <div class="warhub-payment-line">${esc(PAYMENT_TEXT)}</div>
+
         <div class="warhub-actions" style="margin-top:8px;">
-          <button class="warhub-btn primary" id="wh-save-settings">Save + Login</button>
+          <button class="warhub-btn primary" id="wh-save-settings" ${blocked ? "disabled" : ""}>Save + Login</button>
           <button class="warhub-btn" id="wh-test-health">Test Health</button>
           <button class="warhub-btn warn" id="wh-clear-keys">Clear Saved Keys</button>
+        </div>
+      </div>
+
+      <div class="warhub-card">
+        <h3>Trial / Payment</h3>
+        <div class="warhub-mini" style="line-height:1.55;">
+          Trial length: <b>45 days</b>.
+          <br><br>
+          ${accessState.trialActive
+            ? `Your trial is active${accessState.daysLeft != null ? ` with <b>${esc(String(accessState.daysLeft))}</b> day${accessState.daysLeft === 1 ? "" : "s"} left` : ""}${accessState.expiresAt ? ` and ends at <b>${esc(fmtTs(accessState.expiresAt))}</b>` : ""}.`
+            : accessState.paymentRequired || accessState.blocked || accessState.trialExpired
+              ? `Your trial has ended or payment is required. Access is locked until payment is made.`
+              : `Your trial/payment status will show here after login.`}
+          <br><br>
+          When access is blocked, this script clears your saved Torn API key, admin key, and session token locally so the overlay cannot keep using an expired or unpaid session.
+          <br><br>
+          Payment instruction: <b>${esc(PAYMENT_TEXT)}</b>.
         </div>
       </div>
 
@@ -1380,7 +1794,9 @@
           After login, normal requests use the saved <b>session token</b> in the request header instead of repeatedly
           sending your keys on every action.
           <br><br>
-          You can remove saved credentials at any time by using <b>Clear Saved Keys</b> and <b>Log Out</b>.
+          If the server reports your trial has expired or payment is required, the script will immediately clear the saved
+          API key, admin key, and session token from local storage.
+          <br><br>
           Do not share your API key, admin key, or session token with anyone you do not trust.
         </div>
       </div>
@@ -1398,7 +1814,7 @@
           <br>
           4. Shared features such as targets, assignments, med deals, terms, and notes may be visible to other authorized users in the same faction or war context.
           <br>
-          5. Access to War Hub may be changed, limited, revoked, or updated at any time.
+          5. Access to War Hub may be changed, limited, revoked, trial-limited, payment-gated, or updated at any time.
           <br>
           6. Features, layout, endpoints, and stored data behavior may change as the project continues to receive upgrades and fixes.
           <br>
@@ -1430,7 +1846,18 @@
     `;
   }
 
+  function renderLockedOrLoginTab() {
+    if (currentTab !== "settings") currentTab = "settings";
+    return renderSettingsTab();
+  }
+
   function renderTabContent() {
+    const needsLogin = !cleanInputValue(GM_getValue(K_SESSION, "")) && !state;
+    const blocked = accessState.paymentRequired || accessState.blocked || accessState.trialExpired;
+
+    if (blocked) return renderLockedOrLoginTab();
+    if (needsLogin && currentTab !== "settings") return renderLoginRequiredCard();
+
     switch (currentTab) {
       case "terms": return renderTermsTab();
       case "members": return renderMembersTab();
@@ -1452,7 +1879,10 @@
   function tabBtn(key, label) {
     const badgeNum = key === "notifications" ? unreadCount() : 0;
     const text = badgeNum ? `${label} (${badgeNum})` : label;
-    return `<button type="button" class="warhub-tab ${currentTab === key ? "active" : ""}" data-tab="${key}">${text}</button>`;
+    const blocked = accessState.paymentRequired || accessState.blocked || accessState.trialExpired;
+    const needsLogin = !cleanInputValue(GM_getValue(K_SESSION, "")) && !state;
+    const locked = (blocked || needsLogin) && key !== "settings";
+    return `<button type="button" class="warhub-tab ${currentTab === key ? "active" : ""} ${locked ? "locked" : ""}" data-tab="${key}" ${locked ? 'data-locked="1"' : ""}>${text}</button>`;
   }
 
   function renderBody() {
@@ -1579,12 +2009,6 @@
       right: shield.style.right || "",
       bottom: shield.style.bottom || "",
     });
-  }
-
-  function clearSavedKeys() {
-    GM_deleteValue(K_API_KEY);
-    GM_deleteValue(K_ADMIN_KEY);
-    GM_deleteValue(K_SESSION);
   }
 
   function makeDraggable(handleEl, moveEl, saveFn, extra) {
@@ -1722,11 +2146,19 @@
   async function markNotificationsSeen() {
     return req("POST", "/api/notifications/seen", {});
   }
-
-  function bindOverlayEvents() {
+    function bindOverlayEvents() {
     overlay.querySelectorAll(".warhub-tab").forEach((btn) => {
       btn.addEventListener("click", async () => {
-        currentTab = btn.dataset.tab || "war";
+        const key = btn.dataset.tab || "war";
+        const locked = btn.getAttribute("data-locked") === "1";
+        if (locked) {
+          currentTab = "settings";
+          GM_setValue(K_TAB, currentTab);
+          renderBody();
+          setStatus(accessSummaryMessage() || "Login required.", true);
+          return;
+        }
+        currentTab = key;
         GM_setValue(K_TAB, currentTab);
         if (currentTab === "analytics") await loadAnalytics();
         renderBody();
@@ -1756,6 +2188,12 @@
     });
 
     overlay.querySelector("#wh-save-settings")?.addEventListener("click", async () => {
+      if (accessState.paymentRequired || accessState.blocked || accessState.trialExpired) {
+        clearBlockedCredentials();
+        renderBody();
+        return setStatus(accessSummaryMessage() || `${PAYMENT_TEXT}.`, true);
+      }
+
       const api = cleanInputValue(overlay.querySelector("#wh-api-key")?.value || "");
       const admin = cleanInputValue(overlay.querySelector("#wh-admin-key")?.value || "");
 
@@ -1768,7 +2206,10 @@
 
       setStatus(`Saved admin key as: ${admin}. Logging in...`);
       const ok = await login(true);
-      if (!ok) return;
+      if (!ok) {
+        renderBody();
+        return;
+      }
 
       setStatus("Logged in.");
       await loadState(true);
@@ -1784,6 +2225,11 @@
 
     overlay.querySelector("#wh-clear-keys")?.addEventListener("click", () => {
       clearSavedKeys();
+      accessState = {
+        ...accessState,
+        loggedIn: false,
+      };
+      saveAccessCache();
       setStatus("Saved API key, admin key, and session cleared.");
       renderBody();
     });
@@ -1814,15 +2260,23 @@
     overlay.querySelector("#wh-logout")?.addEventListener("click", async () => {
       await req("POST", "/api/logout", {});
       GM_deleteValue(K_SESSION);
+      accessState = {
+        ...accessState,
+        loggedIn: false,
+      };
+      saveAccessCache();
       setStatus("Logged out.");
+      renderBody();
     });
 
     overlay.querySelector("#wh-save-notes")?.addEventListener("click", () => {
+      if (!ensureAllowedOrMessage()) return;
       setNotes(overlay.querySelector("#wh-notes")?.value || "");
       setStatus("Local note saved.");
     });
 
     overlay.querySelector("#wh-clear-notes")?.addEventListener("click", () => {
+      if (!ensureAllowedOrMessage()) return;
       setNotes("");
       renderBody();
       setStatus("Local note cleared.");
@@ -1830,6 +2284,7 @@
 
     overlay.querySelectorAll("[data-fill-assignment]").forEach((btn) => {
       btn.addEventListener("click", () => {
+        if (!ensureAllowedOrMessage()) return;
         const raw = btn.getAttribute("data-fill-assignment") || "";
         const [id, name] = raw.split("|");
         currentTab = "assignments";
@@ -1840,6 +2295,7 @@
     });
 
     overlay.querySelector("#wh-add-target")?.addEventListener("click", async () => {
+      if (!ensureAllowedOrMessage()) return;
       const raw = String(overlay.querySelector("#wh-target-pick")?.value || "");
       const note = cleanInputValue(overlay.querySelector("#wh-target-note")?.value || "");
       if (!raw) return setStatus("Pick an enemy first.", true);
@@ -1853,6 +2309,7 @@
 
     overlay.querySelectorAll("[data-del-target-live]").forEach((btn) => {
       btn.addEventListener("click", async () => {
+        if (!ensureAllowedOrMessage()) return;
         const id = Number(btn.getAttribute("data-del-target-live") || 0);
         if (!id) return;
         const res = await deleteTargetServer(id);
@@ -1864,6 +2321,7 @@
     });
 
     overlay.querySelector("#wh-add-med")?.addEventListener("click", async () => {
+      if (!ensureAllowedOrMessage()) return;
       const warActive = !!state?.war?.active;
       const buyer = cleanInputValue(overlay.querySelector("#wh-med-buyer")?.value || "");
       const note = cleanInputValue(overlay.querySelector("#wh-med-note")?.value || "");
@@ -1880,6 +2338,7 @@
 
     overlay.querySelectorAll("[data-del-med-live]").forEach((btn) => {
       btn.addEventListener("click", async () => {
+        if (!ensureAllowedOrMessage()) return;
         const id = Number(btn.getAttribute("data-del-med-live") || 0);
         if (!id) return;
         const res = await deleteMedDealServer(id);
@@ -1891,6 +2350,7 @@
     });
 
     overlay.querySelector("#wh-save-assignment")?.addEventListener("click", async () => {
+      if (!ensureAllowedOrMessage()) return;
       const warId = cleanInputValue(state?.war?.war_id || state?.war?.id || "");
       const assigneeRaw = cleanInputValue(overlay.querySelector("#wh-assignee-pick")?.value || "");
       const targetText = cleanInputValue(overlay.querySelector("#wh-assignment-target")?.value || "");
@@ -1924,6 +2384,7 @@
 
     overlay.querySelectorAll("[data-del-assignment-live]").forEach((btn) => {
       btn.addEventListener("click", async () => {
+        if (!ensureAllowedOrMessage()) return;
         const id = Number(btn.getAttribute("data-del-assignment-live") || 0);
         if (!id) return;
         const res = await deleteAssignmentServer(id);
@@ -1935,6 +2396,7 @@
     });
 
     overlay.querySelector("#wh-add-server-note")?.addEventListener("click", async () => {
+      if (!ensureAllowedOrMessage()) return;
       const warId = cleanInputValue(state?.war?.war_id || state?.war?.id || "");
       const targetId = cleanInputValue(overlay.querySelector("#wh-note-target-id")?.value || "");
       const note = cleanInputValue(overlay.querySelector("#wh-note-text")?.value || "");
@@ -1951,6 +2413,7 @@
 
     overlay.querySelectorAll("[data-del-note]").forEach((btn) => {
       btn.addEventListener("click", async () => {
+        if (!ensureAllowedOrMessage()) return;
         const id = Number(btn.getAttribute("data-del-note") || 0);
         if (!id) return;
         const res = await deleteServerNote(id);
@@ -1962,6 +2425,7 @@
     });
 
     overlay.querySelector("#wh-save-terms")?.addEventListener("click", async () => {
+      if (!ensureAllowedOrMessage()) return;
       const warId = cleanInputValue(state?.war?.war_id || state?.war?.id || "");
       const termsText = cleanInputValue(overlay.querySelector("#wh-terms-text")?.value || "");
       if (!warId) return setStatus("No active war id found.", true);
@@ -1974,6 +2438,7 @@
     });
 
     overlay.querySelector("#wh-delete-terms")?.addEventListener("click", async () => {
+      if (!ensureAllowedOrMessage()) return;
       const warId = cleanInputValue(state?.war?.war_id || state?.war?.id || "");
       if (!warId) return setStatus("No active war id found.", true);
       const res = await deleteWarTermsServer(warId);
@@ -1984,6 +2449,7 @@
     });
 
     overlay.querySelector("#wh-mark-alerts-seen")?.addEventListener("click", async () => {
+      if (!ensureAllowedOrMessage()) return;
       const res = await markNotificationsSeen();
       if (!res.ok) return setStatus(res.error || "Could not mark alerts seen.", true);
       await loadState(true);
@@ -1992,6 +2458,7 @@
     });
 
     overlay.querySelector("#wh-clear-alerts")?.addEventListener("click", () => {
+      if (!ensureAllowedOrMessage()) return;
       setLocalNotifications([]);
       renderBody();
       updateBadge();
@@ -2098,8 +2565,12 @@
     const savedApi = cleanInputValue(GM_getValue(K_API_KEY, ""));
     const savedAdmin = cleanInputValue(GM_getValue(K_ADMIN_KEY, ""));
 
-    if (!token && savedApi && savedAdmin) {
-      // quiet
+    if ((accessState.paymentRequired || accessState.blocked || accessState.trialExpired) && (token || savedApi || savedAdmin)) {
+      clearBlockedCredentials();
+    }
+
+    if (!token && savedApi && savedAdmin && canUseProtectedFeatures()) {
+      // quiet auto-login will happen through req if needed
     }
 
     await loadState(true);
@@ -2117,6 +2588,11 @@
       });
       setLocalNotifications(localAlerts.slice(0, 20));
       updateBadge();
+    }
+
+    if (accessState.paymentRequired || accessState.blocked || accessState.trialExpired) {
+      setStatus(accessSummaryMessage() || `${PAYMENT_TEXT}.`, true);
+      renderBody();
     }
   }
 
