@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         War Hub ⚔️
 // @namespace    fries91-war-hub
-// @version      2.5.1
+// @version      2.5.2
 // @description  War Hub by Fries91. Ultimate overlay with shared war terms, draggable icon, draggable overlay, PDA friendly, server-backed med deals/targets/assignments/notes, hospital view, analytics, notifications, and settings.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -19,8 +19,8 @@
 (function () {
   "use strict";
 
-  if (window.__WAR_HUB_V251__) return;
-  window.__WAR_HUB_V251__ = true;
+  if (window.__WAR_HUB_V252__) return;
+  window.__WAR_HUB_V252__ = true;
 
   const BASE_URL = "https://torn-war-bot.onrender.com";
 
@@ -293,6 +293,67 @@
       font-weight: 800 !important;
       letter-spacing: .2px !important;
       color: #fff !important;
+    }
+
+    .warhub-section-title {
+      display: flex !important;
+      align-items: center !important;
+      justify-content: space-between !important;
+      gap: 8px !important;
+      margin-bottom: 8px !important;
+    }
+
+    .warhub-count {
+      padding: 4px 8px !important;
+      border-radius: 999px !important;
+      background: rgba(255,255,255,.08) !important;
+      font-size: 11px !important;
+      font-weight: 800 !important;
+      color: #fff !important;
+    }
+
+    .warhub-roster-card.hospital-box {
+      border-color: rgba(255,130,130,.16) !important;
+      background: linear-gradient(180deg, rgba(145,37,37,.18), rgba(255,255,255,.03)) !important;
+    }
+
+    .warhub-roster-card.online-box {
+      border-color: rgba(109,214,143,.16) !important;
+      background: linear-gradient(180deg, rgba(31,120,63,.18), rgba(255,255,255,.03)) !important;
+    }
+
+    .warhub-roster-card.idle-box {
+      border-color: rgba(255,215,118,.16) !important;
+      background: linear-gradient(180deg, rgba(145,114,27,.18), rgba(255,255,255,.03)) !important;
+    }
+
+    .warhub-roster-card.offline-box {
+      border-color: rgba(180,180,180,.12) !important;
+      background: linear-gradient(180deg, rgba(70,70,70,.18), rgba(255,255,255,.03)) !important;
+    }
+
+    .warhub-dropdown {
+      border: 1px solid rgba(255,255,255,.07) !important;
+      border-radius: 12px !important;
+      background: rgba(255,255,255,.03) !important;
+      margin-bottom: 8px !important;
+      overflow: hidden !important;
+    }
+
+    .warhub-dropdown summary {
+      list-style: none !important;
+      cursor: pointer !important;
+      padding: 10px !important;
+      user-select: none !important;
+      outline: none !important;
+    }
+
+    .warhub-dropdown summary::-webkit-details-marker {
+      display: none !important;
+    }
+
+    .warhub-dropdown-body {
+      padding: 0 10px 10px 10px !important;
     }
 
     .warhub-metric {
@@ -690,35 +751,52 @@
     ) || 0;
   }
 
-  function getSortStatusWeight(x) {
+  function getPresenceState(x) {
     const hosp = getHospSeconds(x);
-    if (hosp > 0) return 0;
+    if (hosp > 0) return "hospital";
     const raw = String(x?.online_state || x?.online_status || x?.status || "").toLowerCase();
-    if (raw.includes("online")) return 1;
-    if (raw.includes("idle")) return 2;
-    return 3;
+    if (raw.includes("online")) return "online";
+    if (raw.includes("idle")) return "idle";
+    return "offline";
   }
 
-  function sortMembersForDisplay(list) {
+  function sortHosp(list) {
+    return [...arr(list)].sort((a, b) => getHospSeconds(a) - getHospSeconds(b));
+  }
+
+  function sortAlphabetical(list) {
     return [...arr(list)].sort((a, b) => {
-      const wa = getSortStatusWeight(a);
-      const wb = getSortStatusWeight(b);
-      if (wa !== wb) return wa - wb;
-
-      if (wa === 0) {
-        const ha = getHospSeconds(a);
-        const hb = getHospSeconds(b);
-        if (ha !== hb) return ha - hb;
-      }
-
       const an = String(a?.name || a?.player_name || "").toLowerCase();
       const bn = String(b?.name || b?.player_name || "").toLowerCase();
       return an.localeCompare(bn);
     });
   }
 
-  function sortHosp(list) {
-    return [...arr(list)].sort((a, b) => getHospSeconds(a) - getHospSeconds(b));
+  function sortRosterGroup(list, type) {
+    if (type === "hospital") return sortHosp(list);
+    return sortAlphabetical(list);
+  }
+
+  function splitRosterGroups(list) {
+    const hospital = [];
+    const online = [];
+    const idle = [];
+    const offline = [];
+
+    arr(list).forEach((x) => {
+      const stateName = getPresenceState(x);
+      if (stateName === "hospital") hospital.push(x);
+      else if (stateName === "online") online.push(x);
+      else if (stateName === "idle") idle.push(x);
+      else offline.push(x);
+    });
+
+    return {
+      hospital: sortRosterGroup(hospital, "hospital"),
+      online: sortRosterGroup(online, "online"),
+      idle: sortRosterGroup(idle, "idle"),
+      offline: sortRosterGroup(offline, "offline"),
+    };
   }
 
   function memberRow(x, enemy = false) {
@@ -799,6 +877,64 @@
           <div class="warhub-actions">
             ${id ? `<button class="warhub-btn small warn" data-del-note="${esc(String(id))}">Delete</button>` : ""}
           </div>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderRosterBox(title, list, enemy, boxClass) {
+    return `
+      <div class="warhub-card warhub-roster-card ${boxClass}">
+        <div class="warhub-section-title">
+          <h3>${esc(title)}</h3>
+          <span class="warhub-count">${fmtNum(list.length)}</span>
+        </div>
+        ${list.length
+          ? `<div class="warhub-list">${list.map((x) => memberRow(x, enemy)).join("")}</div>`
+          : `<div class="warhub-empty">None</div>`
+        }
+      </div>
+    `;
+  }
+
+  function renderOfflineDropdown(title, list, enemy) {
+    return `
+      <details class="warhub-dropdown" ${list.length ? "" : ""}>
+        <summary>
+          <div class="warhub-section-title" style="margin-bottom:0;">
+            <h3>${esc(title)}</h3>
+            <span class="warhub-count">${fmtNum(list.length)}</span>
+          </div>
+        </summary>
+        <div class="warhub-dropdown-body">
+          ${list.length
+            ? `<div class="warhub-list">${list.map((x) => memberRow(x, enemy)).join("")}</div>`
+            : `<div class="warhub-empty">None</div>`
+          }
+        </div>
+      </details>
+    `;
+  }
+
+  function renderGroupedRosterTab(title, list, enemy) {
+    const groups = splitRosterGroups(list);
+    const total = arr(list).length;
+
+    if (!total) {
+      return `<div class="warhub-card"><div class="warhub-empty">${enemy ? "Currently not in war" : "No member data yet."}</div></div>`;
+    }
+
+    return `
+      <div class="warhub-card">
+        <div class="warhub-section-title">
+          <h3>${esc(title)}</h3>
+          <span class="warhub-count">${fmtNum(total)}</span>
+        </div>
+        <div class="warhub-section-scroll">
+          ${renderRosterBox("Hospital", groups.hospital, enemy, "hospital-box")}
+          ${renderRosterBox("Online", groups.online, enemy, "online-box")}
+          ${renderRosterBox("Idle", groups.idle, enemy, "idle-box")}
+          ${renderOfflineDropdown("Offline", groups.offline, enemy)}
         </div>
       </div>
     `;
@@ -923,29 +1059,11 @@
   }
 
   function renderMembersTab() {
-    const members = sortMembersForDisplay(arr(state?.members));
-    if (!members.length) return `<div class="warhub-card"><div class="warhub-empty">No member data yet.</div></div>`;
-    return `
-      <div class="warhub-card">
-        <h3>Faction Members</h3>
-        <div class="warhub-section-scroll">
-          <div class="warhub-list">${members.map((x) => memberRow(x, false)).join("")}</div>
-        </div>
-      </div>
-    `;
+    return renderGroupedRosterTab("Faction Members", arr(state?.members), false);
   }
 
   function renderEnemiesTab() {
-    const enemies = sortMembersForDisplay(arr(state?.enemies));
-    if (!enemies.length) return `<div class="warhub-card"><div class="warhub-empty">Currently not in war</div></div>`;
-    return `
-      <div class="warhub-card">
-        <h3>Enemy Members</h3>
-        <div class="warhub-section-scroll">
-          <div class="warhub-list">${enemies.map((x) => memberRow(x, true)).join("")}</div>
-        </div>
-      </div>
-    `;
+    return renderGroupedRosterTab("Enemy Members", arr(state?.enemies), true);
   }
 
   function renderHospitalTab() {
@@ -970,7 +1088,7 @@
 
   function renderChainTab() {
     const me = state?.me || {};
-    const sitters = sortMembersForDisplay(arr(state?.chainSitters));
+    const sitters = sortAlphabetical(arr(state?.chainSitters));
 
     return `
       <div class="warhub-card">
@@ -1512,7 +1630,7 @@
 
     handleEl.addEventListener("pointerdown", (e) => {
       const t = e.target;
-      if (t && (t.closest("button") || t.closest("a") || t.closest("input") || t.closest("textarea") || t.closest("select"))) return;
+      if (t && (t.closest("button") || t.closest("a") || t.closest("input") || t.closest("textarea") || t.closest("select") || t.closest("summary"))) return;
       active = e.pointerId;
       moved = false;
       const r = moveEl.getBoundingClientRect();
