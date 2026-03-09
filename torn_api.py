@@ -1,10 +1,11 @@
+import os
 import re
 import time
 from typing import Any, Dict, List, Tuple
 
 import requests
 
-API_BASE = "https://api.torn.com"
+API_BASE = os.getenv("TORN_API_BASE", "https://api.torn.com").rstrip("/")
 
 
 def _safe_get(url: str, params: Dict[str, Any]) -> Dict[str, Any]:
