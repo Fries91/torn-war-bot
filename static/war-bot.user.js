@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         War Hub ⚔️
 // @namespace    fries91-war-hub
-// @version      2.7.0
+// @version      2.8.0
 // @description  War Hub by Fries91. Faction-license aware overlay with draggable icon, draggable overlay, PDA friendly, shared war tools, faction member management, and payment lock handling.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -19,8 +19,8 @@
 (function () {
   "use strict";
 
-  if (window.__WAR_HUB_V270__) return;
-  window.__WAR_HUB_V270__ = true;
+  if (window.__WAR_HUB_V280__) return;
+  window.__WAR_HUB_V280__ = true;
 
   const BASE_URL = "https://torn-war-bot.onrender.com";
 
@@ -36,6 +36,7 @@
   const K_LOCAL_NOTIFICATIONS = "warhub_local_notifications_v3";
   const K_ACCESS_CACHE = "warhub_access_cache_v3";
   const K_OWNER_TOKEN = "warhub_owner_token_v3";
+  let factionMembersCache = null;
 
   const PAYMENT_PLAYER = "Fries91";
   const PRICE_PER_MEMBER = 2500000;
@@ -1091,6 +1092,7 @@
         return;
       }
       state = normalizeState(res.data || {});
+      if (accessState?.isFactionLeader && !factionMembersCache) { loadFactionMembers().catch(() => null); }
       if (!silent) setStatus("");
       if (overlay && isOpen) renderBody();
       updateBadge();
@@ -1103,6 +1105,29 @@
     if (!canUseProtectedFeatures()) return;
     const res = await req("GET", "/api/analytics");
     if (res.ok) analyticsCache = res.data?.analytics || res.data || {};
+  }
+
+
+  async function loadFactionMembers(force = false) {
+    if (!accessState?.isFactionLeader) {
+      factionMembersCache = null;
+      return null;
+    }
+    if (factionMembersCache && !force) return factionMembersCache;
+    const res = await req("GET", "/api/faction/members");
+    if (!res.ok) {
+      setStatus(res.error || "Could not load faction member access.", true);
+      return null;
+    }
+    factionMembersCache = res.data || {};
+    return factionMembersCache;
+  }
+
+  async function refreshLeaderFactionData() {
+    if (!accessState?.isFactionLeader) return;
+    await loadFactionMembers(true);
+    await loadState(true);
+    renderBody();
   }
 
   async function doAction(method, path, body, okMsg, reload = true) {
@@ -1345,53 +1370,127 @@
 
   function renderFactionTab() {
     const license = state?.factionLicense || {};
-    const members = arr(state?.members);
-    const leader = accessState?.isFactionLeader;
-    const price = accessState?.pricePerMember || PRICE_PER_MEMBER;
+    const leader = !!accessState?.isFactionLeader;
+    const price = Number(accessState?.pricePerMember || state?.payment?.price_per_enabled_member || PRICE_PER_MEMBER) || PRICE_PER_MEMBER;
+    const paymentPlayer = accessState?.paymentPlayer || state?.payment?.required_player || PAYMENT_PLAYER;
+    const paymentAmount = Number(state?.payment?.required_amount || license?.next_payment_amount || 0) || 0;
+    const enabledMembers = Number(license?.enabled_member_count || state?.payment?.enabled_member_count || state?.factionAccess?.managed_member_count || 0) || 0;
+    const projected = Number(license?.renewal_cost || state?.payment?.required_amount || enabledMembers * price) || 0;
+    const statusText = String(license?.status || (accessState?.trialActive ? "trial" : "paid") || "unknown");
+    const paymentHistory = arr(state?.paymentHistory || state?.payment_history || license?.payment_history);
+    const managed = arr(factionMembersCache?.members || state?.factionManagement?.members || []);
+    const liveOptions = managed.map((m) => {
+      const id = m.member_user_id || m.user_id || "";
+      const name = m.name || `ID ${id}`;
+      const enabled = Number(m.enabled || 0) ? "enabled" : "disabled";
+      const saved = m.api_key_saved ? " • key saved" : "";
+      return `<option value="${esc(String(id))}|${esc(name)}">${esc(name)}${id ? ` [${esc(id)}]` : ""} • ${enabled}${saved}</option>`;
+    }).join("");
 
-    const enabledMembers = members.filter((m) => m.enabled_under_license || m.enabled).length;
-    const cost = enabledMembers * price;
+    const rows = managed.length ? managed.map((m) => {
+      const id = m.member_user_id || m.user_id || "";
+      const name = m.name || `ID ${id}`;
+      const enabled = Number(m.enabled || 0) === 1;
+      const selfRow = String(id) === String(state?.me?.user_id || "");
+      return `
+        <div class="warhub-list-item">
+          <div class="warhub-row">
+            <div>
+              <div class="warhub-name">${esc(name)}${id ? ` <span class="warhub-mini">[${esc(id)}]</span>` : ""}</div>
+              <div class="warhub-meta">${esc(m.position || "Member")} • ${enabled ? "Enabled" : "Disabled"} • API key ${m.api_key_saved ? "saved" : "missing"}${m.level ? ` • Lvl ${esc(String(m.level))}` : ""}</div>
+            </div>
+            <div class="warhub-actions">
+              ${m.profile_url ? `<a class="warhub-btn small warhub-link" href="${esc(m.profile_url)}" target="_blank" rel="noreferrer">Profile</a>` : ""}
+              ${selfRow ? `<span class="warhub-count">Leader</span>` : `
+                <button class="warhub-btn small ${enabled ? "warn" : "good"}" data-fm-toggle="${esc(String(id))}|${enabled ? "0" : "1"}">${enabled ? "Disable" : "Enable"}</button>
+                <button class="warhub-btn small warn" data-fm-delete="${esc(String(id))}">Delete</button>
+              `}
+            </div>
+          </div>
+        </div>
+      `;
+    }).join("") : `<div class="warhub-empty">No faction member access records yet.</div>`;
 
     return `
       ${renderAccessBanner()}
       <div class="warhub-card">
         <h3>Faction License</h3>
         <div class="warhub-grid two">
-          <div class="warhub-metric">
-            <div class="k">Faction</div>
-            <div class="v">${esc(accessState.factionName || "—")}</div>
-          </div>
-          <div class="warhub-metric">
-            <div class="k">Leader</div>
-            <div class="v">${leader ? "You" : "Faction Leader"}</div>
-          </div>
-          <div class="warhub-metric">
-            <div class="k">Enabled Members</div>
-            <div class="v">${fmtNum(enabledMembers)}</div>
-          </div>
-          <div class="warhub-metric">
-            <div class="k">Cost / Member</div>
-            <div class="v">${fmtMoney(price)}</div>
-          </div>
-          <div class="warhub-metric">
-            <div class="k">Monthly Cost</div>
-            <div class="v">${fmtMoney(cost)}</div>
-          </div>
-          <div class="warhub-metric">
-            <div class="k">Payment Player</div>
-            <div class="v">${esc(accessState.paymentPlayer || PAYMENT_PLAYER)}</div>
-          </div>
+          <div class="warhub-metric"><div class="k">Faction</div><div class="v">${esc(accessState.factionName || state?.faction?.name || "—")}</div></div>
+          <div class="warhub-metric"><div class="k">Status</div><div class="v">${esc(statusText)}</div></div>
+          <div class="warhub-metric"><div class="k">Enabled Members</div><div class="v">${fmtNum(enabledMembers)}</div></div>
+          <div class="warhub-metric"><div class="k">Price / Enabled Member</div><div class="v">${fmtMoney(price)}</div></div>
+          <div class="warhub-metric"><div class="k">Next Payment</div><div class="v">${fmtMoney(paymentAmount || projected)}</div></div>
+          <div class="warhub-metric"><div class="k">Send To</div><div class="v">${esc(paymentPlayer)}</div></div>
         </div>
+        <div class="warhub-mini" style="margin-top:8px;">Billing is ${fmtMoney(price)} per enabled faction member. Current projected renewal: ${fmtMoney(projected)}.</div>
       </div>
 
-      <div class="warhub-card">
-        <h3>Faction Members</h3>
-        <div class="warhub-section-scroll">
+      ${paymentHistory.length ? `
+        <div class="warhub-card">
+          <h3>Recent Payments</h3>
           <div class="warhub-list">
-            ${members.map((m) => memberRow(m, false)).join("")}
+            ${paymentHistory.slice(0, 10).map((p) => `
+              <div class="warhub-list-item">
+                <div class="warhub-row">
+                  <div>
+                    <div class="warhub-name">${fmtMoney(p.amount || p.payment_amount || 0)}</div>
+                    <div class="warhub-meta">${esc(p.received_by || p.confirmed_by || paymentPlayer)} • ${esc(p.payment_kind || "cash")} • ${esc(fmtTs(p.paid_at || p.created_at || p.updated_at || ""))}</div>
+                  </div>
+                  <div class="warhub-meta">${esc(p.note || p.notes || "")}</div>
+                </div>
+              </div>
+            `).join("")}
           </div>
         </div>
-      </div>
+      ` : ""}
+
+      ${leader ? `
+        <div class="warhub-card">
+          <h3>Leader Member Access</h3>
+          <div class="warhub-grid two">
+            <div>
+              <label class="warhub-label">Faction Member</label>
+              <select id="wh-fm-member" class="warhub-select">
+                <option value="">Pick member</option>
+                ${liveOptions}
+              </select>
+            </div>
+            <div>
+              <label class="warhub-label">Member API Key</label>
+              <input id="wh-fm-api-key" class="warhub-input" placeholder="Member API key">
+            </div>
+          </div>
+          <div class="warhub-grid two" style="margin-top:8px;">
+            <div>
+              <label class="warhub-label">Member ID</label>
+              <input id="wh-fm-user-id" class="warhub-input" placeholder="Auto-filled from pick">
+            </div>
+            <div>
+              <label class="warhub-label">Member Name</label>
+              <input id="wh-fm-name" class="warhub-input" placeholder="Auto-filled from pick">
+            </div>
+          </div>
+          <div class="warhub-actions" style="margin-top:8px;">
+            <button class="warhub-btn primary" id="wh-fm-save">Save / Update Access</button>
+            <button class="warhub-btn" id="wh-fm-refresh">Refresh Members</button>
+          </div>
+          <div class="warhub-mini" style="margin-top:8px;">Add faction members with their own API key, then enable or disable them for billing and access.</div>
+        </div>
+
+        <div class="warhub-card">
+          <div class="warhub-section-title">
+            <h3 style="margin:0;">Managed Members</h3>
+            <span class="warhub-count">${fmtNum(managed.length)}</span>
+          </div>
+          ${rows}
+        </div>
+      ` : `
+        <div class="warhub-card">
+          <h3>Member Access</h3>
+          <div class="warhub-mini">Your faction leader controls who is enabled under the faction license.</div>
+        </div>
+      `}
     `;
   }
 
@@ -1445,8 +1544,8 @@
 
       <div class="warhub-card">
         <h3>Refresh</h3>
-        <label class="warhub-label">Refresh ms</label>
-        <input id="wh-refresh-ms" class="warhub-input" value="${esc(refreshMs)}">
+        <label class="warhub-label">Refresh seconds</label>
+        <input id="wh-refresh-ms" class="warhub-input" value="${esc(Math.round(refreshMs / 1000))}">
 
         <div class="warhub-actions" style="margin-top:8px;">
           <button class="warhub-btn" id="wh-save-refresh">Save</button>
@@ -2278,6 +2377,7 @@
         currentTab = key;
         GM_setValue(K_TAB, currentTab);
         if (currentTab === "analytics") await loadAnalytics();
+        if (currentTab === "faction" && accessState?.isFactionLeader) await loadFactionMembers();
         renderBody();
       });
     });
@@ -2345,7 +2445,7 @@
       const ms = Number.isFinite(val) && val >= 5000 ? val : 25000;
       GM_setValue(K_REFRESH, ms);
       startPolling();
-      setStatus(`Refresh saved at ${ms} ms.`);
+      setStatus(`Refresh saved at ${Math.round(ms / 1000)} seconds.`);
     });
 
     overlay.querySelector("#wh-reset-icon")?.addEventListener("click", () => {
@@ -2557,6 +2657,61 @@
       renderBody();
       updateBadge();
       setStatus("Local alerts cleared.");
+    });
+
+    overlay.querySelector("#wh-fm-member")?.addEventListener("change", (e) => {
+      const raw = e.currentTarget?.value || "";
+      const [id, name] = String(raw).split("|");
+      const idInput = overlay.querySelector("#wh-fm-user-id");
+      const nameInput = overlay.querySelector("#wh-fm-name");
+      if (idInput) idInput.value = id || "";
+      if (nameInput) nameInput.value = name || "";
+    });
+
+    overlay.querySelector("#wh-fm-refresh")?.addEventListener("click", async () => {
+      await refreshLeaderFactionData();
+      setStatus("Faction members refreshed.");
+    });
+
+    overlay.querySelector("#wh-fm-save")?.addEventListener("click", async () => {
+      const memberUserId = cleanInputValue(overlay.querySelector("#wh-fm-user-id")?.value || "");
+      const memberName = cleanInputValue(overlay.querySelector("#wh-fm-name")?.value || "");
+      const memberApiKey = cleanInputValue(overlay.querySelector("#wh-fm-api-key")?.value || "");
+      if (!memberUserId && !memberName) return setStatus("Pick a faction member first.", true);
+      if (!memberApiKey) return setStatus("Enter that member's API key.", true);
+      const res = await req("POST", "/api/faction/members/upsert", {
+        member_user_id: memberUserId,
+        member_name: memberName,
+        member_api_key: memberApiKey,
+        enabled: true,
+      });
+      if (!res.ok) return setStatus(res.error || "Could not save member access.", true);
+      const apiInput = overlay.querySelector("#wh-fm-api-key");
+      if (apiInput) apiInput.value = "";
+      await refreshLeaderFactionData();
+      setStatus("Faction member access saved.");
+    });
+
+    overlay.querySelectorAll("[data-fm-toggle]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const raw = btn.getAttribute("data-fm-toggle") || "";
+        const [memberUserId, enabledRaw] = raw.split("|");
+        const enabled = enabledRaw === "1";
+        const res = await req("POST", "/api/faction/members/enable", { member_user_id: memberUserId, enabled });
+        if (!res.ok) return setStatus(res.error || "Could not update member access.", true);
+        await refreshLeaderFactionData();
+        setStatus(`Member ${enabled ? "enabled" : "disabled"}.`);
+      });
+    });
+
+    overlay.querySelectorAll("[data-fm-delete]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const memberUserId = btn.getAttribute("data-fm-delete") || "";
+        const res = await req("POST", "/api/faction/members/delete", { member_user_id: memberUserId });
+        if (!res.ok) return setStatus(res.error || "Could not delete member access.", true);
+        await refreshLeaderFactionData();
+        setStatus("Faction member access removed.");
+      });
     });
 
     overlay.querySelector("#wh-save-owner-token")?.addEventListener("click", () => {
