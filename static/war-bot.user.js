@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         War Hub ⚔️
 // @namespace    fries91-war-hub
-// @version      2.4.0
+// @version      2.5.0
 // @description  War Hub by Fries91. Ultimate overlay with shared war terms, draggable icon, draggable overlay, PDA friendly, server-backed med deals/targets/assignments/notes, hospital view, analytics, notifications, and settings.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -18,6 +18,9 @@
 
 (function () {
   "use strict";
+
+  if (window.__WAR_HUB_V250__) return;
+  window.__WAR_HUB_V250__ = true;
 
   const BASE_URL = "https://torn-war-bot.onrender.com";
 
@@ -58,8 +61,10 @@
   let isOpen = !!GM_getValue(K_OPEN, false);
   let currentTab = GM_getValue(K_TAB, "war");
   let pollTimer = null;
-  let loadInFlight = false;
   let remountTimer = null;
+  let loadInFlight = false;
+  let lastStatusMsg = "";
+  let lastStatusErr = false;
 
   const css = `
     #warhub-shield {
@@ -222,6 +227,7 @@
       border-radius: 12px;
       padding: 10px;
       margin-bottom: 8px;
+      overflow: hidden;
     }
 
     .warhub-card h3 {
@@ -238,7 +244,25 @@
       min-height: 54px;
     }
     .warhub-metric .k { opacity: .7; font-size: 10px; text-transform: uppercase; letter-spacing: .45px; }
-    .warhub-metric .v { font-size: 16px; font-weight: 800; margin-top: 4px; }
+    .warhub-metric .v {
+      font-size: 16px;
+      font-weight: 800;
+      margin-top: 4px;
+      word-break: break-word;
+    }
+
+    .warhub-score-us {
+      background: linear-gradient(180deg, rgba(31,120,63,.40), rgba(17,67,35,.28));
+      border: 1px solid rgba(109,214,143,.18);
+    }
+    .warhub-score-them {
+      background: linear-gradient(180deg, rgba(145,37,37,.40), rgba(88,18,18,.28));
+      border: 1px solid rgba(255,130,130,.18);
+    }
+    .warhub-score-lead {
+      background: linear-gradient(180deg, rgba(145,114,27,.38), rgba(97,72,13,.26));
+      border: 1px solid rgba(255,215,118,.18);
+    }
 
     .warhub-list { display: grid; gap: 6px; }
 
@@ -326,11 +350,18 @@
     .warhub-divider { height: 1px; background: rgba(255,255,255,.07); margin: 8px 0; }
     .warhub-mini { font-size: 11px; opacity: .78; }
     .warhub-link { color: #fff; text-decoration: none; }
+    .warhub-section-scroll {
+      max-height: 52vh;
+      overflow-y: auto;
+      overflow-x: hidden;
+      -webkit-overflow-scrolling: touch;
+      padding-right: 2px;
+    }
 
     @media (max-width: 700px) {
       #warhub-overlay {
-        width: min(98vw, 98vw);
-        height: min(88vh, 88vh);
+        width: 98vw;
+        height: 88vh;
         top: 56px;
         left: 1vw;
         right: 1vw;
@@ -338,7 +369,12 @@
       }
       .warhub-grid.two, .warhub-grid.three { grid-template-columns: 1fr; }
       .warhub-body { padding-bottom: 18px; }
-      #warhub-shield { width: 40px; height: 40px; font-size: 21px; }
+      #warhub-shield {
+        width: 40px;
+        height: 40px;
+        font-size: 21px;
+      }
+      .warhub-section-scroll { max-height: 34vh; }
     }
   `;
   GM_addStyle(css);
@@ -386,10 +422,21 @@
       .trim();
   }
 
-  function getNotes() { return String(GM_getValue(K_NOTES, "") || ""); }
-  function setNotes(v) { GM_setValue(K_NOTES, String(v || "")); }
-  function getLocalNotifications() { return arr(GM_getValue(K_LOCAL_NOTIFICATIONS, [])); }
-  function setLocalNotifications(v) { GM_setValue(K_LOCAL_NOTIFICATIONS, arr(v)); }
+  function getNotes() {
+    return String(GM_getValue(K_NOTES, "") || "");
+  }
+
+  function setNotes(v) {
+    GM_setValue(K_NOTES, String(v || ""));
+  }
+
+  function getLocalNotifications() {
+    return arr(GM_getValue(K_LOCAL_NOTIFICATIONS, []));
+  }
+
+  function setLocalNotifications(v) {
+    GM_setValue(K_LOCAL_NOTIFICATIONS, arr(v));
+  }
 
   function mergedNotifications() {
     return [...arr(state?.notifications), ...getLocalNotifications()].slice(0, 50);
@@ -400,6 +447,8 @@
   }
 
   function setStatus(msg, isErr = false) {
+    lastStatusMsg = String(msg || "");
+    lastStatusErr = !!isErr;
     const box = overlay?.querySelector("#warhub-status");
     if (!box) return;
     if (!msg) {
@@ -409,6 +458,10 @@
     }
     box.className = `warhub-status show ${isErr ? "err" : ""}`.trim();
     box.textContent = msg;
+  }
+
+  function restoreStatus() {
+    if (lastStatusMsg) setStatus(lastStatusMsg, lastStatusErr);
   }
 
   function gmXhr(method, path, body) {
@@ -459,6 +512,7 @@
       setStatus(res.error || "Login failed.", true);
       return false;
     }
+
     const token = res.data?.token || res.data?.session_token || res.data?.session;
     if (token) GM_setValue(K_SESSION, cleanInputValue(token));
     return !!token;
@@ -547,25 +601,62 @@
     return res;
   }
 
+  function getHospSeconds(x) {
+    return Number(
+      x?.hospital_seconds ||
+      x?.hosp_time ||
+      x?.hospital_time ||
+      x?.status?.until ||
+      0
+    ) || 0;
+  }
+
+  function getSortStatusWeight(x) {
+    const hosp = getHospSeconds(x);
+    if (hosp > 0) return 0;
+    const raw = String(x?.online_state || x?.online_status || x?.status || "").toLowerCase();
+    if (raw.includes("online")) return 1;
+    if (raw.includes("idle")) return 2;
+    return 3;
+  }
+
+  function sortMembersForDisplay(list) {
+    return [...arr(list)].sort((a, b) => {
+      const wa = getSortStatusWeight(a);
+      const wb = getSortStatusWeight(b);
+      if (wa !== wb) return wa - wb;
+
+      if (wa === 0) {
+        const ha = getHospSeconds(a);
+        const hb = getHospSeconds(b);
+        if (ha !== hb) return ha - hb;
+      }
+
+      const an = String(a?.name || a?.player_name || "").toLowerCase();
+      const bn = String(b?.name || b?.player_name || "").toLowerCase();
+      return an.localeCompare(bn);
+    });
+  }
+
   function sortHosp(list) {
-    return [...list].sort((a, b) => Number(a.hospital_seconds || a.hosp_time || a.hospital_time || 0) - Number(b.hospital_seconds || b.hosp_time || b.hospital_time || 0));
+    return [...arr(list)].sort((a, b) => getHospSeconds(a) - getHospSeconds(b));
   }
 
   function memberRow(x, enemy = false) {
     const id = x.user_id || x.id || x.player_id || "";
     const name = x.name || x.player_name || `ID ${id}`;
     const onlineState = String(x.online_state || x.online_status || x.status || "offline").toLowerCase();
-    const hosp = x.hospital_seconds || x.hosp_time || x.hospital_time || 0;
+    const hosp = getHospSeconds(x);
     const hospText = x.hospital_text || "";
     const last = x.last_action || x.last_action_relative || x.last || "—";
     const level = x.level ? `Lvl ${x.level}` : "";
-    const lifeCur = Number(x.life_current || 0);
-    const lifeMax = Number(x.life_max || 0);
+    const lifeCur = Number(x.life_current || x.current_life || 0);
+    const lifeMax = Number(x.life_max || x.maximum_life || 0);
     const lifeText = lifeMax > 0 ? `${lifeCur.toLocaleString()}/${lifeMax.toLocaleString()}` : "—";
     const attackUrl = x.attack_url || (id ? `https://www.torn.com/loader.php?sid=attack&user2ID=${id}` : "#");
 
     const pill =
-      Number(hosp) > 0
+      hosp > 0
         ? `<span class="warhub-pill hosp">Hosp ${esc(fmtHosp(hosp, hospText))}</span>`
         : onlineState.includes("online")
           ? `<span class="warhub-pill online">Online</span>`
@@ -649,6 +740,12 @@
     const sharedTermsAt = String(war.terms_updated_at || state?.warTerms?.updated_at || "").trim();
     const warMessage = String(war.message || war.status_text || "").trim() || "Currently not in war";
 
+    const ourAttackLink = me?.player_id || me?.user_id || me?.id
+      ? `https://www.torn.com/factions.php?step=your#/war/chain`
+      : `https://www.torn.com/factions.php?step=your`;
+
+    const enemyFactionId = enemyFaction?.id || enemyFaction?.faction_id || "";
+
     return `
       ${!warActive ? `
       <div class="warhub-card">
@@ -667,24 +764,52 @@
       </div>
       ` : ""}
 
-      <div class="warhub-grid two">
-        <div class="warhub-card">
-          <h3>Overview</h3>
-          <div class="warhub-grid two">
-            <div class="warhub-metric"><div class="k">You</div><div class="v">${esc(me.name || "—")}</div></div>
-            <div class="warhub-metric"><div class="k">Faction</div><div class="v">${esc(faction.name || faction.faction_name || "—")}</div></div>
-            <div class="warhub-metric"><div class="k">Enemy</div><div class="v">${esc(enemyFaction.name || enemyFaction.faction_name || "Currently not in war")}</div></div>
-            <div class="warhub-metric"><div class="k">War ID</div><div class="v">${esc(currentWar || "—")}</div></div>
+      <div class="warhub-card">
+        <h3>Overview</h3>
+        <div class="warhub-grid two">
+          <div class="warhub-metric">
+            <div class="k">You</div>
+            <div class="v">${esc(me.name || "—")}</div>
+          </div>
+          <div class="warhub-metric">
+            <div class="k">Faction</div>
+            <div class="v">${esc(faction.name || faction.faction_name || "—")}</div>
+          </div>
+          <div class="warhub-metric">
+            <div class="k">Enemy</div>
+            <div class="v">${esc(enemyFaction.name || enemyFaction.faction_name || "Currently not in war")}</div>
+          </div>
+          <div class="warhub-metric">
+            <div class="k">War ID</div>
+            <div class="v">${esc(currentWar || "—")}</div>
           </div>
         </div>
 
-        <div class="warhub-card">
-          <h3>Score</h3>
-          <div class="warhub-grid two">
-            <div class="warhub-metric"><div class="k">Our Score</div><div class="v">${fmtNum(scoreSelf)}</div></div>
-            <div class="warhub-metric"><div class="k">Enemy Score</div><div class="v">${fmtNum(scoreEnemy)}</div></div>
-            <div class="warhub-metric"><div class="k">Lead</div><div class="v">${fmtNum(war.lead || (Number(scoreSelf) - Number(scoreEnemy)))}</div></div>
-            <div class="warhub-metric"><div class="k">Chain</div><div class="v">${fmtNum(chainCount)}</div></div>
+        <div class="warhub-actions" style="margin-top:8px;">
+          <a class="warhub-btn primary warhub-link" href="https://www.torn.com/factions.php?step=your#/war" target="_blank" rel="noreferrer">Open War Page</a>
+          <a class="warhub-btn warhub-link" href="${esc(ourAttackLink)}" target="_blank" rel="noreferrer">Open Chain</a>
+          ${enemyFactionId ? `<a class="warhub-btn warhub-link" href="https://www.torn.com/factions.php?step=profile&ID=${esc(enemyFactionId)}" target="_blank" rel="noreferrer">Enemy Faction</a>` : ""}
+        </div>
+      </div>
+
+      <div class="warhub-card">
+        <h3>Score</h3>
+        <div class="warhub-grid two">
+          <div class="warhub-metric warhub-score-us">
+            <div class="k">Our Score</div>
+            <div class="v">${fmtNum(scoreSelf)}</div>
+          </div>
+          <div class="warhub-metric warhub-score-them">
+            <div class="k">Enemy Score</div>
+            <div class="v">${fmtNum(scoreEnemy)}</div>
+          </div>
+          <div class="warhub-metric warhub-score-lead">
+            <div class="k">Lead</div>
+            <div class="v">${fmtNum(war.lead || (Number(scoreSelf) - Number(scoreEnemy)))}</div>
+          </div>
+          <div class="warhub-metric">
+            <div class="k">Chain</div>
+            <div class="v">${fmtNum(chainCount)}</div>
           </div>
         </div>
       </div>
@@ -722,32 +847,46 @@
   }
 
   function renderMembersTab() {
-    const members = arr(state?.members);
+    const members = sortMembersForDisplay(arr(state?.members));
     if (!members.length) return `<div class="warhub-card"><div class="warhub-empty">No member data yet.</div></div>`;
-    return `<div class="warhub-card"><h3>Faction Members</h3><div class="warhub-list">${members.map((x) => memberRow(x, false)).join("")}</div></div>`;
+    return `
+      <div class="warhub-card">
+        <h3>Faction Members</h3>
+        <div class="warhub-section-scroll">
+          <div class="warhub-list">${members.map((x) => memberRow(x, false)).join("")}</div>
+        </div>
+      </div>
+    `;
   }
 
   function renderEnemiesTab() {
-    const enemies = arr(state?.enemies);
+    const enemies = sortMembersForDisplay(arr(state?.enemies));
     if (!enemies.length) return `<div class="warhub-card"><div class="warhub-empty">Currently not in war</div></div>`;
-    return `<div class="warhub-card"><h3>Enemy Members</h3><div class="warhub-list">${enemies.map((x) => memberRow(x, true)).join("")}</div></div>`;
+    return `
+      <div class="warhub-card">
+        <h3>Enemy Members</h3>
+        <div class="warhub-section-scroll">
+          <div class="warhub-list">${enemies.map((x) => memberRow(x, true)).join("")}</div>
+        </div>
+      </div>
+    `;
   }
 
   function renderHospitalTab() {
     const hospital = state?.hospital || {};
-    const enemies = sortHosp(arr(hospital.enemy_faction || state?.enemies).filter(x => Number(x.hospital_seconds || 0) > 0));
-    const ours = sortHosp(arr(hospital.our_faction || state?.members).filter(x => Number(x.hospital_seconds || 0) > 0));
+    const enemies = sortHosp(arr(hospital.enemy_faction || state?.enemies).filter((x) => getHospSeconds(x) > 0));
+    const ours = sortHosp(arr(hospital.our_faction || state?.members).filter((x) => getHospSeconds(x) > 0));
     const warActive = !!state?.war?.active;
 
     return `
       <div class="warhub-grid two">
         <div class="warhub-card">
           <h3>Our Hospital</h3>
-          ${ours.length ? `<div class="warhub-list">${ours.map((x) => memberRow(x, false)).join("")}</div>` : `<div class="warhub-empty">Nobody from your faction is in hospital right now.</div>`}
+          ${ours.length ? `<div class="warhub-section-scroll"><div class="warhub-list">${ours.map((x) => memberRow(x, false)).join("")}</div></div>` : `<div class="warhub-empty">Nobody from your faction is in hospital right now.</div>`}
         </div>
         <div class="warhub-card">
           <h3>Enemy Hospital</h3>
-          ${enemies.length ? `<div class="warhub-list">${enemies.map((x) => memberRow(x, true)).join("")}</div>` : `<div class="warhub-empty">${warActive ? "No enemy hospital data available." : "Currently not in war"}</div>`}
+          ${enemies.length ? `<div class="warhub-section-scroll"><div class="warhub-list">${enemies.map((x) => memberRow(x, true)).join("")}</div></div>` : `<div class="warhub-empty">${warActive ? "No enemy hospital data available." : "Currently not in war"}</div>`}
         </div>
       </div>
     `;
@@ -755,7 +894,7 @@
 
   function renderChainTab() {
     const me = state?.me || {};
-    const sitters = arr(state?.chainSitters);
+    const sitters = sortMembersForDisplay(arr(state?.chainSitters));
 
     return `
       <div class="warhub-card">
@@ -774,7 +913,7 @@
       </div>
       <div class="warhub-card">
         <h3>Chain Sitters</h3>
-        ${sitters.length ? `<div class="warhub-list">${sitters.map((x) => memberRow(x, false)).join("")}</div>` : `<div class="warhub-empty">No chain sitter list returned yet.</div>`}
+        ${sitters.length ? `<div class="warhub-section-scroll"><div class="warhub-list">${sitters.map((x) => memberRow(x, false)).join("")}</div></div>` : `<div class="warhub-empty">No chain sitter list returned yet.</div>`}
       </div>
     `;
   }
@@ -819,7 +958,7 @@
 
       <div class="warhub-card">
         <h3>Med Deals</h3>
-        ${live.length ? `<div class="warhub-list">${live.map((x) => `
+        ${live.length ? `<div class="warhub-section-scroll"><div class="warhub-list">${live.map((x) => `
           <div class="warhub-list-item">
             <div class="warhub-row">
               <div>
@@ -831,7 +970,7 @@
               </div>
             </div>
           </div>
-        `).join("")}</div>` : `<div class="warhub-empty">No med deals yet.</div>`}
+        `).join("")}</div></div>` : `<div class="warhub-empty">No med deals yet.</div>`}
       </div>
     `;
   }
@@ -865,7 +1004,7 @@
 
       <div class="warhub-card">
         <h3>Targets</h3>
-        ${live.length ? `<div class="warhub-list">${live.map((x) => targetRow(x, true)).join("")}</div>` : `<div class="warhub-empty">No targets saved yet.</div>`}
+        ${live.length ? `<div class="warhub-section-scroll"><div class="warhub-list">${live.map((x) => targetRow(x, true)).join("")}</div></div>` : `<div class="warhub-empty">No targets saved yet.</div>`}
       </div>
     `;
   }
@@ -874,7 +1013,7 @@
     const rows = arr(state?.assignments);
     const warId = state?.war?.war_id || state?.war?.id || "";
     const membersOptions = arr(state?.members).map((x) => {
-      const id = x.user_id || "";
+      const id = x.user_id || x.id || "";
       const name = x.name || `ID ${id}`;
       return `<option value="${esc(String(id))}|${esc(name)}">${esc(name)}${id ? ` [${esc(id)}]` : ""}</option>`;
     }).join("");
@@ -915,7 +1054,7 @@
 
       <div class="warhub-card">
         <h3>Assignments</h3>
-        ${rows.length ? `<div class="warhub-list">${rows.map((x) => `
+        ${rows.length ? `<div class="warhub-section-scroll"><div class="warhub-list">${rows.map((x) => `
           <div class="warhub-list-item">
             <div class="warhub-row">
               <div>
@@ -928,7 +1067,7 @@
               </div>
             </div>
           </div>
-        `).join("")}</div>` : `<div class="warhub-empty">No assignments yet.</div>`}
+        `).join("")}</div></div>` : `<div class="warhub-empty">No assignments yet.</div>`}
       </div>
     `;
   }
@@ -960,7 +1099,7 @@
 
       <div class="warhub-card">
         <h3>Shared Notes</h3>
-        ${serverNotes.length ? `<div class="warhub-list">${serverNotes.map((x) => noteRow(x)).join("")}</div>` : `<div class="warhub-empty">No shared war notes yet.</div>`}
+        ${serverNotes.length ? `<div class="warhub-section-scroll"><div class="warhub-list">${serverNotes.map((x) => noteRow(x)).join("")}</div></div>` : `<div class="warhub-empty">No shared war notes yet.</div>`}
       </div>
     `;
   }
@@ -989,13 +1128,13 @@
     return `
       <div class="warhub-card">
         <h3>Alerts</h3>
-        ${items.length ? `<div class="warhub-list">${items.map((x) => `
+        ${items.length ? `<div class="warhub-section-scroll"><div class="warhub-list">${items.map((x) => `
           <div class="warhub-list-item">
             <div class="warhub-name">${esc(x.kind || x.title || "Alert")}</div>
             <div class="warhub-meta">${esc(x.text || x.message || x.note || "")}</div>
             <div class="warhub-mini">${esc(fmtTs(x.created_at || x.time || x.ts || ""))}</div>
           </div>
-        `).join("")}</div>` : `<div class="warhub-empty">No alerts yet.</div>`}
+        `).join("")}</div></div>` : `<div class="warhub-empty">No alerts yet.</div>`}
         <div class="warhub-actions" style="margin-top:8px;">
           <button class="warhub-btn" id="wh-mark-alerts-seen">Mark Server Alerts Seen</button>
           <button class="warhub-btn" id="wh-clear-alerts">Clear Local Alerts</button>
@@ -1004,7 +1143,7 @@
     `;
   }
 
-    function renderSettingsTab() {
+  function renderSettingsTab() {
     const refreshMs = Number(GM_getValue(K_REFRESH, 25000) || 25000);
     const savedAdmin = cleanInputValue(GM_getValue(K_ADMIN_KEY, ""));
     const savedApi = cleanInputValue(GM_getValue(K_API_KEY, ""));
@@ -1142,6 +1281,7 @@
     `;
     bindOverlayEvents();
     bindOverlayDrag();
+    restoreStatus();
   }
 
   function clampElementPosition(el, left, top) {
@@ -1223,7 +1363,8 @@
   }
 
   function toggleOverlay() {
-    if (isOpen) closeOverlay(); else openOverlay();
+    if (isOpen) closeOverlay();
+    else openOverlay();
   }
 
   function saveOverlayPos() {
@@ -1712,16 +1853,11 @@
       toggleOverlay();
     });
 
-    shield.addEventListener("touchend", (e) => {
-      if (dragMoved) return;
-      e.preventDefault();
-      e.stopPropagation();
-      toggleOverlay();
-    }, { passive: false });
-
     makeDraggable(shield, shield, saveShieldPos, updateBadge);
 
-    if (isOpen) openOverlay(); else renderBody();
+    if (isOpen) openOverlay();
+    else renderBody();
+
     updateBadge();
     mounted = true;
   }
@@ -1763,22 +1899,28 @@
 
   async function boot() {
     ensureMounted();
+
     const token = cleanInputValue(GM_getValue(K_SESSION, ""));
     const savedApi = cleanInputValue(GM_getValue(K_API_KEY, ""));
     const savedAdmin = cleanInputValue(GM_getValue(K_ADMIN_KEY, ""));
 
     if (!token && savedApi && savedAdmin) {
-      // no noisy auto login failure loop
+      // intentional quiet boot
     }
 
     await loadState(true);
     if (currentTab === "analytics") await loadAnalytics();
+
     startPolling();
     startLightRemountCheck();
 
     const localAlerts = getLocalNotifications();
     if (!localAlerts.length) {
-      localAlerts.unshift({ kind: "Script Ready", text: "Ultimate War Hub loaded.", created_at: new Date().toISOString() });
+      localAlerts.unshift({
+        kind: "Script Ready",
+        text: "Ultimate War Hub loaded.",
+        created_at: new Date().toISOString()
+      });
       setLocalNotifications(localAlerts.slice(0, 20));
       updateBadge();
     }
