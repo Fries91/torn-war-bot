@@ -47,22 +47,115 @@ from db import (
     set_user_setting,
     add_audit_log,
     cache_purge_expired,
-
-    # faction-license rebuild
-    ensure_faction_license_row,
-    start_faction_trial_if_needed,
-    compute_faction_license_status,
-    renew_faction_after_payment,
-    get_faction_payment_history,
-    force_expire_faction_license,
-    list_all_faction_licenses,
-    get_faction_admin_dashboard_summary,
-    list_faction_members,
-    get_faction_member_access,
-    upsert_faction_member_access,
-    set_faction_member_enabled,
-    delete_faction_member_access,
 )
+
+# faction-license imports with compatibility fallback
+try:
+    from db import (
+        ensure_faction_license_row,
+        start_faction_trial_if_needed,
+        compute_faction_license_status,
+        renew_faction_after_payment,
+        get_faction_payment_history,
+        force_expire_faction_license,
+        list_all_faction_licenses,
+        get_faction_admin_dashboard_summary,
+        list_faction_members,
+        get_faction_member_access,
+        upsert_faction_member_access,
+        set_faction_member_enabled,
+        delete_faction_member_access,
+    )
+except Exception:
+    from db import (
+        ensure_faction_license as _ensure_faction_license,
+        start_faction_trial_if_needed,
+        compute_faction_license_status as _compute_faction_license_status_raw,
+        renew_faction_after_payment,
+        get_faction_payment_history,
+        force_expire_faction_license,
+        list_all_faction_licenses,
+        get_owner_faction_dashboard as _get_owner_faction_dashboard,
+        list_faction_members,
+        get_faction_member as _get_faction_member,
+        add_or_update_faction_member as _add_or_update_faction_member,
+        set_faction_member_enabled,
+        delete_faction_member as _delete_faction_member,
+    )
+
+    def ensure_faction_license_row(
+        faction_id: str,
+        faction_name: str = "",
+        leader_user_id: str = "",
+        leader_name: str = "",
+        leader_api_key: str = "",
+    ):
+        return _ensure_faction_license(
+            faction_id=faction_id,
+            faction_name=faction_name,
+            leader_user_id=leader_user_id,
+            leader_name=leader_name,
+        )
+
+    def compute_faction_license_status(faction_id: str, viewer_user_id: str = ""):
+        return _compute_faction_license_status_raw(faction_id)
+
+    def get_faction_admin_dashboard_summary():
+        raw = _get_owner_faction_dashboard(limit=250) or {}
+        factions = raw.get("factions", []) or []
+        enabled_members_total = 0
+        projected_renewal_total = 0
+        trials_total = 0
+        paid_total = 0
+        payment_required_total = 0
+
+        for row in factions:
+            lic = row.get("license") or row
+            enabled_members_total += int(lic.get("enabled_member_count") or row.get("enabled_member_count") or 0)
+            projected_renewal_total += int(lic.get("renewal_cost") or row.get("renewal_cost") or 0)
+            status = str(lic.get("status") or row.get("status") or "").lower()
+            if status == "trial":
+                trials_total += 1
+            elif status == "paid":
+                paid_total += 1
+            if bool(lic.get("payment_required") or row.get("payment_required")):
+                payment_required_total += 1
+
+        return {
+            "faction_licenses_total": len(factions),
+            "trials_total": trials_total,
+            "paid_total": paid_total,
+            "payment_required_total": payment_required_total,
+            "enabled_members_total": enabled_members_total,
+            "projected_renewal_total": projected_renewal_total,
+        }
+
+    def get_faction_member_access(faction_id: str, member_user_id: str):
+        return _get_faction_member(faction_id, member_user_id)
+
+    def upsert_faction_member_access(
+        faction_id: str,
+        faction_name: str,
+        leader_user_id: str,
+        leader_name: str,
+        member_user_id: str,
+        member_name: str,
+        member_api_key: str,
+        enabled: int = 1,
+        position: str = "",
+    ):
+        return _add_or_update_faction_member(
+            faction_id=faction_id,
+            leader_user_id=leader_user_id,
+            member_user_id=member_user_id,
+            member_name=member_name,
+            member_api_key=member_api_key,
+            enabled=enabled,
+        )
+
+    def delete_faction_member_access(faction_id: str, member_user_id: str):
+        return _delete_faction_member(faction_id, member_user_id)
+
 from torn_api import (
     me_basic,
     faction_basic,
@@ -384,9 +477,7 @@ def _current_session_context() -> Tuple[Optional[Dict[str, Any]], str, str, Opti
     member_row = get_faction_member_access(faction_id, user_id)
 
     return user, faction_id, faction_name, license_status, member_row, is_leader
-
-
-def require_session(fn):
+    def require_session(fn):
     @wraps(fn)
     def wrapper(*args, **kwargs):
         cache_purge_expired()
@@ -796,7 +887,9 @@ def _rank_enemy_targets(enemy_members: List[Dict[str, Any]], assignments: List[D
         )
     )
     return ranked
-    def _calc_pace_and_estimate(war_id: str, score_us: int, score_them: int, target_score: int) -> Dict[str, Any]:
+
+
+def _calc_pace_and_estimate(war_id: str, score_us: int, score_them: int, target_score: int) -> Dict[str, Any]:
     if not war_id:
         return {
             "lead": score_us - score_them,
@@ -979,9 +1072,7 @@ def _serialize_notes(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             }
         )
     return out
-
-
-@app.before_request
+    @app.before_request
 def before_request_housekeeping():
     cache_purge_expired()
 
