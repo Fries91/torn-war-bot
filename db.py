@@ -267,6 +267,26 @@ def init_db():
         )
     """)
 
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS api_cache (
+            cache_key TEXT PRIMARY KEY,
+            payload_text TEXT DEFAULT '',
+            expires_at_ts INTEGER DEFAULT 0,
+            created_at TEXT DEFAULT '',
+            updated_at TEXT DEFAULT ''
+        )
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS audit_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT DEFAULT '',
+            action TEXT DEFAULT '',
+            detail TEXT DEFAULT '',
+            created_at TEXT DEFAULT ''
+        )
+    """)
+
     _ensure_column(cur, "med_deals", "creator_user_id", "creator_user_id TEXT DEFAULT ''")
     _ensure_column(cur, "med_deals", "creator_name", "creator_name TEXT DEFAULT ''")
     _ensure_column(cur, "med_deals", "faction_id", "faction_id TEXT DEFAULT ''")
@@ -297,6 +317,8 @@ def init_db():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_settings_user_id ON user_settings(user_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_payment_history_user_id ON payment_history(user_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_payment_history_received_at ON payment_history(received_at)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_api_cache_expires_at_ts ON api_cache(expires_at_ts)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_audit_log_user_id ON audit_log(user_id)")
 
     con.commit()
     con.close()
@@ -976,6 +998,79 @@ def set_user_setting(user_id: str, key_name: str, value_text: str):
     con.close()
 
 
+def add_audit_log(user_id: str, action: str, detail: str = ""):
+    con = _con()
+    cur = con.cursor()
+    cur.execute("""
+        INSERT INTO audit_log (user_id, action, detail, created_at)
+        VALUES (?, ?, ?, ?)
+    """, (str(user_id or ""), str(action or ""), str(detail or ""), _utc_now()))
+    con.commit()
+    con.close()
+
+
+def list_audit_log(limit: int = 100) -> List[Dict[str, Any]]:
+    con = _con()
+    cur = con.cursor()
+    cur.execute("""
+        SELECT *
+        FROM audit_log
+        ORDER BY id DESC
+        LIMIT ?
+    """, (int(limit),))
+    rows = [dict(r) for r in cur.fetchall()]
+    con.close()
+    return rows
+
+
+def cache_get(cache_key: str) -> Optional[str]:
+    now_ts = _utc_ts()
+    con = _con()
+    cur = con.cursor()
+    cur.execute("""
+        SELECT payload_text
+        FROM api_cache
+        WHERE cache_key = ? AND expires_at_ts > ?
+        LIMIT 1
+    """, (str(cache_key), now_ts))
+    row = cur.fetchone()
+    con.close()
+    return str(row["payload_text"]) if row else None
+
+
+def cache_set(cache_key: str, payload_text: str, ttl_seconds: int):
+    now = _utc_now()
+    expires_at_ts = _utc_ts() + max(1, int(ttl_seconds))
+    con = _con()
+    cur = con.cursor()
+    cur.execute("""
+        INSERT INTO api_cache (cache_key, payload_text, expires_at_ts, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(cache_key) DO UPDATE SET
+            payload_text = excluded.payload_text,
+            expires_at_ts = excluded.expires_at_ts,
+            updated_at = excluded.updated_at
+    """, (str(cache_key), str(payload_text), expires_at_ts, now, now))
+    con.commit()
+    con.close()
+
+
+def cache_delete(cache_key: str):
+    con = _con()
+    cur = con.cursor()
+    cur.execute("DELETE FROM api_cache WHERE cache_key = ?", (str(cache_key),))
+    con.commit()
+    con.close()
+
+
+def cache_purge_expired():
+    con = _con()
+    cur = con.cursor()
+    cur.execute("DELETE FROM api_cache WHERE expires_at_ts <= ?", (_utc_ts(),))
+    con.commit()
+    con.close()
+
+
 # =========================
 # LICENSE / TRIAL / PAYMENT
 # =========================
@@ -1077,6 +1172,7 @@ def start_trial_if_needed(user_id: str, admin_key: str = "") -> Dict[str, Any]:
     ))
     con.commit()
     con.close()
+    add_audit_log(user_id, "trial_started", f"trial_expires_at={expires}")
     return compute_license_status(user_id)
 
 
@@ -1121,6 +1217,7 @@ def clear_license_admin_key(user_id: str, note: str = "trial_expired"):
     """, (now, now, note, str(user_id)))
     con.commit()
     con.close()
+    add_audit_log(user_id, "license_cleared", note)
 
 
 def mark_payment_received(
@@ -1193,6 +1290,7 @@ def mark_payment_received(
 
     con.commit()
     con.close()
+    add_audit_log(user_id, "payment_received", f"{amount} {payment_kind} by {received_by}")
     return compute_license_status(user_id)
 
 
@@ -1370,4 +1468,80 @@ def force_expire_license(user_id: str, clear_key: bool = True) -> Dict[str, Any]
     if clear_key:
         clear_license_admin_key(user_id, note="forced_expire")
 
+    add_audit_log(user_id, "license_expired", "forced_expire")
     return compute_license_status(user_id)
+
+
+def list_all_licenses(limit: int = 250) -> List[Dict[str, Any]]:
+    con = _con()
+    cur = con.cursor()
+    cur.execute("""
+        SELECT
+            u.user_id,
+            u.name,
+            u.faction_id,
+            u.faction_name,
+            l.status,
+            l.trial_started_at,
+            l.trial_expires_at,
+            l.paid_until_at,
+            l.payment_required,
+            l.last_payment_amount,
+            l.last_payment_kind,
+            l.last_payment_at,
+            l.updated_at
+        FROM user_licenses l
+        LEFT JOIN users u ON u.user_id = l.user_id
+        ORDER BY
+            CASE
+                WHEN l.payment_required = 1 THEN 0
+                WHEN l.status = 'trial' THEN 1
+                WHEN l.status = 'paid' THEN 2
+                ELSE 3
+            END,
+            COALESCE(u.name, l.user_id) ASC
+        LIMIT ?
+    """, (int(limit),))
+    rows = [dict(r) for r in cur.fetchall()]
+    con.close()
+
+    out: List[Dict[str, Any]] = []
+    for row in rows:
+        user_id = str(row.get("user_id") or "")
+        status = compute_license_status(user_id) if user_id else {}
+        out.append({**row, "license": status})
+    return out
+
+
+def get_admin_dashboard_summary() -> Dict[str, Any]:
+    con = _con()
+    cur = con.cursor()
+
+    cur.execute("SELECT COUNT(*) AS c FROM users")
+    users_total = int((cur.fetchone() or {"c": 0})["c"])
+
+    cur.execute("SELECT COUNT(*) AS c FROM user_licenses")
+    licenses_total = int((cur.fetchone() or {"c": 0})["c"])
+
+    cur.execute("SELECT COUNT(*) AS c FROM user_licenses WHERE status = 'trial'")
+    trials_total = int((cur.fetchone() or {"c": 0})["c"])
+
+    cur.execute("SELECT COUNT(*) AS c FROM user_licenses WHERE status = 'paid'")
+    paid_total = int((cur.fetchone() or {"c": 0})["c"])
+
+    cur.execute("SELECT COUNT(*) AS c FROM user_licenses WHERE payment_required = 1")
+    payment_required_total = int((cur.fetchone() or {"c": 0})["c"])
+
+    cur.execute("SELECT COUNT(*) AS c FROM sessions")
+    sessions_total = int((cur.fetchone() or {"c": 0})["c"])
+
+    con.close()
+
+    return {
+        "users_total": users_total,
+        "licenses_total": licenses_total,
+        "trials_total": trials_total,
+        "paid_total": paid_total,
+        "payment_required_total": payment_required_total,
+        "sessions_total": sessions_total,
+    }
