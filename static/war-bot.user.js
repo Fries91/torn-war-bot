@@ -1004,7 +1004,7 @@
     `;
   }
 
-  function renderSettingsTab() {
+    function renderSettingsTab() {
     const refreshMs = Number(GM_getValue(K_REFRESH, 25000) || 25000);
     const savedAdmin = cleanInputValue(GM_getValue(K_ADMIN_KEY, ""));
     const savedApi = cleanInputValue(GM_getValue(K_API_KEY, ""));
@@ -1022,9 +1022,11 @@
             <input id="wh-admin-key" class="warhub-input" autocomplete="off" autocapitalize="off" spellcheck="false" value="${esc(savedAdmin)}" placeholder="Paste your admin key">
           </div>
         </div>
+
         <div class="warhub-mini" style="margin-top:8px;">
           Saved admin key right now: <b>${esc(savedAdmin || "(empty)")}</b>
         </div>
+
         <div class="warhub-actions" style="margin-top:8px;">
           <button class="warhub-btn primary" id="wh-save-settings">Save + Login</button>
           <button class="warhub-btn" id="wh-test-health">Test Health</button>
@@ -1033,10 +1035,57 @@
       </div>
 
       <div class="warhub-card">
+        <h3>API Key Storage</h3>
+        <div class="warhub-mini" style="line-height:1.55;">
+          Your <b>Torn API key</b> and <b>admin key</b> are stored locally on your device using your userscript storage
+          (${esc("GM_setValue")}). They are not displayed publicly to other users through the overlay.
+          <br><br>
+          When you press <b>Save + Login</b>, the script sends your API key and admin key to the War Hub server only for
+          authentication. After successful login, the server returns a <b>session token</b>, and the script stores that
+          token locally as well.
+          <br><br>
+          After login, normal requests use the saved <b>session token</b> in the request header instead of repeatedly
+          sending your keys on every action.
+          <br><br>
+          You can remove saved credentials at any time by using <b>Clear Saved Keys</b> and <b>Log Out</b>.
+          Do not share your API key, admin key, or session token with anyone you do not trust.
+        </div>
+      </div>
+
+      <div class="warhub-card">
+        <h3>Terms of Service</h3>
+        <div class="warhub-mini" style="line-height:1.55;">
+          By using War Hub, you acknowledge and agree that:
+          <br><br>
+          1. You use this script at your own risk.
+          <br>
+          2. You are responsible for the API key and admin key entered into the settings tab.
+          <br>
+          3. You will not redistribute, leak, abuse, reverse engineer, or attempt to damage the service, backend, or shared faction features.
+          <br>
+          4. Shared features such as targets, assignments, med deals, terms, and notes may be visible to other authorized users in the same faction or war context.
+          <br>
+          5. Access to War Hub may be changed, limited, revoked, or updated at any time.
+          <br>
+          6. Features, layout, endpoints, and stored data behavior may change as the project continues to receive upgrades and fixes.
+          <br>
+          7. Abuse, unauthorized sharing, spam, or malicious use may result in access being removed.
+          <br>
+          8. War Hub is an actively evolving tool, and by using it you accept ongoing updates, balancing, fixes, and interface changes.
+        </div>
+      </div>
+
+      <div class="warhub-card">
         <h3>Refresh</h3>
         <div class="warhub-grid two">
-          <div><label class="warhub-label">Refresh milliseconds</label><input id="wh-refresh-ms" class="warhub-input" value="${esc(refreshMs)}"></div>
-          <div><label class="warhub-label">Session</label><div class="warhub-mini">${cleanInputValue(GM_getValue(K_SESSION, "")) ? "Session saved" : "No session yet"}</div></div>
+          <div>
+            <label class="warhub-label">Refresh milliseconds</label>
+            <input id="wh-refresh-ms" class="warhub-input" value="${esc(refreshMs)}">
+          </div>
+          <div>
+            <label class="warhub-label">Session</label>
+            <div class="warhub-mini">${cleanInputValue(GM_getValue(K_SESSION, "")) ? "Session saved" : "No session yet"}</div>
+          </div>
         </div>
         <div class="warhub-actions" style="margin-top:8px;">
           <button class="warhub-btn" id="wh-save-refresh">Save Refresh</button>
