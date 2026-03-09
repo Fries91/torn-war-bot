@@ -52,6 +52,10 @@ from db import (
     renew_after_payment,
     get_payment_history,
     force_expire_license,
+    add_audit_log,
+    cache_purge_expired,
+    list_all_licenses,
+    get_admin_dashboard_summary,
 )
 from torn_api import (
     me_basic,
@@ -70,6 +74,11 @@ PAYMENT_PLAYER = os.getenv("PAYMENT_PLAYER", "Fries91")
 PAYMENT_AMOUNT_XANAX = int(os.getenv("PAYMENT_AMOUNT_XANAX", "50"))
 DEFAULT_REFRESH_SECONDS = int(os.getenv("DEFAULT_REFRESH_SECONDS", "30"))
 LICENSE_ADMIN_TOKEN = str(os.getenv("LICENSE_ADMIN_TOKEN", "")).strip()
+ALLOWED_SCRIPT_ORIGINS = {
+    "https://www.torn.com",
+    "https://torn.com",
+    "",
+}
 
 
 def _parse_admin_keys() -> set[str]:
@@ -220,9 +229,25 @@ def _require_license_admin():
     return True, None
 
 
+def _check_request_origin() -> bool:
+    origin = str(request.headers.get("Origin", "")).strip()
+    referer = str(request.headers.get("Referer", "")).strip()
+    if origin and origin not in ALLOWED_SCRIPT_ORIGINS:
+        return False
+    if referer and not any(referer.startswith(x) for x in ("https://www.torn.com", "https://torn.com", BASE_URL())):
+        return False
+    return True
+
+
+def BASE_URL() -> str:
+    return str(os.getenv("PUBLIC_BASE_URL", "")).strip()
+
+
 def require_session(fn):
     @wraps(fn)
     def wrapper(*args, **kwargs):
+        cache_purge_expired()
+
         token = request.headers.get("X-Session-Token", "").strip()
         if not token:
             return err("Missing session token.", 401)
@@ -235,6 +260,11 @@ def require_session(fn):
         if not user_id:
             delete_session(token)
             return err("Invalid session user.", 401)
+
+        if not _check_request_origin():
+            add_audit_log(user_id, "blocked_request_origin", request.headers.get("Origin", "") or request.headers.get("Referer", ""))
+            delete_sessions_for_user(user_id)
+            return err("Request origin denied.", 403)
 
         license_status = compute_license_status(user_id)
         if not bool(license_status.get("active")):
@@ -771,6 +801,11 @@ def _serialize_notes(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return out
 
 
+@app.before_request
+def before_request_housekeeping():
+    cache_purge_expired()
+
+
 @app.route("/")
 def root():
     return ok(
@@ -779,6 +814,7 @@ def root():
         now=utc_now(),
         admin_keys_loaded=sorted(list(ADMIN_KEYS)),
         license_admin_enabled=bool(LICENSE_ADMIN_TOKEN),
+        public_base_url=BASE_URL(),
         endpoints=[
             "/health",
             "/api/auth",
@@ -807,6 +843,8 @@ def root():
             "/api/admin/payment/confirm",
             "/api/admin/license/expire",
             "/api/admin/license/status",
+            "/api/admin/licenses",
+            "/api/admin/dashboard",
             "/static/war-bot.user.js",
         ],
     )
@@ -863,7 +901,12 @@ def api_auth():
 
         if not has_trial_started:
             if not admin_key:
-                return err("Missing admin key for first activation.", 403, **_payment_details_payload(user_id), **_access_payload(license_status))
+                return err(
+                    "Missing admin key for first activation.",
+                    403,
+                    **_payment_details_payload(user_id),
+                    **_access_payload(license_status),
+                )
             if ADMIN_KEYS and admin_key not in ADMIN_KEYS:
                 return err(
                     f"Invalid admin key. Server loaded these keys: {sorted(list(ADMIN_KEYS))}",
@@ -889,6 +932,7 @@ def api_auth():
 
         token = create_session(user_id)
         add_notification(user_id, "auth", f"Logged into {APP_NAME} successfully.")
+        add_audit_log(user_id, "login", "auth_success")
 
         return ok(
             token=token,
@@ -918,8 +962,10 @@ def api_auth():
 def api_logout():
     try:
         token = request.headers.get("X-Session-Token", "").strip()
+        user_id = str(request.session.get("user_id") or "")
         if token:
             delete_session(token)
+        add_audit_log(user_id, "logout", "session_deleted")
         return ok(message="Logged out.")
     except Exception as e:
         return err(f"Logout failed: {e}", 500)
@@ -1745,6 +1791,32 @@ def api_admin_license_status():
         )
     except Exception as e:
         return err(f"Could not load admin license status: {e}", 500)
+
+
+@app.get("/api/admin/licenses")
+def api_admin_licenses():
+    try:
+        allowed, response = _require_license_admin()
+        if not allowed:
+            return response
+        limit = _to_int(request.args.get("limit"), 250)
+        return ok(licenses=list_all_licenses(limit=max(1, min(limit, 1000))))
+    except Exception as e:
+        return err(f"Could not load licenses: {e}", 500)
+
+
+@app.get("/api/admin/dashboard")
+def api_admin_dashboard():
+    try:
+        allowed, response = _require_license_admin()
+        if not allowed:
+            return response
+        return ok(
+            dashboard=get_admin_dashboard_summary(),
+            licenses=list_all_licenses(limit=100),
+        )
+    except Exception as e:
+        return err(f"Could not load admin dashboard: {e}", 500)
 
 
 @app.errorhandler(404)
