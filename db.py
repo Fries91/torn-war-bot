@@ -1,18 +1,24 @@
 import os
 import secrets
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 DB_PATH = os.getenv("DB_PATH", "war_hub.db")
+TRIAL_DAYS = int(os.getenv("TRIAL_DAYS", "45"))
+DEFAULT_PAID_DAYS = int(os.getenv("DEFAULT_PAID_DAYS", "45"))
+
+
+def _utc_now_dt() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 def _utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return _utc_now_dt().isoformat()
 
 
 def _utc_ts() -> int:
-    return int(datetime.now(timezone.utc).timestamp())
+    return int(_utc_now_dt().timestamp())
 
 
 def _ensure_parent_dir(path: str):
@@ -41,6 +47,19 @@ def _ensure_column(cur, table_name: str, column_name: str, column_sql: str):
     cols = _table_columns(cur, table_name)
     if column_name not in cols:
         cur.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_sql}")
+
+
+def _parse_iso(value: str) -> Optional[datetime]:
+    try:
+        if not value:
+            return None
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except Exception:
+        return None
+
+
+def _future_iso(days: int) -> str:
+    return (_utc_now_dt() + timedelta(days=int(days))).isoformat()
 
 
 def init_db():
@@ -203,10 +222,47 @@ def init_db():
         )
     """)
 
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS user_licenses (
+            user_id TEXT PRIMARY KEY,
+            admin_key TEXT DEFAULT '',
+            admin_key_active INTEGER DEFAULT 0,
+            trial_started_at TEXT DEFAULT '',
+            trial_expires_at TEXT DEFAULT '',
+            paid_until_at TEXT DEFAULT '',
+            payment_required INTEGER DEFAULT 0,
+            status TEXT DEFAULT 'inactive',
+            last_payment_amount INTEGER DEFAULT 0,
+            last_payment_kind TEXT DEFAULT '',
+            last_payment_note TEXT DEFAULT '',
+            last_payment_at TEXT DEFAULT '',
+            cleared_at TEXT DEFAULT '',
+            created_at TEXT DEFAULT '',
+            updated_at TEXT DEFAULT ''
+        )
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS payment_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
+            payment_kind TEXT DEFAULT 'xanax',
+            amount INTEGER DEFAULT 0,
+            note TEXT DEFAULT '',
+            received_by TEXT DEFAULT '',
+            received_at TEXT DEFAULT '',
+            created_at TEXT DEFAULT ''
+        )
+    """)
+
     _ensure_column(cur, "med_deals", "creator_user_id", "creator_user_id TEXT DEFAULT ''")
     _ensure_column(cur, "med_deals", "creator_name", "creator_name TEXT DEFAULT ''")
     _ensure_column(cur, "med_deals", "faction_id", "faction_id TEXT DEFAULT ''")
     _ensure_column(cur, "med_deals", "faction_name", "faction_name TEXT DEFAULT ''")
+
+    _ensure_column(cur, "user_licenses", "last_payment_kind", "last_payment_kind TEXT DEFAULT ''")
+    _ensure_column(cur, "user_licenses", "last_payment_note", "last_payment_note TEXT DEFAULT ''")
+    _ensure_column(cur, "user_licenses", "last_payment_amount", "last_payment_amount INTEGER DEFAULT 0")
 
     cur.execute("""
         UPDATE med_deals
@@ -227,6 +283,8 @@ def init_db():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_war_notes_war_id ON war_notes(war_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_war_terms_war_id ON war_terms(war_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_settings_user_id ON user_settings(user_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_payment_history_user_id ON payment_history(user_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_payment_history_received_at ON payment_history(received_at)")
 
     con.commit()
     con.close()
@@ -331,6 +389,14 @@ def delete_session(token: str):
     con = _con()
     cur = con.cursor()
     cur.execute("DELETE FROM sessions WHERE token = ?", (token,))
+    con.commit()
+    con.close()
+
+
+def delete_sessions_for_user(user_id: str):
+    con = _con()
+    cur = con.cursor()
+    cur.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
     con.commit()
     con.close()
 
@@ -896,3 +962,356 @@ def set_user_setting(user_id: str, key_name: str, value_text: str):
     ))
     con.commit()
     con.close()
+
+
+# =========================
+# LICENSE / TRIAL / PAYMENT
+# =========================
+
+def get_license(user_id: str) -> Optional[Dict[str, Any]]:
+    con = _con()
+    cur = con.cursor()
+    cur.execute("""
+        SELECT *
+        FROM user_licenses
+        WHERE user_id = ?
+        LIMIT 1
+    """, (str(user_id),))
+    row = cur.fetchone()
+    con.close()
+    return _row_to_dict(row)
+
+
+def ensure_license_row(user_id: str, admin_key: str = "") -> Dict[str, Any]:
+    existing = get_license(user_id)
+    if existing:
+        if admin_key and not str(existing.get("admin_key") or "").strip():
+            con = _con()
+            cur = con.cursor()
+            cur.execute("""
+                UPDATE user_licenses
+                SET admin_key = ?, updated_at = ?
+                WHERE user_id = ?
+            """, (admin_key, _utc_now(), str(user_id)))
+            con.commit()
+            con.close()
+            existing = get_license(user_id)
+        return existing or {}
+
+    now = _utc_now()
+    con = _con()
+    cur = con.cursor()
+    cur.execute("""
+        INSERT INTO user_licenses (
+            user_id,
+            admin_key,
+            admin_key_active,
+            trial_started_at,
+            trial_expires_at,
+            paid_until_at,
+            payment_required,
+            status,
+            last_payment_amount,
+            last_payment_kind,
+            last_payment_note,
+            last_payment_at,
+            cleared_at,
+            created_at,
+            updated_at
+        )
+        VALUES (?, ?, 0, '', '', '', 0, 'inactive', 0, '', '', '', '', ?, ?)
+    """, (
+        str(user_id),
+        admin_key or "",
+        now,
+        now,
+    ))
+    con.commit()
+    con.close()
+    return get_license(user_id) or {}
+
+
+def start_trial_if_needed(user_id: str, admin_key: str = "") -> Dict[str, Any]:
+    license_row = ensure_license_row(user_id, admin_key=admin_key)
+    if license_row.get("trial_started_at") and license_row.get("trial_expires_at"):
+        return compute_license_status(user_id)
+
+    now = _utc_now()
+    expires = _future_iso(TRIAL_DAYS)
+
+    con = _con()
+    cur = con.cursor()
+    cur.execute("""
+        UPDATE user_licenses
+        SET
+            admin_key = CASE
+                WHEN COALESCE(NULLIF(admin_key, ''), '') = '' THEN ?
+                ELSE admin_key
+            END,
+            admin_key_active = 1,
+            trial_started_at = ?,
+            trial_expires_at = ?,
+            payment_required = 0,
+            status = 'trial',
+            cleared_at = '',
+            updated_at = ?
+        WHERE user_id = ?
+    """, (
+        admin_key or "",
+        now,
+        expires,
+        now,
+        str(user_id),
+    ))
+    con.commit()
+    con.close()
+    return compute_license_status(user_id)
+
+
+def set_license_admin_key(user_id: str, admin_key: str, active: int = 1):
+    ensure_license_row(user_id, admin_key=admin_key)
+    con = _con()
+    cur = con.cursor()
+    cur.execute("""
+        UPDATE user_licenses
+        SET admin_key = ?, admin_key_active = ?, updated_at = ?
+        WHERE user_id = ?
+    """, (
+        admin_key or "",
+        1 if active else 0,
+        _utc_now(),
+        str(user_id),
+    ))
+    con.commit()
+    con.close()
+
+
+def clear_license_admin_key(user_id: str, note: str = "trial_expired"):
+    ensure_license_row(user_id)
+    now = _utc_now()
+
+    con = _con()
+    cur = con.cursor()
+    cur.execute("""
+        UPDATE user_licenses
+        SET
+            admin_key = '',
+            admin_key_active = 0,
+            payment_required = 1,
+            status = 'expired',
+            cleared_at = ?,
+            updated_at = ?,
+            last_payment_note = CASE
+                WHEN COALESCE(NULLIF(last_payment_note, ''), '') = '' THEN ?
+                ELSE last_payment_note
+            END
+        WHERE user_id = ?
+    """, (now, now, note, str(user_id)))
+    con.commit()
+    con.close()
+
+
+def mark_payment_received(
+    user_id: str,
+    amount: int = 50,
+    payment_kind: str = "xanax",
+    note: str = "",
+    received_by: str = "Fries91",
+    extend_days: int = DEFAULT_PAID_DAYS,
+) -> Dict[str, Any]:
+    ensure_license_row(user_id)
+
+    now_dt = _utc_now_dt()
+    current = get_license(user_id) or {}
+    current_paid_until = _parse_iso(str(current.get("paid_until_at") or ""))
+    base_dt = current_paid_until if current_paid_until and current_paid_until > now_dt else now_dt
+    new_paid_until = (base_dt + timedelta(days=int(extend_days))).isoformat()
+    now = now_dt.isoformat()
+
+    con = _con()
+    cur = con.cursor()
+
+    cur.execute("""
+        INSERT INTO payment_history (
+            user_id,
+            payment_kind,
+            amount,
+            note,
+            received_by,
+            received_at,
+            created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, (
+        str(user_id),
+        payment_kind or "xanax",
+        int(amount or 0),
+        note or "",
+        received_by or "Fries91",
+        now,
+        now,
+    ))
+
+    cur.execute("""
+        UPDATE user_licenses
+        SET
+            payment_required = 0,
+            status = 'paid',
+            paid_until_at = ?,
+            last_payment_amount = ?,
+            last_payment_kind = ?,
+            last_payment_note = ?,
+            last_payment_at = ?,
+            admin_key_active = CASE
+                WHEN COALESCE(NULLIF(admin_key, ''), '') = '' THEN 0
+                ELSE 1
+            END,
+            cleared_at = '',
+            updated_at = ?
+        WHERE user_id = ?
+    """, (
+        new_paid_until,
+        int(amount or 0),
+        payment_kind or "xanax",
+        note or "",
+        now,
+        now,
+        str(user_id),
+    ))
+
+    con.commit()
+    con.close()
+    return compute_license_status(user_id)
+
+
+def get_payment_history(user_id: str, limit: int = 20) -> List[Dict[str, Any]]:
+    con = _con()
+    cur = con.cursor()
+    cur.execute("""
+        SELECT *
+        FROM payment_history
+        WHERE user_id = ?
+        ORDER BY id DESC
+        LIMIT ?
+    """, (str(user_id), int(limit)))
+    rows = [dict(r) for r in cur.fetchall()]
+    con.close()
+    return rows
+
+
+def has_active_paid_access(user_id: str) -> bool:
+    row = get_license(user_id)
+    if not row:
+        return False
+    paid_until = _parse_iso(str(row.get("paid_until_at") or ""))
+    return bool(paid_until and paid_until > _utc_now_dt())
+
+
+def is_trial_expired(user_id: str) -> bool:
+    row = get_license(user_id)
+    if not row:
+        return False
+    trial_expires_at = _parse_iso(str(row.get("trial_expires_at") or ""))
+    if not trial_expires_at:
+        return False
+    return _utc_now_dt() >= trial_expires_at
+
+
+def compute_license_status(user_id: str) -> Dict[str, Any]:
+    row = ensure_license_row(user_id)
+    now_dt = _utc_now_dt()
+
+    trial_started_at = str(row.get("trial_started_at") or "")
+    trial_expires_at = str(row.get("trial_expires_at") or "")
+    paid_until_at = str(row.get("paid_until_at") or "")
+    admin_key = str(row.get("admin_key") or "")
+    admin_key_active = int(row.get("admin_key_active") or 0)
+
+    trial_expires_dt = _parse_iso(trial_expires_at)
+    paid_until_dt = _parse_iso(paid_until_at)
+
+    active = False
+    payment_required = False
+    block_reason = ""
+    status = "inactive"
+
+    if paid_until_dt and paid_until_dt > now_dt:
+        active = True
+        status = "paid"
+    elif trial_expires_dt and now_dt < trial_expires_dt:
+        active = True
+        status = "trial"
+    elif trial_expires_dt and now_dt >= trial_expires_dt:
+        active = False
+        payment_required = True
+        status = "expired"
+        block_reason = "trial_expired"
+
+    if status == "expired" and (admin_key or admin_key_active):
+        clear_license_admin_key(user_id, note="trial_expired")
+        row = get_license(user_id) or row
+        admin_key = str(row.get("admin_key") or "")
+        admin_key_active = int(row.get("admin_key_active") or 0)
+
+    return {
+        "user_id": str(user_id),
+        "active": active,
+        "status": status,
+        "trial_started_at": trial_started_at,
+        "trial_expires_at": trial_expires_at,
+        "paid_until_at": paid_until_at,
+        "payment_required": payment_required,
+        "block_reason": block_reason,
+        "admin_key_present": bool(admin_key),
+        "admin_key_active": bool(admin_key_active),
+        "last_payment_at": str(row.get("last_payment_at") or ""),
+        "last_payment_amount": int(row.get("last_payment_amount") or 0),
+        "last_payment_kind": str(row.get("last_payment_kind") or ""),
+        "last_payment_note": str(row.get("last_payment_note") or ""),
+        "cleared_at": str(row.get("cleared_at") or ""),
+    }
+
+
+def renew_after_payment(
+    user_id: str,
+    amount: int = 50,
+    payment_kind: str = "xanax",
+    note: str = "",
+    received_by: str = "Fries91",
+    extend_days: int = DEFAULT_PAID_DAYS,
+) -> Dict[str, Any]:
+    return mark_payment_received(
+        user_id=user_id,
+        amount=amount,
+        payment_kind=payment_kind,
+        note=note,
+        received_by=received_by,
+        extend_days=extend_days,
+    )
+
+
+def force_expire_license(user_id: str, clear_key: bool = True) -> Dict[str, Any]:
+    ensure_license_row(user_id)
+    now = _utc_now()
+    con = _con()
+    cur = con.cursor()
+    cur.execute("""
+        UPDATE user_licenses
+        SET
+            trial_expires_at = CASE
+                WHEN COALESCE(NULLIF(trial_expires_at, ''), '') = '' THEN ?
+                ELSE trial_expires_at
+            END,
+            paid_until_at = '',
+            payment_required = 1,
+            status = 'expired',
+            updated_at = ?
+        WHERE user_id = ?
+    """, (now, now, str(user_id)))
+    con.commit()
+    con.close()
+
+    if clear_key:
+        clear_license_admin_key(user_id, note="forced_expire")
+
+    return compute_license_status(user_id)
