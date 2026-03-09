@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         War Hub ⚔️
 // @namespace    fries91-war-hub
-// @version      2.5.0
+// @version      2.5.1
 // @description  War Hub by Fries91. Ultimate overlay with shared war terms, draggable icon, draggable overlay, PDA friendly, server-backed med deals/targets/assignments/notes, hospital view, analytics, notifications, and settings.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -19,8 +19,8 @@
 (function () {
   "use strict";
 
-  if (window.__WAR_HUB_V250__) return;
-  window.__WAR_HUB_V250__ = true;
+  if (window.__WAR_HUB_V251__) return;
+  window.__WAR_HUB_V251__ = true;
 
   const BASE_URL = "https://torn-war-bot.onrender.com";
 
@@ -70,311 +70,390 @@
     #warhub-shield {
       position: fixed !important;
       z-index: 2147483647 !important;
-      width: 42px;
-      height: 42px;
-      border-radius: 12px;
+      width: 42px !important;
+      height: 42px !important;
+      border-radius: 12px !important;
       display: flex !important;
-      align-items: center;
-      justify-content: center;
-      font-size: 22px;
-      cursor: grab;
-      user-select: none;
-      -webkit-user-select: none;
-      -webkit-touch-callout: none;
-      touch-action: none;
-      box-shadow: 0 8px 24px rgba(0,0,0,.45);
-      border: 1px solid rgba(255,255,255,.10);
-      background: radial-gradient(circle at 30% 20%, rgba(220,75,75,.98), rgba(110,12,12,.98) 55%, rgba(48,6,6,.98));
-      color: #fff;
-      top: 120px;
-      right: 14px;
-      left: auto;
-      bottom: auto;
+      align-items: center !important;
+      justify-content: center !important;
+      font-size: 22px !important;
+      line-height: 1 !important;
+      cursor: grab !important;
+      user-select: none !important;
+      -webkit-user-select: none !important;
+      -webkit-touch-callout: none !important;
+      touch-action: none !important;
+      box-shadow: 0 8px 24px rgba(0,0,0,.45) !important;
+      border: 1px solid rgba(255,255,255,.10) !important;
+      background: radial-gradient(circle at 30% 20%, rgba(220,75,75,.98), rgba(110,12,12,.98) 55%, rgba(48,6,6,.98)) !important;
+      color: #fff !important;
+      top: 120px !important;
+      right: 14px !important;
+      left: auto !important;
+      bottom: auto !important;
       opacity: 1 !important;
       visibility: visible !important;
       pointer-events: auto !important;
     }
-    #warhub-shield.dragging { cursor: grabbing; }
+    #warhub-shield.dragging { cursor: grabbing !important; }
 
     #warhub-badge {
       position: fixed !important;
       z-index: 2147483647 !important;
-      min-width: 16px;
-      height: 16px;
-      padding: 0 4px;
-      border-radius: 999px;
-      background: #ffd54a;
-      color: #111;
-      font-size: 10px;
-      line-height: 16px;
-      text-align: center;
-      font-weight: 800;
-      box-shadow: 0 3px 12px rgba(0,0,0,.45);
-      display: none;
-      pointer-events: none;
+      min-width: 16px !important;
+      height: 16px !important;
+      padding: 0 4px !important;
+      border-radius: 999px !important;
+      background: #ffd54a !important;
+      color: #111 !important;
+      font-size: 10px !important;
+      line-height: 16px !important;
+      text-align: center !important;
+      font-weight: 800 !important;
+      box-shadow: 0 3px 12px rgba(0,0,0,.45) !important;
+      display: none !important;
+      pointer-events: none !important;
     }
 
     #warhub-overlay {
       position: fixed !important;
       z-index: 2147483646 !important;
-      right: 12px;
-      top: 170px;
-      width: min(96vw, 500px);
-      height: min(86vh, 860px);
-      max-height: 86vh;
-      overflow: hidden;
-      border-radius: 14px;
-      background: linear-gradient(180deg, #171717, #0c0c0c);
-      color: #f2f2f2;
-      border: 1px solid rgba(255,255,255,.08);
-      box-shadow: 0 16px 38px rgba(0,0,0,.54);
-      display: none;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      left: auto;
-      bottom: auto;
-      flex-direction: column;
+      right: 12px !important;
+      top: 170px !important;
+      width: min(96vw, 500px) !important;
+      height: min(86vh, 860px) !important;
+      max-height: 86vh !important;
+      min-height: 420px !important;
+      overflow: hidden !important;
+      border-radius: 14px !important;
+      background: linear-gradient(180deg, #171717, #0c0c0c) !important;
+      color: #f2f2f2 !important;
+      border: 1px solid rgba(255,255,255,.08) !important;
+      box-shadow: 0 16px 38px rgba(0,0,0,.54) !important;
+      display: none !important;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
+      left: auto !important;
+      bottom: auto !important;
+      flex-direction: column !important;
+      box-sizing: border-box !important;
+      opacity: 1 !important;
+      visibility: visible !important;
     }
     #warhub-overlay.open { display: flex !important; }
 
-    .warhub-head {
-      padding: 10px 12px 9px;
-      border-bottom: 1px solid rgba(255,255,255,.08);
-      background: linear-gradient(180deg, rgba(170,18,18,.30), rgba(20,20,20,.20));
-      cursor: grab;
-      user-select: none;
-      -webkit-user-select: none;
-      -webkit-touch-callout: none;
-      touch-action: none;
-      flex: 0 0 auto;
+    #warhub-overlay *,
+    #warhub-overlay *::before,
+    #warhub-overlay *::after {
+      box-sizing: border-box !important;
     }
-    .warhub-head.dragging { cursor: grabbing; }
+
+    .warhub-head {
+      padding: 10px 12px 9px !important;
+      border-bottom: 1px solid rgba(255,255,255,.08) !important;
+      background: linear-gradient(180deg, rgba(170,18,18,.30), rgba(20,20,20,.20)) !important;
+      cursor: grab !important;
+      user-select: none !important;
+      -webkit-user-select: none !important;
+      -webkit-touch-callout: none !important;
+      touch-action: none !important;
+      flex: 0 0 auto !important;
+      display: block !important;
+      width: 100% !important;
+      min-height: 54px !important;
+    }
+    .warhub-head.dragging { cursor: grabbing !important; }
 
     .warhub-toprow {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 10px;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: space-between !important;
+      gap: 10px !important;
+      width: 100% !important;
     }
 
-    .warhub-title { font-weight: 800; font-size: 16px; letter-spacing: .2px; }
-    .warhub-sub { opacity: .72; font-size: 11px; margin-top: 2px; }
+    .warhub-title {
+      font-weight: 800 !important;
+      font-size: 16px !important;
+      letter-spacing: .2px !important;
+      color: #fff !important;
+    }
+    .warhub-sub {
+      opacity: .72 !important;
+      font-size: 11px !important;
+      margin-top: 2px !important;
+      color: #fff !important;
+    }
 
     .warhub-close {
-      border: 0;
-      border-radius: 9px;
-      background: rgba(255,255,255,.08);
-      color: #fff;
-      padding: 5px 9px;
-      font-weight: 700;
-      cursor: pointer;
-      font-size: 12px;
-      flex: 0 0 auto;
+      appearance: none !important;
+      -webkit-appearance: none !important;
+      border: 0 !important;
+      border-radius: 9px !important;
+      background: rgba(255,255,255,.08) !important;
+      color: #fff !important;
+      padding: 5px 9px !important;
+      font-weight: 700 !important;
+      cursor: pointer !important;
+      font-size: 12px !important;
+      flex: 0 0 auto !important;
+      display: inline-flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      min-height: 30px !important;
     }
 
     .warhub-tabs {
-      display: flex;
-      gap: 6px;
-      padding: 8px;
-      overflow-x: auto;
-      overflow-y: hidden;
-      border-bottom: 1px solid rgba(255,255,255,.08);
-      background: rgba(255,255,255,.02);
-      scrollbar-width: thin;
-      flex: 0 0 auto;
-      -webkit-overflow-scrolling: touch;
+      display: flex !important;
+      flex: 0 0 auto !important;
+      flex-wrap: nowrap !important;
+      align-items: center !important;
+      gap: 6px !important;
+      padding: 8px !important;
+      overflow-x: auto !important;
+      overflow-y: hidden !important;
+      border-bottom: 1px solid rgba(255,255,255,.08) !important;
+      background: rgba(255,255,255,.02) !important;
+      scrollbar-width: thin !important;
+      -webkit-overflow-scrolling: touch !important;
+      width: 100% !important;
+      min-height: 48px !important;
+      max-height: 48px !important;
+      white-space: nowrap !important;
     }
 
     .warhub-tab {
-      border: 0;
-      border-radius: 999px;
-      background: rgba(255,255,255,.07);
-      color: #fff;
-      padding: 6px 10px;
-      font-size: 11px;
-      font-weight: 700;
-      white-space: nowrap;
-      cursor: pointer;
-      flex: 0 0 auto;
+      appearance: none !important;
+      -webkit-appearance: none !important;
+      border: 0 !important;
+      border-radius: 999px !important;
+      background: rgba(255,255,255,.07) !important;
+      color: #fff !important;
+      padding: 6px 10px !important;
+      font-size: 11px !important;
+      font-weight: 700 !important;
+      white-space: nowrap !important;
+      cursor: pointer !important;
+      flex: 0 0 auto !important;
+      display: inline-flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      min-height: 30px !important;
+      line-height: 1.1 !important;
+      opacity: 1 !important;
+      visibility: visible !important;
     }
-    .warhub-tab.active { background: linear-gradient(180deg, #d23333, #831515); }
+    .warhub-tab.active {
+      background: linear-gradient(180deg, #d23333, #831515) !important;
+      color: #fff !important;
+    }
 
     .warhub-body {
-      padding: 8px;
-      overflow-y: auto;
-      overflow-x: hidden;
-      -webkit-overflow-scrolling: touch;
-      flex: 1 1 auto;
+      padding: 8px !important;
+      overflow-y: auto !important;
+      overflow-x: hidden !important;
+      -webkit-overflow-scrolling: touch !important;
+      flex: 1 1 auto !important;
+      min-height: 0 !important;
+      width: 100% !important;
+      display: block !important;
     }
 
     .warhub-status {
-      display: none;
-      margin-bottom: 8px;
-      padding: 8px 10px;
-      border-radius: 10px;
-      font-size: 12px;
-      background: rgba(255,255,255,.06);
+      display: none !important;
+      margin-bottom: 8px !important;
+      padding: 8px 10px !important;
+      border-radius: 10px !important;
+      font-size: 12px !important;
+      background: rgba(255,255,255,.06) !important;
+      color: #fff !important;
     }
-    .warhub-status.show { display: block; }
-    .warhub-status.err { background: rgba(185,52,52,.22); color: #ffdcdc; }
+    .warhub-status.show { display: block !important; }
+    .warhub-status.err {
+      background: rgba(185,52,52,.22) !important;
+      color: #ffdcdc !important;
+    }
 
-    .warhub-grid { display: grid; gap: 8px; }
-    .warhub-grid.two { grid-template-columns: repeat(2, minmax(0,1fr)); }
-    .warhub-grid.three { grid-template-columns: repeat(3, minmax(0,1fr)); }
+    .warhub-grid { display: grid !important; gap: 8px !important; }
+    .warhub-grid.two { grid-template-columns: repeat(2, minmax(0,1fr)) !important; }
+    .warhub-grid.three { grid-template-columns: repeat(3, minmax(0,1fr)) !important; }
 
     .warhub-card {
-      border: 1px solid rgba(255,255,255,.07);
-      background: rgba(255,255,255,.03);
-      border-radius: 12px;
-      padding: 10px;
-      margin-bottom: 8px;
-      overflow: hidden;
+      border: 1px solid rgba(255,255,255,.07) !important;
+      background: rgba(255,255,255,.03) !important;
+      border-radius: 12px !important;
+      padding: 10px !important;
+      margin-bottom: 8px !important;
+      overflow: hidden !important;
+      color: #fff !important;
     }
 
     .warhub-card h3 {
-      margin: 0 0 8px;
-      font-size: 13px;
-      font-weight: 800;
-      letter-spacing: .2px;
+      margin: 0 0 8px !important;
+      font-size: 13px !important;
+      font-weight: 800 !important;
+      letter-spacing: .2px !important;
+      color: #fff !important;
     }
 
     .warhub-metric {
-      border-radius: 10px;
-      background: rgba(255,255,255,.05);
-      padding: 8px;
-      min-height: 54px;
+      border-radius: 10px !important;
+      background: rgba(255,255,255,.05) !important;
+      padding: 8px !important;
+      min-height: 54px !important;
     }
-    .warhub-metric .k { opacity: .7; font-size: 10px; text-transform: uppercase; letter-spacing: .45px; }
+    .warhub-metric .k {
+      opacity: .7 !important;
+      font-size: 10px !important;
+      text-transform: uppercase !important;
+      letter-spacing: .45px !important;
+      color: #fff !important;
+    }
     .warhub-metric .v {
-      font-size: 16px;
-      font-weight: 800;
-      margin-top: 4px;
-      word-break: break-word;
+      font-size: 16px !important;
+      font-weight: 800 !important;
+      margin-top: 4px !important;
+      word-break: break-word !important;
+      color: #fff !important;
     }
 
     .warhub-score-us {
-      background: linear-gradient(180deg, rgba(31,120,63,.40), rgba(17,67,35,.28));
-      border: 1px solid rgba(109,214,143,.18);
+      background: linear-gradient(180deg, rgba(31,120,63,.40), rgba(17,67,35,.28)) !important;
+      border: 1px solid rgba(109,214,143,.18) !important;
     }
     .warhub-score-them {
-      background: linear-gradient(180deg, rgba(145,37,37,.40), rgba(88,18,18,.28));
-      border: 1px solid rgba(255,130,130,.18);
+      background: linear-gradient(180deg, rgba(145,37,37,.40), rgba(88,18,18,.28)) !important;
+      border: 1px solid rgba(255,130,130,.18) !important;
     }
     .warhub-score-lead {
-      background: linear-gradient(180deg, rgba(145,114,27,.38), rgba(97,72,13,.26));
-      border: 1px solid rgba(255,215,118,.18);
+      background: linear-gradient(180deg, rgba(145,114,27,.38), rgba(97,72,13,.26)) !important;
+      border: 1px solid rgba(255,215,118,.18) !important;
     }
 
-    .warhub-list { display: grid; gap: 6px; }
+    .warhub-list { display: grid !important; gap: 6px !important; }
 
     .warhub-list-item {
-      border-radius: 10px;
-      background: rgba(255,255,255,.04);
-      padding: 8px;
-      display: grid;
-      gap: 4px;
+      border-radius: 10px !important;
+      background: rgba(255,255,255,.04) !important;
+      padding: 8px !important;
+      display: grid !important;
+      gap: 4px !important;
+      color: #fff !important;
     }
 
     .warhub-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 8px;
-      flex-wrap: wrap;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: space-between !important;
+      gap: 8px !important;
+      flex-wrap: wrap !important;
     }
 
-    .warhub-name { font-weight: 700; }
-    .warhub-meta { opacity: .76; font-size: 11px; }
-    .warhub-empty { opacity: .75; font-size: 12px; }
-    .warhub-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+    .warhub-name { font-weight: 700 !important; color: #fff !important; }
+    .warhub-meta { opacity: .76 !important; font-size: 11px !important; color: #fff !important; }
+    .warhub-empty { opacity: .75 !important; font-size: 12px !important; color: #fff !important; }
+    .warhub-actions { display: flex !important; gap: 6px !important; flex-wrap: wrap !important; }
 
     .warhub-btn, .warhub-input, .warhub-select, .warhub-textarea {
-      font: inherit;
-      border-radius: 10px;
-      border: 1px solid rgba(255,255,255,.10);
-      background: rgba(255,255,255,.05);
-      color: #fff;
+      font: inherit !important;
+      border-radius: 10px !important;
+      border: 1px solid rgba(255,255,255,.10) !important;
+      background: rgba(255,255,255,.05) !important;
+      color: #fff !important;
     }
 
     .warhub-btn {
-      padding: 7px 10px;
-      cursor: pointer;
-      font-size: 12px;
-      font-weight: 700;
-      text-decoration: none;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
+      appearance: none !important;
+      -webkit-appearance: none !important;
+      padding: 7px 10px !important;
+      cursor: pointer !important;
+      font-size: 12px !important;
+      font-weight: 700 !important;
+      text-decoration: none !important;
+      display: inline-flex !important;
+      align-items: center !important;
+      justify-content: center !important;
     }
 
-    .warhub-btn.primary { background: linear-gradient(180deg, #cc3737, #821616); border-color: rgba(255,255,255,.12); }
-    .warhub-btn.good { background: linear-gradient(180deg, #238c52, #15603a); }
-    .warhub-btn.warn { background: linear-gradient(180deg, #af7b22, #775114); }
-    .warhub-btn.small { padding: 5px 8px; font-size: 11px; }
+    .warhub-btn.primary { background: linear-gradient(180deg, #cc3737, #821616) !important; border-color: rgba(255,255,255,.12) !important; }
+    .warhub-btn.good { background: linear-gradient(180deg, #238c52, #15603a) !important; }
+    .warhub-btn.warn { background: linear-gradient(180deg, #af7b22, #775114) !important; }
+    .warhub-btn.small { padding: 5px 8px !important; font-size: 11px !important; }
 
     .warhub-input, .warhub-select, .warhub-textarea {
-      width: 100%;
-      padding: 8px 10px;
-      box-sizing: border-box;
-      font-size: 12px;
+      width: 100% !important;
+      padding: 8px 10px !important;
+      font-size: 12px !important;
     }
 
     .warhub-input[readonly] {
-      opacity: .9;
-      background: rgba(255,255,255,.035);
+      opacity: .9 !important;
+      background: rgba(255,255,255,.035) !important;
     }
 
-    .warhub-textarea { min-height: 94px; resize: vertical; }
+    .warhub-textarea { min-height: 94px !important; resize: vertical !important; }
 
     .warhub-label {
-      font-size: 11px;
-      opacity: .74;
-      margin-bottom: 4px;
-      display: block;
+      font-size: 11px !important;
+      opacity: .74 !important;
+      margin-bottom: 4px !important;
+      display: block !important;
+      color: #fff !important;
     }
 
     .warhub-pill {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      padding: 4px 8px;
-      border-radius: 999px;
-      background: rgba(255,255,255,.07);
-      font-size: 11px;
-      font-weight: 700;
+      display: inline-flex !important;
+      align-items: center !important;
+      gap: 6px !important;
+      padding: 4px 8px !important;
+      border-radius: 999px !important;
+      background: rgba(255,255,255,.07) !important;
+      font-size: 11px !important;
+      font-weight: 700 !important;
     }
-    .warhub-pill.online { background: rgba(40,140,90,.20); color: #b7ffd5; }
-    .warhub-pill.idle { background: rgba(197,141,46,.22); color: #ffe3a5; }
-    .warhub-pill.offline { background: rgba(113,113,113,.20); color: #dadada; }
-    .warhub-pill.hosp { background: rgba(181,62,62,.24); color: #ffd0d0; }
+    .warhub-pill.online { background: rgba(40,140,90,.20) !important; color: #b7ffd5 !important; }
+    .warhub-pill.idle { background: rgba(197,141,46,.22) !important; color: #ffe3a5 !important; }
+    .warhub-pill.offline { background: rgba(113,113,113,.20) !important; color: #dadada !important; }
+    .warhub-pill.hosp { background: rgba(181,62,62,.24) !important; color: #ffd0d0 !important; }
 
-    .warhub-divider { height: 1px; background: rgba(255,255,255,.07); margin: 8px 0; }
-    .warhub-mini { font-size: 11px; opacity: .78; }
-    .warhub-link { color: #fff; text-decoration: none; }
+    .warhub-divider {
+      height: 1px !important;
+      background: rgba(255,255,255,.07) !important;
+      margin: 8px 0 !important;
+    }
+
+    .warhub-mini { font-size: 11px !important; opacity: .78 !important; color: #fff !important; }
+    .warhub-link { color: #fff !important; text-decoration: none !important; }
+
     .warhub-section-scroll {
-      max-height: 52vh;
-      overflow-y: auto;
-      overflow-x: hidden;
-      -webkit-overflow-scrolling: touch;
-      padding-right: 2px;
+      max-height: 52vh !important;
+      overflow-y: auto !important;
+      overflow-x: hidden !important;
+      -webkit-overflow-scrolling: touch !important;
+      padding-right: 2px !important;
     }
 
     @media (max-width: 700px) {
       #warhub-overlay {
-        width: 98vw;
-        height: 88vh;
-        top: 56px;
-        left: 1vw;
-        right: 1vw;
-        border-radius: 12px;
+        width: 98vw !important;
+        height: 88vh !important;
+        min-height: 360px !important;
+        top: 56px !important;
+        left: 1vw !important;
+        right: 1vw !important;
+        border-radius: 12px !important;
       }
-      .warhub-grid.two, .warhub-grid.three { grid-template-columns: 1fr; }
-      .warhub-body { padding-bottom: 18px; }
+      .warhub-grid.two, .warhub-grid.three { grid-template-columns: 1fr !important; }
+      .warhub-body { padding-bottom: 18px !important; }
       #warhub-shield {
-        width: 40px;
-        height: 40px;
-        font-size: 21px;
+        width: 40px !important;
+        height: 40px !important;
+        font-size: 21px !important;
       }
-      .warhub-section-scroll { max-height: 34vh; }
+      .warhub-section-scroll { max-height: 34vh !important; }
+      .warhub-tabs {
+        min-height: 44px !important;
+        max-height: 44px !important;
+      }
     }
   `;
   GM_addStyle(css);
@@ -740,10 +819,7 @@
     const sharedTermsAt = String(war.terms_updated_at || state?.warTerms?.updated_at || "").trim();
     const warMessage = String(war.message || war.status_text || "").trim() || "Currently not in war";
 
-    const ourAttackLink = me?.player_id || me?.user_id || me?.id
-      ? `https://www.torn.com/factions.php?step=your#/war/chain`
-      : `https://www.torn.com/factions.php?step=your`;
-
+    const ourAttackLink = `https://www.torn.com/factions.php?step=your#/war/chain`;
     const enemyFactionId = enemyFaction?.id || enemyFaction?.faction_id || "";
 
     return `
@@ -1258,7 +1334,7 @@
   function tabBtn(key, label) {
     const badgeNum = key === "notifications" ? unreadCount() : 0;
     const text = badgeNum ? `${label} (${badgeNum})` : label;
-    return `<button class="warhub-tab ${currentTab === key ? "active" : ""}" data-tab="${key}">${text}</button>`;
+    return `<button type="button" class="warhub-tab ${currentTab === key ? "active" : ""}" data-tab="${key}">${text}</button>`;
   }
 
   function renderBody() {
@@ -1270,10 +1346,10 @@
             <div class="warhub-title">War Hub</div>
             <div class="warhub-sub">made by Fries91</div>
           </div>
-          <button class="warhub-close" id="warhub-close-btn">Close</button>
+          <button type="button" class="warhub-close" id="warhub-close-btn">Close</button>
         </div>
       </div>
-      <div class="warhub-tabs">${TAB_ORDER.map(([key, label]) => tabBtn(key, label)).join("")}</div>
+      <div class="warhub-tabs" id="warhub-tabs-bar">${TAB_ORDER.map(([key, label]) => tabBtn(key, label)).join("")}</div>
       <div class="warhub-body">
         <div id="warhub-status" class="warhub-status"></div>
         ${renderTabContent()}
@@ -1905,7 +1981,7 @@
     const savedAdmin = cleanInputValue(GM_getValue(K_ADMIN_KEY, ""));
 
     if (!token && savedApi && savedAdmin) {
-      // intentional quiet boot
+      // quiet
     }
 
     await loadState(true);
