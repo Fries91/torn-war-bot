@@ -1,3 +1,4 @@
+
 import os
 import secrets
 import sqlite3
@@ -345,7 +346,8 @@ def init_db():
             created_at TEXT DEFAULT ''
         )
     """)
-        _ensure_column(cur, "med_deals", "creator_user_id", "creator_user_id TEXT DEFAULT ''")
+
+    _ensure_column(cur, "med_deals", "creator_user_id", "creator_user_id TEXT DEFAULT ''")
     _ensure_column(cur, "med_deals", "creator_name", "creator_name TEXT DEFAULT ''")
     _ensure_column(cur, "med_deals", "faction_id", "faction_id TEXT DEFAULT ''")
     _ensure_column(cur, "med_deals", "faction_name", "faction_name TEXT DEFAULT ''")
@@ -827,6 +829,8 @@ def upsert_enemy_state(
     ))
     con.commit()
     con.close()
+
+
 def list_target_assignments_for_war(war_id: str) -> List[Dict[str, Any]]:
     if not war_id:
         return []
@@ -1428,7 +1432,8 @@ def compute_license_status(user_id: str) -> Dict[str, Any]:
         status = "inactive"
         payment_required = False
         message = "Trial has not started yet."
-            if raw_payment_required:
+
+    if raw_payment_required:
         active = False
         payment_required = True
         if status != "paid":
