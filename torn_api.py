@@ -481,6 +481,8 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
         "active": False,
         "war_id": "",
         "war_type": "",
+        "my_faction_id": str(my_faction_id or ""),
+        "my_faction_name": str(my_faction_name or ""),
         "enemy_faction_id": "",
         "enemy_faction_name": "",
         "enemy_members": [],
@@ -507,12 +509,22 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
     wars = wars_res.get("wars") or []
     active_war = None
 
+    my_faction_id = str(my_faction_id or "")
+
     for war in wars:
         factions = war.get("factions") or []
-        faction_ids = [str(x.get("faction_id") or "") for x in factions]
-        if my_faction_id and str(my_faction_id) in faction_ids and bool(war.get("active")):
-            active_war = war
-            break
+        if not factions:
+            continue
+
+        if my_faction_id:
+            faction_ids = [str(x.get("faction_id") or "") for x in factions]
+            if my_faction_id in faction_ids and bool(war.get("active")):
+                active_war = war
+                break
+        else:
+            if bool(war.get("active")):
+                active_war = war
+                break
 
     if not active_war:
         out = dict(default)
@@ -524,25 +536,23 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
     my_side = None
     enemy_side = None
 
-    for f in factions:
-        fid_s = str(f.get("faction_id") or "")
-        if my_faction_id and fid_s == str(my_faction_id):
-            my_side = f
-            break
+    if my_faction_id:
+        for f in factions:
+            if str(f.get("faction_id") or "") == my_faction_id:
+                my_side = f
+                break
 
     if my_side:
         for f in factions:
-            fid_s = str(f.get("faction_id") or "")
-            if fid_s != str(my_side.get("faction_id") or ""):
-                enemy_side = f
-                break
-
-    if my_side is None and factions:
-        my_side = factions[0]
-        for f in factions[1:]:
             if str(f.get("faction_id") or "") != str(my_side.get("faction_id") or ""):
                 enemy_side = f
                 break
+    else:
+        if len(factions) >= 2:
+            my_side = factions[0]
+            enemy_side = factions[1]
+        elif len(factions) == 1:
+            my_side = factions[0]
 
     my_id = str((my_side or {}).get("faction_id") or my_faction_id or "")
     my_name = str((my_side or {}).get("faction_name") or my_faction_name or "")
@@ -560,7 +570,7 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
 
     enemy_members: List[Dict[str, Any]] = []
     if enemy_id:
-        enemy_faction = faction_basic(api_key, faction_id=str(enemy_id))
+        enemy_faction = faction_basic(api_key, faction_id=enemy_id)
         if enemy_faction.get("ok"):
             enemy_name = enemy_faction.get("faction_name") or enemy_name
             enemy_members = enemy_faction.get("members", [])
@@ -572,7 +582,7 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
 
     return {
         "ok": True,
-        "active": True,
+        "active": bool(active_war.get("active")),
         "war_id": str(active_war.get("war_id") or ""),
         "war_type": str(active_war.get("war_type") or ""),
         "my_faction_id": my_id,
