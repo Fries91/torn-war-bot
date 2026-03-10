@@ -268,32 +268,23 @@ def me_basic(api_key: str) -> Dict[str, Any]:
 
 
 def faction_basic(api_key: str, faction_id: str = "") -> Dict[str, Any]:
+    faction_id = str(faction_id or "").strip()
+
     if faction_id:
         res = _safe_get(
-            f"{API_BASE}/faction/",
+            f"{API_BASE}/faction/{faction_id}",
             {
                 "selections": "basic",
-                "ID": faction_id,
                 "key": api_key,
             },
             cache_seconds=CACHE_TTL_FACTION_BASIC,
             cache_prefix="faction_basic",
         )
-        if not res.get("ok"):
-            res = _safe_get(
-                f"{API_BASE}/faction/",
-                {
-                    "selections": "basic",
-                    "id": faction_id,
-                    "key": api_key,
-                },
-                cache_seconds=CACHE_TTL_FACTION_BASIC,
-                cache_prefix="faction_basic",
-            )
+
         if not res.get("ok"):
             return {
                 "ok": False,
-                "faction_id": str(faction_id or ""),
+                "faction_id": faction_id,
                 "faction_name": "",
                 "members": [],
                 "error": res.get("error", "Could not load faction."),
@@ -306,6 +297,11 @@ def faction_basic(api_key: str, faction_id: str = "") -> Dict[str, Any]:
         if isinstance(members_raw, dict):
             for uid, member in members_raw.items():
                 if isinstance(member, dict):
+                    members.append(_normalize_member(uid, member))
+        elif isinstance(members_raw, list):
+            for idx, member in enumerate(members_raw):
+                if isinstance(member, dict):
+                    uid = member.get("user_id") or member.get("id") or str(idx)
                     members.append(_normalize_member(uid, member))
 
         return {
@@ -382,7 +378,7 @@ def _side_name(side_data: Dict[str, Any], fallback: str = "") -> str:
 
 
 def _side_score(side_data: Dict[str, Any]) -> int:
-    for key in ("score", "points", "war_score", "chain"):
+    for key in ("score", "points", "war_score"):
         val = side_data.get(key)
         if isinstance(val, (int, float)):
             return int(val)
@@ -485,6 +481,7 @@ def faction_wars(api_key: str) -> Dict[str, Any]:
         "source_note": f"Loaded from faction {chosen_container_name}.",
     }
 
+
 def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: str = "") -> Dict[str, Any]:
     default = {
         "ok": True,
@@ -518,7 +515,6 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
 
     wars = wars_res.get("wars") or []
     active_war = None
-
     my_faction_id = str(my_faction_id or "")
 
     for war in wars:
