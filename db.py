@@ -362,6 +362,15 @@ def init_db():
     _ensure_column(cur, "faction_members", "leader_name", "leader_name TEXT DEFAULT ''")
     _ensure_column(cur, "faction_members", "position", "position TEXT DEFAULT ''")
 
+    _ensure_column(cur, "users", "name", "name TEXT DEFAULT ''")
+    _ensure_column(cur, "users", "api_key", "api_key TEXT DEFAULT ''")
+    _ensure_column(cur, "users", "faction_id", "faction_id TEXT DEFAULT ''")
+    _ensure_column(cur, "users", "faction_name", "faction_name TEXT DEFAULT ''")
+    _ensure_column(cur, "users", "available", "available INTEGER DEFAULT 1")
+    _ensure_column(cur, "users", "chain_sitter", "chain_sitter INTEGER DEFAULT 0")
+    _ensure_column(cur, "users", "created_at", "created_at TEXT DEFAULT ''")
+    _ensure_column(cur, "users", "last_seen_at", "last_seen_at TEXT DEFAULT ''")
+
     cur.execute("""
         UPDATE med_deals
         SET creator_user_id = COALESCE(NULLIF(creator_user_id, ''), user_id)
