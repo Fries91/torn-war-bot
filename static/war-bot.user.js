@@ -925,7 +925,7 @@
         url,
         headers,
         data: body != null ? JSON.stringify(body) : undefined,
-        timeout: 30000,
+        timeout: 60000,
         onload: (res) => {
           let json = null;
           try { json = JSON.parse(res.responseText || "{}"); } catch {}
@@ -936,8 +936,18 @@
             error: json?.error || json?.details || (res.status >= 400 ? `HTTP ${res.status}` : "Request failed"),
           });
         },
-        onerror: () => resolve({ ok: false, status: 0, data: null, error: "Network error." }),
-        ontimeout: () => resolve({ ok: false, status: 0, data: null, error: "Request timed out." }),
+        onerror: () => resolve({
+  ok: false,
+  status: 0,
+  data: null,
+  error: `Network error: ${method} ${path}`,
+}),
+ontimeout: () => resolve({
+  ok: false,
+  status: 0,
+  data: null,
+  error: `Request timed out: ${method} ${path}`,
+}),
       });
     });
   }
