@@ -35,7 +35,6 @@
   const K_NOTES = "warhub_notes_v3";
   const K_LOCAL_NOTIFICATIONS = "warhub_local_notifications_v3";
   const K_ACCESS_CACHE = "warhub_access_cache_v3";
-  const K_OWNER_TOKEN = "warhub_owner_token_v3";
   let factionMembersCache = null;
 
   const PAYMENT_PLAYER = "Fries91";
@@ -56,7 +55,7 @@
     ["analytics", "Analytics"],
     ["notifications", "Alerts"],
     ["faction", "Faction"],
-    ["owner", "Owner"],
+    ["admin", "Admin"],
     ["settings", "Settings"],
   ];
 
@@ -69,6 +68,7 @@
   let dragMoved = false;
   let isOpen = !!GM_getValue(K_OPEN, false);
   let currentTab = GM_getValue(K_TAB, "war");
+  if (currentTab === "owner") currentTab = "admin";
   let pollTimer = null;
   let remountTimer = null;
   let loadInFlight = false;
@@ -696,6 +696,7 @@
       memberEnabled: !!a.memberEnabled,
       pricePerMember: Number.isFinite(Number(a.pricePerMember)) ? Number(a.pricePerMember) : PRICE_PER_MEMBER,
       paymentPlayer: a.paymentPlayer || PAYMENT_PLAYER,
+      isOwner: !!a.isOwner,
     };
   }
 
@@ -729,6 +730,10 @@
       return "Faction trial active.";
     }
     return "";
+  }
+
+  function isOwnerSession() {
+    return !!(accessState?.isOwner || state?.me?.is_owner || state?.user?.is_owner || state?.owner?.is_owner);
   }
 
   function getAccessInfo(payload, httpStatus) {
@@ -850,6 +855,7 @@
       memberEnabled: !!memberAccess.enabled || !!factionAccess.member_enabled || !!memberAccess.allowed,
       pricePerMember: Number(payment.price_per_enabled_member || payment.price_per_member || PRICE_PER_MEMBER) || PRICE_PER_MEMBER,
       paymentPlayer: String(payment.required_player || PAYMENT_PLAYER),
+      isOwner: !!d.is_owner || !!d?.user?.is_owner || !!d?.me?.is_owner || !!d?.owner?.is_owner || !!factionAccess.is_owner,
     };
   }
 
@@ -886,6 +892,7 @@
         paymentRequired: false,
         trialExpired: false,
         lastSeenAt: new Date().toISOString(),
+        isOwner: !!accessState.isOwner,
       };
       saveAccessCache();
     }
@@ -1018,12 +1025,11 @@
     return res;
   }
 
-  async function ownerReq(method, path, body) {
-    const ownerToken = getOwnerToken();
-    if (!ownerToken) {
-      return { ok: false, status: 401, data: null, error: "Missing owner token." };
+  async function adminReq(method, path, body) {
+    if (!isOwnerSession()) {
+      return { ok: false, status: 403, data: null, error: "Admin access required." };
     }
-    return gmXhr(method, path, body, { "X-License-Admin": ownerToken });
+    return req(method, path, body);
   }
 
   function normalizeState(data) {
@@ -1097,6 +1103,7 @@
       if (!silent) setStatus("");
       if (overlay && isOpen) renderBody();
       updateBadge();
+      if (overlay && isOpen && currentTab === "admin" && isOwnerSession()) loadAdminDashboard().catch(() => null);
     } finally {
       loadInFlight = false;
     }
@@ -1549,32 +1556,38 @@
     `;
   }
 
-  function renderOwnerTab() {
-    const token = getOwnerToken();
+  function renderAdminTab() {
+    if (!isOwnerSession()) {
+      return `
+        <div class="warhub-card">
+          <h3>Admin</h3>
+          <div class="warhub-empty">This tab is only visible to the owner account.</div>
+        </div>
+      `;
+    }
 
     return `
       <div class="warhub-card">
-        <h3>License Owner Panel</h3>
-
-        <label class="warhub-label">Owner Token</label>
-        <input id="wh-owner-token" class="warhub-input" value="${esc(token)}">
-
-        <div class="warhub-actions" style="margin-top:8px;">
-          <button class="warhub-btn primary" id="wh-save-owner-token">Save Token</button>
-        </div>
-
-        <div class="warhub-divider"></div>
-
-        <div class="warhub-mini">
-          This tab allows the license owner to manage faction licenses,
-          approve payments, and toggle members.
-        </div>
-
+        <h3>War Hub Admin Dashboard</h3>
+        <div class="warhub-mini">Owner-only overview of factions, licenses, renewals, and payment controls.</div>
         <div class="warhub-actions" style="margin-top:10px;">
-          <button class="warhub-btn" id="wh-owner-load">Load Licenses</button>
+          <button class="warhub-btn primary" id="wh-admin-refresh">Refresh Admin Data</button>
         </div>
+      </div>
 
-        <div id="wh-owner-results" style="margin-top:10px;"></div>
+      <div class="warhub-card" id="wh-admin-summary-wrap">
+        <h3>Summary</h3>
+        <div id="wh-admin-summary" class="warhub-mini">Loading...</div>
+      </div>
+
+      <div class="warhub-card" id="wh-admin-revenue-wrap">
+        <h3>Revenue Snapshot</h3>
+        <div id="wh-admin-revenue" class="warhub-mini">Loading...</div>
+      </div>
+
+      <div class="warhub-card">
+        <h3>Faction Licenses</h3>
+        <div id="wh-admin-results" style="margin-top:10px;"></div>
       </div>
     `;
   }
@@ -1632,7 +1645,7 @@
       case "analytics": return renderAnalyticsTab();
       case "notifications": return renderNotificationsTab();
       case "faction": return renderFactionTab();
-      case "owner": return renderOwnerTab();
+      case "admin": return renderAdminTab();
       case "settings": return renderSettingsTab();
       case "war":
       default: return renderWarTab();
@@ -1640,11 +1653,13 @@
   }
 
   function tabBtn(key, label) {
+    if (key === "admin" && !isOwnerSession()) return "";
+
     const badgeNum = key === "notifications" ? unreadCount() : 0;
     const text = badgeNum ? `${label} (${badgeNum})` : label;
     const blocked = accessState.paymentRequired || accessState.blocked || accessState.trialExpired;
     const needsLogin = !cleanInputValue(GM_getValue(K_SESSION, "")) && !state;
-    const locked = (blocked || needsLogin) && key !== "settings" && key !== "instructions";
+    const locked = ((blocked || needsLogin) && key !== "settings" && key !== "instructions") || (key === "admin" && !isOwnerSession());
 
     return `
       <button
@@ -2324,96 +2339,134 @@
     return req("POST", "/api/notifications/seen", {});
   }
 
-  async function loadOwnerDashboard() {
-    const results = overlay?.querySelector("#wh-owner-results");
+  async function loadAdminDashboard() {
+    const summaryEl = overlay?.querySelector("#wh-admin-summary");
+    const revenueEl = overlay?.querySelector("#wh-admin-revenue");
+    const results = overlay?.querySelector("#wh-admin-results");
+
+    if (summaryEl) summaryEl.innerHTML = `Loading...`;
+    if (revenueEl) revenueEl.innerHTML = `Loading...`;
     if (results) results.innerHTML = `<div class="warhub-mini">Loading...</div>`;
 
-    const res = await ownerReq("GET", "/api/admin/faction-dashboard");
+    const res = await adminReq("GET", "/api/owner/faction-dashboard");
     if (!res.ok) {
-      setStatus(res.error || "Could not load owner dashboard.", true);
+      setStatus(res.error || "Could not load admin dashboard.", true);
+      if (summaryEl) summaryEl.innerHTML = `Could not load summary.`;
+      if (revenueEl) revenueEl.innerHTML = `Could not load revenue snapshot.`;
       if (results) results.innerHTML = "";
       return;
     }
 
     const dashboard = res.data?.dashboard || {};
     const licenses = arr(res.data?.faction_licenses || res.data?.licenses || []);
+    const projected = Number(dashboard.projected_renewal_total || 0);
+    const factionsTotal = Number(dashboard.faction_licenses_total || licenses.length || 0);
+    const enabledMembers = Number(dashboard.enabled_members_total || 0);
+    const avgPerFaction = factionsTotal ? Math.round(projected / factionsTotal) : 0;
 
-    if (!results) return;
-
-    results.innerHTML = `
-      <div class="warhub-card" style="margin-bottom:8px;">
-        <h3>Owner Summary</h3>
+    if (summaryEl) {
+      summaryEl.innerHTML = `
         <div class="warhub-grid two">
           <div class="warhub-metric"><div class="k">Faction Licenses</div><div class="v">${fmtNum(dashboard.faction_licenses_total || 0)}</div></div>
           <div class="warhub-metric"><div class="k">Trials</div><div class="v">${fmtNum(dashboard.trials_total || 0)}</div></div>
           <div class="warhub-metric"><div class="k">Paid</div><div class="v">${fmtNum(dashboard.paid_total || 0)}</div></div>
           <div class="warhub-metric"><div class="k">Payment Required</div><div class="v">${fmtNum(dashboard.payment_required_total || 0)}</div></div>
-          <div class="warhub-metric"><div class="k">Enabled Members</div><div class="v">${fmtNum(dashboard.enabled_members_total || 0)}</div></div>
-          <div class="warhub-metric"><div class="k">Projected Renewal</div><div class="v">${fmtMoney(dashboard.projected_renewal_total || 0)}</div></div>
+          <div class="warhub-metric"><div class="k">Enabled Members</div><div class="v">${fmtNum(enabledMembers)}</div></div>
+          <div class="warhub-metric"><div class="k">Stored Members</div><div class="v">${fmtNum(dashboard.stored_members_total || 0)}</div></div>
         </div>
+      `;
+    }
+
+    if (revenueEl) {
+      revenueEl.innerHTML = `
+        <div class="warhub-grid two">
+          <div class="warhub-metric"><div class="k">Projected Renewal Total</div><div class="v">${fmtMoney(projected)}</div></div>
+          <div class="warhub-metric"><div class="k">Per Enabled Member</div><div class="v">${fmtMoney(dashboard.payment_per_member || PRICE_PER_MEMBER)}</div></div>
+          <div class="warhub-metric"><div class="k">Avg Per Faction</div><div class="v">${fmtMoney(avgPerFaction)}</div></div>
+          <div class="warhub-metric"><div class="k">Payment Player</div><div class="v">${esc(String(dashboard.payment_player || PAYMENT_PLAYER))}</div></div>
+        </div>
+      `;
+    }
+
+    if (!results) return;
+
+    const expiringSoon = licenses.filter((x) => {
+      const lic = x.license || x;
+      const days = Number(lic.days_left);
+      return Number.isFinite(days) && days >= 0 && days <= 7;
+    }).length;
+
+    results.innerHTML = `
+      <div class="warhub-card" style="margin-bottom:8px;">
+        <h3>Upcoming Renewals</h3>
+        <div class="warhub-mini">${fmtNum(expiringSoon)} faction${expiringSoon === 1 ? "" : "s"} due within 7 days.</div>
       </div>
 
-      <div class="warhub-card">
-        <h3>Faction Licenses</h3>
-        ${licenses.length ? `
-          <div class="warhub-section-scroll">
-            <div class="warhub-list">
-              ${licenses.map((x) => {
-                const lic = x.license || x;
-                const fid = x.faction_id || lic.faction_id || "";
-                const fname = x.faction_name || lic.faction_name || "Unknown Faction";
-                const leaderName = x.leader_name || lic.leader_name || "Unknown";
-                const enabledCount = Number(lic.enabled_member_count || x.enabled_member_count || 0);
-                const renewCost = Number(lic.renewal_cost || x.renewal_cost || 0);
-                return `
-                  <div class="warhub-list-item">
-                    <div class="warhub-row">
-                      <div>
-                        <div class="warhub-name">${esc(fname)} ${fid ? `<span class="warhub-mini">[${esc(fid)}]</span>` : ""}</div>
-                        <div class="warhub-meta">Leader: ${esc(leaderName)} • Status: ${esc(lic.status || x.status || "unknown")} • Enabled: ${fmtNum(enabledCount)} • Cost: ${fmtMoney(renewCost)}</div>
-                      </div>
-                      <div class="warhub-actions">
-                        <button class="warhub-btn small good" data-owner-confirm="${esc(String(fid))}|${esc(String(renewCost || 0))}">Confirm Payment</button>
-                        <button class="warhub-btn small warn" data-owner-expire="${esc(String(fid))}">Expire</button>
+      ${licenses.length ? `
+        <div class="warhub-section-scroll">
+          <div class="warhub-list">
+            ${licenses.map((x) => {
+              const lic = x.license || x;
+              const fid = x.faction_id || lic.faction_id || "";
+              const fname = x.faction_name || lic.faction_name || "Unknown Faction";
+              const leaderName = x.leader_name || lic.leader_name || "Unknown";
+              const enabledCount = Number(lic.enabled_member_count || x.enabled_member_count || 0);
+              const renewCost = Number(lic.renewal_cost || x.renewal_cost || 0);
+              const daysLeft = lic.days_left;
+              const status = String(lic.status || x.status || "unknown");
+              const expiresText = lic.expires_at ? fmtTs(lic.expires_at) : (lic.paid_until_at ? fmtTs(lic.paid_until_at) : "-");
+              return `
+                <div class="warhub-list-item">
+                  <div class="warhub-row" style="align-items:flex-start; gap:10px;">
+                    <div style="flex:1 1 auto; min-width:0;">
+                      <div class="warhub-name">${esc(fname)} ${fid ? `<span class="warhub-mini">[${esc(fid)}]</span>` : ""}</div>
+                      <div class="warhub-meta">Leader: ${esc(leaderName)} • Status: ${esc(status)} • Enabled: ${fmtNum(enabledCount)} • Cost: ${fmtMoney(renewCost)}</div>
+                      <div class="warhub-mini" style="margin-top:4px; white-space:normal; line-height:1.45;">
+                        ${lic.message ? esc(String(lic.message)) : "No status message."}<br>
+                        Expires: ${esc(expiresText)}${daysLeft != null ? ` • Days left: ${esc(String(daysLeft))}` : ""}
                       </div>
                     </div>
+                    <div class="warhub-actions">
+                      <button class="warhub-btn small good" data-admin-confirm="${esc(String(fid))}|${esc(String(renewCost || 0))}">Confirm Payment</button>
+                      <button class="warhub-btn small warn" data-admin-expire="${esc(String(fid))}">Expire License</button>
+                    </div>
                   </div>
-                `;
-              }).join("")}
-            </div>
+                </div>
+              `;
+            }).join("")}
           </div>
-        ` : `<div class="warhub-empty">No faction licenses returned.</div>`}
-      </div>
+        </div>
+      ` : `<div class="warhub-empty">No faction licenses returned.</div>`}
     `;
 
-    results.querySelectorAll("[data-owner-confirm]").forEach((btn) => {
+    results.querySelectorAll("[data-admin-confirm]").forEach((btn) => {
       btn.addEventListener("click", async () => {
-        const raw = btn.getAttribute("data-owner-confirm") || "";
+        const raw = btn.getAttribute("data-admin-confirm") || "";
         const [factionId, amountRaw] = raw.split("|");
         const amount = Number(amountRaw || 0) || 0;
-        const res2 = await ownerReq("POST", "/api/admin/faction-payment/confirm", {
+        const res2 = await adminReq("POST", "/api/owner/faction-payment/confirm", {
           faction_id: factionId,
           amount,
           payment_kind: "cash",
-          note: "Owner confirmed payment",
+          note: "Admin confirmed payment",
           received_by: PAYMENT_PLAYER,
           extend_days: 30,
         });
         if (!res2.ok) return setStatus(res2.error || "Could not confirm payment.", true);
         setStatus("Faction payment confirmed.");
-        await loadOwnerDashboard();
+        await loadAdminDashboard();
       });
     });
 
-    results.querySelectorAll("[data-owner-expire]").forEach((btn) => {
+    results.querySelectorAll("[data-admin-expire]").forEach((btn) => {
       btn.addEventListener("click", async () => {
-        const factionId = btn.getAttribute("data-owner-expire") || "";
-        const res2 = await ownerReq("POST", "/api/admin/faction-license/expire", {
+        const factionId = btn.getAttribute("data-admin-expire") || "";
+        const res2 = await adminReq("POST", "/api/owner/faction-license/expire", {
           faction_id: factionId,
         });
         if (!res2.ok) return setStatus(res2.error || "Could not expire faction license.", true);
         setStatus("Faction license expired.");
-        await loadOwnerDashboard();
+        await loadAdminDashboard();
       });
     });
   }
@@ -2792,14 +2845,8 @@
       });
     });
 
-    overlay.querySelector("#wh-save-owner-token")?.addEventListener("click", () => {
-      const token = cleanInputValue(overlay.querySelector("#wh-owner-token")?.value || "");
-      setOwnerToken(token);
-      setStatus(token ? "Owner token saved." : "Owner token cleared.");
-    });
-
-    overlay.querySelector("#wh-owner-load")?.addEventListener("click", async () => {
-      await loadOwnerDashboard();
+    overlay.querySelector("#wh-admin-refresh")?.addEventListener("click", async () => {
+      await loadAdminDashboard();
     });
   }
 
