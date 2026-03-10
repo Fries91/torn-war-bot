@@ -617,92 +617,113 @@ def _require_json():
 
 @app.route("/api/auth", methods=["POST"])
 def api_auth():
-    if not _check_request_origin():
-        return err("Blocked request origin.", 403)
+    try:
+        if not _check_request_origin():
+            return err("Blocked request origin.", 403)
 
-    data = _require_json()
-    api_key = str(data.get("api_key") or "").strip()
+        data = _require_json()
+        api_key = str(data.get("api_key") or "").strip()
 
-    if not api_key:
-        return err("Missing api_key.", 400)
+        if not api_key:
+            return err("Missing api_key.", 400)
 
-    me = me_basic(api_key)
-    if not me or not str(me.get("user_id") or "").strip():
-        return err("Invalid API key or Torn API unavailable.", 401)
+        me = me_basic(api_key)
+        if not me or not me.get("ok") or not str(me.get("user_id") or "").strip():
+            return err(
+                me.get("error", "Invalid API key or Torn API unavailable."),
+                401,
+                torn_response=me,
+            )
 
-    user_id = str(me.get("user_id")).strip()
-    name = str(me.get("name") or "").strip()
-    faction_id = str(me.get("faction_id") or "").strip()
-    faction_name = str(me.get("faction_name") or "").strip()
+        user_id = str(me.get("user_id")).strip()
+        name = str(me.get("name") or "").strip()
+        faction_id = str(me.get("faction_id") or "").strip()
+        faction_name = str(me.get("faction_name") or "").strip()
 
-    upsert_user(
-        user_id=user_id,
-        name=name,
-        api_key=api_key,
-        faction_id=faction_id,
-        faction_name=faction_name,
-    )
+        try:
+            upsert_user(
+                user_id=user_id,
+                name=name,
+                api_key=api_key,
+                faction_id=faction_id,
+                faction_name=faction_name,
+            )
+        except Exception as e:
+            return err("upsert_user failed.", 500, details=str(e))
 
-    if faction_id:
-        ensure_faction_license_row(
-            faction_id=faction_id,
-            faction_name=faction_name,
-            leader_user_id=user_id,
-            leader_name=name,
-            leader_api_key=api_key,
-        )
-        start_faction_trial_if_needed(
-            faction_id=faction_id,
-            faction_name=faction_name,
-            leader_user_id=user_id,
-            leader_name=name,
-            leader_api_key=api_key,
-        )
-
-    license_status = _build_license_status_payload(faction_id, viewer_user_id=user_id) if faction_id else {}
-    is_owner = _session_is_owner({"name": name, "user_id": user_id})
-
-    if faction_id and not is_owner:
-        if bool(license_status.get("payment_required")) and str(license_status.get("leader_user_id") or "") != user_id:
-            member_row = get_faction_member_access(faction_id, user_id) or {}
-            if not _safe_bool(member_row.get("enabled")):
-                return err(
-                    "Your faction leader has not enabled your access yet.",
-                    403,
-                    code="member_not_enabled",
+        if faction_id:
+            try:
+                ensure_faction_license_row(
                     faction_id=faction_id,
                     faction_name=faction_name,
-                    license=license_status,
+                    leader_user_id=user_id,
+                    leader_name=name,
+                    leader_api_key=api_key,
                 )
+            except Exception as e:
+                return err("ensure_faction_license_row failed.", 500, details=str(e))
 
-        if str(license_status.get("status") or "").lower() == "expired":
-            leader_id = str(license_status.get("leader_user_id") or "")
-            if leader_id != user_id:
-                return err(
-                    "Faction license expired. Leader payment required.",
-                    403,
-                    code="license_expired",
+            try:
+                start_faction_trial_if_needed(
                     faction_id=faction_id,
                     faction_name=faction_name,
-                    license=license_status,
+                    leader_user_id=user_id,
+                    leader_name=name,
+                    leader_api_key=api_key,
                 )
+            except Exception as e:
+                return err("start_faction_trial_if_needed failed.", 500, details=str(e))
 
-    delete_sessions_for_user(user_id)
-    token = create_session(user_id)
+        license_status = _build_license_status_payload(faction_id, viewer_user_id=user_id) if faction_id else {}
+        is_owner = _session_is_owner({"name": name, "user_id": user_id})
 
-    return ok(
-        message="Authenticated.",
-        token=token,
-        user={
-            "user_id": user_id,
-            "name": name,
-            "faction_id": faction_id,
-            "faction_name": faction_name,
-            "is_owner": is_owner,
-            "is_leader": str(license_status.get("leader_user_id") or "") == user_id,
-        },
-        license=license_status,
-    )
+        if faction_id and not is_owner:
+            if bool(license_status.get("payment_required")) and str(license_status.get("leader_user_id") or "") != user_id:
+                member_row = get_faction_member_access(faction_id, user_id) or {}
+                if not _safe_bool(member_row.get("enabled")):
+                    return err(
+                        "Your faction leader has not enabled your access yet.",
+                        403,
+                        code="member_not_enabled",
+                        faction_id=faction_id,
+                        faction_name=faction_name,
+                        license=license_status,
+                    )
+
+            if str(license_status.get("status") or "").lower() == "expired":
+                leader_id = str(license_status.get("leader_user_id") or "")
+                if leader_id != user_id:
+                    return err(
+                        "Faction license expired. Leader payment required.",
+                        403,
+                        code="license_expired",
+                        faction_id=faction_id,
+                        faction_name=faction_name,
+                        license=license_status,
+                    )
+
+        try:
+            delete_sessions_for_user(user_id)
+            token = create_session(user_id)
+        except Exception as e:
+            return err("create_session failed.", 500, details=str(e))
+
+        return ok(
+            message="Authenticated.",
+            token=token,
+            user={
+                "user_id": user_id,
+                "name": name,
+                "faction_id": faction_id,
+                "faction_name": faction_name,
+                "is_owner": is_owner,
+                "is_leader": str(license_status.get("leader_user_id") or "") == user_id,
+            },
+            license=license_status,
+        )
+    except Exception as e:
+        print("AUTH ERROR:", repr(e))
+        return err("Login failed.", 500, details=str(e))
 
 
 @app.route("/api/logout", methods=["POST"])
@@ -1452,6 +1473,7 @@ def not_allowed(e):
 
 @app.errorhandler(Exception)
 def handle_error(e):
+    print("UNHANDLED ERROR:", repr(e))
     return err("Unhandled error.", 500, details=str(e))
 
 
