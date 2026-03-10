@@ -47,115 +47,20 @@ from db import (
     set_user_setting,
     add_audit_log,
     cache_purge_expired,
+    ensure_faction_license_row,
+    start_faction_trial_if_needed,
+    compute_faction_license_status,
+    renew_faction_after_payment,
+    get_faction_payment_history,
+    force_expire_faction_license,
+    list_all_faction_licenses,
+    get_faction_admin_dashboard_summary,
+    list_faction_members,
+    get_faction_member_access,
+    upsert_faction_member_access,
+    set_faction_member_enabled,
+    delete_faction_member_access,
 )
-
-# faction-license imports with compatibility fallback
-try:
-    from db import (
-        ensure_faction_license_row,
-        start_faction_trial_if_needed,
-        compute_faction_license_status,
-        renew_faction_after_payment,
-        get_faction_payment_history,
-        force_expire_faction_license,
-        list_all_faction_licenses,
-        get_faction_admin_dashboard_summary,
-        list_faction_members,
-        get_faction_member_access,
-        upsert_faction_member_access,
-        set_faction_member_enabled,
-        delete_faction_member_access,
-    )
-except Exception:
-    from db import (
-        ensure_faction_license as _ensure_faction_license,
-        start_faction_trial_if_needed,
-        compute_faction_license_status as _compute_faction_license_status_raw,
-        renew_faction_after_payment,
-        get_faction_payment_history,
-        force_expire_faction_license,
-        list_all_faction_licenses,
-        get_owner_faction_dashboard as _get_owner_faction_dashboard,
-        list_faction_members,
-        get_faction_member as _get_faction_member,
-        add_or_update_faction_member as _add_or_update_faction_member,
-        set_faction_member_enabled,
-        delete_faction_member as _delete_faction_member,
-    )
-
-    def ensure_faction_license_row(
-        faction_id: str,
-        faction_name: str = "",
-        leader_user_id: str = "",
-        leader_name: str = "",
-        leader_api_key: str = "",
-    ):
-        return _ensure_faction_license(
-            faction_id=faction_id,
-            faction_name=faction_name,
-            leader_user_id=leader_user_id,
-            leader_name=leader_name,
-        )
-
-    def compute_faction_license_status(faction_id: str, viewer_user_id: str = ""):
-        return _compute_faction_license_status_raw(faction_id)
-
-    def get_faction_admin_dashboard_summary():
-        raw = _get_owner_faction_dashboard(limit=250) or {}
-        factions = raw.get("factions", []) or []
-        enabled_members_total = 0
-        projected_renewal_total = 0
-        trials_total = 0
-        paid_total = 0
-        payment_required_total = 0
-
-        for row in factions:
-            lic = row.get("license") or row
-            enabled_members_total += int(lic.get("enabled_member_count") or row.get("enabled_member_count") or 0)
-            projected_renewal_total += int(lic.get("renewal_cost") or row.get("renewal_cost") or 0)
-            status = str(lic.get("status") or row.get("status") or "").lower()
-            if status == "trial":
-                trials_total += 1
-            elif status == "paid":
-                paid_total += 1
-            if bool(lic.get("payment_required") or row.get("payment_required")):
-                payment_required_total += 1
-
-        return {
-            "faction_licenses_total": len(factions),
-            "trials_total": trials_total,
-            "paid_total": paid_total,
-            "payment_required_total": payment_required_total,
-            "enabled_members_total": enabled_members_total,
-            "projected_renewal_total": projected_renewal_total,
-        }
-
-    def get_faction_member_access(faction_id: str, member_user_id: str):
-        return _get_faction_member(faction_id, member_user_id)
-
-    def upsert_faction_member_access(
-        faction_id: str,
-        faction_name: str,
-        leader_user_id: str,
-        leader_name: str,
-        member_user_id: str,
-        member_name: str,
-        member_api_key: str,
-        enabled: int = 1,
-        position: str = "",
-    ):
-        return _add_or_update_faction_member(
-            faction_id=faction_id,
-            leader_user_id=leader_user_id,
-            member_user_id=member_user_id,
-            member_name=member_name,
-            member_api_key=member_api_key,
-            enabled=enabled,
-        )
-
-    def delete_faction_member_access(faction_id: str, member_user_id: str):
-        return _delete_faction_member(faction_id, member_user_id)
-
 
 from torn_api import (
     me_basic,
@@ -171,7 +76,7 @@ load_dotenv()
 
 APP_NAME = "War Hub"
 PAYMENT_PLAYER = str(os.getenv("PAYMENT_PLAYER", "Fries91")).strip() or "Fries91"
-FACTION_MEMBER_PRICE = int(os.getenv("FACTION_MEMBER_PRICE", "2500000"))
+FACTION_MEMBER_PRICE = int(os.getenv("PAYMENT_PER_MEMBER", "2500000"))
 DEFAULT_REFRESH_SECONDS = int(os.getenv("DEFAULT_REFRESH_SECONDS", "30"))
 LICENSE_ADMIN_TOKEN = str(os.getenv("LICENSE_ADMIN_TOKEN", "")).strip()
 ALLOWED_SCRIPT_ORIGINS = {
@@ -264,7 +169,7 @@ def _require_license_admin():
 
 def with_cors(resp):
     resp.headers["Access-Control-Allow-Origin"] = request.headers.get("Origin", "*") or "*"
-    resp.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-License-Admin"
+    resp.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-License-Admin, X-Session-Token"
     resp.headers["Access-Control-Allow-Methods"] = "GET, POST, DELETE, OPTIONS"
     return resp
 
@@ -276,11 +181,7 @@ def _after(resp):
 
 @app.route("/health", methods=["GET"])
 def health():
-    return ok(
-        app=APP_NAME,
-        now=utc_now(),
-        base_url=BASE_URL(),
-    )
+    return ok(app=APP_NAME, now=utc_now(), base_url=BASE_URL())
 
 
 @app.route("/", methods=["GET"])
@@ -392,8 +293,7 @@ def _owner_names() -> set:
     owner_name = str(os.getenv("OWNER_NAME", "")).strip().lower()
     if owner_name:
         out.add(owner_name)
-    if "fries91" not in out:
-        out.add("fries91")
+    out.add("fries91")
     return out
 
 
@@ -412,7 +312,6 @@ def require_owner(fn):
         if not _session_is_owner(request.user):
             return err("Owner access only.", 403)
         return fn(*args, **kwargs)
-
     return wrapper
 
 
@@ -421,11 +320,16 @@ def require_leader_session(fn):
     @require_session
     def wrapper(*args, **kwargs):
         user = request.user or {}
-        faction_position = str(user.get("faction_position", "") or "").strip().lower()
-        if faction_position not in {"leader", "co-leader", "coleader"} and not _session_is_owner(user):
+        faction_id = str(user.get("faction_id") or "").strip()
+        if not faction_id:
+            return err("No faction found.", 403)
+
+        lic = compute_faction_license_status(faction_id, viewer_user_id=str(user.get("user_id") or "")) or {}
+        leader_user_id = str(lic.get("leader_user_id") or "").strip()
+
+        if not _session_is_owner(user) and str(user.get("user_id") or "").strip() != leader_user_id:
             return err("Leader access required.", 403)
         return fn(*args, **kwargs)
-
     return wrapper
 
 
@@ -470,25 +374,6 @@ def _ranked_war_payload_for_user(api_key: str) -> Dict[str, Any]:
             "target": _to_int((war or {}).get("target")),
         },
     }
-
-
-def _status_class(member: Dict[str, Any]) -> str:
-    online_state = str(member.get("online_state", "") or "").strip().lower()
-    if online_state in {"online", "idle", "offline", "hospital"}:
-        return online_state
-
-    status = str(member.get("status", "") or "").strip().lower()
-    status_detail = str(member.get("status_detail", "") or "").strip().lower()
-    last_action = str(member.get("last_action", "") or "").strip().lower()
-
-    joined = " ".join([status, status_detail, last_action]).strip()
-    if "hospital" in joined:
-        return "hospital"
-    if "idle" in joined:
-        return "idle"
-    if "online" in joined:
-        return "online"
-    return "offline"
 
 
 def _parse_minutes_from_member(member: Dict[str, Any]) -> int:
@@ -575,7 +460,10 @@ def _clean_member(member: Dict[str, Any], enemy_state: Optional[Dict[str, Any]] 
     hospital_seconds = _to_int(m.get("hospital_seconds"))
 
     if enemy_state:
+        st = str(enemy_state.get("online_state") or "").strip().lower()
         hosp = _to_int(enemy_state.get("hospital_seconds"))
+        if st:
+            status_class = st
         if hosp > 0:
             status_class = "hospital"
             hospital_seconds = hosp
@@ -609,9 +497,13 @@ def _normalize_assignment(row: Dict[str, Any]) -> Dict[str, Any]:
     r = dict(row or {})
     r["war_id"] = str(r.get("war_id") or "")
     r["target_id"] = str(r.get("target_id") or "")
-    r["assigned_to"] = str(r.get("assigned_to") or "")
-    r["assigned_by"] = str(r.get("assigned_by") or "")
     r["target_name"] = str(r.get("target_name") or "")
+    r["assigned_to_user_id"] = str(r.get("assigned_to_user_id") or "")
+    r["assigned_to_name"] = str(r.get("assigned_to_name") or "")
+    r["assigned_by_user_id"] = str(r.get("assigned_by_user_id") or "")
+    r["assigned_by_name"] = str(r.get("assigned_by_name") or "")
+    r["priority"] = str(r.get("priority") or "normal")
+    r["note"] = str(r.get("note") or "")
     return r
 
 
@@ -620,7 +512,8 @@ def _normalize_note(row: Dict[str, Any]) -> Dict[str, Any]:
     r["war_id"] = str(r.get("war_id") or "")
     r["target_id"] = str(r.get("target_id") or "")
     r["note"] = str(r.get("note") or "")
-    r["updated_by"] = str(r.get("updated_by") or "")
+    r["created_by_user_id"] = str(r.get("created_by_user_id") or "")
+    r["created_by_name"] = str(r.get("created_by_name") or "")
     return r
 
 
@@ -642,6 +535,7 @@ def _normalize_member_access_row(row: Dict[str, Any]) -> Dict[str, Any]:
     r["leader_name"] = str(r.get("leader_name") or "")
     r["member_user_id"] = str(r.get("member_user_id") or "")
     r["member_name"] = str(r.get("member_name") or "")
+    r["position"] = str(r.get("position") or "")
     r["member_api_key_masked"] = ""
     api_key = str(r.get("member_api_key") or "")
     if api_key:
@@ -680,7 +574,6 @@ def api_auth():
 
     data = _require_json()
     api_key = str(data.get("api_key") or "").strip()
-    leader_admin_key = str(data.get("leader_admin_key") or data.get("admin_key") or "").strip()
 
     if not api_key:
         return err("Missing api_key.", 400)
@@ -693,7 +586,6 @@ def api_auth():
     name = str(me.get("name") or "").strip()
     faction_id = str(me.get("faction_id") or "").strip()
     faction_name = str(me.get("faction_name") or "").strip()
-    faction_position = str(me.get("faction_position") or "").strip()
 
     upsert_user(
         user_id=user_id,
@@ -701,7 +593,6 @@ def api_auth():
         api_key=api_key,
         faction_id=faction_id,
         faction_name=faction_name,
-        faction_position=faction_position,
     )
 
     if faction_id:
@@ -717,31 +608,14 @@ def api_auth():
             faction_name=faction_name,
             leader_user_id=user_id,
             leader_name=name,
-        )
-
-    is_leader = faction_position.strip().lower() in {"leader", "co-leader", "coleader"}
-    if is_leader and faction_id:
-        db_leader = get_user_map_by_faction(faction_id) or {}
-        leader_api_key = api_key
-        if leader_admin_key:
-            set_user_setting(user_id, "leader_admin_key", leader_admin_key)
-        elif db_leader:
-            leader_api_key = str(db_leader.get("api_key") or api_key)
-
-        ensure_faction_license_row(
-            faction_id=faction_id,
-            faction_name=faction_name,
-            leader_user_id=user_id,
-            leader_name=name,
-            leader_api_key=leader_api_key,
+            leader_api_key=api_key,
         )
 
     license_status = _build_license_status_payload(faction_id, viewer_user_id=user_id) if faction_id else {}
-    requires_payment = bool(license_status.get("payment_required"))
-    status_name = str(license_status.get("status") or "").lower()
+    is_owner = _session_is_owner({"name": name, "user_id": user_id})
 
-    if not _session_is_owner({"name": name, "user_id": user_id}):
-        if faction_id and requires_payment and not is_leader:
+    if faction_id and not is_owner:
+        if bool(license_status.get("payment_required")) and str(license_status.get("leader_user_id") or "") != user_id:
             member_row = get_faction_member_access(faction_id, user_id) or {}
             if not _safe_bool(member_row.get("enabled")):
                 return err(
@@ -753,41 +627,31 @@ def api_auth():
                     license=license_status,
                 )
 
-        if faction_id and status_name == "expired":
-            return err(
-                "Faction license expired. Leader payment required.",
-                403,
-                code="license_expired",
-                faction_id=faction_id,
-                faction_name=faction_name,
-                license=license_status,
-            )
-
-        if faction_id and status_name == "trial_expired":
-            return err(
-                "Faction trial expired. Leader payment required.",
-                403,
-                code="trial_expired",
-                faction_id=faction_id,
-                faction_name=faction_name,
-                license=license_status,
-            )
+        if str(license_status.get("status") or "").lower() == "expired":
+            leader_id = str(license_status.get("leader_user_id") or "")
+            if leader_id != user_id:
+                return err(
+                    "Faction license expired. Leader payment required.",
+                    403,
+                    code="license_expired",
+                    faction_id=faction_id,
+                    faction_name=faction_name,
+                    license=license_status,
+                )
 
     delete_sessions_for_user(user_id)
     token = create_session(user_id)
-    is_owner = _session_is_owner({"name": name, "user_id": user_id})
 
     return ok(
         message="Authenticated.",
         token=token,
-                user={
+        user={
             "user_id": user_id,
             "name": name,
             "faction_id": faction_id,
             "faction_name": faction_name,
-            "faction_position": faction_position,
             "is_owner": is_owner,
-            "is_leader": is_leader,
+            "is_leader": str(license_status.get("leader_user_id") or "") == user_id,
         },
         license=license_status,
     )
@@ -813,9 +677,8 @@ def api_state():
 
     license_status = _build_license_status_payload(faction_id, viewer_user_id=user_id) if faction_id else {}
     faction_map = get_user_map_by_faction(faction_id) if faction_id else {}
-    members_map = faction_map or {}
-
     me = me_basic(api_key) or {}
+
     war_payload = _ranked_war_payload_for_user(api_key) if api_key else {
         "war_id": "",
         "war": {},
@@ -829,31 +692,31 @@ def api_state():
     }
 
     war_id = str(war_payload.get("war_id") or "")
-    members = [_clean_member(members_map.get(str(m.get("user_id") or m.get("id") or ""), m)) for m in (war_payload.get("members") or [])]
-    members = [_clean_member(m) for m in members]
+
+    members = []
+    for m in (war_payload.get("members") or []):
+        member_id = str(m.get("user_id") or m.get("id") or "")
+        merged = dict(m)
+        if member_id and member_id in faction_map:
+            merged.update({k: v for k, v in faction_map[member_id].items() if v not in (None, "")})
+        members.append(_clean_member(merged))
     members.sort(key=_bucket_sort_key)
 
     enemies = _merge_enemy_state(war_payload.get("enemies") or [], war_id)
 
     assignments = [_normalize_assignment(x) for x in (list_target_assignments_for_war(war_id) if war_id else [])]
     notes = [_normalize_note(x) for x in (list_war_notes(war_id) if war_id else [])]
-    terms = get_war_terms(faction_id) if faction_id else {}
+    terms = get_war_terms(war_id) if war_id else {}
 
     med_deals = list_med_deals_for_faction(faction_id) if faction_id else []
-    targets = list_targets(faction_id) if faction_id else []
-    bounties = list_bounties(faction_id) if faction_id else []
+    targets = list_targets(user_id) if user_id else []
+    bounties = list_bounties(user_id) if user_id else []
     notifications = list_notifications(user_id)
     mark_notifications_seen(user_id)
-
-    owner_flags = {
-        "is_owner": _session_is_owner(user),
-        "is_leader": str(user.get("faction_position", "")).strip().lower() in {"leader", "co-leader", "coleader"},
-    }
 
     settings = {
         "refresh_seconds": _to_int(get_user_setting(user_id, "refresh_seconds"), DEFAULT_REFRESH_SECONDS),
         "compact_mode": _safe_bool(get_user_setting(user_id, "compact_mode")),
-        "leader_admin_key_saved": bool(str(get_user_setting(user_id, "leader_admin_key") or "").strip()),
     }
 
     return ok(
@@ -864,8 +727,8 @@ def api_state():
             "name": str(user.get("name") or ""),
             "faction_id": faction_id,
             "faction_name": faction_name,
-            "faction_position": str(user.get("faction_position") or ""),
-            **owner_flags,
+            "is_owner": _session_is_owner(user),
+            "is_leader": str(license_status.get("leader_user_id") or "") == user_id,
         },
         settings=settings,
         license=license_status,
@@ -885,9 +748,7 @@ def api_state():
         has_war=bool(war_payload.get("has_war")),
         is_ranked_war=bool(war_payload.get("is_ranked_war")),
     )
-
-
-@app.route("/api/availability", methods=["POST"])
+    @app.route("/api/availability", methods=["POST"])
 @require_session
 def api_set_availability():
     user = request.user or {}
@@ -898,7 +759,7 @@ def api_set_availability():
         actor_user_id=str(user.get("user_id") or ""),
         actor_name=str(user.get("name") or ""),
         action="set_availability",
-        meta={"available": available},
+        meta_json={"available": available},
     )
     return ok(message="Availability updated.", available=available)
 
@@ -914,7 +775,7 @@ def api_chain_sitter():
         actor_user_id=str(user.get("user_id") or ""),
         actor_name=str(user.get("name") or ""),
         action="set_chain_sitter",
-        meta={"enabled": enabled},
+        meta_json={"enabled": enabled},
     )
     return ok(message="Chain sitter updated.", enabled=enabled)
 
@@ -932,9 +793,6 @@ def api_settings():
 
     if "compact_mode" in data:
         set_user_setting(user_id, "compact_mode", "1" if _safe_bool(data.get("compact_mode")) else "0")
-
-    if "leader_admin_key" in data:
-        set_user_setting(user_id, "leader_admin_key", str(data.get("leader_admin_key") or "").strip())
 
     return ok(message="Settings saved.")
 
@@ -956,30 +814,33 @@ def api_add_med_deal():
     if not faction_id:
         return err("No faction found.", 400)
 
-    item = add_med_deal(
-        faction_id=faction_id,
-        seller_name=str(data.get("seller_name") or "").strip(),
-        item_name=str(data.get("item_name") or "").strip(),
-        price=str(data.get("price") or "").strip(),
-        note=str(data.get("note") or "").strip(),
-        created_by=str(user.get("name") or ""),
-    )
+    seller_name = str(data.get("seller_name") or "").strip()
+    item_name = str(data.get("item_name") or "").strip()
+    price = str(data.get("price") or "").strip()
+    note = str(data.get("note") or "").strip()
+
+    item = add_med_deal(faction_id, seller_name, item_name, price, note)
     return ok(message="Med deal added.", item=item)
 
 
-@app.route("/api/med-deals/<int:item_id>", methods=["DELETE"])
+@app.route("/api/med-deals/<int:deal_id>", methods=["DELETE"])
 @require_session
-def api_delete_med_deal(item_id: int):
-    delete_med_deal(item_id)
-    return ok(message="Med deal deleted.", id=item_id)
+def api_delete_med_deal(deal_id: int):
+    user = request.user or {}
+    faction_id = str(user.get("faction_id") or "")
+    if not faction_id:
+        return err("No faction found.", 400)
+
+    delete_med_deal(faction_id, int(deal_id))
+    return ok(message="Med deal deleted.", id=deal_id)
 
 
 @app.route("/api/targets", methods=["GET"])
 @require_session
 def api_list_targets():
     user = request.user or {}
-    faction_id = str(user.get("faction_id") or "")
-    return ok(items=list_targets(faction_id) if faction_id else [])
+    user_id = str(user.get("user_id") or "")
+    return ok(items=list_targets(user_id) if user_id else [])
 
 
 @app.route("/api/targets", methods=["POST"])
@@ -987,37 +848,39 @@ def api_list_targets():
 def api_add_target():
     user = request.user or {}
     data = _require_json()
-    faction_id = str(user.get("faction_id") or "")
-    if not faction_id:
-        return err("No faction found.", 400)
+    user_id = str(user.get("user_id") or "")
+    if not user_id:
+        return err("No user found.", 400)
 
     target_id = str(data.get("target_id") or "").strip()
+    target_name = str(data.get("target_name") or "").strip()
+    notes = str(data.get("notes") or data.get("reason") or "").strip()
+
     if not target_id:
         return err("Missing target_id.", 400)
 
-    item = add_target(
-        faction_id=faction_id,
-        target_id=target_id,
-        target_name=str(data.get("target_name") or "").strip(),
-        reason=str(data.get("reason") or "").strip(),
-        created_by=str(user.get("name") or ""),
-    )
+    item = add_target(user_id, target_id, target_name, notes)
     return ok(message="Target added.", item=item)
 
 
-@app.route("/api/targets/<int:item_id>", methods=["DELETE"])
+@app.route("/api/targets/<int:target_row_id>", methods=["DELETE"])
 @require_session
-def api_delete_target(item_id: int):
-    delete_target(item_id)
-    return ok(message="Target deleted.", id=item_id)
+def api_delete_target(target_row_id: int):
+    user = request.user or {}
+    user_id = str(user.get("user_id") or "")
+    if not user_id:
+        return err("No user found.", 400)
+
+    delete_target(user_id, int(target_row_id))
+    return ok(message="Target deleted.", id=target_row_id)
 
 
 @app.route("/api/bounties", methods=["GET"])
 @require_session
 def api_list_bounties():
     user = request.user or {}
-    faction_id = str(user.get("faction_id") or "")
-    return ok(items=list_bounties(faction_id) if faction_id else [])
+    user_id = str(user.get("user_id") or "")
+    return ok(items=list_bounties(user_id) if user_id else [])
 
 
 @app.route("/api/bounties", methods=["POST"])
@@ -1025,34 +888,40 @@ def api_list_bounties():
 def api_add_bounty():
     user = request.user or {}
     data = _require_json()
-    faction_id = str(user.get("faction_id") or "")
-    if not faction_id:
-        return err("No faction found.", 400)
+    user_id = str(user.get("user_id") or "")
+    if not user_id:
+        return err("No user found.", 400)
 
-    item = add_bounty(
-        faction_id=faction_id,
-        target_id=str(data.get("target_id") or "").strip(),
-        target_name=str(data.get("target_name") or "").strip(),
-        amount=str(data.get("amount") or "").strip(),
-        note=str(data.get("note") or "").strip(),
-        created_by=str(user.get("name") or ""),
-    )
+    target_id = str(data.get("target_id") or "").strip()
+    target_name = str(data.get("target_name") or "").strip()
+    reward_text = str(data.get("reward_text") or data.get("amount") or "").strip()
+
+    if not target_id:
+        return err("Missing target_id.", 400)
+
+    item = add_bounty(user_id, target_id, target_name, reward_text)
     return ok(message="Bounty added.", item=item)
 
 
-@app.route("/api/bounties/<int:item_id>", methods=["DELETE"])
+@app.route("/api/bounties/<int:bounty_row_id>", methods=["DELETE"])
 @require_session
-def api_delete_bounty(item_id: int):
-    delete_bounty(item_id)
-    return ok(message="Bounty deleted.", id=item_id)
+def api_delete_bounty(bounty_row_id: int):
+    user = request.user or {}
+    user_id = str(user.get("user_id") or "")
+    if not user_id:
+        return err("No user found.", 400)
+
+    delete_bounty(user_id, int(bounty_row_id))
+    return ok(message="Bounty deleted.", id=bounty_row_id)
 
 
 @app.route("/api/notifications", methods=["GET"])
 @require_session
 def api_notifications():
     user = request.user or {}
-    items = list_notifications(str(user.get("user_id") or ""))
-    mark_notifications_seen(str(user.get("user_id") or ""))
+    user_id = str(user.get("user_id") or "")
+    items = list_notifications(user_id)
+    mark_notifications_seen(user_id)
     return ok(items=items)
 
 
@@ -1065,25 +934,27 @@ def api_save_war_snapshot():
         return err("Missing API key.", 400)
 
     payload = _ranked_war_payload_for_user(api_key)
+    if not str(payload.get("war_id") or ""):
+        return err("No active ranked war.", 400)
+
     war = payload.get("war") or {}
     our = payload.get("our_faction") or {}
     enemy = payload.get("enemy_faction") or {}
-    war_id = str(payload.get("war_id") or "")
-
-    if not war_id:
-        return err("No active ranked war.", 400)
+    score = payload.get("score") or {}
 
     item = save_war_snapshot(
-        war_id=war_id,
+        war_id=str(payload.get("war_id") or ""),
         faction_id=str(user.get("faction_id") or ""),
-        our_score=_to_int((payload.get("score") or {}).get("our")),
-        enemy_score=_to_int((payload.get("score") or {}).get("enemy")),
-        target_score=_to_int((payload.get("score") or {}).get("target")),
-        payload={
-            "war": war,
-            "our_faction": our,
-            "enemy_faction": enemy,
-        },
+        faction_name=str(our.get("name") or user.get("faction_name") or ""),
+        enemy_faction_id=str(enemy.get("faction_id") or enemy.get("id") or ""),
+        enemy_faction_name=str(enemy.get("name") or ""),
+        our_score=_to_int(score.get("our")),
+        enemy_score=_to_int(score.get("enemy")),
+        lead=_to_int(score.get("our")) - _to_int(score.get("enemy")),
+        target_score=_to_int(score.get("target")),
+        start_ts=_to_int(war.get("start") or war.get("start_ts")),
+        end_ts=_to_int(war.get("end") or war.get("end_ts")),
+        status_text=str(war.get("status") or ""),
     )
     return ok(message="War snapshot saved.", item=item)
 
@@ -1100,21 +971,22 @@ def api_list_war_snapshots():
 @app.route("/api/war/enemy-state", methods=["POST"])
 @require_session
 def api_upsert_enemy_state():
-    user = request.user or {}
     data = _require_json()
-
     war_id = str(data.get("war_id") or "").strip()
     enemy_id = str(data.get("enemy_id") or data.get("user_id") or "").strip()
+    enemy_name = str(data.get("enemy_name") or data.get("name") or "").strip()
+    online_state = str(data.get("online_state") or data.get("status_class") or "").strip().lower()
+    hospital_seconds = _to_int(data.get("hospital_seconds"))
+
     if not war_id or not enemy_id:
         return err("Missing war_id or enemy_id.", 400)
 
     row = upsert_enemy_state(
         war_id=war_id,
-        enemy_id=enemy_id,
-        enemy_name=str(data.get("enemy_name") or "").strip(),
-        hospital_seconds=_to_int(data.get("hospital_seconds")),
-        status_class=str(data.get("status_class") or "").strip(),
-        updated_by=str(user.get("name") or ""),
+        user_id=enemy_id,
+        name=enemy_name,
+        online_state=online_state,
+        hospital_seconds=hospital_seconds,
     )
     return ok(message="Enemy state updated.", item=row)
 
@@ -1143,22 +1015,21 @@ def api_upsert_assignment():
         war_id=war_id,
         target_id=target_id,
         target_name=str(data.get("target_name") or "").strip(),
-        assigned_to=str(data.get("assigned_to") or "").strip(),
-        assigned_by=str(user.get("name") or ""),
+        assigned_to_user_id=str(data.get("assigned_to_user_id") or data.get("assigned_to") or "").strip(),
+        assigned_to_name=str(data.get("assigned_to_name") or "").strip(),
+        assigned_by_user_id=str(user.get("user_id") or ""),
+        assigned_by_name=str(user.get("name") or ""),
+        priority=str(data.get("priority") or "normal").strip(),
+        note=str(data.get("note") or "").strip(),
     )
     return ok(message="Assignment saved.", item=_normalize_assignment(row))
 
 
-@app.route("/api/war/assignments", methods=["DELETE"])
+@app.route("/api/war/assignments/<int:assignment_id>", methods=["DELETE"])
 @require_session
-def api_delete_assignment():
-    war_id = str(request.args.get("war_id") or "").strip()
-    target_id = str(request.args.get("target_id") or "").strip()
-    if not war_id or not target_id:
-        return err("Missing war_id or target_id.", 400)
-
-    delete_target_assignment(war_id, target_id)
-    return ok(message="Assignment deleted.")
+def api_delete_assignment(assignment_id: int):
+    delete_target_assignment(int(assignment_id))
+    return ok(message="Assignment deleted.", id=assignment_id)
 
 
 @app.route("/api/war/notes", methods=["GET"])
@@ -1178,36 +1049,35 @@ def api_upsert_note():
 
     war_id = str(data.get("war_id") or "").strip()
     target_id = str(data.get("target_id") or "").strip()
+    note = str(data.get("note") or "").strip()
+
     if not war_id or not target_id:
         return err("Missing war_id or target_id.", 400)
 
     row = upsert_war_note(
         war_id=war_id,
         target_id=target_id,
-        note=str(data.get("note") or "").strip(),
-        updated_by=str(user.get("name") or ""),
+        note=note,
+        created_by_user_id=str(user.get("user_id") or ""),
+        created_by_name=str(user.get("name") or ""),
     )
     return ok(message="Note saved.", item=_normalize_note(row))
 
 
-@app.route("/api/war/notes", methods=["DELETE"])
+@app.route("/api/war/notes/<int:note_id>", methods=["DELETE"])
 @require_session
-def api_delete_note():
-    war_id = str(request.args.get("war_id") or "").strip()
-    target_id = str(request.args.get("target_id") or "").strip()
-    if not war_id or not target_id:
-        return err("Missing war_id or target_id.", 400)
-
-    delete_war_note(war_id, target_id)
-    return ok(message="Note deleted.")
+def api_delete_note(note_id: int):
+    delete_war_note(int(note_id))
+    return ok(message="Note deleted.", id=note_id)
 
 
 @app.route("/api/war-terms", methods=["GET"])
 @require_session
 def api_get_terms():
-    user = request.user or {}
-    faction_id = str(user.get("faction_id") or "")
-    return ok(item=get_war_terms(faction_id) if faction_id else {})
+    war_id = str(request.args.get("war_id") or "").strip()
+    if not war_id:
+        return ok(item={})
+    return ok(item=get_war_terms(war_id) or {})
 
 
 @app.route("/api/war-terms", methods=["POST"])
@@ -1215,14 +1085,15 @@ def api_get_terms():
 def api_upsert_terms():
     user = request.user or {}
     data = _require_json()
-    faction_id = str(user.get("faction_id") or "")
-    if not faction_id:
-        return err("No faction found.", 400)
+    war_id = str(data.get("war_id") or "").strip()
+    if not war_id:
+        return err("Missing war_id.", 400)
 
     row = upsert_war_terms(
-        faction_id=faction_id,
-        terms=str(data.get("terms") or "").strip(),
-        updated_by=str(user.get("name") or ""),
+        war_id=war_id,
+        terms_text=str(data.get("terms") or data.get("terms_text") or "").strip(),
+        updated_by_user_id=str(user.get("user_id") or ""),
+        updated_by_name=str(user.get("name") or ""),
     )
     return ok(message="War terms saved.", item=row)
 
@@ -1230,11 +1101,10 @@ def api_upsert_terms():
 @app.route("/api/war-terms", methods=["DELETE"])
 @require_leader_session
 def api_delete_terms():
-    user = request.user or {}
-    faction_id = str(user.get("faction_id") or "")
-    if not faction_id:
-        return err("No faction found.", 400)
-    delete_war_terms(faction_id)
+    war_id = str(request.args.get("war_id") or "").strip()
+    if not war_id:
+        return err("Missing war_id.", 400)
+    delete_war_terms(war_id)
     return ok(message="War terms deleted.")
 
 
@@ -1295,10 +1165,9 @@ def api_faction_member_upsert():
     )
 
     add_notification(
-        user_id=leader_user_id,
-        title="Faction member access updated",
-        body=f"{member_name or member_user_id} access updated.",
-        kind="faction_access",
+        leader_user_id,
+        "faction_access",
+        f"{member_name or member_user_id} access updated.",
     )
 
     return ok(message="Faction member access saved.", item=_normalize_member_access_row(row))
@@ -1352,13 +1221,11 @@ def api_admin_faction_license_renew(faction_id: str):
     data = _require_json()
 
     amount = _to_int(data.get("amount"))
-    member_count = _to_int(data.get("member_count"))
     note = str(data.get("note") or "").strip()
 
     row = renew_faction_after_payment(
         faction_id=str(faction_id),
         amount=amount,
-        member_count=member_count,
         payment_player=PAYMENT_PLAYER,
         renewed_by=str(user.get("name") or ""),
         note=note,
@@ -1369,12 +1236,8 @@ def api_admin_faction_license_renew(faction_id: str):
 @app.route("/api/admin/faction-licenses/<faction_id>/expire", methods=["POST"])
 @require_owner
 def api_admin_faction_license_expire(faction_id: str):
-    user = request.user or {}
-    row = force_expire_faction_license(
-        faction_id=str(faction_id),
-        expired_by=str(user.get("name") or ""),
-    )
-    return ok(message="Faction expired.", item=row)
+    force_expire_faction_license(str(faction_id))
+    return ok(message="Faction expired.", faction_id=str(faction_id))
 
 
 @app.route("/api/license-admin/dashboard", methods=["GET"])
@@ -1405,14 +1268,12 @@ def api_license_admin_renew(faction_id: str):
 
     data = _require_json()
     amount = _to_int(data.get("amount"))
-    member_count = _to_int(data.get("member_count"))
     renewed_by = str(data.get("renewed_by") or "license-admin").strip()
     note = str(data.get("note") or "").strip()
 
     row = renew_faction_after_payment(
         faction_id=str(faction_id),
         amount=amount,
-        member_count=member_count,
         payment_player=PAYMENT_PLAYER,
         renewed_by=renewed_by,
         note=note,
@@ -1426,14 +1287,8 @@ def api_license_admin_expire(faction_id: str):
     if not allowed:
         return response
 
-    data = _require_json()
-    expired_by = str(data.get("expired_by") or "license-admin").strip()
-
-    row = force_expire_faction_license(
-        faction_id=str(faction_id),
-        expired_by=expired_by,
-    )
-    return ok(message="Faction expired.", item=row)
+    force_expire_faction_license(str(faction_id))
+    return ok(message="Faction expired.", faction_id=str(faction_id))
 
 
 @app.route("/api/owner/factions", methods=["GET"])
@@ -1470,7 +1325,6 @@ def api_debug_session():
             "name": str((request.user or {}).get("name") or ""),
             "faction_id": str((request.user or {}).get("faction_id") or ""),
             "faction_name": str((request.user or {}).get("faction_name") or ""),
-            "faction_position": str((request.user or {}).get("faction_position") or ""),
             "is_owner": _session_is_owner(request.user),
         },
     )
