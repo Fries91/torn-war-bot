@@ -547,7 +547,6 @@ def require_session(fn):
         request.current_member_row = member_row
         request.current_is_leader = is_leader
         return fn(*args, **kwargs)
-kwargs)
 
     return wrapper
 
