@@ -414,25 +414,63 @@ def upsert_user(
     con = _con()
     cur = con.cursor()
 
-    cur.execute("SELECT user_id FROM users WHERE user_id = ?", (user_id,))
-    existing = cur.fetchone()
+    try:
+        cols = set(_table_columns(cur, "users"))
 
-    if existing:
-        cur.execute("""
-            UPDATE users
-            SET name = ?, api_key = ?, faction_id = ?, faction_name = ?, last_seen_at = ?
-            WHERE user_id = ?
-        """, (name, api_key, faction_id, faction_name, now, user_id))
-    else:
-        cur.execute("""
-            INSERT INTO users (
-                user_id, name, api_key, faction_id, faction_name,
-                available, chain_sitter, created_at, last_seen_at
-            ) VALUES (?, ?, ?, ?, ?, 1, 0, ?, ?)
-        """, (user_id, name, api_key, faction_id, faction_name, now, now))
+        # Build dynamic update/insert so old DBs do not crash
+        values = {
+            "user_id": str(user_id or ""),
+            "name": str(name or ""),
+            "api_key": str(api_key or ""),
+            "faction_id": str(faction_id or ""),
+            "faction_name": str(faction_name or ""),
+            "available": 1,
+            "chain_sitter": 0,
+            "created_at": now,
+            "last_seen_at": now,
+        }
 
-    con.commit()
-    con.close()
+        cur.execute("SELECT user_id FROM users WHERE user_id = ?", (str(user_id or ""),))
+        existing = cur.fetchone()
+
+        if existing:
+            update_parts = []
+            update_vals = []
+
+            for key in ["name", "api_key", "faction_id", "faction_name", "last_seen_at"]:
+                if key in cols:
+                    update_parts.append(f"{key} = ?")
+                    update_vals.append(values[key])
+
+            update_vals.append(str(user_id or ""))
+
+            cur.execute(
+                f"UPDATE users SET {', '.join(update_parts)} WHERE user_id = ?",
+                tuple(update_vals),
+            )
+        else:
+            insert_cols = []
+            insert_vals = []
+            placeholders = []
+
+            for key in ["user_id", "name", "api_key", "faction_id", "faction_name", "available", "chain_sitter", "created_at", "last_seen_at"]:
+                if key in cols:
+                    insert_cols.append(key)
+                    insert_vals.append(values[key])
+                    placeholders.append("?")
+
+            cur.execute(
+                f"INSERT INTO users ({', '.join(insert_cols)}) VALUES ({', '.join(placeholders)})",
+                tuple(insert_vals),
+            )
+
+        con.commit()
+
+    except Exception as e:
+        print("UPSERT_USER ERROR:", repr(e))
+        raise
+    finally:
+        con.close()
 
 
 def get_user(user_id: str) -> Optional[Dict[str, Any]]:
