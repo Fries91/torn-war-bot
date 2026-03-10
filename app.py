@@ -547,6 +547,7 @@ def require_session(fn):
         request.current_member_row = member_row
         request.current_is_leader = is_leader
         return fn(*args, **kwargs)
+kwargs)
 
     return wrapper
 
@@ -560,19 +561,21 @@ def require_leader_session(fn):
         return fn(*args, **kwargs)
 
     return wrapper
-    def _seconds_to_text(seconds: int) -> str:
-        seconds = max(0, int(seconds or 0))
-        if seconds <= 0:
+
+
+def _seconds_to_text(seconds: int) -> str:
+    seconds = max(0, int(seconds or 0))
+    if seconds <= 0:
         return "0s"
 
-        days = seconds // 86400
-        seconds %= 86400
-        hours = seconds // 3600
-        seconds %= 3600
-        mins = seconds // 60
-        secs = seconds % 60
+    days = seconds // 86400
+    seconds %= 86400
+    hours = seconds // 3600
+    seconds %= 3600
+    mins = seconds // 60
+    secs = seconds % 60
 
-        parts: List[str] = []
+    parts: List[str] = []
     if days:
         parts.append(f"{days}d")
     if hours:
