@@ -350,28 +350,69 @@ def _seconds_to_text(seconds: int) -> str:
     return " ".join(parts)
 
 
-def _ranked_war_payload_for_user(api_key: str) -> Dict[str, Any]:
-    wars = faction_wars(api_key) or {}
-    summary = ranked_war_summary(wars) or {}
+def _faction_basic_by_id(api_key: str, faction_id: str) -> Dict[str, Any]:
+    faction_id = str(faction_id or "").strip()
+    if not api_key or not faction_id:
+        return {"ok": False, "members": []}
 
-    our = summary.get("our_faction") or {}
-    enemy = summary.get("enemy_faction") or {}
-    war = summary.get("war") or {}
+    try:
+        data = faction_basic(api_key, faction_id=faction_id)
+        if isinstance(data, dict):
+            return data
+    except TypeError:
+        pass
+    except Exception:
+        pass
 
-    war_id = str(war.get("war_id") or "")
+    try:
+        data = faction_basic(api_key, faction_id)
+        if isinstance(data, dict):
+            return data
+    except Exception:
+        pass
+
+    return {"ok": False, "members": []}
+
+
+def _ranked_war_payload_for_user(api_key: str, my_faction_id: str = "", my_faction_name: str = "") -> Dict[str, Any]:
+    summary = ranked_war_summary(
+        api_key,
+        my_faction_id=my_faction_id,
+        my_faction_name=my_faction_name,
+    ) or {}
+
+    war_id = str(summary.get("war_id") or "")
     return {
         "war_id": war_id,
-        "war": war,
-        "our_faction": our,
-        "enemy_faction": enemy,
-        "members": summary.get("members") or [],
-        "enemies": summary.get("enemies") or [],
-        "is_ranked_war": bool(summary.get("is_ranked_war")),
-        "has_war": bool(summary.get("has_war")),
+        "war": {
+            "war_id": war_id,
+            "status": summary.get("status_text") or ("Active" if summary.get("active") else "Currently not in war"),
+            "active": bool(summary.get("active")),
+            "war_type": str(summary.get("war_type") or ""),
+            "start": _to_int(summary.get("start")),
+            "end": _to_int(summary.get("end")),
+            "target": _to_int(summary.get("target_score")),
+        },
+        "our_faction": {
+            "faction_id": str(summary.get("my_faction_id") or my_faction_id or ""),
+            "name": str(summary.get("my_faction_name") or my_faction_name or ""),
+            "score": _to_int(summary.get("score_us")),
+            "chain": _to_int(summary.get("chain_us")),
+        },
+        "enemy_faction": {
+            "faction_id": str(summary.get("enemy_faction_id") or ""),
+            "name": str(summary.get("enemy_faction_name") or ""),
+            "score": _to_int(summary.get("score_them")),
+            "chain": _to_int(summary.get("chain_them")),
+        },
+        "members": [],
+        "enemies": summary.get("enemy_members") or [],
+        "is_ranked_war": bool(summary.get("active")),
+        "has_war": bool(summary.get("active")),
         "score": {
-            "our": _to_int((our or {}).get("score")),
-            "enemy": _to_int((enemy or {}).get("score")),
-            "target": _to_int((war or {}).get("target")),
+            "our": _to_int(summary.get("score_us")),
+            "enemy": _to_int(summary.get("score_them")),
+            "target": _to_int(summary.get("target_score")),
         },
     }
 
@@ -665,6 +706,7 @@ def api_logout():
         delete_session(token)
     return ok(message="Logged out.")
 
+
 @app.route("/api/state", methods=["GET"])
 @require_session
 def api_state():
@@ -680,10 +722,10 @@ def api_state():
 
     faction_info = faction_basic(api_key) if api_key else {"ok": False, "members": []}
     war_info = ranked_war_summary(
-    api_key,
-    my_faction_id=faction_id,
-    my_faction_name=faction_name,
-) if api_key else {"ok": True, "active": False}
+        api_key,
+        my_faction_id=faction_id,
+        my_faction_name=faction_name,
+    ) if api_key else {"ok": True, "active": False}
 
     members = []
     for m in (faction_info.get("members") or []):
@@ -695,7 +737,15 @@ def api_state():
     members.sort(key=_bucket_sort_key)
 
     war_id = str(war_info.get("war_id") or "")
-    enemies = _merge_enemy_state(war_info.get("enemy_members") or [], war_id)
+    enemy_faction_id = str(war_info.get("enemy_faction_id") or "").strip()
+    enemy_faction_name = str(war_info.get("enemy_faction_name") or "").strip()
+
+    raw_enemy_members = []
+    if bool(war_info.get("active")) and enemy_faction_id:
+        enemy_info = _faction_basic_by_id(api_key, enemy_faction_id)
+        raw_enemy_members = enemy_info.get("members") or []
+
+    enemies = _merge_enemy_state(raw_enemy_members, war_id)
 
     war_payload = {
         "war_id": war_id,
@@ -715,8 +765,8 @@ def api_state():
     }
 
     enemy_faction = {
-        "faction_id": str(war_info.get("enemy_faction_id") or ""),
-        "name": str(war_info.get("enemy_faction_name") or ""),
+        "faction_id": enemy_faction_id,
+        "name": enemy_faction_name,
         "score": _to_int(war_info.get("score_them")),
         "chain": _to_int(war_info.get("chain_them")),
     }
@@ -769,7 +819,8 @@ def api_state():
         has_war=bool(war_info.get("active")),
         is_ranked_war=bool(war_info.get("active")),
     )
-    
+
+
 @app.route("/api/availability", methods=["POST"])
 @require_session
 def api_set_availability():
@@ -955,7 +1006,11 @@ def api_save_war_snapshot():
     if not api_key:
         return err("Missing API key.", 400)
 
-    payload = _ranked_war_payload_for_user(api_key)
+    payload = _ranked_war_payload_for_user(
+        api_key,
+        my_faction_id=str(user.get("faction_id") or ""),
+        my_faction_name=str(user.get("faction_name") or ""),
+    )
     if not str(payload.get("war_id") or ""):
         return err("No active ranked war.", 400)
 
