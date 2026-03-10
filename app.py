@@ -1749,7 +1749,9 @@ def api_settings_set():
         return ok(message="Settings updated.")
     except Exception as e:
         return err(f"Could not update settings: {e}", 500)
-        @app.get("/api/faction/members")
+
+
+@app.get("/api/faction/members")
 @require_leader_session
 def api_faction_members_list():
     try:
