@@ -2244,8 +2244,13 @@ def api_war_terms_set():
             updated_by_user_id=user_id,
             updated_by_name=str(user.get("name") or "").strip(),
         )
+        add_notification(user_id, "war_terms", "War terms updated.")
+        return ok(message="War terms updated.")
+    except Exception as e:
+        return err(f"Could not update war terms: {e}", 500)
 
-        @app.post("/api/war-terms/delete")
+
+@app.post("/api/war-terms/delete")
 @require_session
 def api_war_terms_delete():
     try:
