@@ -610,6 +610,93 @@ def _parse_minutes_from_member(member: Dict[str, Any]) -> int:
         return 10**8
     if "hospital" in s:
         return hospital_seconds if hospital_seconds > 0 else 10**7
+                    delete_session(token)
+            return err("User not found.", 401)
+
+        if not faction_id:
+            delete_sessions_for_user(user_id)
+            return err("You must be in a faction to use War Hub.", 403)
+
+        if not bool(license_status and license_status.get("active")):
+            delete_sessions_for_user(user_id)
+            return _faction_block_response(faction_id, faction_name, license_status)
+
+        if not is_leader:
+            if not member_row or not _safe_bool(member_row.get("enabled")):
+                delete_sessions_for_user(user_id)
+                return _member_block_response(faction_id, faction_name, "member_not_enabled", license_status)
+
+        touch_session(token)
+        request.current_user = user
+        request.current_faction_id = faction_id
+        request.current_faction_name = faction_name
+        request.current_license_status = license_status
+        request.current_member_row = member_row
+        request.current_is_leader = is_leader
+        return fn(*args, **kwargs)
+
+    return wrapper
+
+
+def require_leader_session(fn):
+    @wraps(fn)
+    @require_session
+    def wrapper(*args, **kwargs):
+        if not bool(getattr(request, "current_is_leader", False)):
+            return err("Leader access required.", 403)
+        return fn(*args, **kwargs)
+
+    return wrapper
+
+
+def _seconds_to_text(seconds: int) -> str:
+    seconds = max(0, int(seconds or 0))
+    if seconds <= 0:
+        return "0s"
+
+    days = seconds // 86400
+    seconds %= 86400
+    hours = seconds // 3600
+    seconds %= 3600
+    mins = seconds // 60
+    secs = seconds % 60
+
+    parts: List[str] = []
+    if days:
+        parts.append(f"{days}d")
+    if hours:
+        parts.append(f"{hours}h")
+    if mins:
+        parts.append(f"{mins}m")
+    if secs and not parts:
+        parts.append(f"{secs}s")
+    return " ".join(parts[:3])
+
+
+def _parse_minutes_from_member(member: Dict[str, Any]) -> int:
+    online_state = str(member.get("online_state", "") or "").strip().lower()
+    hospital_seconds = int(member.get("hospital_seconds") or 0)
+    last_action = str(member.get("last_action", "") or "").strip().lower()
+    status = str(member.get("status", "") or "").strip().lower()
+    status_detail = str(member.get("status_detail", "") or "").strip().lower()
+
+    if online_state == "online":
+        return 0
+    if online_state == "idle":
+        return 1
+    if online_state == "hospital":
+        return hospital_seconds if hospital_seconds > 0 else 10**7
+
+    s = " ".join([last_action, status, status_detail]).strip()
+
+    if "online" in s:
+        return 0
+    if "idle" in s:
+        return 1
+    if "offline" in s:
+        return 10**8
+    if "hospital" in s:
+        return hospital_seconds if hospital_seconds > 0 else 10**7
 
     parts = s.replace(",", " ").split()
     total = 0
@@ -1051,514 +1138,7 @@ def _serialize_med_deals(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             }
         )
     return out
-
-
-def _serialize_targets(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    out = []
-    for row in rows:
-        tid = str(row.get("target_id") or "").strip()
-        tname = str(row.get("target_name") or "").strip()
-        notes = str(row.get("notes") or "").strip()
-        out.append(
-            {
-                **row,
-                "id": row.get("id"),
-                "target_id": tid,
-                "user_id": tid,
-                "name": tname or tid,
-                "target_name": tname or tid,
-                "reason": notes,
-                "note": notes,
-                "attack_url": attack_url(tid) if tid else "",
-                "profile_url": profile_url(tid) if tid else "",
-                "bounty_url": bounty_url(tid) if tid else "",
-            }
-        )
-    return out
-
-
-def _serialize_notes(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    out = []
-    for row in rows:
-        out.append(
-            {
-                **row,
-                "text": row.get("note", ""),
-                "message": row.get("note", ""),
-            }
-        )
-    return out
-
-
-@app.before_request
-def before_request_housekeeping():
-    cache_purge_expired()
-
-
-@app.route("/")
-def root():
-    return ok(
-        service=APP_NAME,
-        status="online",
-        now=utc_now(),
-        license_admin_enabled=bool(LICENSE_ADMIN_TOKEN),
-        public_base_url=BASE_URL(),
-        payment_player=PAYMENT_PLAYER,
-        price_per_enabled_member=FACTION_MEMBER_PRICE,
-        endpoints=[
-            "/health",
-            "/api/auth",
-            "/api/logout",
-            "/api/state",
-            "/api/wars",
-            "/api/analytics",
-            "/api/settings",
-            "/api/license/status",
-            "/api/faction/license",
-            "/api/faction/members",
-            "/api/faction/members/upsert",
-            "/api/faction/members/enable",
-            "/api/faction/members/delete",
-            "/api/availability/set",
-            "/api/chain-sitter/set",
-            "/api/med-deals/add",
-            "/api/med-deals/delete",
-            "/api/targets/add",
-            "/api/targets/delete",
-            "/api/targets/assign",
-            "/api/targets/unassign",
-            "/api/targets/note",
-            "/api/targets/note/delete",
-            "/api/war-terms/set",
-            "/api/war-terms/delete",
-            "/api/bounties/add",
-            "/api/bounties/delete",
-            "/api/notifications",
-            "/api/notifications/seen",
-            "/api/admin/faction-payment/confirm",
-            "/api/admin/faction-license/expire",
-            "/api/admin/faction-license/status",
-            "/api/admin/faction-licenses",
-            "/api/admin/faction-dashboard",
-            "/api/admin/payment/confirm",
-            "/api/admin/license/expire",
-            "/api/admin/license/status",
-            "/api/admin/licenses",
-            "/api/admin/dashboard",
-            "/static/war-bot.user.js",
-        ],
-    )
-
-
-@app.route("/health")
-def health():
-    return ok(
-        service=APP_NAME,
-        status="healthy",
-        now=utc_now(),
-        license_admin_enabled=bool(LICENSE_ADMIN_TOKEN),
-        payment_player=PAYMENT_PLAYER,
-        price_per_enabled_member=FACTION_MEMBER_PRICE,
-    )
-
-
-@app.route("/static/<path:path>")
-def static_proxy(path):
-    return send_from_directory("static", path)
-
-
-@app.post("/api/auth")
-def api_auth():
-    try:
-        data = request.get_json(force=True, silent=True) or {}
-        api_key = str(data.get("api_key", "")).strip()
-        if not api_key:
-            return err("Missing Torn API key.")
-
-        me = me_basic(api_key)
-        if not me.get("ok"):
-            return err(me.get("error", "Could not verify Torn API key."), 400)
-
-        player = me.get("player", {}) or {}
-        user_id = str(player.get("user_id") or "").strip()
-        name = str(player.get("name") or "").strip()
-        faction_id = str(player.get("faction_id") or "").strip()
-        faction_name = str(player.get("faction_name") or "").strip()
-
-        if not user_id:
-            return err("Could not determine player id from Torn API.", 400)
-
-        upsert_user(
-            user_id=user_id,
-            name=name,
-            api_key=api_key,
-            faction_id=faction_id,
-            faction_name=faction_name,
-        )
-
-        if not faction_id:
-            return err("You must be in a faction to use War Hub.", 403)
-
-        live_faction = _get_live_faction_context(api_key, user_id, faction_id, faction_name)
-        if not live_faction.get("ok"):
-            return err(live_faction.get("error", "Could not load faction."), 500)
-
-        faction_id = str(live_faction.get("faction_id") or faction_id)
-        faction_name = str(live_faction.get("faction_name") or faction_name)
-        is_leader = bool(live_faction.get("is_leader"))
-        my_member = live_faction.get("my_member") or {}
-
-        upsert_user(
-            user_id=user_id,
-            name=name,
-            api_key=api_key,
-            faction_id=faction_id,
-            faction_name=faction_name,
-        )
-
-        if is_leader:
-            ensure_faction_license_row(
-                faction_id=faction_id,
-                faction_name=faction_name,
-                leader_user_id=user_id,
-                leader_name=name,
-                leader_api_key=api_key,
-            )
-            start_faction_trial_if_needed(
-                faction_id=faction_id,
-                faction_name=faction_name,
-                leader_user_id=user_id,
-                leader_name=name,
-                leader_api_key=api_key,
-            )
-            upsert_faction_member_access(
-                faction_id=faction_id,
-                faction_name=faction_name,
-                leader_user_id=user_id,
-                leader_name=name,
-                member_user_id=user_id,
-                member_name=name,
-                member_api_key=api_key,
-                enabled=1,
-                position=str(my_member.get("position") or "Leader"),
-            )
-            license_status = compute_faction_license_status(faction_id, viewer_user_id=user_id)
-
-        else:
-            member_row = get_faction_member_access(faction_id, user_id)
-            if not member_row:
-                return _member_block_response(faction_id, faction_name, "member_not_added")
-
-            stored_key = str(member_row.get("member_api_key") or member_row.get("api_key") or "").strip()
-            if stored_key and stored_key != api_key:
-                return _member_block_response(faction_id, faction_name, "member_api_key_mismatch")
-
-            if not _safe_bool(member_row.get("enabled")):
-                return _member_block_response(faction_id, faction_name, "member_not_enabled")
-
-            upsert_faction_member_access(
-                faction_id=faction_id,
-                faction_name=faction_name,
-                leader_user_id=str(member_row.get("leader_user_id") or ""),
-                leader_name=str(member_row.get("leader_name") or ""),
-                member_user_id=user_id,
-                member_name=name,
-                member_api_key=api_key,
-                enabled=1,
-                position=str(my_member.get("position") or member_row.get("position") or ""),
-            )
-            license_status = compute_faction_license_status(faction_id, viewer_user_id=user_id)
-
-        if not bool(license_status.get("active")):
-            delete_sessions_for_user(user_id)
-            return _faction_block_response(faction_id, faction_name, license_status)
-
-        if not is_leader:
-            member_row = get_faction_member_access(faction_id, user_id)
-            if not member_row or not _safe_bool(member_row.get("enabled")):
-                delete_sessions_for_user(user_id)
-                return _member_block_response(faction_id, faction_name, "member_not_enabled", license_status)
-
-        if get_user_setting(user_id, "refresh_seconds") is None:
-            set_user_setting(user_id, "refresh_seconds", str(DEFAULT_REFRESH_SECONDS))
-        if get_user_setting(user_id, "alerts_enabled") is None:
-            set_user_setting(user_id, "alerts_enabled", "1")
-
-        token = create_session(user_id)
-        add_notification(user_id, "auth", f"Logged into {APP_NAME} successfully.")
-        add_audit_log(
-            user_id,
-            "login",
-            f"auth_success faction={faction_id} leader={1 if is_leader else 0}",
-        )
-
-        return ok(
-            token=token,
-            session_token=token,
-            user={
-                "user_id": user_id,
-                "name": name,
-                "faction_id": faction_id,
-                "faction_name": faction_name,
-                "profile_url": profile_url(user_id),
-                "is_faction_leader": is_leader,
-            },
-            faction_license=license_status,
-            faction_access={
-                "is_faction_leader": is_leader,
-                "member_enabled": True,
-            },
-            payment=_payment_details_payload(faction_id, faction_name, license_status).get("payment"),
-            **_access_payload(license_status),
-        )
-    except Exception as e:
-        return err(f"Auth failed: {e}", 500)
-
-
-@app.post("/api/logout")
-@require_session
-def api_logout():
-    try:
-        token = request.headers.get("X-Session-Token", "").strip()
-        user_id = str(request.session.get("user_id") or "")
-        if token:
-            delete_session(token)
-        add_audit_log(user_id, "logout", "session_deleted")
-        return ok(message="Logged out.")
-    except Exception as e:
-        return err(f"Logout failed: {e}", 500)
-
-
-@app.get("/api/license/status")
-@require_session
-def api_license_status():
-    try:
-        faction_id = request.current_faction_id
-        faction_name = request.current_faction_name
-        license_status = compute_faction_license_status(
-            faction_id,
-            viewer_user_id=request.current_user["user_id"],
-        )
-
-        return ok(
-            license=license_status,
-            faction_license=license_status,
-            payment=_payment_details_payload(faction_id, faction_name, license_status).get("payment"),
-            payment_history=get_faction_payment_history(faction_id, limit=10),
-            is_faction_leader=bool(request.current_is_leader),
-            member_access=request.current_member_row or {},
-            **_access_payload(license_status),
-        )
-    except Exception as e:
-        return err(f"Could not load license status: {e}", 500)
-
-
-@app.get("/api/faction/license")
-@require_session
-def api_faction_license():
-    try:
-        faction_id = request.current_faction_id
-        faction_name = request.current_faction_name
-        license_status = compute_faction_license_status(
-            faction_id,
-            viewer_user_id=request.current_user["user_id"],
-        )
-
-        return ok(
-            faction_id=faction_id,
-            faction_name=faction_name,
-            faction_license=license_status,
-            payment=_payment_details_payload(faction_id, faction_name, license_status).get("payment"),
-            payment_history=get_faction_payment_history(faction_id, limit=25),
-            is_faction_leader=bool(request.current_is_leader),
-            member_access=request.current_member_row or {},
-            **_access_payload(license_status),
-        )
-    except Exception as e:
-        return err(f"Could not load faction license: {e}", 500)
-
-
-@app.get("/api/wars")
-@require_session
-def api_wars():
-    try:
-        user_id = request.session["user_id"]
-        user = get_user(user_id)
-        if not user:
-            return err("User not found.", 404)
-
-        res = faction_wars(user["api_key"])
-        if not res.get("ok"):
-            return err(res.get("error", "Could not load wars."), 500)
-
-        return ok(
-            wars=res.get("wars", []),
-            source_ok=bool(res.get("source_ok")),
-            source_note=res.get("source_note", ""),
-            faction_license=request.current_license_status,
-            **_access_payload(request.current_license_status),
-        )
-    except Exception as e:
-        return err(f"Could not load wars: {e}", 500)
-
-
-@app.get("/api/state")
-@require_session
-def api_state():
-    try:
-        user_id = request.session["user_id"]
-        user = get_user(user_id)
-        if not user:
-            return err("User not found.", 404)
-
-        api_key = str(user["api_key"] or "").strip()
-        faction_id = request.current_faction_id
-        faction_name = request.current_faction_name
-        license_status = compute_faction_license_status(faction_id, viewer_user_id=user_id)
-
-        faction = {
-            "ok": True,
-            "faction_id": faction_id,
-            "faction_name": faction_name,
-            "members": [],
-        }
-        if faction_id:
-            faction = faction_basic(api_key)
-            if not faction.get("ok"):
-                return err(faction.get("error", "Could not load faction."), 500)
-
-        merged = _merge_faction_members(
-            str(faction.get("faction_id", faction_id) or ""),
-            faction.get("members", []),
-        )
-
-        war_summary = ranked_war_summary(
-            api_key=api_key,
-            my_faction_id=str(faction.get("faction_id", faction_id) or ""),
-            my_faction_name=str(faction.get("faction_name", faction_name) or ""),
-        )
-
-        enemy_info = _decorate_enemy_members(war_summary.get("enemy_members", []))
-
-        state_faction_id = str(faction.get("faction_id", faction_id) or "")
-        state_faction_name = str(faction.get("faction_name", faction_name) or "")
-        enemy_faction_name = str(war_summary.get("enemy_faction_name", "") or "").strip()
-        enemy_faction_id = str(war_summary.get("enemy_faction_id", "") or "").strip()
-        war_id = str(war_summary.get("war_id", "") or "")
-        score_us = _to_int(war_summary.get("score_us"), 0)
-        score_them = _to_int(war_summary.get("score_them"), 0)
-        target_score = _to_int(war_summary.get("target_score"), 0)
-
-        enemy_faction_options: List[Dict[str, str]] = []
-        if enemy_faction_name or enemy_faction_id:
-            enemy_faction_options.append(
-                {
-                    "faction_id": enemy_faction_id,
-                    "faction_name": enemy_faction_name or f"Faction {enemy_faction_id}",
-                }
-            )
-
-        war_active = bool(war_summary.get("active"))
-        war_status_text = str(war_summary.get("status_text") or "").strip()
-        if not war_active:
-            war_status_text = "Currently not in war"
-
-        if war_id:
-            save_war_snapshot(
-                war_id=war_id,
-                faction_id=state_faction_id,
-                faction_name=state_faction_name,
-                enemy_faction_id=enemy_faction_id,
-                enemy_faction_name=enemy_faction_name,
-                score_us=score_us,
-                score_them=score_them,
-                target_score=target_score,
-                lead=score_us - score_them,
-                start_ts=_to_int(war_summary.get("start"), 0),
-                end_ts=_to_int(war_summary.get("end"), 0),
-                status_text=str(war_summary.get("status_text") or ""),
-            )
-
-        if _to_int(get_user_setting(user_id, "alerts_enabled"), 1):
-            _emit_enemy_hospital_alerts(user_id, war_id, enemy_info["members"])
-
-        assignments = list_target_assignments_for_war(war_id) if war_id else []
-        enemy_map = _safe_name_map(enemy_info["members"])
-        assignments = _decorate_assignments(assignments, enemy_map)
-
-        ranked_targets = _rank_enemy_targets(enemy_info["members"], assignments)
-        notes = _serialize_notes(list_war_notes(war_id) if war_id else [])
-        war_terms = get_war_terms(war_id) if war_id else None
-        pace = _calc_pace_and_estimate(war_id, score_us, score_them, target_score)
-        tops = _top_lists(merged["members"], enemy_info["members"])
-
-        refresh_seconds = _to_int(get_user_setting(user_id, "refresh_seconds"), DEFAULT_REFRESH_SECONDS)
-        alerts_enabled = _to_int(get_user_setting(user_id, "alerts_enabled"), 1)
-
-        med_deals = _serialize_med_deals(list_med_deals_for_faction(state_faction_id))
-        targets = _serialize_targets(list_targets(user_id))
-        notifications = list_notifications(user_id)
-        managed_members = list_faction_members(state_faction_id)
-
-        return ok(
-            me={
-                "user_id": user["user_id"],
-                "name": user["name"],
-                "faction_id": state_faction_id,
-                "faction_name": state_faction_name,
-                "profile_url": profile_url(user["user_id"]),
-                "available": int(user.get("available", 1)),
-                "chain_sitter": int(user.get("chain_sitter", 0)),
-                "is_faction_leader": bool(request.current_is_leader),
-            },
-            faction_license=license_status,
-            license=license_status,
-            payment=_payment_details_payload(state_faction_id, state_faction_name, license_status).get("payment"),
-            **_access_payload(license_status),
-            faction_access={
-                "is_faction_leader": bool(request.current_is_leader),
-                "member_access": request.current_member_row or {},
-                "managed_member_count": len(managed_members),
-            },
-            faction_management={
-                "visible": bool(request.current_is_leader),
-                "members": managed_members if request.current_is_leader else [],
-            },
-            faction={
-                "id": state_faction_id,
-                "faction_id": state_faction_id,
-                "name": state_faction_name,
-                "faction_name": state_faction_name,
-                "members": merged["members"],
-            },
-            enemy_faction={
-                "id": enemy_faction_id,
-                "faction_id": enemy_faction_id,
-                "name": enemy_faction_name,
-                "faction_name": enemy_faction_name,
-                "members": enemy_info["members"],
-                "message": "" if war_active else "Currently not in war",
-            },
-            quick_links={
-                "opt_in": {
-                    "endpoint": "/api/chain-sitter/set",
-                    "payload": {"enabled": True},
-                },
-                "opt_out": {
-                    "endpoint": "/api/chain-sitter/set",
-                    "payload": {"enabled": False},
-                },
-                "available": {
-                    "endpoint": "/api/availability/set",
-                    "payload": {"available": True},
-                },
-                "unavailable": {
-                    "endpoint": "/api/availability/set",
-                    "payload": {"available": False},
-                },
-            },
-            settings={
-                "refresh_seconds": refresh_seconds,
+                    "refresh_seconds": refresh_seconds,
                 "alerts_enabled": alerts_enabled,
             },
             war={
@@ -1907,378 +1487,7 @@ def api_faction_members_upsert():
         )
     except Exception as e:
         return err(f"Could not save faction member access: {e}", 500)
-
-
-@app.post("/api/faction/members/enable")
-@require_leader_session
-def api_faction_members_enable():
-    try:
-        leader = request.current_user
-        faction_id = request.current_faction_id
-        faction_name = request.current_faction_name
-
-        data = request.get_json(force=True, silent=True) or {}
-        member_user_id = str(data.get("member_user_id") or data.get("user_id") or "").strip()
-        enabled = 1 if _safe_bool(data.get("enabled", True)) else 0
-
-        if not member_user_id:
-            return err("Missing member_user_id.")
-
-        if member_user_id == str(leader.get("user_id") or "") and not enabled:
-            return err("Leader access cannot be disabled here.", 400)
-
-        set_faction_member_enabled(
-            faction_id=faction_id,
-            member_user_id=member_user_id,
-            enabled=enabled,
-            changed_by_user_id=str(leader.get("user_id") or ""),
-            changed_by_name=str(leader.get("name") or ""),
-        )
-
-        if not enabled:
-            delete_sessions_for_user(member_user_id)
-
-        license_status = compute_faction_license_status(
-            faction_id,
-            viewer_user_id=str(leader.get("user_id") or ""),
-        )
-
-        add_audit_log(
-            str(leader.get("user_id") or ""),
-            "faction_member_enable",
-            f"faction={faction_id} member={member_user_id} enabled={enabled}",
-        )
-
-        return ok(
-            message="Faction member access updated.",
-            member_user_id=member_user_id,
-            enabled=enabled,
-            faction_license=license_status,
-            payment=_payment_details_payload(faction_id, faction_name, license_status).get("payment"),
-            **_access_payload(license_status),
-        )
-    except Exception as e:
-        return err(f"Could not update faction member access: {e}", 500)
-
-
-@app.post("/api/faction/members/delete")
-@require_leader_session
-def api_faction_members_delete():
-    try:
-        leader = request.current_user
-        faction_id = request.current_faction_id
-
-        data = request.get_json(force=True, silent=True) or {}
-        member_user_id = str(data.get("member_user_id") or data.get("user_id") or "").strip()
-        if not member_user_id:
-            return err("Missing member_user_id.")
-
-        if member_user_id == str(leader.get("user_id") or ""):
-            return err("Leader access cannot be deleted here.", 400)
-
-        delete_faction_member_access(faction_id=faction_id, member_user_id=member_user_id)
-        delete_sessions_for_user(member_user_id)
-
-        add_audit_log(
-            str(leader.get("user_id") or ""),
-            "faction_member_delete",
-            f"faction={faction_id} member={member_user_id}",
-        )
-
-        return ok(
-            message="Faction member access removed.",
-            member_user_id=member_user_id,
-        )
-    except Exception as e:
-        return err(f"Could not delete faction member access: {e}", 500)
-
-
-@app.post("/api/availability/set")
-@require_session
-def api_availability_set():
-    try:
-        user_id = request.current_user["user_id"]
-        data = request.get_json(force=True, silent=True) or {}
-        value = 1 if bool(data.get("available")) else 0
-        set_availability(user_id, value)
-        return ok(message="Availability updated.", available=value)
-    except Exception as e:
-        return err(f"Could not update availability: {e}", 500)
-
-
-@app.post("/api/chain-sitter/set")
-@require_session
-def api_chain_sitter_set():
-    try:
-        user_id = request.current_user["user_id"]
-        data = request.get_json(force=True, silent=True) or {}
-        value = 1 if bool(data.get("enabled")) else 0
-        set_chain_sitter(user_id, value)
-        return ok(message="Chain sitter updated.", enabled=value)
-    except Exception as e:
-        return err(f"Could not update chain sitter: {e}", 500)
-
-
-@app.post("/api/med-deals/add")
-@require_session
-def api_med_deals_add():
-    try:
-        user_id = request.current_user["user_id"]
-        user = request.current_user
-        data = request.get_json(force=True, silent=True) or {}
-
-        war_summary = ranked_war_summary(
-            api_key=str(user.get("api_key") or "").strip(),
-            my_faction_id=str(user.get("faction_id") or "").strip(),
-            my_faction_name=str(user.get("faction_name") or "").strip(),
-        )
-
-        if not war_summary.get("active"):
-            return err("Currently not in war.")
-
-        seller_name = str(user.get("name") or "").strip()
-        buyer_name = str(data.get("buyer_name", "")).strip()
-        notes = str(data.get("notes", "")).strip()
-
-        enemy_members = war_summary.get("enemy_members", []) or []
-        valid_enemy_names = {
-            str(m.get("name") or "").strip()
-            for m in enemy_members
-            if str(m.get("name") or "").strip()
-        }
-
-        if not buyer_name:
-            return err("Choose a buyer.")
-        if buyer_name not in valid_enemy_names:
-            return err("Buyer must be an active enemy faction member from the current war.")
-
-        add_med_deal(
-            creator_user_id=user_id,
-            creator_name=seller_name,
-            faction_id=str(user.get("faction_id") or "").strip(),
-            faction_name=str(user.get("faction_name") or "").strip(),
-            buyer_name=buyer_name,
-            seller_name=seller_name,
-            notes=notes,
-        )
-
-        add_notification(user_id, "med_deal", f"Med deal added: {seller_name} → {buyer_name}.")
-        return ok(message="Med deal added.")
-    except Exception as e:
-        return err(f"Could not add med deal: {e}", 500)
-
-
-@app.post("/api/med-deals/delete")
-@require_session
-def api_med_deals_delete():
-    try:
-        user = request.current_user
-        data = request.get_json(force=True, silent=True) or {}
-        deal_id = int(data.get("id") or 0)
-        if not deal_id:
-            return err("Missing med deal id.")
-
-        delete_med_deal(
-            faction_id=str(user.get("faction_id") or "").strip(),
-            deal_id=deal_id,
-        )
-        return ok(message="Med deal deleted.")
-    except Exception as e:
-        return err(f"Could not delete med deal: {e}", 500)
-
-
-@app.post("/api/targets/add")
-@require_session
-def api_targets_add():
-    try:
-        user_id = request.current_user["user_id"]
-        data = request.get_json(force=True, silent=True) or {}
-
-        target_id = str(data.get("target_id", "")).strip()
-        target_name = str(data.get("target_name", "")).strip()
-        notes = str(data.get("notes", "")).strip()
-
-        if not target_id and not target_name:
-            return err("Enter a target id or name.")
-
-        add_target(user_id, target_id, target_name, notes)
-        return ok(message="Target added.")
-    except Exception as e:
-        return err(f"Could not add target: {e}", 500)
-
-
-@app.post("/api/targets/delete")
-@require_session
-def api_targets_delete():
-    try:
-        user_id = request.current_user["user_id"]
-        data = request.get_json(force=True, silent=True) or {}
-        target_row_id = int(data.get("id") or 0)
-        if not target_row_id:
-            return err("Missing target id.")
-        delete_target(user_id, target_row_id)
-        return ok(message="Target deleted.")
-    except Exception as e:
-        return err(f"Could not delete target: {e}", 500)
-
-
-@app.post("/api/targets/assign")
-@require_session
-def api_targets_assign():
-    try:
-        user_id = request.current_user["user_id"]
-        user = request.current_user
-
-        data = request.get_json(force=True, silent=True) or {}
-        war_id = str(data.get("war_id", "")).strip()
-        target_id = str(data.get("target_id", "")).strip()
-        target_name = str(data.get("target_name", "")).strip()
-        assigned_to_user_id = str(data.get("assigned_to_user_id", user_id)).strip()
-        assigned_to_name = str(data.get("assigned_to_name", user.get("name") or "")).strip()
-        priority = str(data.get("priority", "normal")).strip()
-        note = str(data.get("note", "")).strip()
-
-        if not war_id:
-            return err("Missing war id.")
-        if not target_id and not target_name:
-            return err("Missing target.")
-
-        upsert_target_assignment(
-            war_id=war_id,
-            target_id=target_id,
-            target_name=target_name,
-            assigned_to_user_id=assigned_to_user_id,
-            assigned_to_name=assigned_to_name,
-            assigned_by_user_id=user_id,
-            assigned_by_name=str(user.get("name") or "").strip(),
-            priority=priority,
-            note=note,
-        )
-
-        add_notification(user_id, "target_assign", f"Assigned target: {target_name or target_id}.")
-        return ok(message="Target assigned.")
-    except Exception as e:
-        return err(f"Could not assign target: {e}", 500)
-
-
-@app.post("/api/targets/unassign")
-@require_session
-def api_targets_unassign():
-    try:
-        data = request.get_json(force=True, silent=True) or {}
-        assignment_id = _to_int(data.get("id"), 0)
-        if not assignment_id:
-            return err("Missing assignment id.")
-
-        delete_target_assignment(assignment_id)
-        return ok(message="Target assignment removed.")
-    except Exception as e:
-        return err(f"Could not remove assignment: {e}", 500)
-
-
-@app.post("/api/targets/note")
-@require_session
-def api_targets_note():
-    try:
-        user_id = request.current_user["user_id"]
-        user = request.current_user
-
-        data = request.get_json(force=True, silent=True) or {}
-        war_id = str(data.get("war_id", "")).strip()
-        target_id = str(data.get("target_id", "")).strip()
-        note = str(data.get("note", "")).strip()
-
-        if not war_id:
-            return err("Missing war id.")
-        if not target_id:
-            return err("Missing target id.")
-        if not note:
-            return err("Missing note.")
-
-        upsert_war_note(
-            war_id=war_id,
-            target_id=target_id,
-            note=note,
-            created_by_user_id=user_id,
-            created_by_name=str(user.get("name") or "").strip(),
-        )
-
-        return ok(message="Note saved.")
-    except Exception as e:
-        return err(f"Could not save note: {e}", 500)
-
-
-@app.post("/api/targets/note/delete")
-@require_session
-def api_targets_note_delete():
-    try:
-        data = request.get_json(force=True, silent=True) or {}
-        note_id = _to_int(data.get("id"), 0)
-        if not note_id:
-            return err("Missing note id.")
-        delete_war_note(note_id)
-        return ok(message="Note deleted.")
-    except Exception as e:
-        return err(f"Could not delete note: {e}", 500)
-
-
-@app.post("/api/war-terms/set")
-@require_session
-def api_war_terms_set():
-    try:
-        user_id = request.current_user["user_id"]
-        user = request.current_user
-
-        data = request.get_json(force=True, silent=True) or {}
-        war_id = str(data.get("war_id", "")).strip()
-        terms_text = str(data.get("terms_text", "")).strip()
-
-        if not war_id:
-            return err("Missing war id.")
-        if not terms_text:
-            return err("Missing terms text.")
-
-        upsert_war_terms(
-            war_id=war_id,
-            terms_text=terms_text,
-            updated_by_user_id=user_id,
-            updated_by_name=str(user.get("name") or "").strip(),
-        )
-        add_notification(user_id, "war_terms", "War terms updated.")
-        return ok(message="War terms updated.")
-    except Exception as e:
-        return err(f"Could not update war terms: {e}", 500)
-
-
-@app.post("/api/war-terms/delete")
-@require_session
-def api_war_terms_delete():
-    try:
-        data = request.get_json(force=True, silent=True) or {}
-        war_id = str(data.get("war_id", "")).strip()
-
-        if not war_id:
-            return err("Missing war id.")
-
-        delete_war_terms(war_id)
-        return ok(message="War terms deleted.")
-    except Exception as e:
-        return err(f"Could not delete war terms: {e}", 500)
-
-
-@app.post("/api/bounties/add")
-@require_session
-def api_bounties_add():
-    try:
-        user_id = request.current_user["user_id"]
-        data = request.get_json(force=True, silent=True) or {}
-
-        target_id = str(data.get("target_id", "")).strip()
-        target_name = str(data.get("target_name", "")).strip()
-        reward_text = str(data.get("reward_text", "")).strip()
-
-        if not target_id and not target_name:
-            return err("Enter a target id or name.")
+                    return err("Enter a target id or name.")
         if not reward_text:
             return err("Enter a reward.")
 
@@ -2605,8 +1814,6 @@ def api_admin_dashboard():
         )
     except Exception as e:
         return err(f"Could not load admin dashboard: {e}", 500)
-
-
 @app.errorhandler(404)
 def not_found(_e):
     return err("404 Not Found: The requested URL was not found on the server.", 404)
