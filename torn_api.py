@@ -458,35 +458,17 @@ def faction_wars(api_key: str) -> Dict[str, Any]:
                     }
                 )
 
+        phase = _war_phase(war)
+
         wars.append(
             {
                 "war_id": str(war_id),
                 "war_type": str(war.get("war_type") or chosen_container_name),
                 "status_text": str(war.get("status") or war.get("state") or ""),
-                phase = _war_phase(war)
-
-wars.append(
-    {
-        "war_id": str(war_id),
-        "war_type": str(war.get("war_type") or chosen_container_name),
-        "status_text": str(war.get("status") or war.get("state") or ""),
-        "phase": phase,
-        "active": phase == "active",
-        "registered": phase in {"registered", "active"},
-        "finished": phase == "finished",
-        "start": _to_int(war.get("start") or war.get("start_time") or war.get("started"), 0),
-        "end": _to_int(war.get("end") or war.get("end_time") or war.get("ends"), 0),
-        "target_score": _to_int(
-            war.get("target")
-            or war.get("target_score")
-            or war.get("goal")
-            or war.get("score_target"),
-            0,
-        ),
-        "factions": parsed_factions,
-        "raw": war,
-    }
-)
+                "phase": phase,
+                "active": phase == "active",
+                "registered": phase in {"registered", "active"},
+                "finished": phase == "finished",
                 "start": _to_int(war.get("start") or war.get("start_time") or war.get("started"), 0),
                 "end": _to_int(war.get("end") or war.get("end_time") or war.get("ends"), 0),
                 "target_score": _to_int(
@@ -502,12 +484,19 @@ wars.append(
         )
 
     wars.sort(
-    key=lambda x: (
-        0 if x.get("phase") == "active" else 1 if x.get("phase") == "registered" else 2,
-        -(x.get("start") or 0),
-        x.get("war_id") or "",
+        key=lambda x: (
+            0 if x.get("phase") == "active" else 1 if x.get("phase") == "registered" else 2,
+            -(x.get("start") or 0),
+            x.get("war_id") or "",
+        )
     )
-)
+
+    return {
+        "ok": True,
+        "wars": wars,
+        "source_ok": True,
+        "source_note": f"Loaded from faction {chosen_container_name}.",
+    }
 
 
 def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: str = "") -> Dict[str, Any]:
@@ -585,7 +574,6 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
                 enemy_side = f
                 break
 
-    # Never fall back to your own faction as enemy
     my_id = str((my_side or {}).get("faction_id") or my_faction_id or "")
     my_name = str((my_side or {}).get("faction_name") or my_faction_name or "")
 
