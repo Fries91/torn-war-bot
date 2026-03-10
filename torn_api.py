@@ -46,9 +46,10 @@ def _safe_get(url: str, params: Dict[str, Any], cache_seconds: int = 0, cache_pr
         data = r.json()
 
         if isinstance(data, dict) and data.get("error"):
+            err_obj = data.get("error") or {}
             return {
                 "ok": False,
-                "error": data["error"].get("error", "Torn API error"),
+                "error": err_obj.get("error", "Torn API error"),
                 "data": data,
             }
 
@@ -122,12 +123,14 @@ def _extract_hospital_until_ts(member: Dict[str, Any], fallback_seconds: int = 0
 
     status = member.get("status")
     if isinstance(status, dict):
-        candidates.extend([
-            status.get("until"),
-            status.get("until_timestamp"),
-            status.get("timestamp"),
-            status.get("time"),
-        ])
+        candidates.extend(
+            [
+                status.get("until"),
+                status.get("until_timestamp"),
+                status.get("timestamp"),
+                status.get("time"),
+            ]
+        )
 
     now = int(time.time())
     for value in candidates:
@@ -239,21 +242,28 @@ def me_basic(api_key: str) -> Dict[str, Any]:
         cache_seconds=CACHE_TTL_USER_PROFILE,
         cache_prefix="user_profile",
     )
-    if not res["ok"]:
-        return {"ok": False, "error": res.get("error", "Could not load user profile.")}
 
-    data = res["data"]
+    if not res.get("ok"):
+        return {
+            "ok": False,
+            "error": res.get("error", "Could not load user profile."),
+            "user_id": "",
+            "name": "",
+            "level": "",
+            "faction_id": "",
+            "faction_name": "",
+        }
+
+    data = res.get("data") or {}
     faction = data.get("faction") or {}
 
     return {
         "ok": True,
-        "player": {
-            "user_id": str(data.get("player_id") or ""),
-            "name": data.get("name") or "Unknown",
-            "level": data.get("level") or "",
-            "faction_id": str(faction.get("faction_id") or ""),
-            "faction_name": faction.get("faction_name") or "",
-        },
+        "user_id": str(data.get("player_id") or ""),
+        "name": data.get("name") or "Unknown",
+        "level": data.get("level") or "",
+        "faction_id": str(faction.get("faction_id") or ""),
+        "faction_name": faction.get("faction_name") or "",
     }
 
 
@@ -269,7 +279,7 @@ def faction_basic(api_key: str, faction_id: str = "") -> Dict[str, Any]:
             cache_seconds=CACHE_TTL_FACTION_BASIC,
             cache_prefix="faction_basic",
         )
-        if not res["ok"]:
+        if not res.get("ok"):
             res = _safe_get(
                 f"{API_BASE}/faction/",
                 {
@@ -280,15 +290,23 @@ def faction_basic(api_key: str, faction_id: str = "") -> Dict[str, Any]:
                 cache_seconds=CACHE_TTL_FACTION_BASIC,
                 cache_prefix="faction_basic",
             )
-        if not res["ok"]:
-            return {"ok": False, "members": [], "error": res.get("error", "Could not load faction.")}
+        if not res.get("ok"):
+            return {
+                "ok": False,
+                "faction_id": str(faction_id or ""),
+                "faction_name": "",
+                "members": [],
+                "error": res.get("error", "Could not load faction."),
+            }
 
-        data = res["data"]
+        data = res.get("data") or {}
         members_raw = data.get("members") or {}
         members: List[Dict[str, Any]] = []
 
-        for uid, member in members_raw.items():
-            members.append(_normalize_member(uid, member))
+        if isinstance(members_raw, dict):
+            for uid, member in members_raw.items():
+                if isinstance(member, dict):
+                    members.append(_normalize_member(uid, member))
 
         return {
             "ok": True,
@@ -298,10 +316,16 @@ def faction_basic(api_key: str, faction_id: str = "") -> Dict[str, Any]:
         }
 
     me = me_basic(api_key)
-    if not me["ok"]:
-        return {"ok": False, "members": [], "error": me.get("error", "Could not load player.")}
+    if not me.get("ok"):
+        return {
+            "ok": False,
+            "faction_id": "",
+            "faction_name": "",
+            "members": [],
+            "error": me.get("error", "Could not load player."),
+        }
 
-    my_faction_id = me["player"].get("faction_id")
+    my_faction_id = me.get("faction_id")
     if not my_faction_id:
         return {
             "ok": True,
@@ -327,10 +351,12 @@ def _extract_factions_from_war(war: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _is_active_war(war: Dict[str, Any]) -> bool:
-    raw = " ".join([
-        str(war.get("status") or ""),
-        str(war.get("state") or ""),
-    ]).strip().lower()
+    raw = " ".join(
+        [
+            str(war.get("status") or ""),
+            str(war.get("state") or ""),
+        ]
+    ).strip().lower()
 
     if any(x in raw for x in ["active", "running", "ongoing", "started", "live"]):
         return True
@@ -384,7 +410,7 @@ def faction_wars(api_key: str) -> Dict[str, Any]:
             cache_seconds=CACHE_TTL_FACTION_WARS,
             cache_prefix=f"faction_{selection}",
         )
-        if not res["ok"]:
+        if not res.get("ok"):
             last_note = res.get("error", "Unknown Torn API error")
             continue
 
