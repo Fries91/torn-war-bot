@@ -1088,7 +1088,9 @@ def _serialize_notes(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             }
         )
     return out
-    @app.before_request
+
+
+@app.before_request
 def before_request_housekeeping():
     cache_purge_expired()
 
