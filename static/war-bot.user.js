@@ -42,6 +42,7 @@
   const PRICE_PER_MEMBER = 2500000;
 
   const TAB_ORDER = [
+    ["instructions", "Instructions"],
     ["war", "War"],
     ["terms", "Terms"],
     ["members", "Members"],
@@ -1494,6 +1495,60 @@
     `;
   }
 
+  function renderInstructionsTab() {
+    const installLink = `${BASE_URL}/static/war-bot.user.js`;
+
+    return `
+      <div class="warhub-card">
+        <h3>Quick Start</h3>
+        <div class="warhub-mini">Follow these steps after installing the script.</div>
+        <div class="warhub-grid two" style="margin-top:10px;">
+          <div class="warhub-metric">
+            <div class="k">1. Install</div>
+            <div class="v" style="font-size:13px; line-height:1.45;">Install this script in Tampermonkey, Violentmonkey, or Torn PDA.</div>
+          </div>
+          <div class="warhub-metric">
+            <div class="k">2. Open War Hub</div>
+            <div class="v" style="font-size:13px; line-height:1.45;">Refresh Torn, tap the War Hub icon, then open the Settings tab.</div>
+          </div>
+          <div class="warhub-metric">
+            <div class="k">3. Enter API Key</div>
+            <div class="v" style="font-size:13px; line-height:1.45;">Paste your Torn API key and press Save + Login.</div>
+          </div>
+          <div class="warhub-metric">
+            <div class="k">4. Leader Setup</div>
+            <div class="v" style="font-size:13px; line-height:1.45;">Leaders use the Faction tab to add and enable members.</div>
+          </div>
+        </div>
+        <div class="warhub-actions" style="margin-top:10px;">
+          <button class="warhub-btn" id="wh-copy-install-link">Copy Install Link</button>
+        </div>
+        <div class="warhub-mini" style="margin-top:8px; word-break:break-all;">${esc(installLink)}</div>
+      </div>
+
+      <div class="warhub-card">
+        <h3>Terms of Service</h3>
+        <div class="warhub-mini" style="white-space:normal; line-height:1.55;">
+          War Hub is provided for faction communication, coordination, and war tracking. Use is at your own risk.
+          This tool is intended to assist players with information display and shared faction organization. It does not
+          perform automated gameplay actions for you. Faction leaders are responsible for deciding which members receive
+          access and for removing access when needed. Continued access depends on an active faction license and enabled
+          member status.
+        </div>
+      </div>
+
+      <div class="warhub-card">
+        <h3>API Key Storage & Security</h3>
+        <div class="warhub-mini" style="white-space:normal; line-height:1.55;">
+          Members should use a <b>Limited API key</b>. Recommended permissions are <b>User</b> and <b>Faction</b>.
+          Your API key is stored locally in your browser for this script and is also sent to the War Hub server only so
+          the server can verify your Torn account, identify your faction access, and load the data needed for the tool.
+          Using a Limited key helps protect the rest of your Torn account data while still allowing the script to work.
+        </div>
+      </div>
+    `;
+  }
+
   function renderOwnerTab() {
     const token = getOwnerToken();
 
@@ -1560,10 +1615,11 @@
     const needsLogin = !cleanInputValue(GM_getValue(K_SESSION, "")) && !state;
     const blocked = accessState.paymentRequired || accessState.blocked || accessState.trialExpired;
 
-    if (blocked) return renderSettingsTab();
-    if (needsLogin && currentTab !== "settings") return renderSettingsTab();
+    if (blocked && currentTab !== "instructions") return renderSettingsTab();
+    if (needsLogin && currentTab !== "settings" && currentTab !== "instructions") return renderSettingsTab();
 
     switch (currentTab) {
+      case "instructions": return renderInstructionsTab();
       case "terms": return renderTermsTab();
       case "members": return renderMembersTab();
       case "enemies": return renderEnemiesTab();
@@ -1588,7 +1644,7 @@
     const text = badgeNum ? `${label} (${badgeNum})` : label;
     const blocked = accessState.paymentRequired || accessState.blocked || accessState.trialExpired;
     const needsLogin = !cleanInputValue(GM_getValue(K_SESSION, "")) && !state;
-    const locked = (blocked || needsLogin) && key !== "settings";
+    const locked = (blocked || needsLogin) && key !== "settings" && key !== "instructions";
 
     return `
       <button
@@ -2402,6 +2458,28 @@
 
     overlay.querySelector("#wh-opt-out")?.addEventListener("click", async () => {
       await doAction("POST", "/api/chain-sitter/set", { enabled: false }, "Chain sitter disabled.");
+    });
+
+    overlay.querySelector("#wh-copy-install-link")?.addEventListener("click", async () => {
+      const installLink = `${BASE_URL}/static/war-bot.user.js`;
+      try {
+        if (navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(installLink);
+        } else {
+          const temp = document.createElement("textarea");
+          temp.value = installLink;
+          temp.setAttribute("readonly", "readonly");
+          temp.style.position = "fixed";
+          temp.style.left = "-9999px";
+          document.body.appendChild(temp);
+          temp.select();
+          document.execCommand("copy");
+          temp.remove();
+        }
+        toast("Install link copied.");
+      } catch (e) {
+        toast("Could not copy link.");
+      }
     });
 
     overlay.querySelector("#wh-save-settings")?.addEventListener("click", async () => {
