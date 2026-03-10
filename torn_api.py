@@ -270,27 +270,17 @@ def me_basic(api_key: str) -> Dict[str, Any]:
 def faction_basic(api_key: str, faction_id: str = "") -> Dict[str, Any]:
     faction_id = str(faction_id or "").strip()
 
-    if faction_id:
-        res = _safe_get(
-            f"{API_BASE}/faction/{faction_id}",
-            {
-                "selections": "basic",
-                "key": api_key,
-            },
-            cache_seconds=CACHE_TTL_FACTION_BASIC,
-            cache_prefix="faction_basic",
-        )
-
-        if not res.get("ok"):
+    def _build_result(res_obj: Dict[str, Any], fallback_faction_id: str = "") -> Dict[str, Any]:
+        if not res_obj.get("ok"):
             return {
                 "ok": False,
-                "faction_id": faction_id,
+                "faction_id": fallback_faction_id,
                 "faction_name": "",
                 "members": [],
-                "error": res.get("error", "Could not load faction."),
+                "error": res_obj.get("error", "Could not load faction."),
             }
 
-        data = res.get("data") or {}
+        data = res_obj.get("data") or {}
         members_raw = data.get("members") or {}
         members: List[Dict[str, Any]] = []
 
@@ -306,9 +296,62 @@ def faction_basic(api_key: str, faction_id: str = "") -> Dict[str, Any]:
 
         return {
             "ok": True,
-            "faction_id": str(data.get("ID") or faction_id or ""),
+            "faction_id": str(data.get("ID") or fallback_faction_id or ""),
             "faction_name": data.get("name") or "",
             "members": members,
+        }
+
+    if faction_id:
+        # Try direct endpoint first
+        res = _safe_get(
+            f"{API_BASE}/faction/{faction_id}",
+            {
+                "selections": "basic",
+                "key": api_key,
+            },
+            cache_seconds=CACHE_TTL_FACTION_BASIC,
+            cache_prefix="faction_basic",
+        )
+        built = _build_result(res, faction_id)
+        if built.get("ok") and built.get("members"):
+            return built
+
+        # Fallback 1: generic endpoint with ID
+        res = _safe_get(
+            f"{API_BASE}/faction/",
+            {
+                "selections": "basic",
+                "ID": faction_id,
+                "key": api_key,
+            },
+            cache_seconds=CACHE_TTL_FACTION_BASIC,
+            cache_prefix="faction_basic",
+        )
+        built = _build_result(res, faction_id)
+        if built.get("ok") and built.get("members"):
+            return built
+
+        # Fallback 2: generic endpoint with id
+        res = _safe_get(
+            f"{API_BASE}/faction/",
+            {
+                "selections": "basic",
+                "id": faction_id,
+                "key": api_key,
+            },
+            cache_seconds=CACHE_TTL_FACTION_BASIC,
+            cache_prefix="faction_basic",
+        )
+        built = _build_result(res, faction_id)
+        if built.get("ok"):
+            return built
+
+        return {
+            "ok": False,
+            "faction_id": faction_id,
+            "faction_name": "",
+            "members": [],
+            "error": "Could not load faction.",
         }
 
     me = me_basic(api_key)
