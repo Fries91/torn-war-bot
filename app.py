@@ -748,7 +748,8 @@ def api_state():
         has_war=bool(war_payload.get("has_war")),
         is_ranked_war=bool(war_payload.get("is_ranked_war")),
     )
-    @app.route("/api/availability", methods=["POST"])
+    
+@app.route("/api/availability", methods=["POST"])
 @require_session
 def api_set_availability():
     user = request.user or {}
