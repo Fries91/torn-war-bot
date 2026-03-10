@@ -741,16 +741,24 @@ def api_state():
     enemy_faction_name = str(war_info.get("enemy_faction_name") or "").strip()
 
     raw_enemy_members = []
-    if bool(war_info.get("active")) and enemy_faction_id:
-        enemy_info = _faction_basic_by_id(api_key, enemy_faction_id)
-        raw_enemy_members = enemy_info.get("members") or []
+if str(war_info.get("phase") or "") == "active" and enemy_faction_id:
+    enemy_info = _faction_basic_by_id(api_key, enemy_faction_id)
+    raw_enemy_members = enemy_info.get("members") or []
 
     enemies = _merge_enemy_state(raw_enemy_members, war_id)
 
     war_payload = {
         "war_id": war_id,
-        "status": war_info.get("status_text") or ("Active" if war_info.get("active") else "Currently not in war"),
-        "active": bool(war_info.get("active")),
+       "status": war_info.get("status_text") or (
+    "War active"
+    if war_info.get("active")
+    else "War registered"
+    if war_info.get("registered")
+    else "Currently not in war"
+),
+"active": bool(war_info.get("active")),
+"registered": bool(war_info.get("registered")),
+"phase": str(war_info.get("phase") or "none"),
         "war_type": str(war_info.get("war_type") or ""),
         "start": _to_int(war_info.get("start")),
         "end": _to_int(war_info.get("end")),
@@ -816,8 +824,8 @@ def api_state():
             "enemy": _to_int(war_info.get("score_them")),
             "target": _to_int(war_info.get("target_score")),
         },
-        has_war=bool(war_info.get("active")),
-        is_ranked_war=bool(war_info.get("active")),
+        has_war=bool(war_info.get("has_war")),
+is_ranked_war=bool(war_info.get("has_war")),
     )
 
 
