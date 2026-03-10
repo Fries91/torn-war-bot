@@ -349,28 +349,33 @@ def _extract_factions_from_war(war: Dict[str, Any]) -> Dict[str, Any]:
     return {}
 
 
-def _is_active_war(war: Dict[str, Any]) -> bool:
-    raw = " ".join(
-        [
-            str(war.get("status") or ""),
-            str(war.get("state") or ""),
-        ]
-    ).strip().lower()
+def _war_phase(war: Dict[str, Any]) -> str:
+    raw = " ".join([
+        str(war.get("status") or ""),
+        str(war.get("state") or ""),
+    ]).strip().lower()
 
-    if any(x in raw for x in ["active", "running", "ongoing", "started", "live"]):
-        return True
     if any(x in raw for x in ["ended", "finished", "complete", "completed", "expired"]):
-        return False
+        return "finished"
 
-    end_val = war.get("end") or war.get("end_time") or war.get("ends") or 0
-    if isinstance(end_val, (int, float)) and int(end_val) > 0:
-        return int(end_val) > int(time.time())
+    if any(x in raw for x in ["active", "running", "ongoing", "started", "live", "in progress"]):
+        return "active"
 
-    start_val = war.get("start") or war.get("start_time") or war.get("started") or 0
-    if isinstance(start_val, (int, float)) and int(start_val) > 0:
-        return True
+    if any(x in raw for x in ["pending", "matching", "matched", "upcoming", "scheduled", "registered"]):
+        return "registered"
 
-    return True
+    now = int(time.time())
+    start_val = _to_int(war.get("start") or war.get("start_time") or war.get("started"), 0)
+    end_val = _to_int(war.get("end") or war.get("end_time") or war.get("ends"), 0)
+
+    if end_val > 0 and end_val <= now:
+        return "finished"
+    if start_val > now:
+        return "registered"
+    if start_val > 0 and (end_val == 0 or end_val > now):
+        return "active"
+
+    return "unknown"
 
 
 def _side_name(side_data: Dict[str, Any], fallback: str = "") -> str:
@@ -458,7 +463,30 @@ def faction_wars(api_key: str) -> Dict[str, Any]:
                 "war_id": str(war_id),
                 "war_type": str(war.get("war_type") or chosen_container_name),
                 "status_text": str(war.get("status") or war.get("state") or ""),
-                "active": _is_active_war(war),
+                phase = _war_phase(war)
+
+wars.append(
+    {
+        "war_id": str(war_id),
+        "war_type": str(war.get("war_type") or chosen_container_name),
+        "status_text": str(war.get("status") or war.get("state") or ""),
+        "phase": phase,
+        "active": phase == "active",
+        "registered": phase in {"registered", "active"},
+        "finished": phase == "finished",
+        "start": _to_int(war.get("start") or war.get("start_time") or war.get("started"), 0),
+        "end": _to_int(war.get("end") or war.get("end_time") or war.get("ends"), 0),
+        "target_score": _to_int(
+            war.get("target")
+            or war.get("target_score")
+            or war.get("goal")
+            or war.get("score_target"),
+            0,
+        ),
+        "factions": parsed_factions,
+        "raw": war,
+    }
+)
                 "start": _to_int(war.get("start") or war.get("start_time") or war.get("started"), 0),
                 "end": _to_int(war.get("end") or war.get("end_time") or war.get("ends"), 0),
                 "target_score": _to_int(
@@ -473,19 +501,22 @@ def faction_wars(api_key: str) -> Dict[str, Any]:
             }
         )
 
-    wars.sort(key=lambda x: (not bool(x["active"]), -(x["start"] or 0), x["war_id"]))
-    return {
-        "ok": True,
-        "wars": wars,
-        "source_ok": True,
-        "source_note": f"Loaded from faction {chosen_container_name}.",
-    }
+    wars.sort(
+    key=lambda x: (
+        0 if x.get("phase") == "active" else 1 if x.get("phase") == "registered" else 2,
+        -(x.get("start") or 0),
+        x.get("war_id") or "",
+    )
+)
 
 
 def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: str = "") -> Dict[str, Any]:
     default = {
         "ok": True,
         "active": False,
+        "registered": False,
+        "has_war": False,
+        "phase": "none",
         "war_id": "",
         "war_type": "",
         "my_faction_id": str(my_faction_id or ""),
@@ -504,7 +535,7 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
         "end": 0,
         "status_text": "Currently not in war",
         "source_ok": False,
-        "source_note": "Ranked war endpoint not available or no active war found.",
+        "source_note": "No registered or active ranked war found.",
     }
 
     wars_res = faction_wars(api_key)
@@ -514,31 +545,31 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
         return out
 
     wars = wars_res.get("wars") or []
-    active_war = None
     my_faction_id = str(my_faction_id or "")
+    chosen_war = None
 
     for war in wars:
         factions = war.get("factions") or []
         if not factions:
             continue
 
-        if my_faction_id:
-            faction_ids = [str(x.get("faction_id") or "") for x in factions]
-            if my_faction_id in faction_ids and bool(war.get("active")):
-                active_war = war
-                break
-        else:
-            if bool(war.get("active")):
-                active_war = war
-                break
+        faction_ids = [str(x.get("faction_id") or "") for x in factions]
 
-    if not active_war:
+        if my_faction_id and my_faction_id not in faction_ids:
+            continue
+
+        phase = str(war.get("phase") or "")
+        if phase in {"registered", "active"}:
+            chosen_war = war
+            break
+
+    if not chosen_war:
         out = dict(default)
         out["source_ok"] = bool(wars_res.get("source_ok"))
         out["source_note"] = wars_res.get("source_note", out["source_note"])
         return out
 
-    factions = active_war.get("factions") or []
+    factions = chosen_war.get("factions") or []
     my_side = None
     enemy_side = None
 
@@ -553,17 +584,17 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
             if str(f.get("faction_id") or "") != str(my_side.get("faction_id") or ""):
                 enemy_side = f
                 break
-    else:
-        if len(factions) >= 2:
-            my_side = factions[0]
-            enemy_side = factions[1]
-        elif len(factions) == 1:
-            my_side = factions[0]
 
+    # Never fall back to your own faction as enemy
     my_id = str((my_side or {}).get("faction_id") or my_faction_id or "")
     my_name = str((my_side or {}).get("faction_name") or my_faction_name or "")
+
     enemy_id = str((enemy_side or {}).get("faction_id") or "")
     enemy_name = str((enemy_side or {}).get("faction_name") or "")
+
+    phase = str(chosen_war.get("phase") or "none")
+    is_active = phase == "active"
+    is_registered = phase in {"registered", "active"}
 
     score_us = _to_int((my_side or {}).get("score"), 0)
     score_them = _to_int((enemy_side or {}).get("score"), 0)
@@ -571,11 +602,11 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
     chain_them = _to_int((enemy_side or {}).get("chain"), 0)
     lead = score_us - score_them
 
-    target_score = _to_int(active_war.get("target_score"), 0)
+    target_score = _to_int(chosen_war.get("target_score"), 0)
     remaining_to_target = max(0, target_score - score_us) if target_score else 0
 
     enemy_members: List[Dict[str, Any]] = []
-    if enemy_id:
+    if is_active and enemy_id:
         enemy_faction = faction_basic(api_key, faction_id=enemy_id)
         if enemy_faction.get("ok"):
             enemy_name = enemy_faction.get("faction_name") or enemy_name
@@ -586,11 +617,18 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
     if not my_name and my_id:
         my_name = f"Faction {my_id}"
 
+    status_text = str(chosen_war.get("status_text") or "")
+    if not status_text:
+        status_text = "War active" if is_active else "War registered"
+
     return {
         "ok": True,
-        "active": bool(active_war.get("active")),
-        "war_id": str(active_war.get("war_id") or ""),
-        "war_type": str(active_war.get("war_type") or ""),
+        "active": is_active,
+        "registered": is_registered,
+        "has_war": is_registered,
+        "phase": phase,
+        "war_id": str(chosen_war.get("war_id") or ""),
+        "war_type": str(chosen_war.get("war_type") or ""),
         "my_faction_id": my_id,
         "my_faction_name": my_name,
         "enemy_faction_id": enemy_id,
@@ -603,9 +641,9 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
         "remaining_to_target": remaining_to_target,
         "chain_us": chain_us,
         "chain_them": chain_them,
-        "start": _to_int(active_war.get("start"), 0),
-        "end": _to_int(active_war.get("end"), 0),
-        "status_text": str(active_war.get("status_text") or "Active war"),
+        "start": _to_int(chosen_war.get("start"), 0),
+        "end": _to_int(chosen_war.get("end"), 0),
+        "status_text": status_text,
         "source_ok": bool(wars_res.get("source_ok")),
         "source_note": wars_res.get("source_note", ""),
     }
