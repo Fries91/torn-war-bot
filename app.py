@@ -65,7 +65,6 @@ from db import (
 from torn_api import (
     me_basic,
     faction_basic,
-    faction_wars,
     ranked_war_summary,
     profile_url,
     attack_url,
@@ -386,8 +385,16 @@ def _ranked_war_payload_for_user(api_key: str, my_faction_id: str = "", my_facti
         "war_id": war_id,
         "war": {
             "war_id": war_id,
-            "status": summary.get("status_text") or ("Active" if summary.get("active") else "Currently not in war"),
+            "status": summary.get("status_text") or (
+                "War active"
+                if summary.get("active")
+                else "War registered"
+                if summary.get("registered")
+                else "Currently not in war"
+            ),
             "active": bool(summary.get("active")),
+            "registered": bool(summary.get("registered")),
+            "phase": str(summary.get("phase") or "none"),
             "war_type": str(summary.get("war_type") or ""),
             "start": _to_int(summary.get("start")),
             "end": _to_int(summary.get("end")),
@@ -407,8 +414,8 @@ def _ranked_war_payload_for_user(api_key: str, my_faction_id: str = "", my_facti
         },
         "members": [],
         "enemies": summary.get("enemy_members") or [],
-        "is_ranked_war": bool(summary.get("active")),
-        "has_war": bool(summary.get("active")),
+        "is_ranked_war": bool(summary.get("has_war")),
+        "has_war": bool(summary.get("has_war")),
         "score": {
             "our": _to_int(summary.get("score_us")),
             "enemy": _to_int(summary.get("score_them")),
@@ -725,7 +732,13 @@ def api_state():
         api_key,
         my_faction_id=faction_id,
         my_faction_name=faction_name,
-    ) if api_key else {"ok": True, "active": False}
+    ) if api_key else {
+        "ok": True,
+        "active": False,
+        "registered": False,
+        "has_war": False,
+        "phase": "none",
+    }
 
     members = []
     for m in (faction_info.get("members") or []):
@@ -741,24 +754,24 @@ def api_state():
     enemy_faction_name = str(war_info.get("enemy_faction_name") or "").strip()
 
     raw_enemy_members = []
-if str(war_info.get("phase") or "") == "active" and enemy_faction_id:
-    enemy_info = _faction_basic_by_id(api_key, enemy_faction_id)
-    raw_enemy_members = enemy_info.get("members") or []
+    if str(war_info.get("phase") or "") == "active" and enemy_faction_id:
+        enemy_info = _faction_basic_by_id(api_key, enemy_faction_id)
+        raw_enemy_members = enemy_info.get("members") or []
 
     enemies = _merge_enemy_state(raw_enemy_members, war_id)
 
     war_payload = {
         "war_id": war_id,
-       "status": war_info.get("status_text") or (
-    "War active"
-    if war_info.get("active")
-    else "War registered"
-    if war_info.get("registered")
-    else "Currently not in war"
-),
-"active": bool(war_info.get("active")),
-"registered": bool(war_info.get("registered")),
-"phase": str(war_info.get("phase") or "none"),
+        "status": war_info.get("status_text") or (
+            "War active"
+            if war_info.get("active")
+            else "War registered"
+            if war_info.get("registered")
+            else "Currently not in war"
+        ),
+        "active": bool(war_info.get("active")),
+        "registered": bool(war_info.get("registered")),
+        "phase": str(war_info.get("phase") or "none"),
         "war_type": str(war_info.get("war_type") or ""),
         "start": _to_int(war_info.get("start")),
         "end": _to_int(war_info.get("end")),
@@ -825,7 +838,7 @@ if str(war_info.get("phase") or "") == "active" and enemy_faction_id:
             "target": _to_int(war_info.get("target_score")),
         },
         has_war=bool(war_info.get("has_war")),
-is_ranked_war=bool(war_info.get("has_war")),
+        is_ranked_war=bool(war_info.get("has_war")),
     )
 
 
@@ -1447,8 +1460,7 @@ def create_app():
     return app
 
 
-init_db()
-
 if __name__ == "__main__":
+    init_db()
     port = int(os.getenv("PORT", "5000"))
     app.run(host="0.0.0.0", port=port, debug=False)
