@@ -485,7 +485,6 @@ def faction_wars(api_key: str) -> Dict[str, Any]:
         "source_note": f"Loaded from faction {chosen_container_name}.",
     }
 
-
 def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: str = "") -> Dict[str, Any]:
     default = {
         "ok": True,
@@ -519,7 +518,8 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
 
     wars = wars_res.get("wars") or []
     active_war = None
-    my_faction_id = str(my_faction_id or "")
+    my_faction_id = str(my_faction_id or "").strip()
+    my_faction_name = str(my_faction_name or "").strip()
 
     for war in wars:
         factions = war.get("factions") or []
@@ -527,7 +527,7 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
             continue
 
         if my_faction_id:
-            faction_ids = [str(x.get("faction_id") or "") for x in factions]
+            faction_ids = [str(x.get("faction_id") or "").strip() for x in factions]
             if my_faction_id in faction_ids and bool(war.get("active")):
                 active_war = war
                 break
@@ -542,57 +542,55 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
         return out
 
     factions = active_war.get("factions") or []
-my_side = None
-enemy_side = None
+    my_side = None
+    enemy_side = None
 
-my_faction_id = str(my_faction_id or "").strip()
+    # First: find my exact side
+    if my_faction_id:
+        for f in factions:
+            fid = str(f.get("faction_id") or "").strip()
+            if fid == my_faction_id:
+                my_side = f
+                break
 
-# First: find my exact side
-if my_faction_id:
-    for f in factions:
-        fid = str(f.get("faction_id") or "").strip()
-        if fid == my_faction_id:
-            my_side = f
-            break
-
-# Second: enemy must be a DIFFERENT faction id
-if my_side:
-    my_id_check = str(my_side.get("faction_id") or "").strip()
-    for f in factions:
-        fid = str(f.get("faction_id") or "").strip()
-        if fid and fid != my_id_check:
-            enemy_side = f
-            break
-
-# Last fallback only if exact match failed
-if my_side is None and len(factions) >= 2:
-    first_id = str(factions[0].get("faction_id") or "").strip()
-    second_id = str(factions[1].get("faction_id") or "").strip()
-
-    if my_faction_id and first_id == my_faction_id:
-        my_side = factions[0]
-        enemy_side = factions[1]
-    elif my_faction_id and second_id == my_faction_id:
-        my_side = factions[1]
-        enemy_side = factions[0]
-    else:
-        my_side = factions[0]
-        enemy_side = factions[1]
-
-elif my_side is None and len(factions) == 1:
-    my_side = factions[0]
-
-# Safety guard: never allow same faction on both sides
-if my_side and enemy_side:
-    my_id_check = str(my_side.get("faction_id") or "").strip()
-    enemy_id_check = str(enemy_side.get("faction_id") or "").strip()
-    if my_id_check == enemy_id_check:
-        enemy_side = None
+    # Second: enemy must be a DIFFERENT faction id
+    if my_side:
+        my_id_check = str(my_side.get("faction_id") or "").strip()
         for f in factions:
             fid = str(f.get("faction_id") or "").strip()
             if fid and fid != my_id_check:
                 enemy_side = f
                 break
+
+    # Fallback if exact match failed
+    if my_side is None and len(factions) >= 2:
+        first_id = str(factions[0].get("faction_id") or "").strip()
+        second_id = str(factions[1].get("faction_id") or "").strip()
+
+        if my_faction_id and first_id == my_faction_id:
+            my_side = factions[0]
+            enemy_side = factions[1]
+        elif my_faction_id and second_id == my_faction_id:
+            my_side = factions[1]
+            enemy_side = factions[0]
+        else:
+            my_side = factions[0]
+            enemy_side = factions[1]
+
+    elif my_side is None and len(factions) == 1:
+        my_side = factions[0]
+
+    # Safety guard: never allow same faction on both sides
+    if my_side and enemy_side:
+        my_id_check = str(my_side.get("faction_id") or "").strip()
+        enemy_id_check = str(enemy_side.get("faction_id") or "").strip()
+        if my_id_check == enemy_id_check:
+            enemy_side = None
+            for f in factions:
+                fid = str(f.get("faction_id") or "").strip()
+                if fid and fid != my_id_check:
+                    enemy_side = f
+                    break
 
     my_id = str((my_side or {}).get("faction_id") or my_faction_id or "")
     my_name = str((my_side or {}).get("faction_name") or my_faction_name or "")
