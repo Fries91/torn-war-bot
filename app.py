@@ -665,106 +665,110 @@ def api_logout():
         delete_session(token)
     return ok(message="Logged out.")
 
-
 @app.route("/api/state", methods=["GET"])
 @require_session
 def api_state():
+    user = request.user or {}
     api_key = str(user.get("api_key") or "").strip()
-user_id = str(user.get("user_id") or "").strip()
-faction_id = str(user.get("faction_id") or "").strip()
-faction_name = str(user.get("faction_name") or "").strip()
+    user_id = str(user.get("user_id") or "").strip()
+    faction_id = str(user.get("faction_id") or "").strip()
+    faction_name = str(user.get("faction_name") or "").strip()
 
-license_status = _build_license_status_payload(faction_id, viewer_user_id=user_id) if faction_id else {}
-faction_map = get_user_map_by_faction(faction_id) if faction_id else {}
-me = me_basic(api_key) or {}
+    license_status = _build_license_status_payload(faction_id, viewer_user_id=user_id) if faction_id else {}
+    faction_map = get_user_map_by_faction(faction_id) if faction_id else {}
+    me = me_basic(api_key) or {}
 
-faction_info = faction_basic(api_key) if api_key else {"ok": False, "members": []}
-war_info = ranked_war_summary(api_key, my_faction_id=faction_id, my_faction_name=faction_name) if api_key else {"ok": True, "active": False}
+    faction_info = faction_basic(api_key) if api_key else {"ok": False, "members": []}
+    war_info = ranked_war_summary(
+        api_key,
+        my_faction_id=faction_id,
+        my_faction_name=faction_name,
+    ) if api_key else {"ok": True, "active": False}
 
-members = []
-for m in (faction_info.get("members") or []):
-    member_id = str(m.get("user_id") or m.get("id") or "")
-    merged = dict(m)
-    if member_id and member_id in faction_map:
-        merged.update({k: v for k, v in faction_map[member_id].items() if v not in (None, "")})
-    members.append(_clean_member(merged))
-members.sort(key=_bucket_sort_key)
+    members = []
+    for m in (faction_info.get("members") or []):
+        member_id = str(m.get("user_id") or m.get("id") or "")
+        merged = dict(m)
+        if member_id and member_id in faction_map:
+            merged.update({k: v for k, v in faction_map[member_id].items() if v not in (None, "")})
+        members.append(_clean_member(merged))
+    members.sort(key=_bucket_sort_key)
 
-war_id = str(war_info.get("war_id") or "")
-enemies = _merge_enemy_state(war_info.get("enemy_members") or [], war_id)
+    war_id = str(war_info.get("war_id") or "")
+    enemies = _merge_enemy_state(war_info.get("enemy_members") or [], war_id)
 
-war_payload = {
-    "war_id": war_id,
-    "status": war_info.get("status_text") or ("Active" if war_info.get("active") else "Currently not in war"),
-    "active": bool(war_info.get("active")),
-    "war_type": str(war_info.get("war_type") or ""),
-    "start": _to_int(war_info.get("start")),
-    "end": _to_int(war_info.get("end")),
-    "target_score": _to_int(war_info.get("target_score")),
-}
+    war_payload = {
+        "war_id": war_id,
+        "status": war_info.get("status_text") or ("Active" if war_info.get("active") else "Currently not in war"),
+        "active": bool(war_info.get("active")),
+        "war_type": str(war_info.get("war_type") or ""),
+        "start": _to_int(war_info.get("start")),
+        "end": _to_int(war_info.get("end")),
+        "target_score": _to_int(war_info.get("target_score")),
+    }
 
-our_faction = {
-    "faction_id": str(war_info.get("my_faction_id") or faction_id or ""),
-    "name": str(war_info.get("my_faction_name") or faction_name or ""),
-    "score": _to_int(war_info.get("score_us")),
-    "chain": _to_int(war_info.get("chain_us")),
-}
+    our_faction = {
+        "faction_id": str(war_info.get("my_faction_id") or faction_id or ""),
+        "name": str(war_info.get("my_faction_name") or faction_name or ""),
+        "score": _to_int(war_info.get("score_us")),
+        "chain": _to_int(war_info.get("chain_us")),
+    }
 
-enemy_faction = {
-    "faction_id": str(war_info.get("enemy_faction_id") or ""),
-    "name": str(war_info.get("enemy_faction_name") or ""),
-    "score": _to_int(war_info.get("score_them")),
-    "chain": _to_int(war_info.get("chain_them")),
-}
+    enemy_faction = {
+        "faction_id": str(war_info.get("enemy_faction_id") or ""),
+        "name": str(war_info.get("enemy_faction_name") or ""),
+        "score": _to_int(war_info.get("score_them")),
+        "chain": _to_int(war_info.get("chain_them")),
+    }
 
-assignments = [_normalize_assignment(x) for x in (list_target_assignments_for_war(war_id) if war_id else [])]
-notes = [_normalize_note(x) for x in (list_war_notes(war_id) if war_id else [])]
-terms = get_war_terms(war_id) if war_id else {}
+    assignments = [_normalize_assignment(x) for x in (list_target_assignments_for_war(war_id) if war_id else [])]
+    notes = [_normalize_note(x) for x in (list_war_notes(war_id) if war_id else [])]
+    terms = get_war_terms(war_id) if war_id else {}
 
-med_deals = list_med_deals_for_faction(faction_id) if faction_id else []
-targets = list_targets(user_id) if user_id else []
-bounties = list_bounties(user_id) if user_id else []
-notifications = list_notifications(user_id)
-mark_notifications_seen(user_id)
+    med_deals = list_med_deals_for_faction(faction_id) if faction_id else []
+    targets = list_targets(user_id) if user_id else []
+    bounties = list_bounties(user_id) if user_id else []
+    notifications = list_notifications(user_id)
+    mark_notifications_seen(user_id)
 
-settings = {
-    "refresh_seconds": _to_int(get_user_setting(user_id, "refresh_seconds"), DEFAULT_REFRESH_SECONDS),
-    "compact_mode": _safe_bool(get_user_setting(user_id, "compact_mode")),
-}
+    settings = {
+        "refresh_seconds": _to_int(get_user_setting(user_id, "refresh_seconds"), DEFAULT_REFRESH_SECONDS),
+        "compact_mode": _safe_bool(get_user_setting(user_id, "compact_mode")),
+    }
 
-return ok(
-    now=utc_now(),
-    me=me,
-    user={
-        "user_id": user_id,
-        "name": str(user.get("name") or ""),
-        "faction_id": faction_id,
-        "faction_name": faction_name,
-        "is_owner": _session_is_owner(user),
-        "is_leader": str(license_status.get("leader_user_id") or "") == user_id,
-    },
-    settings=settings,
-    license=license_status,
-    war=war_payload,
-    faction=our_faction,
-    enemy_faction=enemy_faction,
-    members=members,
-    enemies=enemies,
-    assignments=assignments,
-    notes=notes,
-    war_terms=terms or {},
-    med_deals=med_deals or [],
-    targets=targets or [],
-    bounties=bounties or [],
-    notifications=notifications or [],
-    score={
-        "our": _to_int(war_info.get("score_us")),
-        "enemy": _to_int(war_info.get("score_them")),
-        "target": _to_int(war_info.get("target_score")),
-    },
-    has_war=bool(war_info.get("active")),
-    is_ranked_war=bool(war_info.get("active")),
-)
+    return ok(
+        now=utc_now(),
+        me=me,
+        user={
+            "user_id": user_id,
+            "name": str(user.get("name") or ""),
+            "faction_id": faction_id,
+            "faction_name": faction_name,
+            "is_owner": _session_is_owner(user),
+            "is_leader": str(license_status.get("leader_user_id") or "") == user_id,
+        },
+        settings=settings,
+        license=license_status,
+        war=war_payload,
+        faction=our_faction,
+        enemy_faction=enemy_faction,
+        members=members,
+        enemies=enemies,
+        assignments=assignments,
+        notes=notes,
+        war_terms=terms or {},
+        med_deals=med_deals or [],
+        targets=targets or [],
+        bounties=bounties or [],
+        notifications=notifications or [],
+        score={
+            "our": _to_int(war_info.get("score_us")),
+            "enemy": _to_int(war_info.get("score_them")),
+            "target": _to_int(war_info.get("target_score")),
+        },
+        has_war=bool(war_info.get("active")),
+        is_ranked_war=bool(war_info.get("active")),
+    )
     
 @app.route("/api/availability", methods=["POST"])
 @require_session
