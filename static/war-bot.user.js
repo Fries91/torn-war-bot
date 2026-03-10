@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         War Hub ⚔️
 // @namespace    fries91-war-hub
-// @version      2.8.1
+// @version      2.8.0
 // @description  War Hub by Fries91. Faction-license aware overlay with draggable icon, draggable overlay, PDA friendly, shared war tools, faction member management, and payment lock handling.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -250,201 +250,6 @@
       justify-content: center !important;
       min-height: 30px !important;
       line-height: 1.1 !important;
-      opacity: 1 !important;
-      visibility: visible !important;
-      gap: 6px !important;
-    }
-    .warhub-tab.active {
-      background: linear-gradient(180deg, #d23333, #831515) !important;
-      color: #fff !important;
-    }
-    .warhub-tab.locked {
-      opacity: .55 !important;
-    }
-
-    .warhub-body {
-      padding: 8px !important;
-      overflow-y: auto !important;
-      overflow-x: hidden !important;
-      -webkit-overflow-scrolling: touch !important;
-      flex: 1 1 auto !important;
-      min-height: 0 !important;
-      width: 100% !important;
-      display: block !important;
-    }
-
-    .warhub-status {
-      display: none !important;
-      margin-bottom: 8px !important;
-      padding: 8px 10px !important;
-      border-radius: 10px !important;
-      font-size: 12px !important;
-      background: rgba(255,255,255,.06) !important;
-      color: #fff !important;
-    }
-    .warhub-status.show { display: block !important; }
-    .warhub-status.err {
-      background: rgba(185,52,52,.22) !important;
-      color: #ffdcdc !important;
-    }
-
-    .warhub-banner {
-      margin-bottom: 8px !important;
-      padding: 10px 12px !important;
-      border-radius: 12px !important;
-      border: 1px solid rgba(255,255,255,.10) !important;
-      background: rgba(255,255,255,.05) !important;
-      color: #fff !important;
-    }
-    .warhub-banner.payment {
-      background: linear-gradient(180deg, rgba(150,43,43,.38), rgba(72,19,19,.26)) !important;
-      border-color: rgba(255,130,130,.22) !important;
-    }
-    .warhub-banner.trial {
-      background: linear-gradient(180deg, rgba(164,118,19,.28), rgba(92,58,10,.20)) !important;
-      border-color: rgba(255,194,84,.18) !important;
-    }
-
-    .warhub-grid {
-      display: grid !important;
-      grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-      gap: 8px !important;
-      width: 100% !important;
-    }
-    .warhub-grid.grid-3 {
-      grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
-    }
-
-    .warhub-card {
-      background: rgba(255,255,255,.045) !important;
-      border: 1px solid rgba(255,255,255,.06) !important;
-      border-radius: 12px !important;
-      padding: 10px !important;
-      margin-bottom: 8px !important;
-      color: #fff !important;
-      width: 100% !important;
-      overflow: hidden !important;
-    }
-
-    .warhub-mini {
-      font-size: 11px !important;
-      opacity: .75 !important;
-      color: #fff !important;
-    }
-
-    .warhub-hero {
-      display: flex !important;
-      flex-direction: column !important;
-      gap: 8px !important;
-      margin-bottom: 8px !important;
-    }
-
-    .warhub-hero-top {
-      display: flex !important;
-      justify-content: space-between !important;
-      gap: 8px !important;
-      align-items: center !important;
-      flex-wrap: wrap !important;
-    }
-
-    .warhub-score-row {
-      display: grid !important;
-      grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
-      gap: 8px !important;
-    }
-
-    .warhub-score-box {
-      border-radius: 12px !important;
-      padding: 10px !important;
-      text-align: center !important;
-      font-weight: 800 !important;
-      background: rgba(255,255,255,.06) !important;
-      border: 1px solid rgba(255,255,255,.08) !important;
-      color: #fff !important;
-    }
-    .warhub-score-box.us {
-      background: linear-gradient(180deg, rgba(44,123,60,.28), rgba(16,63,26,.22)) !important;
-    }
-    .warhub-score-box.them {
-      background: linear-gradient(180deg, rgba(148,44,44,.30), rgba(72,16,16,.24)) !important;
-    }
-    .warhub-score-box.target {
-      background: linear-gradient(180deg, rgba(178,131,22,.26), rgba(92,64,8,.22)) !important;
-    }
-
-    .warhub-flex {
-      display: flex !important;
-      gap: 8px !important;
-      align-items: center !important;
-      flex-wrap: wrap !important;
-    }
-
-    .warhub-section-title {
-      font-size: 13px !important;
-      font-weight: 800 !important;
-      margin-bottom: 8px !important;
-      color: #fff !important;
-    }
-
-    .warhub-list {
-      display: flex !important;
-      flex-direction: column !important;
-      gap: 8px !important;
-    }
-
-    .warhub-row {
-      display: flex !important;
-      gap: 8px !important;
-      align-items: center !important;
-      justify-content: space-between !important;
-      width: 100% !important;
-      flex-wrap: wrap !important;
-    }
-
-    .warhub-left {
-      display: flex !important;
-      gap: 8px !important;
-      align-items: center !important;
-      min-width: 0 !important;
-      flex: 1 1 auto !important;
-    }
-
-    .warhub-right {
-      display: flex !important;
-      gap: 6px !important;
-      align-items: center !important;
-      flex-wrap: wrap !important;
-      justify-content: flex-end !important;
-    }
-
-    .warhub-pill {
-      padding: 3px 8px !important;
-      border-radius: 999px !important;
-      font-size: 10px !important;
-      font-weight: 800 !important;
-      background: rgba(255,255,255,.08) !important;
-      color: #fff !important;
-      white-space: nowrap !important;
-    }
-    .warhub-pill.online { background: rgba(58,155,77,.34) !important; }
-    .warhub-pill.idle { background: rgba(192,145,43,.34) !important; }
-    .warhub-pill.offline { background: rgba(110,110,110,.28) !important; }
-    .warhub-pill.hospital { background: rgba(168,62,62,.32) !important; }
-
-    .warhub-input,
-    .warhub-select,
-    .warhub-textarea {
-      width: 100% !important;
-      background: rgba(255,255,255,.06) !important;
-      border: 1px solid rgba(255,255,255,.10) !important;
-      color: #fff !important;
-      border-radius: 10px !important;
-      padding: 8px 10px !important;
-      outline: none !important;
-      font-size: 12px !important;
-    }
-
-          line-height: 1.1 !important;
       opacity: 1 !important;
       visibility: visible !important;
       gap: 6px !important;
@@ -945,273 +750,6 @@
       !!d.paymentRequired ||
       !!access.payment_required ||
       !!access.requires_payment ||
-      !!access.paymentRequired;
-
-    const blocked =
-      !!d.blocked ||
-      !!d.access_blocked ||
-      !!d.locked ||
-      !!d.denied ||
-      !!access.blocked ||
-      !!access.access_blocked ||
-      !!access.locked ||
-      !!access.denied ||
-      paymentRequired;
-
-    const expiresAt =
-      d.trial_expires_at ||
-      d.trialEndsAt ||
-      d.expires_at ||
-      access.trial_expires_at ||
-      access.trialEndsAt ||
-      access.expires_at ||
-      "";
-
-    const explicitDaysLeft = d.trial_days_left ?? d.days_left ?? access.trial_days_left ?? access.days_left;
-    const computedDaysLeft = explicitDaysLeft != null ? Number(explicitDaysLeft) : fmtDaysLeftFromIso(expiresAt);
-
-    const trialExpired =
-      !!d.trial_expired ||
-      !!d.expired ||
-      !!access.trial_expired ||
-      !!access.expired ||
-      ((computedDaysLeft != null && computedDaysLeft < 0) && !paymentRequired ? true : false);
-
-    const trialActive =
-      !!d.trial_active ||
-      !!access.trial_active ||
-      ((computedDaysLeft != null && computedDaysLeft >= 0) && !paymentRequired && !trialExpired);
-
-    const accessStatus = String(
-      d.access_status ||
-      d.status ||
-      access.status ||
-      access.access_status ||
-      ""
-    ).toLowerCase();
-
-    const reason =
-      d.reason ||
-      d.block_reason ||
-      d.error ||
-      access.reason ||
-      access.block_reason ||
-      memberAccess.reason ||
-      "";
-
-    let message =
-      d.message ||
-      d.notice ||
-      d.details ||
-      access.message ||
-      access.notice ||
-      payment.message ||
-      "";
-
-    let finalBlocked = blocked;
-    let finalPaymentRequired = paymentRequired;
-    let finalTrialExpired = trialExpired;
-
-    if (accessStatus.includes("payment")) {
-      finalBlocked = true;
-      finalPaymentRequired = true;
-      finalTrialExpired = true;
-    } else if (accessStatus.includes("expired")) {
-      finalBlocked = true;
-      finalTrialExpired = true;
-    } else if (accessStatus.includes("blocked") || accessStatus.includes("locked") || accessStatus.includes("denied")) {
-      finalBlocked = true;
-    }
-
-    if ((httpStatus === 402 || httpStatus === 403) && !message) {
-      message = `Faction access blocked. Payment goes to ${payment.required_player || PAYMENT_PLAYER}.`;
-    }
-
-    if (finalPaymentRequired && !message) {
-      message = `Faction payment required. Payment goes to ${payment.required_player || PAYMENT_PLAYER}.`;
-    } else if (finalBlocked && !message) {
-      message = reason || `Faction access locked.`;
-    }
-
-    return {
-      loggedIn: false,
-      blocked: finalBlocked,
-      paymentRequired: finalPaymentRequired,
-      trialActive: !!trialActive && !finalBlocked,
-      trialExpired: finalTrialExpired || finalPaymentRequired,
-      expiresAt: expiresAt || "",
-      daysLeft: Number.isFinite(computedDaysLeft) ? computedDaysLeft : null,
-      reason: String(reason || ""),
-      message: String(message || ""),
-      source: String(accessStatus || ""),
-      lastSeenAt: new Date().toISOString(),
-      factionId: d.faction_id || d?.faction?.id || d?.me?.faction_id || "",
-      factionName: d.faction_name || d?.faction?.name || d?.me?.faction_name || "",
-      isFactionLeader: !!d.is_faction_leader || !!factionAccess.is_faction_leader || !!d?.me?.is_faction_leader,
-      memberEnabled: !!memberAccess.enabled || !!factionAccess.member_enabled || !!memberAccess.allowed,
-      pricePerMember: Number(payment.price_per_enabled_member || payment.price_per_member || PRICE_PER_MEMBER) || PRICE_PER_MEMBER,
-      paymentPlayer: String(payment.required_player || PAYMENT_PLAYER),
-      isOwner: !!d.is_owner || !!d?.user?.is_owner || !!d?.me?.is_owner || !!d?.owner?.is_owner || !!factionAccess.is_owner,
-    };
-  }
-
-  function updateAccessFromPayload(payload, httpStatus, loggedInHint) {
-    const next = getAccessInfo(payload, httpStatus);
-    if (loggedInHint === true && !next.blocked) next.loggedIn = true;
-    if (loggedInHint === false) next.loggedIn = false;
-
-    if (next.blocked || next.paymentRequired || next.trialExpired) {
-      accessState = next;
-      clearBlockedCredentials();
-      saveAccessCache();
-      return next;
-    }
-
-    if (next.trialActive || next.expiresAt || next.daysLeft != null || next.factionId || next.isFactionLeader) {
-      accessState = {
-        ...accessState,
-        ...next,
-        loggedIn: loggedInHint === true ? true : accessState.loggedIn,
-        blocked: false,
-        paymentRequired: false,
-        trialExpired: false,
-      };
-      saveAccessCache();
-      return accessState;
-    }
-
-    if (loggedInHint === true) {
-      accessState = {
-        ...accessState,
-        loggedIn: true,
-        blocked: false,
-        paymentRequired: false,
-        trialExpired: false,
-        lastSeenAt: new Date().toISOString(),
-        isOwner: !!accessState.isOwner,
-      };
-      saveAccessCache();
-    }
-
-    return accessState;
-  }
-
-  function canUseProtectedFeatures() {
-    return !(accessState?.blocked || accessState?.paymentRequired || accessState?.trialExpired);
-  }
-
-  function ensureAllowedOrMessage() {
-    if (canUseProtectedFeatures()) return true;
-    setStatus(accessSummaryMessage() || `Faction access locked.`, true);
-    renderBody();
-    return false;
-  }
-
-  function gmXhr(method, path, body, extraHeaders) {
-    return new Promise((resolve) => {
-      const token = cleanInputValue(GM_getValue(K_SESSION, ""));
-      const url = `${BASE_URL}${path}`;
-      const headers = { "Accept": "application/json", ...(extraHeaders || {}) };
-      if (token) headers["X-Session-Token"] = token;
-      if (body != null) headers["Content-Type"] = "application/json";
-
-      GM_xmlhttpRequest({
-        method,
-        url,
-        headers,
-        data: body != null ? JSON.stringify(body) : undefined,
-        timeout: 30000,
-        onload: (res) => {
-          let json = null;
-          try { json = JSON.parse(res.responseText || "{}"); } catch {}
-          resolve({
-            ok: res.status >= 200 && res.status < 300 && (!json || json.ok !== false),
-            status: res.status,
-            data: json,
-            error: json?.error || json?.details || (res.status >= 400 ? `HTTP ${res.status}` : "Request failed"),
-          });
-        },
-        onerror: () => resolve({ ok: false, status: 0, data: null, error: "Network error." }),
-        ontimeout: () => resolve({ ok: false, status: 0, data: null, error: "Request timed out." }),
-      });
-    });
-  }
-
-  async function healthCheck() {
-    return gmXhr("GET", "/health");
-  }
-
-  async function login(showDebug = false) {
-    const apiKey = cleanInputValue(GM_getValue(K_API_KEY, ""));
-    if (!apiKey) return false;
-
-    if (showDebug) {
-      setStatus(`Trying login with saved API key...`);
-    }
-
-    const res = await gmXhr("POST", "/api/auth", { api_key: apiKey });
-    updateAccessFromPayload(res.data, res.status, false);
-
-    if (!res.ok) {
-      if (accessState?.blocked || accessState?.paymentRequired || accessState?.trialExpired) {
-        setStatus(accessSummaryMessage() || `Faction access blocked.`, true);
-        renderBody();
-        return false;
-      }
-      setStatus(res.error || "Login failed.", true);
-      return false;
-    }
-
-    const token = res.data?.token || res.data?.session_token || res.data?.session;
-    if (token) {
-      GM_setValue(K_SESSION, cleanInputValue(token));
-      updateAccessFromPayload(res.data, res.status, true);
-      return true;
-    }
-
-    if (accessState?.blocked || accessState?.paymentRequired || accessState?.trialExpired) {
-      setStatus(accessSummaryMessage() || `Faction access blocked.`, true);
-      renderBody();
-      return false;
-    }
-
-    setStatus("Login failed.", true);
-    return false;
-  }
-
-  async function req(method, path, body) {
-    if (!canUseProtectedFeatures() && path !== "/health" && path !== "/api/auth") {
-      return {
-        ok: false,
-        status: 403,
-        data: { ok: false, payment_required: true, message: accessSummaryMessage() || `Faction access blocked.` },
-        error: accessSummaryMessage() || `Faction access blocked.`,
-      };
-    }
-
-    let res = await gmXhr(method, path, body);
-    updateAccessFromPayload(res.data, res.status, !!cleanInputValue(GM_getValue(K_SESSION, "")));
-
-    if (accessState?.blocked || accessState?.paymentRequired || accessState?.trialExpired) {
-      return {
-        ok: false,
-        status: res.status || 403,
-        data: res.data,
-        error: accessSummaryMessage() || res.error || `Faction access blocked.`,
-      };
-    }
-
-    if (!res.ok && (res.status === 401 || res.status === 403)) {
-      const ok = await login(false);
-      if (ok) {
-        res = await gmXhr(method, path, body);
-        updateAccessFromPayload(res.data, res.status, true);
-      }
-    }
-
-    return res;
-  }
-        !!access.requires_payment ||
       !!access.paymentRequired;
 
     const blocked =
@@ -2101,117 +1639,162 @@
   }
 
   function renderAssignmentsTab() {
-    const rows = arr(state?.assignments);
-    const warId = state?.war?.war_id || state?.war?.id || "";
-    const membersOptions = arr(state?.members).map((x) => {
-      const id = x.user_id || x.id || "";
-      const name = x.name || `ID ${id}`;
-      return `<option value="${esc(String(id))}|${esc(name)}">${esc(name)}${id ? ` [${esc(id)}]` : ""}</option>`;
-    }).join("");
-
-    return `
-      ${renderAccessBanner()}
-      <div class="warhub-card">
-        <h3>Assign Target</h3>
-        ${warId ? `<div class="warhub-mini" style="margin-bottom:8px;">War ID: ${esc(warId)}</div>` : `<div class="warhub-mini" style="margin-bottom:8px;">Currently not in war.</div>`}
-        <div class="warhub-grid two">
-          <div>
-            <label class="warhub-label">Faction Member</label>
-            <select id="wh-assignee-pick" class="warhub-select">
-              <option value="">Pick member</option>
-              ${membersOptions}
-            </select>
+    const warId = String(state?.war?.war_id || state?.war?.id || "");
+    const managed = arr(state?.factionManagement?.members || factionMembersCache?.members || []).filter((m) => {
+      const uid = String(m.member_user_id || m.user_id || "");
+      return uid && !!m.enabled;
+    });
+    const rows = arr(state?.assignments || []).length ? `
+        <div class="warhub-card">
+          <div class="warhub-section-title">
+            <h3 style="margin:0;">Live Assignments</h3>
+            <span class="warhub-count">${fmtNum(arr(state.assignments).length)}</span>
           </div>
-          <div>
-            <label class="warhub-label">Target</label>
-            <input id="wh-assignment-target" class="warhub-input">
+          <div class="warhub-list">
+            ${arr(state.assignments).map((a) => {
+              const id = String(a.id || "");
+              const assigned = a.assigned_to_name || a.assignee || "Unassigned";
+              const targetName = a.target_name || a.target || a.target_id || "Unknown";
+              const attack = a.target_attack_url || (a.target_id ? `https://www.torn.com/loader.php?sid=attack&user2ID=${encodeURIComponent(String(a.target_id))}` : "");
+              return `
+                <div class="warhub-list-item">
+                  <div class="warhub-row">
+                    <div>
+                      <div class="warhub-name">${esc(targetName)}</div>
+                      <div class="warhub-meta">${esc([`Assigned: ${assigned}`, a.priority || "normal", a.note || ""].filter(Boolean).join(" • "))}</div>
+                    </div>
+                    <div class="warhub-actions">
+                      ${attack ? `<a class="warhub-btn small primary warhub-link" href="${esc(attack)}" target="_blank" rel="noopener noreferrer">Attack</a>` : ""}
+                      ${id ? `<button class="warhub-btn small warn" data-del-assignment-live="${esc(id)}">Delete</button>` : ""}
+                    </div>
+                  </div>
+                </div>
+              `;
+            }).join("")}
           </div>
         </div>
-        <div class="warhub-grid two" style="margin-top:8px;">
+      ` : `
+              <div class="warhub-card">
+          <h3>Live Assignments</h3>
+          <div class="warhub-empty">No assignments yet.</div>
+        </div>
+      `;
+
+    return `
+      <div class="warhub-card">
+        <h3>Assign Target</h3>
+        <div class="warhub-grid two">
+          <div>
+            <label class="warhub-label">War ID</label>
+            <input class="warhub-input" id="wh-assignment-war-id" value="${esc(warId)}" readonly>
+          </div>
+          <div>
+            <label class="warhub-label">Target ID</label>
+            <input class="warhub-input" id="wh-assignment-target-id" placeholder="Enemy target ID">
+          </div>
+          <div>
+            <label class="warhub-label">Target Name</label>
+            <input class="warhub-input" id="wh-assignment-target-name" placeholder="Optional target name">
+          </div>
+          <div>
+            <label class="warhub-label">Assign To</label>
+            <select class="warhub-select" id="wh-assignment-member">
+              <option value="">Select enabled member</option>
+              ${managed.map((m) => {
+                const uid = String(m.member_user_id || m.user_id || "");
+                const nm = String(m.member_name || m.name || uid);
+                return `<option value="${esc(uid)}" data-name="${esc(nm)}">${esc(nm)} [${esc(uid)}]</option>`;
+              }).join("")}
+            </select>
+          </div>
+        </div>
+        <div style="height:8px;"></div>
+        <div class="warhub-grid two">
           <div>
             <label class="warhub-label">Priority</label>
-            <select id="wh-assignment-priority" class="warhub-select">
+            <select class="warhub-select" id="wh-assignment-priority">
+              <option value="normal">Normal</option>
               <option value="high">High</option>
-              <option value="normal" selected>Normal</option>
               <option value="low">Low</option>
             </select>
           </div>
           <div>
             <label class="warhub-label">Note</label>
-            <input id="wh-assignment-note" class="warhub-input">
+            <input class="warhub-input" id="wh-assignment-note" placeholder="Optional note">
           </div>
         </div>
-        <div class="warhub-actions" style="margin-top:8px;"><button class="warhub-btn primary" id="wh-save-assignment">Save Assignment</button></div>
+        <div class="warhub-actions" style="margin-top:8px;">
+          <button class="warhub-btn primary" id="wh-save-assignment">Save Assignment</button>
+        </div>
       </div>
-
-      <div class="warhub-card">
-        <h3>Assignments</h3>
-        ${rows.length ? `<div class="warhub-section-scroll"><div class="warhub-list">${rows.map((x) => `
-          <div class="warhub-list-item">
-            <div class="warhub-row">
-              <div>
-                <div class="warhub-name">${esc(x.assignee || x.assigned_to_name || x.member || "Unknown")}</div>
-                <div class="warhub-meta">Target: ${esc(x.target || x.target_name || x.target_id || "—")} • ${esc(x.priority || "normal")} • ${esc(x.note || "")}</div>
-              </div>
-              <div class="warhub-actions">
-                ${x.target_attack_url ? `<a class="warhub-btn small primary warhub-link" href="${esc(x.target_attack_url)}" target="_blank" rel="noreferrer">Attack</a>` : ""}
-                ${x.id ? `<button class="warhub-btn small warn" data-del-assignment-live="${esc(String(x.id))}">Delete</button>` : ""}
-              </div>
-            </div>
-          </div>
-        `).join("")}</div></div>` : `<div class="warhub-empty">No assignments yet.</div>`}
-      </div>
+      ${rows}
     `;
   }
 
   function renderNotesTab() {
-    const serverNotes = arr(state?.notes);
-    const warId = state?.war?.war_id || state?.war?.id || "";
-
+    const localNotes = getNotes();
+    const shared = arr(state?.notes || []);
     return `
-      ${renderAccessBanner()}
       <div class="warhub-card">
-        <h3>War Notes</h3>
-        ${warId ? `<div class="warhub-mini" style="margin-bottom:8px;">War ID: ${esc(warId)}</div>` : `<div class="warhub-mini" style="margin-bottom:8px;">No active war id detected.</div>`}
-        <label class="warhub-label">Quick personal note</label>
-        <textarea id="wh-notes" class="warhub-textarea">${esc(getNotes())}</textarea>
+        <h3>Local Notes</h3>
+        <label class="warhub-label">Your personal notes</label>
+        <textarea class="warhub-textarea" id="wh-notes">${esc(localNotes)}</textarea>
         <div class="warhub-actions" style="margin-top:8px;">
-          <button class="warhub-btn" id="wh-save-notes">Save Local Note</button>
-          <button class="warhub-btn" id="wh-clear-notes">Clear Local</button>
+          <button class="warhub-btn primary" id="wh-save-notes">Save Local</button>
+          <button class="warhub-btn warn" id="wh-clear-notes">Clear Local</button>
         </div>
-
-        <div class="warhub-divider"></div>
-
-        <div class="warhub-grid two">
-          <div><label class="warhub-label">Target ID</label><input id="wh-note-target-id" class="warhub-input"></div>
-          <div><label class="warhub-label">Server War Note</label><input id="wh-note-text" class="warhub-input"></div>
-        </div>
-
-        <div class="warhub-actions" style="margin-top:8px;"><button class="warhub-btn primary" id="wh-add-server-note">Save Shared Note</button></div>
       </div>
 
       <div class="warhub-card">
-        <h3>Shared Notes</h3>
-        ${serverNotes.length ? `<div class="warhub-section-scroll"><div class="warhub-list">${serverNotes.map((x) => noteRow(x)).join("")}</div></div>` : `<div class="warhub-empty">No shared war notes yet.</div>`}
+        <h3>Shared War Note</h3>
+        <div class="warhub-grid two">
+          <div>
+            <label class="warhub-label">War ID</label>
+            <input class="warhub-input" id="wh-note-war-id" value="${esc(String(state?.war?.war_id || state?.war?.id || ""))}" readonly>
+          </div>
+          <div>
+            <label class="warhub-label">Target ID</label>
+            <input class="warhub-input" id="wh-note-target-id" placeholder="Enemy target ID">
+          </div>
+        </div>
+        <div style="height:8px;"></div>
+        <label class="warhub-label">Note</label>
+        <textarea class="warhub-textarea" id="wh-note-text" placeholder="Shared note for this target"></textarea>
+        <div class="warhub-actions" style="margin-top:8px;">
+          <button class="warhub-btn primary" id="wh-add-server-note">Save Shared Note</button>
+        </div>
+      </div>
+
+      <div class="warhub-card">
+        <div class="warhub-section-title">
+          <h3>Shared Notes</h3>
+          <span class="warhub-count">${fmtNum(shared.length)}</span>
+        </div>
+        <div class="warhub-list">
+          ${shared.length ? shared.map((x) => noteRow(x)).join("") : `<div class="warhub-empty">No shared notes yet.</div>`}
+        </div>
       </div>
     `;
   }
 
   function renderAnalyticsTab() {
-    const a = analyticsCache || state?.analytics || {};
-    const snaps = arr(a.snapshots);
-
+    const snaps = arr(state?.snapshots || []);
     return `
-      ${renderAccessBanner()}
       <div class="warhub-card">
         <h3>Analytics</h3>
-        <div class="warhub-grid two">
-          <div class="warhub-metric"><div class="k">Lead</div><div class="v">${fmtNum(a.lead || 0)}</div></div>
-          <div class="warhub-metric"><div class="k">Target Score</div><div class="v">${fmtNum(a.target_score || state?.war?.target_score || 0)}</div></div>
-          <div class="warhub-metric"><div class="k">Pace / Hour Us</div><div class="v">${esc(String(a.pace_per_hour_us || 0))}</div></div>
-          <div class="warhub-metric"><div class="k">Pace / Hour Them</div><div class="v">${esc(String(a.pace_per_hour_them || 0))}</div></div>
-          <div class="warhub-metric"><div class="k">ETA</div><div class="v">${esc(a.eta_to_target_us_text || "—")}</div></div>
-          <div class="warhub-metric"><div class="k">Snapshots</div><div class="v">${fmtNum(snaps.length)}</div></div>
+        <div class="warhub-grid three">
+          <div class="warhub-metric">
+            <div class="k">Snapshots</div>
+            <div class="v">${fmtNum(snaps.length)}</div>
+          </div>
+          <div class="warhub-metric">
+            <div class="k">Members</div>
+            <div class="v">${fmtNum(arr(state?.members || []).length)}</div>
+          </div>
+          <div class="warhub-metric">
+            <div class="k">Enemies</div>
+            <div class="v">${fmtNum(arr(state?.enemies || []).length)}</div>
+          </div>
         </div>
       </div>
     `;
@@ -2220,22 +1803,268 @@
   function renderNotificationsTab() {
     const items = mergedNotifications();
     return `
-      ${renderAccessBanner()}
       <div class="warhub-card">
-        <h3>Alerts</h3>
-        ${items.length ? `<div class="warhub-section-scroll"><div class="warhub-list">${items.map((x) => `
-          <div class="warhub-list-item">
-            <div class="warhub-name">${esc(x.kind || x.title || "Alert")}</div>
-            <div class="warhub-meta">${esc(x.text || x.message || x.note || "")}</div>
-            <div class="warhub-mini">${esc(fmtTs(x.created_at || x.time || x.ts || ""))}</div>
-          </div>
-        `).join("")}</div></div>` : `<div class="warhub-empty">No alerts yet.</div>`}
+        <div class="warhub-section-title">
+          <h3>Notifications</h3>
+          <span class="warhub-count">${fmtNum(items.length)}</span>
+        </div>
+        <div class="warhub-list">
+          ${items.length ? items.map((x) => `
+            <div class="warhub-list-item">
+              <div class="warhub-name">${esc(x.title || x.kind || "Notification")}</div>
+              <div class="warhub-meta">${esc(x.body || x.text || x.message || "")}</div>
+              <div class="warhub-mini">${esc(fmtTs(x.created_at || x.ts || ""))}</div>
+            </div>
+          `).join("") : `<div class="warhub-empty">No notifications.</div>`}
+        </div>
         <div class="warhub-actions" style="margin-top:8px;">
-          <button class="warhub-btn" id="wh-mark-alerts-seen">Mark Server Alerts Seen</button>
-          <button class="warhub-btn" id="wh-clear-alerts">Clear Local Alerts</button>
+          <button class="warhub-btn" id="wh-mark-alerts-seen">Refresh / Mark Seen</button>
+          <button class="warhub-btn warn" id="wh-clear-alerts">Clear Local</button>
         </div>
       </div>
     `;
+  }
+
+  function renderFactionTab() {
+    const license = state?.factionLicense || state?.license || {};
+    const members = arr(factionMembersCache?.members || []);
+    const status = license.status || (accessState?.paymentRequired ? "payment_required" : accessState?.trialActive ? "trial" : "active");
+
+    return `
+      <div class="warhub-card">
+        <h3>Faction License</h3>
+        <div class="warhub-grid two">
+          <div class="warhub-metric">
+            <div class="k">Status</div>
+            <div class="v">${esc(status)}</div>
+          </div>
+          <div class="warhub-metric">
+            <div class="k">Faction</div>
+            <div class="v">${esc(state?.user?.faction_name || accessState?.factionName || "—")}</div>
+          </div>
+          <div class="warhub-metric">
+            <div class="k">Payment Player</div>
+            <div class="v">${esc(license.payment_player || accessState?.paymentPlayer || PAYMENT_PLAYER)}</div>
+          </div>
+          <div class="warhub-metric">
+            <div class="k">Price / Enabled Member</div>
+            <div class="v">${fmtMoney(license.faction_member_price || accessState?.pricePerMember || PRICE_PER_MEMBER)}</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="warhub-card">
+        <h3>Manage Member Access</h3>
+        ${accessState?.isFactionLeader ? `
+          <div class="warhub-grid two">
+            <div>
+              <label class="warhub-label">Member User ID</label>
+              <input class="warhub-input" id="wh-fm-userid" placeholder="User ID">
+            </div>
+            <div>
+              <label class="warhub-label">Member Name</label>
+              <input class="warhub-input" id="wh-fm-name" placeholder="Member name">
+            </div>
+            <div>
+              <label class="warhub-label">Member API Key</label>
+              <input class="warhub-input" id="wh-fm-key" placeholder="Member API key">
+            </div>
+            <div>
+              <label class="warhub-label">Position</label>
+              <input class="warhub-input" id="wh-fm-position" placeholder="Position">
+            </div>
+          </div>
+          <div class="warhub-actions" style="margin-top:8px;">
+            <button class="warhub-btn primary" id="wh-fm-save">Save Member Access</button>
+          </div>
+        ` : `<div class="warhub-empty">Leader access required.</div>`}
+      </div>
+
+      <div class="warhub-card">
+        <div class="warhub-section-title">
+          <h3>Faction Members</h3>
+          <span class="warhub-count">${fmtNum(members.length)}</span>
+        </div>
+        <div class="warhub-list">
+          ${members.length ? members.map((x) => {
+            const memberId = x.member_user_id || x.user_id || "";
+            const memberName = x.member_name || x.name || `ID ${memberId}`;
+            const enabled = !!x.enabled;
+            return `
+              <div class="warhub-list-item">
+                <div class="warhub-row">
+                  <div>
+                    <div class="warhub-name">${esc(memberName)}</div>
+                    <div class="warhub-meta">${esc([`ID ${memberId}`, x.position || "", x.member_api_key_masked || ""].filter(Boolean).join(" • "))}</div>
+                  </div>
+                  <div class="warhub-actions">
+                    <span class="warhub-pill ${enabled ? "enabled" : "disabled"}">${enabled ? "Enabled" : "Disabled"}</span>
+                    ${accessState?.isFactionLeader ? `<button class="warhub-btn small ${enabled ? "" : "good"}" data-toggle-member="${esc(String(memberId))}" data-enabled="${enabled ? "0" : "1"}">${enabled ? "Disable" : "Enable"}</button>` : ``}
+                    ${accessState?.isFactionLeader ? `<button class="warhub-btn small warn" data-del-member="${esc(String(memberId))}">Delete</button>` : ``}
+                  </div>
+                </div>
+              </div>
+            `;
+          }).join("") : `<div class="warhub-empty">No member access rows yet.</div>`}
+        </div>
+      </div>
+    `;
+  }
+
+  function renderAdminTab() {
+    if (!isOwnerSession()) {
+      return `
+        <div class="warhub-card">
+          <h3>Admin</h3>
+          <div class="warhub-empty">Owner access required.</div>
+        </div>
+      `;
+    }
+
+    const dash = state?.adminDashboard || {};
+    const items = arr(dash.items || dash.factions || []);
+    const summary = dash.summary || {};
+
+    return `
+      <div class="warhub-card">
+        <h3>Owner Dashboard</h3>
+        <div class="warhub-grid two">
+          <div class="warhub-metric"><div class="k">Factions</div><div class="v">${fmtNum(summary.faction_licenses_total || items.length || 0)}</div></div>
+          <div class="warhub-metric"><div class="k">Trials</div><div class="v">${fmtNum(summary.trials_total || 0)}</div></div>
+          <div class="warhub-metric"><div class="k">Paid</div><div class="v">${fmtNum(summary.paid_total || 0)}</div></div>
+          <div class="warhub-metric"><div class="k">Payment Required</div><div class="v">${fmtNum(summary.payment_required_total || 0)}</div></div>
+        </div>
+      </div>
+
+      <div class="warhub-card">
+        <h3>Faction Licenses</h3>
+        <div class="warhub-list">
+          ${items.length ? items.map((x) => {
+            const factionId = x.faction_id || x.id || "";
+            const factionName = x.faction_name || x.name || `Faction ${factionId}`;
+            return `
+              <div class="warhub-list-item">
+                <div class="warhub-row">
+                  <div>
+                    <div class="warhub-name">${esc(factionName)}</div>
+                    <div class="warhub-meta">${esc([`ID ${factionId}`, x.status || "", x.leader_name || "", x.expires_at ? fmtTs(x.expires_at) : ""].filter(Boolean).join(" • "))}</div>
+                  </div>
+                  <div class="warhub-actions">
+                    <button class="warhub-btn small" data-admin-history="${esc(String(factionId))}">History</button>
+                    <button class="warhub-btn small good" data-admin-renew="${esc(String(factionId))}">Renew</button>
+                    <button class="warhub-btn small warn" data-admin-expire="${esc(String(factionId))}">Expire</button>
+                  </div>
+                </div>
+              </div>
+            `;
+          }).join("") : `<div class="warhub-empty">No faction licenses found.</div>`}
+        </div>
+      </div>
+    `;
+  }
+
+  function renderSettingsTab() {
+    const apiKey = cleanInputValue(GM_getValue(K_API_KEY, ""));
+    const refreshMs = Number(GM_getValue(K_REFRESH, 30000)) || 30000;
+    return `
+      <div class="warhub-card">
+        <h3>Keys</h3>
+        <label class="warhub-label">Your Torn API Key</label>
+        <input class="warhub-input" id="wh-api-key" value="${esc(apiKey)}" placeholder="Paste your API key">
+        <div class="warhub-actions" style="margin-top:8px;">
+          <button class="warhub-btn primary" id="wh-save-keys">Save Keys</button>
+          <button class="warhub-btn" id="wh-login-btn">Login</button>
+          <button class="warhub-btn warn" id="wh-logout-btn">Logout</button>
+        </div>
+      </div>
+
+      <div class="warhub-card">
+        <h3>Polling</h3>
+        <label class="warhub-label">Refresh every (ms)</label>
+        <input class="warhub-input" id="wh-refresh-ms" value="${esc(String(refreshMs))}">
+        <div class="warhub-actions" style="margin-top:8px;">
+          <button class="warhub-btn" id="wh-save-refresh">Save Refresh</button>
+          <button class="warhub-btn" id="wh-reset-positions">Reset Positions</button>
+        </div>
+      </div>
+
+      <div class="warhub-card">
+        <h3>Access Info</h3>
+        <div class="warhub-mini" style="line-height:1.6;">
+          Payment player: <strong>${esc(accessState?.paymentPlayer || PAYMENT_PLAYER)}</strong><br>
+          Price per enabled member: <strong>${esc(fmtMoney(accessState?.pricePerMember || PRICE_PER_MEMBER))}</strong><br>
+          ${accessSummaryMessage() ? `Status: <strong>${esc(accessSummaryMessage())}</strong>` : `Status: <strong>Ready</strong>`}
+        </div>
+      </div>
+    `;
+  }
+
+  function renderTabContent() {
+    switch (currentTab) {
+      case "instructions": return renderInstructionsTab();
+      case "war": return `${renderAccessBanner()}${renderWarTab()}`;
+      case "terms": return renderTermsTab();
+      case "members": return `${renderAccessBanner()}${renderMembersTab()}`;
+      case "enemies": return `${renderAccessBanner()}${renderEnemiesTab()}`;
+      case "hospital": return `${renderAccessBanner()}${renderHospitalTab()}`;
+      case "chain": return `${renderAccessBanner()}${renderChainTab()}`;
+      case "meddeals": return `${renderAccessBanner()}${renderMedDealsTab()}`;
+      case "targets": return `${renderAccessBanner()}${renderTargetsTab()}`;
+      case "assignments": return `${renderAccessBanner()}${renderAssignmentsTab()}`;
+      case "notes": return `${renderAccessBanner()}${renderNotesTab()}`;
+      case "analytics": return `${renderAccessBanner()}${renderAnalyticsTab()}`;
+      case "notifications": return `${renderAccessBanner()}${renderNotificationsTab()}`;
+      case "faction": return `${renderAccessBanner()}${renderFactionTab()}`;
+      case "admin": return renderAdminTab();
+      case "settings": return renderSettingsTab();
+      default: return `${renderAccessBanner()}${renderWarTab()}`;
+    }
+  }
+
+  function renderAccessBanner() {
+    const msg = accessSummaryMessage();
+    if (!msg) return "";
+    const cls = accessState?.paymentRequired || accessState?.blocked || accessState?.trialExpired
+      ? "payment"
+      : accessState?.trialActive
+        ? "trial"
+        : "good";
+    return `
+      <div class="warhub-banner ${cls}">
+        <div><strong>Faction Access</strong></div>
+        <div class="warhub-mini" style="margin-top:6px;">${esc(msg)}</div>
+      </div>
+    `;
+  }
+
+  function noteRow(x) {
+    const id = String(x.id || x.note_id || "");
+    return `
+      <div class="warhub-list-item">
+        <div class="warhub-row">
+          <div>
+            <div class="warhub-name">${esc(x.target_name || `Target ${x.target_id || "—"}`)}</div>
+            <div class="warhub-meta">${esc(x.note || "")}</div>
+            <div class="warhub-mini">${esc([x.created_by_name || x.updated_by_name || "", fmtTs(x.created_at || x.updated_at || "")].filter(Boolean).join(" • "))}</div>
+          </div>
+          <div class="warhub-actions">
+            ${id ? `<button class="warhub-btn small warn" data-del-note-live="${esc(id)}">Delete</button>` : ``}
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  function tabLocked(key) {
+    if (key === "admin") return !isOwnerSession();
+    if (key === "terms" || key === "faction") return !accessState?.isFactionLeader;
+    return false;
+  }
+
+  function tabBtn(key, label) {
+    const active = currentTab === key ? "active" : "";
+    const locked = tabLocked(key) ? "locked" : "";
+    return `<button class="warhub-tab ${active} ${locked}" data-tab="${esc(key)}">${esc(label)}</button>`;
   }
 
   function renderBody() {
@@ -2245,12 +2074,14 @@
         <div class="warhub-toprow">
           <div>
             <div class="warhub-title">War Hub</div>
-            <div class="warhub-sub">made by Fries91</div>
+            <div class="warhub-sub">Fries91 • Torn overlay</div>
           </div>
-          <button type="button" class="warhub-close" id="warhub-close-btn">Close</button>
+          <button class="warhub-close" id="warhub-close-btn" type="button">Close</button>
         </div>
       </div>
-      <div class="warhub-tabs" id="warhub-tabs-bar">${TAB_ORDER.map(([key, label]) => tabBtn(key, label)).join("")}</div>
+      <div class="warhub-tabs">
+        ${TAB_ORDER.map(([key, label]) => tabBtn(key, label)).join("")}
+      </div>
       <div class="warhub-body">
         <div id="warhub-status" class="warhub-status"></div>
         ${renderTabContent()}
@@ -2263,8 +2094,8 @@
 
   function clampElementPosition(el, left, top) {
     const rect = el.getBoundingClientRect();
-    const w = rect.width || parseInt(getComputedStyle(el).width, 10) || 300;
-    const h = rect.height || parseInt(getComputedStyle(el).height, 10) || 100;
+    const w = rect.width || parseInt(getComputedStyle(el).width, 10) || 320;
+    const h = rect.height || parseInt(getComputedStyle(el).height, 10) || 320;
     const maxLeft = Math.max(4, window.innerWidth - w - 4);
     const maxTop = Math.max(4, window.innerHeight - h - 4);
     const clampedLeft = Math.min(Math.max(4, left), maxLeft);
@@ -2511,254 +2342,6 @@
     remountTimer = setInterval(keepMounted, 2000);
   }
 
-  function tabLocked(key) {
-    if (key === "admin") return !isOwnerSession();
-    if (["terms", "faction"].includes(key)) return !accessState?.isFactionLeader;
-    return false;
-  }
-
-  function tabBtn(key, label) {
-    const locked = tabLocked(key);
-    return `
-      <button type="button" class="warhub-tab ${currentTab === key ? "active" : ""} ${locked ? "locked" : ""}" data-tab="${esc(key)}">
-        ${esc(label)}${locked ? ` 🔒` : ``}
-      </button>
-    `;
-  }
-
-  function renderAccessBanner() {
-    const msg = accessSummaryMessage();
-    if (!msg) return "";
-    const klass =
-      accessState?.paymentRequired || accessState?.blocked || accessState?.trialExpired
-        ? "payment"
-        : accessState?.trialActive
-          ? "trial"
-          : "good";
-    return `
-      <div class="warhub-banner ${klass}">
-        <div><strong>Faction Access</strong></div>
-        <div class="warhub-mini" style="margin-top:6px;">${esc(msg)}</div>
-      </div>
-    `;
-  }
-
-  function noteRow(x) {
-    const id = x.id || x.note_id || "";
-    return `
-      <div class="warhub-list-item">
-        <div class="warhub-row">
-          <div>
-            <div class="warhub-name">Target ${esc(x.target_id || "—")}</div>
-            <div class="warhub-meta">${esc(x.note || x.text || "")}</div>
-            <div class="warhub-mini">${esc(x.created_by_name || x.updated_by_name || "Unknown")} • ${esc(fmtTs(x.created_at || x.updated_at || ""))}</div>
-          </div>
-          <div class="warhub-actions">
-            ${id ? `<button class="warhub-btn small warn" data-del-note-live="${esc(String(id))}">Delete</button>` : ``}
-          </div>
-        </div>
-      </div>
-    `;
-  }
-
-  function renderFactionTab() {
-    const lic = state?.factionLicense || state?.license || {};
-    const members = arr(factionMembersCache?.members || state?.factionManagement?.members || state?.factionManagement?.items || []);
-    const isLeader = !!accessState?.isFactionLeader;
-
-    return `
-      ${renderAccessBanner()}
-
-      <div class="warhub-card">
-        <h3>Faction License</h3>
-        <div class="warhub-grid two">
-          <div class="warhub-metric">
-            <div class="k">Status</div>
-            <div class="v">${esc(lic.status || (accessState?.trialActive ? "trial" : accessState?.paymentRequired ? "payment required" : "active"))}</div>
-          </div>
-          <div class="warhub-metric">
-            <div class="k">Faction</div>
-            <div class="v">${esc(state?.user?.faction_name || accessState?.factionName || "—")}</div>
-          </div>
-          <div class="warhub-metric">
-            <div class="k">Payment Player</div>
-            <div class="v">${esc(lic.payment_player || accessState?.paymentPlayer || PAYMENT_PLAYER)}</div>
-          </div>
-          <div class="warhub-metric">
-            <div class="k">Price / Enabled Member</div>
-            <div class="v">${fmtMoney(lic.faction_member_price || accessState?.pricePerMember || PRICE_PER_MEMBER)}</div>
-          </div>
-        </div>
-        ${lic.expires_at || accessState?.expiresAt ? `
-          <div class="warhub-payment-line">
-            Expires: ${esc(fmtTs(lic.expires_at || accessState?.expiresAt))}
-          </div>
-        ` : ``}
-      </div>
-
-      <div class="warhub-card">
-        <div class="warhub-section-title">
-          <h3>Member Access</h3>
-          ${isLeader ? `<span class="warhub-pill leader">Leader Controls</span>` : `<span class="warhub-pill disabled">View Only</span>`}
-        </div>
-
-        ${isLeader ? `
-          <div class="warhub-grid two">
-            <div>
-              <label class="warhub-label">Member User ID</label>
-              <input class="warhub-input" id="wh-fm-userid" placeholder="User ID">
-            </div>
-            <div>
-              <label class="warhub-label">Member Name</label>
-              <input class="warhub-input" id="wh-fm-name" placeholder="Member name">
-            </div>
-            <div>
-              <label class="warhub-label">Member API Key</label>
-              <input class="warhub-input" id="wh-fm-key" placeholder="Member API key">
-            </div>
-            <div>
-              <label class="warhub-label">Position</label>
-              <input class="warhub-input" id="wh-fm-position" placeholder="Member / Co-leader / etc">
-            </div>
-          </div>
-          <div class="warhub-actions" style="margin-top:8px;">
-            <button class="warhub-btn primary" id="wh-fm-save">Save / Update Member Access</button>
-          </div>
-          <div class="warhub-divider"></div>
-        ` : ``}
-
-        ${members.length ? `<div class="warhub-section-scroll"><div class="warhub-list">${members.map((x) => {
-          const memberId = x.member_user_id || x.user_id || "";
-          const memberName = x.member_name || x.name || `ID ${memberId}`;
-          const enabled = !!x.enabled;
-          return `
-            <div class="warhub-list-item">
-              <div class="warhub-row">
-                <div>
-                  <div class="warhub-name">${esc(memberName)}</div>
-                  <div class="warhub-meta">${esc([`ID ${memberId}`, x.position || "", x.member_api_key_masked || ""].filter(Boolean).join(" • "))}</div>
-                </div>
-                <div class="warhub-actions">
-                  <span class="warhub-pill ${enabled ? "enabled" : "disabled"}">${enabled ? "Enabled" : "Disabled"}</span>
-                  ${isLeader ? `<button class="warhub-btn small ${enabled ? "" : "good"}" data-toggle-member="${esc(String(memberId))}" data-enabled="${enabled ? "0" : "1"}">${enabled ? "Disable" : "Enable"}</button>` : ``}
-                  ${isLeader ? `<button class="warhub-btn small warn" data-del-member="${esc(String(memberId))}">Delete</button>` : ``}
-                </div>
-              </div>
-            </div>
-          `;
-        }).join("")}</div></div>` : `<div class="warhub-empty">No faction member access rows yet.</div>`}
-      </div>
-    `;
-  }
-
-  function renderAdminTab() {
-    if (!isOwnerSession()) {
-      return `
-        <div class="warhub-card">
-          <h3>Admin</h3>
-          <div class="warhub-empty">Owner access required.</div>
-        </div>
-      `;
-    }
-
-    const dash = state?.adminDashboard || {};
-    const items = arr(dash.items || dash.factions || []);
-    const summary = dash.summary || {};
-
-    return `
-      <div class="warhub-card">
-        <h3>Owner Dashboard</h3>
-        <div class="warhub-grid two">
-          <div class="warhub-metric"><div class="k">Factions</div><div class="v">${fmtNum(summary.faction_licenses_total || items.length || 0)}</div></div>
-          <div class="warhub-metric"><div class="k">Trials</div><div class="v">${fmtNum(summary.trials_total || 0)}</div></div>
-          <div class="warhub-metric"><div class="k">Paid</div><div class="v">${fmtNum(summary.paid_total || 0)}</div></div>
-          <div class="warhub-metric"><div class="k">Payment Required</div><div class="v">${fmtNum(summary.payment_required_total || 0)}</div></div>
-        </div>
-      </div>
-
-      <div class="warhub-card">
-        <h3>Faction Licenses</h3>
-        ${items.length ? `<div class="warhub-section-scroll"><div class="warhub-list">${items.map((x) => {
-          const factionId = x.faction_id || x.id || "";
-          const factionName = x.faction_name || x.name || `Faction ${factionId}`;
-          return `
-            <div class="warhub-list-item">
-              <div class="warhub-row">
-                <div>
-                  <div class="warhub-name">${esc(factionName)}</div>
-                  <div class="warhub-meta">${esc([`ID ${factionId}`, x.status || "", x.leader_name || "", x.expires_at ? fmtTs(x.expires_at) : ""].filter(Boolean).join(" • "))}</div>
-                </div>
-                <div class="warhub-actions">
-                  <button class="warhub-btn small" data-admin-history="${esc(String(factionId))}">History</button>
-                  <button class="warhub-btn small good" data-admin-renew="${esc(String(factionId))}">Renew</button>
-                  <button class="warhub-btn small warn" data-admin-expire="${esc(String(factionId))}">Expire</button>
-                </div>
-              </div>
-            </div>
-          `;
-        }).join("")}</div></div>` : `<div class="warhub-empty">No faction license rows found.</div>`}
-      </div>
-    `;
-  }
-
-  function renderSettingsTab() {
-    const apiKey = cleanInputValue(GM_getValue(K_API_KEY, ""));
-    const refreshMs = Number(GM_getValue(K_REFRESH, 30000)) || 30000;
-    return `
-      <div class="warhub-card">
-        <h3>Keys</h3>
-        <label class="warhub-label">Your Torn API Key</label>
-        <input class="warhub-input" id="wh-api-key" value="${esc(apiKey)}" placeholder="Paste your API key">
-        <div class="warhub-actions" style="margin-top:8px;">
-          <button class="warhub-btn primary" id="wh-save-keys">Save Keys</button>
-          <button class="warhub-btn" id="wh-login-btn">Login</button>
-          <button class="warhub-btn warn" id="wh-logout-btn">Logout</button>
-        </div>
-      </div>
-
-      <div class="warhub-card">
-        <h3>Polling</h3>
-        <label class="warhub-label">Refresh every (ms)</label>
-        <input class="warhub-input" id="wh-refresh-ms" value="${esc(String(refreshMs))}">
-        <div class="warhub-actions" style="margin-top:8px;">
-          <button class="warhub-btn" id="wh-save-refresh">Save Refresh</button>
-          <button class="warhub-btn" id="wh-reset-positions">Reset Positions</button>
-        </div>
-      </div>
-
-      <div class="warhub-card">
-        <h3>Access Info</h3>
-        <div class="warhub-mini" style="line-height:1.6;">
-          Payment player: <strong>${esc(accessState?.paymentPlayer || PAYMENT_PLAYER)}</strong><br>
-          Price per enabled member: <strong>${esc(fmtMoney(accessState?.pricePerMember || PRICE_PER_MEMBER))}</strong><br>
-          ${accessSummaryMessage() ? `Status: <strong>${esc(accessSummaryMessage())}</strong>` : `Status: <strong>Ready</strong>`}
-        </div>
-      </div>
-    `;
-  }
-
-  function renderTabContent() {
-    switch (currentTab) {
-      case "instructions": return renderInstructionsTab();
-      case "war": return `${renderAccessBanner()}${renderWarTab()}`;
-      case "terms": return renderTermsTab();
-      case "members": return `${renderAccessBanner()}${renderMembersTab()}`;
-      case "enemies": return `${renderAccessBanner()}${renderEnemiesTab()}`;
-      case "hospital": return `${renderAccessBanner()}${renderHospitalTab()}`;
-      case "chain": return `${renderAccessBanner()}${renderChainTab()}`;
-      case "meddeals": return `${renderAccessBanner()}${renderMedDealsTab()}`;
-      case "targets": return `${renderAccessBanner()}${renderTargetsTab()}`;
-      case "assignments": return renderAssignmentsTab();
-      case "notes": return renderNotesTab();
-      case "analytics": return renderAnalyticsTab();
-      case "notifications": return renderNotificationsTab();
-      case "faction": return renderFactionTab();
-      case "admin": return renderAdminTab();
-      case "settings": return renderSettingsTab();
-      default: return `${renderAccessBanner()}${renderWarTab()}`;
-    }
-  }
-
   async function loadAdminDashboard() {
     if (!isOwnerSession()) return null;
     const res = await adminReq("GET", "/api/admin/faction-licenses");
@@ -2876,36 +2459,19 @@
 
     overlay?.querySelector("#wh-save-assignment")?.addEventListener("click", async () => {
       const war_id = cleanInputValue(state?.war?.war_id || state?.war?.id || "");
-      const target_id = cleanInputValue(overlay.querySelector("#wh-assignment-target")?.value || "");
-      const assigneeRaw = cleanInputValue(overlay.querySelector("#wh-assignee-pick")?.value || "");
+      const target_id = cleanInputValue(overlay.querySelector("#wh-assignment-target-id")?.value || "");
+      const target_name = cleanInputValue(overlay.querySelector("#wh-assignment-target-name")?.value || "");
+      const sel = overlay.querySelector("#wh-assignment-member");
+      const opt = sel?.selectedOptions?.[0];
+      const assigned_to_user_id = cleanInputValue(opt?.value || "");
+      const assigned_to_name = cleanInputValue(opt?.dataset?.name || "");
       const priority = cleanInputValue(overlay.querySelector("#wh-assignment-priority")?.value || "normal");
       const note = cleanInputValue(overlay.querySelector("#wh-assignment-note")?.value || "");
 
-      if (!war_id) {
-        setStatus("No active war detected.", true);
+      if (!war_id || !target_id) {
+        setStatus("War ID and target ID are required.", true);
         return;
       }
-      if (!target_id) {
-        setStatus("Target is required.", true);
-        return;
-      }
-
-      let assigned_to_user_id = "";
-      let assigned_to_name = "";
-      if (assigneeRaw.includes("|")) {
-        const bits = assigneeRaw.split("|");
-        assigned_to_user_id = cleanInputValue(bits[0] || "");
-        assigned_to_name = cleanInputValue(bits.slice(1).join("|") || "");
-      }
-
-      const targetMatch = arr(state?.targets || []).find((x) => String(x.target_id || x.user_id || "") === String(target_id));
-      const enemyMatch = arr(state?.enemies || []).find((x) => String(x.user_id || x.id || "") === String(target_id));
-      const target_name = cleanInputValue(
-        targetMatch?.target_name ||
-        targetMatch?.name ||
-        enemyMatch?.name ||
-        ""
-      );
 
       const res = await doAction("POST", "/api/war/assignments", {
         war_id,
@@ -2932,13 +2498,13 @@
     overlay?.querySelector("#wh-save-notes")?.addEventListener("click", () => {
       const txt = overlay.querySelector("#wh-notes")?.value || "";
       setNotes(txt);
-      setStatus("Local note saved.");
+      setStatus("Local notes saved.");
     });
 
     overlay?.querySelector("#wh-clear-notes")?.addEventListener("click", () => {
       setNotes("");
       renderBody();
-      setStatus("Local note cleared.");
+      setStatus("Local notes cleared.");
     });
 
     overlay?.querySelector("#wh-add-server-note")?.addEventListener("click", async () => {
@@ -2946,12 +2512,8 @@
       const target_id = cleanInputValue(overlay.querySelector("#wh-note-target-id")?.value || "");
       const note = cleanInputValue(overlay.querySelector("#wh-note-text")?.value || "");
 
-      if (!war_id) {
-        setStatus("No active war detected.", true);
-        return;
-      }
-      if (!target_id || !note) {
-        setStatus("Target ID and note are required.", true);
+      if (!war_id || !target_id || !note) {
+        setStatus("War ID, target ID and note are required.", true);
         return;
       }
 
@@ -2992,10 +2554,10 @@
     overlay?.querySelector("#wh-mark-alerts-seen")?.addEventListener("click", async () => {
       const res = await req("GET", "/api/notifications");
       if (!res.ok) {
-        setStatus(res.error || "Could not mark alerts seen.", true);
+        setStatus(res.error || "Could not refresh notifications.", true);
         return;
       }
-      setStatus("Server alerts refreshed.");
+      setStatus("Notifications refreshed.");
       await loadState(true);
       renderBody();
     });
@@ -3004,7 +2566,7 @@
       setLocalNotifications([]);
       updateBadge();
       renderBody();
-      setStatus("Local alerts cleared.");
+      setStatus("Local notifications cleared.");
     });
 
     overlay?.querySelector("#wh-fm-save")?.addEventListener("click", async () => {
