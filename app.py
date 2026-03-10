@@ -680,10 +680,10 @@ def api_state():
 
     faction_info = faction_basic(api_key) if api_key else {"ok": False, "members": []}
     war_info = ranked_war_summary(
-        api_key,
-        my_faction_id=faction_id,
-        my_faction_name=faction_name,
-    ) if api_key else {"ok": True, "active": False}
+    api_key,
+    my_faction_id=faction_id,
+    my_faction_name=faction_name,
+) if api_key else {"ok": True, "active": False}
 
     members = []
     for m in (faction_info.get("members") or []):
