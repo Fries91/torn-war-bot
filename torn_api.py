@@ -233,15 +233,40 @@ def _normalize_member(uid: Any, member: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def me_basic(api_key: str) -> Dict[str, Any]:
+    api_key = str(api_key or "").strip()
+    if not api_key:
+        return {
+            "ok": False,
+            "error": "Missing API key.",
+            "user_id": "",
+            "name": "",
+            "level": "",
+            "faction_id": "",
+            "faction_name": "",
+        }
+
+    # Use the plain /user endpoint form first because it is the most reliable
     res = _safe_get(
-        f"{API_BASE}/user/",
+        f"{API_BASE}/user",
         {
             "selections": "profile",
             "key": api_key,
         },
-        cache_seconds=CACHE_TTL_USER_PROFILE,
-        cache_prefix="user_profile",
+        cache_seconds=0,
+        cache_prefix="",
     )
+
+    # Fallback with trailing slash just in case
+    if not res.get("ok"):
+        res = _safe_get(
+            f"{API_BASE}/user/",
+            {
+                "selections": "profile",
+                "key": api_key,
+            },
+            cache_seconds=0,
+            cache_prefix="",
+        )
 
     if not res.get("ok"):
         return {
@@ -257,13 +282,25 @@ def me_basic(api_key: str) -> Dict[str, Any]:
     data = res.get("data") or {}
     faction = data.get("faction") or {}
 
+    player_id = str(data.get("player_id") or data.get("playerID") or data.get("user_id") or "")
+    if not player_id:
+        return {
+            "ok": False,
+            "error": "Could not resolve player_id from Torn response.",
+            "user_id": "",
+            "name": "",
+            "level": "",
+            "faction_id": "",
+            "faction_name": "",
+        }
+
     return {
         "ok": True,
-        "user_id": str(data.get("player_id") or ""),
+        "user_id": player_id,
         "name": data.get("name") or "Unknown",
         "level": data.get("level") or "",
-        "faction_id": str(faction.get("faction_id") or ""),
-        "faction_name": faction.get("faction_name") or "",
+        "faction_id": str(faction.get("faction_id") or faction.get("ID") or ""),
+        "faction_name": faction.get("faction_name") or faction.get("name") or "",
     }
 
 
@@ -302,7 +339,6 @@ def faction_basic(api_key: str, faction_id: str = "") -> Dict[str, Any]:
         }
 
     if faction_id:
-        # Try direct endpoint first
         res = _safe_get(
             f"{API_BASE}/faction/{faction_id}",
             {
@@ -310,13 +346,12 @@ def faction_basic(api_key: str, faction_id: str = "") -> Dict[str, Any]:
                 "key": api_key,
             },
             cache_seconds=CACHE_TTL_FACTION_BASIC,
-            cache_prefix="faction_basic",
+            cache_prefix="faction_basic_direct",
         )
         built = _build_result(res, faction_id)
         if built.get("ok") and built.get("members"):
             return built
 
-        # Fallback 1: generic endpoint with ID
         res = _safe_get(
             f"{API_BASE}/faction/",
             {
@@ -325,13 +360,12 @@ def faction_basic(api_key: str, faction_id: str = "") -> Dict[str, Any]:
                 "key": api_key,
             },
             cache_seconds=CACHE_TTL_FACTION_BASIC,
-            cache_prefix="faction_basic",
+            cache_prefix="faction_basic_id_upper",
         )
         built = _build_result(res, faction_id)
         if built.get("ok") and built.get("members"):
             return built
 
-        # Fallback 2: generic endpoint with id
         res = _safe_get(
             f"{API_BASE}/faction/",
             {
@@ -340,7 +374,7 @@ def faction_basic(api_key: str, faction_id: str = "") -> Dict[str, Any]:
                 "key": api_key,
             },
             cache_seconds=CACHE_TTL_FACTION_BASIC,
-            cache_prefix="faction_basic",
+            cache_prefix="faction_basic_id_lower",
         )
         built = _build_result(res, faction_id)
         if built.get("ok"):
@@ -586,7 +620,6 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
             continue
 
         faction_ids = [str(x.get("faction_id") or "") for x in factions]
-
         if my_faction_id and my_faction_id not in faction_ids:
             continue
 
