@@ -26,6 +26,7 @@
 
   const K_API_KEY = "warhub_api_key_v3";
   const K_ADMIN_KEY = "warhub_admin_key_v3";
+  const K_OWNER_TOKEN = "warhub_owner_token_v3";
   const K_SESSION = "warhub_session_v3";
   const K_OPEN = "warhub_open_v3";
   const K_TAB = "warhub_tab_v3";
