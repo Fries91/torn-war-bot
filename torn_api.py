@@ -408,10 +408,12 @@ def faction_basic(api_key: str, faction_id: str = "") -> Dict[str, Any]:
     return faction_basic(api_key, faction_id=str(my_faction_id))
 
 
-def _find_war_container(data: Dict[str, Any]) -> Tuple[str, Dict[str, Any]]:
+def _find_war_container(data: Dict[str, Any]) -> Tuple[str, Any]:
     for key in ("rankedwars", "wars"):
         v = data.get(key)
         if isinstance(v, dict) and v:
+            return key, v
+        if isinstance(v, list) and v:
             return key, v
     return "", {}
 
@@ -475,9 +477,9 @@ def _side_chain(side_data: Dict[str, Any]) -> int:
 
 def faction_wars(api_key: str, faction_id: str = "") -> Dict[str, Any]:
     faction_id = str(faction_id or "").strip()
-    tries = ["rankedwars", "wars", "basic"]
+    tries = ["rankedwars", "wars"]
     chosen_container_name = ""
-    chosen_container: Dict[str, Any] = {}
+    chosen_container: Any = {}
     last_note = ""
 
     for selection in tries:
@@ -520,79 +522,79 @@ def faction_wars(api_key: str, faction_id: str = "") -> Dict[str, Any]:
 
     wars: List[Dict[str, Any]] = []
 
-    for war_id, war in chosen_container.items():
+    if isinstance(chosen_container, dict):
+        iterable = chosen_container.items()
+    elif isinstance(chosen_container, list):
+        iterable = [(str(i), war) for i, war in enumerate(chosen_container)]
+    else:
+        iterable = []
+
+    for war_id, war in iterable:
         if not isinstance(war, dict):
             continue
 
-        factions_raw = _extract_factions_from_war(war)
         parsed_factions = []
 
+        factions_raw = _extract_factions_from_war(war)
         if isinstance(factions_raw, dict):
             for fid, fdata in factions_raw.items():
-                if not isinstance(fdata, dict):
-                    continue
-                parsed_factions.append(
-                    {
+                if isinstance(fdata, dict):
+                    parsed_factions.append({
                         "faction_id": str(fid),
                         "faction_name": _side_name(fdata),
                         "score": _side_score(fdata),
                         "chain": _side_chain(fdata),
                         "raw": fdata,
-                    }
-                )
+                    })
 
-        if not parsed_factions:
-            for key in ("faction_1", "faction1", "team_1", "team1"):
-                side = war.get(key)
-                if isinstance(side, dict):
-                    sid = str(side.get("id") or side.get("faction_id") or "")
-                    parsed_factions.append(
-                        {
-                            "faction_id": sid,
-                            "faction_name": _side_name(side),
-                            "score": _side_score(side),
-                            "chain": _side_chain(side),
-                            "raw": side,
-                        }
-                    )
-            for key in ("faction_2", "faction2", "team_2", "team2"):
-                side = war.get(key)
-                if isinstance(side, dict):
-                    sid = str(side.get("id") or side.get("faction_id") or "")
-                    parsed_factions.append(
-                        {
-                            "faction_id": sid,
-                            "faction_name": _side_name(side),
-                            "score": _side_score(side),
-                            "chain": _side_chain(side),
-                            "raw": side,
-                        }
-                    )
+        for key in ("faction_1", "faction1", "team_1", "team1"):
+            side = war.get(key)
+            if isinstance(side, dict):
+                sid = str(side.get("id") or side.get("faction_id") or "")
+                if sid and not any(x["faction_id"] == sid for x in parsed_factions):
+                    parsed_factions.append({
+                        "faction_id": sid,
+                        "faction_name": _side_name(side),
+                        "score": _side_score(side),
+                        "chain": _side_chain(side),
+                        "raw": side,
+                    })
+
+        for key in ("faction_2", "faction2", "team_2", "team2"):
+            side = war.get(key)
+            if isinstance(side, dict):
+                sid = str(side.get("id") or side.get("faction_id") or "")
+                if sid and not any(x["faction_id"] == sid for x in parsed_factions):
+                    parsed_factions.append({
+                        "faction_id": sid,
+                        "faction_name": _side_name(side),
+                        "score": _side_score(side),
+                        "chain": _side_chain(side),
+                        "raw": side,
+                    })
 
         phase = _war_phase(war)
 
-        wars.append(
-            {
-                "war_id": str(war_id),
-                "war_type": str(war.get("war_type") or chosen_container_name),
-                "status_text": str(war.get("status") or war.get("state") or ""),
-                "phase": phase,
-                "active": phase == "active",
-                "registered": phase in {"registered", "active"},
-                "finished": phase == "finished",
-                "start": _to_int(war.get("start") or war.get("start_time") or war.get("started"), 0),
-                "end": _to_int(war.get("end") or war.get("end_time") or war.get("ends"), 0),
-                "target_score": _to_int(
-                    war.get("target")
-                    or war.get("target_score")
-                    or war.get("goal")
-                    or war.get("score_target"),
-                    0,
-                ),
-                "factions": parsed_factions,
-                "raw": war,
-            }
-        )
+        wars.append({
+            "war_id": str(war.get("id") or war_id),
+            "war_type": str(war.get("war_type") or chosen_container_name),
+            "status_text": str(war.get("status") or war.get("state") or ""),
+            "phase": phase,
+            "active": phase == "active",
+            "registered": phase in {"registered", "active"},
+            "finished": phase == "finished",
+            "start": _to_int(war.get("start") or war.get("start_time") or war.get("started"), 0),
+            "end": _to_int(war.get("end") or war.get("end_time") or war.get("ends"), 0),
+            "target_score": _to_int(
+                war.get("target")
+                or war.get("target_score")
+                or war.get("goal")
+                or war.get("score_target"),
+                0,
+            ),
+            "factions": parsed_factions,
+            "raw": war,
+        })
 
     wars.sort(
         key=lambda x: (
