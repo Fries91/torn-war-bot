@@ -810,18 +810,25 @@
         enemies.length
     );
 
+    var myName =
+        (state && state.me && state.me.name) ||
+        (state && state.user && state.user.name) ||
+        (state && state.me && state.me.player_name) ||
+        (state && state.user && state.user.player_name) ||
+        'You';
+
     return "\
       <div class=\"warhub-card\">\n\
         <h3>Add Med Deal</h3>\n\
         <div class=\"warhub-grid two\">\n\
           <div>\n\
             <label class=\"warhub-label\">User</label>\n\
-            <input class=\"warhub-input\" id=\"warhub-med-seller\" placeholder=\"Your name / faction member name\" />\n\
+            <input class=\"warhub-input\" id=\"warhub-med-seller\" value=\"".concat(esc(myName), "\" readonly />\n\
           </div>\n\
           <div>\n\
             <label class=\"warhub-label\">Enemy</label>\n\
             <select class=\"warhub-select\" id=\"warhub-med-item\">\n\
-              <option value=\"\">".concat(hasWar ? 'Select enemy member' : 'Currently not in a war', "</option>\n\
+              <option value=\"\">").concat(hasWar ? 'Select enemy member' : 'Currently not in a war', "</option>\n\
               ").concat(enemies.map(function (x) {
                 var id = x.user_id || x.id || x.player_id || '';
                 var name = x.name || x.player_name || "ID ".concat(id);
