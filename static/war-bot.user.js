@@ -19,7 +19,7 @@
 (function () {
   "use strict";
 
-  alert("War Hub started");
+  document.body.style.outline = "6px solid red";
   
   if (window.__WAR_HUB_V285__) return;
   window.__WAR_HUB_V285__ = true;
