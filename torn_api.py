@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Tuple
 
 import requests
 
-API_BASE = os.getenv("TORN_API_BASE", "https://api.torn.com").rstrip("/")
+API_BASE = str(os.getenv("TORN_API_BASE", "https://api.torn.com")).rstrip("/")
 TORN_TIMEOUT = int(os.getenv("TORN_TIMEOUT", "30"))
 CACHE_TTL_USER_PROFILE = int(os.getenv("CACHE_TTL_USER_PROFILE", "30"))
 CACHE_TTL_FACTION_BASIC = int(os.getenv("CACHE_TTL_FACTION_BASIC", "20"))
@@ -27,13 +27,27 @@ def _cache_key(prefix: str, params: Dict[str, Any]) -> str:
     return f"{prefix}:{ordered}"
 
 
-def _safe_get(url: str, params: Dict[str, Any], cache_seconds: int = 0, cache_prefix: str = "") -> Dict[str, Any]:
+def _to_int(value: Any, default: int = 0) -> int:
     try:
-        cache_key = ""
+        if value in (None, ""):
+            return default
+        return int(value)
+    except Exception:
+        return default
+
+
+def _safe_get(
+    url: str,
+    params: Dict[str, Any],
+    cache_seconds: int = 0,
+    cache_prefix: str = "",
+) -> Dict[str, Any]:
+    try:
+        key_name = ""
         if cache_seconds > 0 and cache_prefix:
             safe_params = {k: v for k, v in params.items() if k != "key"}
-            cache_key = _cache_key(cache_prefix, safe_params)
-            cached = cache_get(cache_key)
+            key_name = _cache_key(cache_prefix, safe_params)
+            cached = cache_get(key_name)
             if cached:
                 try:
                     data = json.loads(cached)
@@ -41,9 +55,9 @@ def _safe_get(url: str, params: Dict[str, Any], cache_seconds: int = 0, cache_pr
                 except Exception:
                     pass
 
-        r = requests.get(url, params=params, timeout=TORN_TIMEOUT)
-        r.raise_for_status()
-        data = r.json()
+        response = requests.get(url, params=params, timeout=TORN_TIMEOUT)
+        response.raise_for_status()
+        data = response.json()
 
         if isinstance(data, dict) and data.get("error"):
             err_obj = data.get("error") or {}
@@ -53,9 +67,9 @@ def _safe_get(url: str, params: Dict[str, Any], cache_seconds: int = 0, cache_pr
                 "data": data,
             }
 
-        if cache_seconds > 0 and cache_prefix and cache_key:
+        if cache_seconds > 0 and cache_prefix and key_name:
             try:
-                cache_set(cache_key, json.dumps(data), cache_seconds)
+                cache_set(key_name, json.dumps(data), cache_seconds)
             except Exception:
                 pass
 
@@ -74,15 +88,6 @@ def attack_url(user_id: str) -> str:
 
 def bounty_url(user_id: str) -> str:
     return f"https://www.torn.com/bounties.php#/p=add&userID={user_id}"
-
-
-def _to_int(value: Any, default: int = 0) -> int:
-    try:
-        if value in (None, ""):
-            return default
-        return int(value)
-    except Exception:
-        return default
 
 
 def _extract_hospital_seconds_from_text(text: str) -> int:
@@ -160,27 +165,32 @@ def _normalize_member(uid: Any, member: Dict[str, Any]) -> Dict[str, Any]:
     last_action = ""
     status_text = ""
     status_detail = ""
+    name = str(member.get("name") or "Unknown")
     level = member.get("level", "")
     position = member.get("position", "")
-    name = member.get("name", "Unknown")
 
-    la = member.get("last_action")
-    if isinstance(la, dict):
-        last_action = (
-            la.get("status", "")
-            or la.get("relative", "")
-            or la.get("timestamp", "")
+    last_action_raw = member.get("last_action")
+    if isinstance(last_action_raw, dict):
+        last_action = str(
+            last_action_raw.get("status")
+            or last_action_raw.get("relative")
+            or last_action_raw.get("timestamp")
             or ""
         )
     else:
-        last_action = str(la or "")
+        last_action = str(last_action_raw or "")
 
-    status = member.get("status")
-    if isinstance(status, dict):
-        status_text = str(status.get("state") or status.get("description") or status.get("color") or "")
-        status_detail = str(status.get("description") or status.get("details") or "")
+    status_raw = member.get("status")
+    if isinstance(status_raw, dict):
+        status_text = str(
+            status_raw.get("state")
+            or status_raw.get("description")
+            or status_raw.get("color")
+            or ""
+        )
+        status_detail = str(status_raw.get("details") or status_raw.get("description") or "")
     else:
-        status_text = str(status or "")
+        status_text = str(status_raw or "")
 
     life = member.get("life")
     current_life = 0
@@ -198,22 +208,26 @@ def _normalize_member(uid: Any, member: Dict[str, Any]) -> Dict[str, Any]:
     hospital_seconds = _extract_hospital_seconds_from_text(combined)
     hospital_until_ts = _extract_hospital_until_ts(member, hospital_seconds)
 
-    if hospital_until_ts > int(time.time()):
+    now_ts = int(time.time())
+    if hospital_until_ts > now_ts:
         in_hospital = 1
         if hospital_seconds <= 0:
-            hospital_seconds = max(0, hospital_until_ts - int(time.time()))
+            hospital_seconds = max(0, hospital_until_ts - now_ts)
 
     online_state = "hospital" if in_hospital else _member_state_from_last_action(last_action)
 
-    if not in_hospital and "online" in status_text.lower():
+    status_text_lower = status_text.lower()
+    if not in_hospital and "online" in status_text_lower:
         online_state = "online"
-    elif not in_hospital and "idle" in status_text.lower():
+    elif not in_hospital and "idle" in status_text_lower:
         online_state = "idle"
-    elif not in_hospital and "offline" in status_text.lower():
+    elif not in_hospital and "offline" in status_text_lower:
         online_state = "offline"
 
+    user_id = str(uid or "")
+
     return {
-        "user_id": str(uid or ""),
+        "user_id": user_id,
         "name": name,
         "level": level,
         "position": position,
@@ -226,9 +240,9 @@ def _normalize_member(uid: Any, member: Dict[str, Any]) -> Dict[str, Any]:
         "hospital_until_ts": hospital_until_ts,
         "life_current": current_life,
         "life_max": max_life,
-        "profile_url": profile_url(str(uid or "")),
-        "attack_url": attack_url(str(uid or "")),
-        "bounty_url": bounty_url(str(uid or "")),
+        "profile_url": profile_url(user_id),
+        "attack_url": attack_url(user_id),
+        "bounty_url": bounty_url(user_id),
     }
 
 
@@ -247,10 +261,7 @@ def me_basic(api_key: str) -> Dict[str, Any]:
 
     res = _safe_get(
         f"{API_BASE}/user",
-        {
-            "selections": "profile",
-            "key": api_key,
-        },
+        {"selections": "profile", "key": api_key},
         cache_seconds=0,
         cache_prefix="",
     )
@@ -258,10 +269,7 @@ def me_basic(api_key: str) -> Dict[str, Any]:
     if not res.get("ok"):
         res = _safe_get(
             f"{API_BASE}/user/",
-            {
-                "selections": "profile",
-                "key": api_key,
-            },
+            {"selections": "profile", "key": api_key},
             cache_seconds=0,
             cache_prefix="",
         )
@@ -295,10 +303,10 @@ def me_basic(api_key: str) -> Dict[str, Any]:
     return {
         "ok": True,
         "user_id": player_id,
-        "name": data.get("name") or "Unknown",
+        "name": str(data.get("name") or "Unknown"),
         "level": data.get("level") or "",
         "faction_id": str(faction.get("faction_id") or faction.get("ID") or ""),
-        "faction_name": faction.get("faction_name") or faction.get("name") or "",
+        "faction_name": str(faction.get("faction_name") or faction.get("name") or ""),
     }
 
 
@@ -332,51 +340,39 @@ def faction_basic(api_key: str, faction_id: str = "") -> Dict[str, Any]:
         return {
             "ok": True,
             "faction_id": str(data.get("ID") or fallback_faction_id or ""),
-            "faction_name": data.get("name") or "",
+            "faction_name": str(data.get("name") or ""),
             "members": members,
         }
 
     if faction_id:
-        res = _safe_get(
-            f"{API_BASE}/faction/{faction_id}",
-            {
-                "selections": "basic",
-                "key": api_key,
-            },
-            cache_seconds=CACHE_TTL_FACTION_BASIC,
-            cache_prefix="faction_basic_direct",
-        )
-        built = _build_result(res, faction_id)
-        if built.get("ok") and built.get("members"):
-            return built
+        attempts = [
+            (
+                f"{API_BASE}/faction/{faction_id}",
+                {"selections": "basic", "key": api_key},
+                "faction_basic_direct",
+            ),
+            (
+                f"{API_BASE}/faction/",
+                {"selections": "basic", "ID": faction_id, "key": api_key},
+                "faction_basic_id_upper",
+            ),
+            (
+                f"{API_BASE}/faction/",
+                {"selections": "basic", "id": faction_id, "key": api_key},
+                "faction_basic_id_lower",
+            ),
+        ]
 
-        res = _safe_get(
-            f"{API_BASE}/faction/",
-            {
-                "selections": "basic",
-                "ID": faction_id,
-                "key": api_key,
-            },
-            cache_seconds=CACHE_TTL_FACTION_BASIC,
-            cache_prefix="faction_basic_id_upper",
-        )
-        built = _build_result(res, faction_id)
-        if built.get("ok") and built.get("members"):
-            return built
-
-        res = _safe_get(
-            f"{API_BASE}/faction/",
-            {
-                "selections": "basic",
-                "id": faction_id,
-                "key": api_key,
-            },
-            cache_seconds=CACHE_TTL_FACTION_BASIC,
-            cache_prefix="faction_basic_id_lower",
-        )
-        built = _build_result(res, faction_id)
-        if built.get("ok"):
-            return built
+        for url, params, prefix in attempts:
+            res = _safe_get(
+                url,
+                params,
+                cache_seconds=CACHE_TTL_FACTION_BASIC,
+                cache_prefix=prefix,
+            )
+            built = _build_result(res, faction_id)
+            if built.get("ok"):
+                return built
 
         return {
             "ok": False,
@@ -396,25 +392,20 @@ def faction_basic(api_key: str, faction_id: str = "") -> Dict[str, Any]:
             "error": me.get("error", "Could not load player."),
         }
 
-    my_faction_id = me.get("faction_id")
+    my_faction_id = str(me.get("faction_id") or "")
     if not my_faction_id:
-        return {
-            "ok": True,
-            "faction_id": "",
-            "faction_name": "",
-            "members": [],
-        }
+        return {"ok": True, "faction_id": "", "faction_name": "", "members": []}
 
-    return faction_basic(api_key, faction_id=str(my_faction_id))
+    return faction_basic(api_key, faction_id=my_faction_id)
 
 
 def _find_war_container(data: Dict[str, Any]) -> Tuple[str, Any]:
     for key in ("rankedwars", "wars"):
-        v = data.get(key)
-        if isinstance(v, dict) and v:
-            return key, v
-        if isinstance(v, list) and v:
-            return key, v
+        value = data.get(key)
+        if isinstance(value, dict) and value:
+            return key, value
+        if isinstance(value, list) and value:
+            return key, value
     return "", {}
 
 
@@ -434,22 +425,20 @@ def _war_phase(war: Dict[str, Any]) -> str:
 
     if any(x in raw for x in ["ended", "finished", "complete", "completed", "expired"]):
         return "finished"
-
     if any(x in raw for x in ["active", "running", "ongoing", "started", "live", "in progress"]):
         return "active"
-
     if any(x in raw for x in ["pending", "matching", "matched", "upcoming", "scheduled", "registered"]):
         return "registered"
 
-    now = int(time.time())
+    now_ts = int(time.time())
     start_val = _to_int(war.get("start") or war.get("start_time") or war.get("started"), 0)
     end_val = _to_int(war.get("end") or war.get("end_time") or war.get("ends"), 0)
 
-    if end_val > 0 and end_val <= now:
+    if end_val > 0 and end_val <= now_ts:
         return "finished"
-    if start_val > now:
+    if start_val > now_ts:
         return "registered"
-    if start_val > 0 and (end_val == 0 or end_val > now):
+    if start_val > 0 and (end_val == 0 or end_val > now_ts):
         return "active"
 
     return "unknown"
@@ -483,12 +472,9 @@ def faction_wars(api_key: str, faction_id: str = "") -> Dict[str, Any]:
     last_note = ""
 
     for selection in tries:
-        params = {
-            "selections": selection,
-            "key": api_key,
-        }
-
+        params = {"selections": selection, "key": api_key}
         cache_suffix = "self"
+
         if faction_id:
             params["ID"] = faction_id
             cache_suffix = f"id_{faction_id}"
@@ -500,7 +486,7 @@ def faction_wars(api_key: str, faction_id: str = "") -> Dict[str, Any]:
             cache_prefix=f"faction_{selection}_{cache_suffix}",
         )
         if not res.get("ok"):
-            last_note = res.get("error", "Unknown Torn API error")
+            last_note = str(res.get("error", "Unknown Torn API error"))
             continue
 
         data = res.get("data") or {}
@@ -534,67 +520,75 @@ def faction_wars(api_key: str, faction_id: str = "") -> Dict[str, Any]:
             continue
 
         parsed_factions = []
-
         factions_raw = _extract_factions_from_war(war)
+
         if isinstance(factions_raw, dict):
             for fid, fdata in factions_raw.items():
                 if isinstance(fdata, dict):
-                    parsed_factions.append({
-                        "faction_id": str(fid),
-                        "faction_name": _side_name(fdata),
-                        "score": _side_score(fdata),
-                        "chain": _side_chain(fdata),
-                        "raw": fdata,
-                    })
+                    parsed_factions.append(
+                        {
+                            "faction_id": str(fid),
+                            "faction_name": _side_name(fdata),
+                            "score": _side_score(fdata),
+                            "chain": _side_chain(fdata),
+                            "raw": fdata,
+                        }
+                    )
 
         for key in ("faction_1", "faction1", "team_1", "team1"):
             side = war.get(key)
             if isinstance(side, dict):
                 sid = str(side.get("id") or side.get("faction_id") or "")
                 if sid and not any(x["faction_id"] == sid for x in parsed_factions):
-                    parsed_factions.append({
-                        "faction_id": sid,
-                        "faction_name": _side_name(side),
-                        "score": _side_score(side),
-                        "chain": _side_chain(side),
-                        "raw": side,
-                    })
+                    parsed_factions.append(
+                        {
+                            "faction_id": sid,
+                            "faction_name": _side_name(side),
+                            "score": _side_score(side),
+                            "chain": _side_chain(side),
+                            "raw": side,
+                        }
+                    )
 
         for key in ("faction_2", "faction2", "team_2", "team2"):
             side = war.get(key)
             if isinstance(side, dict):
                 sid = str(side.get("id") or side.get("faction_id") or "")
                 if sid and not any(x["faction_id"] == sid for x in parsed_factions):
-                    parsed_factions.append({
-                        "faction_id": sid,
-                        "faction_name": _side_name(side),
-                        "score": _side_score(side),
-                        "chain": _side_chain(side),
-                        "raw": side,
-                    })
+                    parsed_factions.append(
+                        {
+                            "faction_id": sid,
+                            "faction_name": _side_name(side),
+                            "score": _side_score(side),
+                            "chain": _side_chain(side),
+                            "raw": side,
+                        }
+                    )
 
         phase = _war_phase(war)
 
-        wars.append({
-            "war_id": str(war.get("id") or war_id),
-            "war_type": str(war.get("war_type") or chosen_container_name),
-            "status_text": str(war.get("status") or war.get("state") or ""),
-            "phase": phase,
-            "active": phase == "active",
-            "registered": phase in {"registered", "active"},
-            "finished": phase == "finished",
-            "start": _to_int(war.get("start") or war.get("start_time") or war.get("started"), 0),
-            "end": _to_int(war.get("end") or war.get("end_time") or war.get("ends"), 0),
-            "target_score": _to_int(
-                war.get("target")
-                or war.get("target_score")
-                or war.get("goal")
-                or war.get("score_target"),
-                0,
-            ),
-            "factions": parsed_factions,
-            "raw": war,
-        })
+        wars.append(
+            {
+                "war_id": str(war.get("id") or war_id),
+                "war_type": str(war.get("war_type") or chosen_container_name),
+                "status_text": str(war.get("status") or war.get("state") or ""),
+                "phase": phase,
+                "active": phase == "active",
+                "registered": phase in {"registered", "active"},
+                "finished": phase == "finished",
+                "start": _to_int(war.get("start") or war.get("start_time") or war.get("started"), 0),
+                "end": _to_int(war.get("end") or war.get("end_time") or war.get("ends"), 0),
+                "target_score": _to_int(
+                    war.get("target")
+                    or war.get("target_score")
+                    or war.get("goal")
+                    or war.get("score_target"),
+                    0,
+                ),
+                "factions": parsed_factions,
+                "raw": war,
+            }
+        )
 
     wars.sort(
         key=lambda x: (
@@ -647,7 +641,7 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
     wars_res = faction_wars(api_key, faction_id=resolved_my_faction_id)
     if not wars_res.get("ok"):
         out = dict(default)
-        out["source_note"] = wars_res.get("error", out["source_note"])
+        out["source_note"] = str(wars_res.get("error", out["source_note"]))
         return out
 
     wars = wars_res.get("wars") or []
@@ -662,23 +656,20 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
         if resolved_my_faction_id and resolved_my_faction_id not in faction_ids:
             continue
 
-        phase = str(war.get("phase") or "")
-        if phase in {"registered", "active"}:
+        if str(war.get("phase") or "") in {"registered", "active"}:
             chosen_war = war
             break
 
     if not chosen_war:
-        if wars:
-            for war in wars:
-                phase = str(war.get("phase") or "")
-                if phase in {"registered", "active"}:
-                    chosen_war = war
-                    break
+        for war in wars:
+            if str(war.get("phase") or "") in {"registered", "active"}:
+                chosen_war = war
+                break
 
     if not chosen_war:
         out = dict(default)
         out["source_ok"] = bool(wars_res.get("source_ok"))
-        out["source_note"] = wars_res.get("source_note", out["source_note"])
+        out["source_note"] = str(wars_res.get("source_note", out["source_note"]))
         return out
 
     factions = chosen_war.get("factions") or []
@@ -686,15 +677,15 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
     enemy_side = None
 
     if resolved_my_faction_id:
-        for f in factions:
-            if str(f.get("faction_id") or "") == resolved_my_faction_id:
-                my_side = f
+        for faction in factions:
+            if str(faction.get("faction_id") or "") == resolved_my_faction_id:
+                my_side = faction
                 break
 
     if my_side:
-        for f in factions:
-            if str(f.get("faction_id") or "") != str(my_side.get("faction_id") or ""):
-                enemy_side = f
+        for faction in factions:
+            if str(faction.get("faction_id") or "") != str(my_side.get("faction_id") or ""):
+                enemy_side = faction
                 break
 
     if not my_side and len(factions) == 2:
@@ -703,7 +694,6 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
 
     my_id = str((my_side or {}).get("faction_id") or resolved_my_faction_id or "")
     my_name = str((my_side or {}).get("faction_name") or resolved_my_faction_name or "")
-
     enemy_id = str((enemy_side or {}).get("faction_id") or "")
     enemy_name = str((enemy_side or {}).get("faction_name") or "")
 
@@ -724,7 +714,7 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
     if is_active and enemy_id:
         enemy_faction = faction_basic(api_key, faction_id=enemy_id)
         if enemy_faction.get("ok"):
-            enemy_name = enemy_faction.get("faction_name") or enemy_name
+            enemy_name = str(enemy_faction.get("faction_name") or enemy_name)
             enemy_members = enemy_faction.get("members", [])
 
     if not enemy_name and enemy_id:
@@ -760,5 +750,5 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
         "end": _to_int(chosen_war.get("end"), 0),
         "status_text": status_text,
         "source_ok": bool(wars_res.get("source_ok")),
-        "source_note": wars_res.get("source_note", ""),
+        "source_note": str(wars_res.get("source_note", "")),
     }
