@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         War Hub ⚔️
 // @namespace    fries91-war-hub
-// @version      2.8.4
+// @version      2.8.5
 // @description  War Hub by Fries91. Faction-license aware overlay with draggable icon, draggable overlay, PDA friendly, shared war tools, faction member management, and payment lock handling.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -19,8 +19,8 @@
 (function () {
   "use strict";
 
-  if (window.__WAR_HUB_V280__) return;
-  window.__WAR_HUB_V280__ = true;
+  if (window.__WAR_HUB_V285__) return;
+  window.__WAR_HUB_V285__ = true;
 
   const BASE_URL = "https://torn-war-bot.onrender.com";
 
@@ -36,6 +36,7 @@
   const K_NOTES = "warhub_notes_v3";
   const K_LOCAL_NOTIFICATIONS = "warhub_local_notifications_v3";
   const K_ACCESS_CACHE = "warhub_access_cache_v3";
+
   let factionMembersCache = null;
 
   const PAYMENT_PLAYER = "Fries91";
@@ -643,14 +644,6 @@
     GM_setValue(K_LOCAL_NOTIFICATIONS, arr(v));
   }
 
-  function getOwnerToken() {
-    return cleanInputValue(GM_getValue(K_OWNER_TOKEN, ""));
-  }
-
-  function setOwnerToken(v) {
-    GM_setValue(K_OWNER_TOKEN, cleanInputValue(v || ""));
-  }
-
   function mergedNotifications() {
     return [...arr(state?.notifications), ...getLocalNotifications()].slice(0, 50);
   }
@@ -719,9 +712,11 @@
     if (!accessState) return "";
     const paymentPlayer = accessState.paymentPlayer || PAYMENT_PLAYER;
     const ppm = accessState.pricePerMember || PRICE_PER_MEMBER;
+
     if (accessState.paymentRequired || accessState.blocked || accessState.trialExpired) {
       return accessState.message || accessState.reason || `Faction access locked. Payment goes to ${paymentPlayer}.`;
     }
+
     if (accessState.trialActive) {
       if (accessState.daysLeft != null) {
         if (accessState.daysLeft <= 0) return `Faction trial ends today. Billing is ${fmtMoney(ppm)} per enabled member.`;
@@ -730,6 +725,7 @@
       if (accessState.expiresAt) return `Faction trial active until ${fmtTs(accessState.expiresAt)}.`;
       return "Faction trial active.";
     }
+
     return "";
   }
 
@@ -835,7 +831,7 @@
     if (finalPaymentRequired && !message) {
       message = `Faction payment required. Payment goes to ${payment.required_player || PAYMENT_PLAYER}.`;
     } else if (finalBlocked && !message) {
-      message = reason || `Faction access locked.`;
+      message = reason || "Faction access locked.";
     }
 
     return {
@@ -907,7 +903,7 @@
 
   function ensureAllowedOrMessage() {
     if (canUseProtectedFeatures()) return true;
-    setStatus(accessSummaryMessage() || `Faction access locked.`, true);
+    setStatus(accessSummaryMessage() || "Faction access locked.", true);
     renderBody();
     return false;
   }
@@ -916,7 +912,7 @@
     return new Promise((resolve) => {
       const token = cleanInputValue(GM_getValue(K_SESSION, ""));
       const url = `${BASE_URL}${path}`;
-      const headers = { "Accept": "application/json", ...(extraHeaders || {}) };
+      const headers = { Accept: "application/json", ...(extraHeaders || {}) };
       if (token) headers["X-Session-Token"] = token;
       if (body != null) headers["Content-Type"] = "application/json";
 
@@ -937,17 +933,17 @@
           });
         },
         onerror: () => resolve({
-  ok: false,
-  status: 0,
-  data: null,
-  error: `Network error: ${method} ${path}`,
-}),
-ontimeout: () => resolve({
-  ok: false,
-  status: 0,
-  data: null,
-  error: `Request timed out: ${method} ${path}`,
-}),
+          ok: false,
+          status: 0,
+          data: null,
+          error: `Network error: ${method} ${path}`,
+        }),
+        ontimeout: () => resolve({
+          ok: false,
+          status: 0,
+          data: null,
+          error: `Request timed out: ${method} ${path}`,
+        }),
       });
     });
   }
@@ -960,16 +956,14 @@ ontimeout: () => resolve({
     const apiKey = cleanInputValue(GM_getValue(K_API_KEY, ""));
     if (!apiKey) return false;
 
-    if (showDebug) {
-      setStatus(`Trying login with saved API key...`);
-    }
+    if (showDebug) setStatus("Trying login with saved API key...");
 
     const res = await gmXhr("POST", "/api/auth", { api_key: apiKey });
     updateAccessFromPayload(res.data, res.status, false);
 
     if (!res.ok) {
       if (accessState?.blocked || accessState?.paymentRequired || accessState?.trialExpired) {
-        setStatus(accessSummaryMessage() || `Faction access blocked.`, true);
+        setStatus(accessSummaryMessage() || "Faction access blocked.", true);
         renderBody();
         return false;
       }
@@ -985,7 +979,7 @@ ontimeout: () => resolve({
     }
 
     if (accessState?.blocked || accessState?.paymentRequired || accessState?.trialExpired) {
-      setStatus(accessSummaryMessage() || `Faction access blocked.`, true);
+      setStatus(accessSummaryMessage() || "Faction access blocked.", true);
       renderBody();
       return false;
     }
@@ -999,8 +993,8 @@ ontimeout: () => resolve({
       return {
         ok: false,
         status: 403,
-        data: { ok: false, payment_required: true, message: accessSummaryMessage() || `Faction access blocked.` },
-        error: accessSummaryMessage() || `Faction access blocked.`,
+        data: { ok: false, payment_required: true, message: accessSummaryMessage() || "Faction access blocked." },
+        error: accessSummaryMessage() || "Faction access blocked.",
       };
     }
 
@@ -1012,7 +1006,7 @@ ontimeout: () => resolve({
         ok: false,
         status: res.status || 403,
         data: res.data,
-        error: accessSummaryMessage() || res.error || `Faction access blocked.`,
+        error: accessSummaryMessage() || res.error || "Faction access blocked.",
       };
     }
 
@@ -1039,10 +1033,39 @@ ontimeout: () => resolve({
     const me = s.me || s.user || {};
     const war = { ...(s.war || s.war_info || {}) };
     if (war.active == null) war.active = !!(s.has_war || war.war_id || war.id);
+
     const faction = s.faction || s.my_faction || {};
-    const enemyFaction = s.enemy_faction || s.opponent || war.enemy_faction || {};
+
+    const enemyFactionRaw = s.enemy_faction || s.opponent || war.enemy_faction || {};
+    const enemyFactionId =
+      enemyFactionRaw.id ||
+      enemyFactionRaw.faction_id ||
+      s.enemy_faction_id ||
+      war.enemy_faction_id ||
+      war.opponent_faction_id ||
+      "";
+    const enemyFactionName =
+      enemyFactionRaw.name ||
+      s.enemy_faction_name ||
+      war.enemy_faction_name ||
+      war.opponent_faction_name ||
+      "";
+
+    const enemyFaction = {
+      ...enemyFactionRaw,
+      id: enemyFactionId,
+      faction_id: enemyFactionRaw.faction_id || enemyFactionId,
+      name: enemyFactionName || "Enemy Faction",
+    };
+
     const members = arr(s.members || faction.members || s.member_list);
-    const enemies = arr(s.enemies || enemyFaction.members || s.enemy_members);
+    const enemies = arr(
+      s.enemies ||
+      s.enemy_members ||
+      enemyFaction.members ||
+      war.enemy_members
+    );
+
     const hospital = s.hospital || {};
     const medDeals = arr(s.med_deals || s.medDeals || s.deals).map((x) => ({
       ...x,
@@ -1062,15 +1085,27 @@ ontimeout: () => resolve({
     const factionAccess = s.faction_access || {};
     const factionManagement = s.faction_management || {};
     const payment = s.payment || {};
+    const hasWar = !!(
+      s.has_war ||
+      war.active ||
+      war.war_id ||
+      war.id ||
+      enemyFactionId ||
+      enemies.length
+    );
 
     updateAccessFromPayload(s, 200, !!cleanInputValue(GM_getValue(K_SESSION, "")));
 
     return {
       ...s,
+      has_war: hasWar,
       me,
       war,
       faction,
       enemyFaction,
+      enemy_faction: s.enemy_faction || enemyFaction,
+      enemy_faction_id: s.enemy_faction_id || enemyFactionId,
+      enemy_faction_name: s.enemy_faction_name || enemyFactionName,
       members,
       enemies,
       hospital,
@@ -1090,10 +1125,10 @@ ontimeout: () => resolve({
     };
   }
 
-  async function loadState(silent = false) {
+   async function loadState(silent = false) {
     if (loadInFlight) return;
     if (!canUseProtectedFeatures()) {
-      if (!silent) setStatus(accessSummaryMessage() || `Faction access blocked.`, true);
+      if (!silent) setStatus(accessSummaryMessage() || "Faction access blocked.", true);
       renderBody();
       return;
     }
@@ -1107,7 +1142,7 @@ ontimeout: () => resolve({
         return;
       }
       state = normalizeState(res.data || {});
-      if (accessState?.isFactionLeader && !factionMembersCache) { loadFactionMembers().catch(() => null); }
+      if (accessState?.isFactionLeader && !factionMembersCache) loadFactionMembers().catch(() => null);
       if (!silent) setStatus("");
       if (overlay && isOpen) renderBody();
       updateBadge();
@@ -1122,18 +1157,19 @@ ontimeout: () => resolve({
     return analyticsCache;
   }
 
-
   async function loadFactionMembers(force = false) {
     if (!accessState?.isFactionLeader) {
       factionMembersCache = null;
       return null;
     }
     if (factionMembersCache && !force) return factionMembersCache;
+
     const res = await req("GET", "/api/faction/members");
     if (!res.ok) {
       setStatus(res.error || "Could not load faction member access.", true);
       return null;
     }
+
     factionMembersCache = {
       ...(res.data || {}),
       members: arr(res.data?.items || res.data?.members || []),
@@ -1361,11 +1397,13 @@ ontimeout: () => resolve({
     const war = state?.war || {};
     const our = state?.faction || state?.our_faction || {};
     const enemy = state?.enemyFaction || state?.enemy_faction || {};
+    const enemyFactionId = enemy?.faction_id || enemy?.id || state?.enemy_faction_id || state?.war?.enemy_faction_id || state?.war?.opponent_faction_id || "";
+    const enemyFactionName = enemy?.name || state?.enemy_faction_name || state?.war?.enemy_faction_name || state?.war?.opponent_faction_name || "—";
     const scoreUs = Number(state?.score?.our || war?.our_score || our?.score || 0) || 0;
     const scoreThem = Number(state?.score?.enemy || war?.enemy_score || enemy?.score || 0) || 0;
     const target = Number(state?.score?.target || war?.target_score || war?.target || 0) || 0;
     const lead = scoreUs - scoreThem;
-    const hasWar = !!(state?.has_war || war?.active || war?.war_id || war?.id);
+    const hasWar = !!(state?.has_war || war?.active || war?.war_id || war?.id || enemyFactionId || arr(state?.enemies).length);
 
     if (!hasWar) {
       return `
@@ -1407,7 +1445,7 @@ ontimeout: () => resolve({
           </div>
           <div class="warhub-metric">
             <div class="k">Enemy Faction</div>
-            <div class="v">${esc(enemy?.name || "—")}</div>
+            <div class="v">${esc(enemyFactionName)}</div>
           </div>
           <div class="warhub-metric">
             <div class="k">Target Score</div>
@@ -1423,7 +1461,7 @@ ontimeout: () => resolve({
 
         <div class="warhub-actions">
           <button class="warhub-btn primary" id="warhub-save-snapshot">Save Snapshot</button>
-          ${enemy?.faction_id || enemy?.id ? `<a class="warhub-btn" href="https://www.torn.com/factions.php?step=profile&ID=${encodeURIComponent(enemy?.faction_id || enemy?.id)}" target="_blank" rel="noopener noreferrer">Enemy Faction</a>` : ``}
+          ${enemyFactionId ? `<a class="warhub-btn" href="https://www.torn.com/factions.php?step=profile&ID=${encodeURIComponent(enemyFactionId)}" target="_blank" rel="noopener noreferrer">Enemy Faction</a>` : ``}
         </div>
       </div>
     `;
@@ -1471,7 +1509,8 @@ ontimeout: () => resolve({
 
   function renderEnemiesTab() {
     const enemies = arr(state?.enemies || []);
-    if (!enemies.length && !(state?.has_war || state?.war?.active)) {
+    const hasWar = !!(state?.has_war || state?.war?.active || state?.war?.war_id || state?.enemy_faction_id || state?.enemyFaction?.id || state?.enemyFaction?.faction_id);
+    if (!enemies.length && !hasWar) {
       return `
         <div class="warhub-card">
           <h3>Enemies</h3>
@@ -1655,40 +1694,40 @@ ontimeout: () => resolve({
       return uid && !!m.enabled;
     });
     const rows = arr(state?.assignments || []).length ? `
-        <div class="warhub-card">
-          <div class="warhub-section-title">
-            <h3 style="margin:0;">Live Assignments</h3>
-            <span class="warhub-count">${fmtNum(arr(state.assignments).length)}</span>
-          </div>
-          <div class="warhub-list">
-            ${arr(state.assignments).map((a) => {
-              const id = String(a.id || "");
-              const assigned = a.assigned_to_name || a.assignee || "Unassigned";
-              const targetName = a.target_name || a.target || a.target_id || "Unknown";
-              const attack = a.target_attack_url || (a.target_id ? `https://www.torn.com/loader.php?sid=attack&user2ID=${encodeURIComponent(String(a.target_id))}` : "");
-              return `
-                <div class="warhub-list-item">
-                  <div class="warhub-row">
-                    <div>
-                      <div class="warhub-name">${esc(targetName)}</div>
-                      <div class="warhub-meta">${esc([`Assigned: ${assigned}`, a.priority || "normal", a.note || ""].filter(Boolean).join(" • "))}</div>
-                    </div>
-                    <div class="warhub-actions">
-                      ${attack ? `<a class="warhub-btn small primary warhub-link" href="${esc(attack)}" target="_blank" rel="noopener noreferrer">Attack</a>` : ""}
-                      ${id ? `<button class="warhub-btn small warn" data-del-assignment-live="${esc(id)}">Delete</button>` : ""}
-                    </div>
+      <div class="warhub-card">
+        <div class="warhub-section-title">
+          <h3 style="margin:0;">Live Assignments</h3>
+          <span class="warhub-count">${fmtNum(arr(state.assignments).length)}</span>
+        </div>
+        <div class="warhub-list">
+          ${arr(state.assignments).map((a) => {
+            const id = String(a.id || "");
+            const assigned = a.assigned_to_name || a.assignee || "Unassigned";
+            const targetName = a.target_name || a.target || a.target_id || "Unknown";
+            const attack = a.target_attack_url || (a.target_id ? `https://www.torn.com/loader.php?sid=attack&user2ID=${encodeURIComponent(String(a.target_id))}` : "");
+            return `
+              <div class="warhub-list-item">
+                <div class="warhub-row">
+                  <div>
+                    <div class="warhub-name">${esc(targetName)}</div>
+                    <div class="warhub-meta">${esc([`Assigned: ${assigned}`, a.priority || "normal", a.note || ""].filter(Boolean).join(" • "))}</div>
+                  </div>
+                  <div class="warhub-actions">
+                    ${attack ? `<a class="warhub-btn small primary warhub-link" href="${esc(attack)}" target="_blank" rel="noopener noreferrer">Attack</a>` : ""}
+                    ${id ? `<button class="warhub-btn small warn" data-del-assignment-live="${esc(id)}">Delete</button>` : ""}
                   </div>
                 </div>
-              `;
-            }).join("")}
-          </div>
+              </div>
+            `;
+          }).join("")}
         </div>
-      ` : `
-              <div class="warhub-card">
-          <h3>Live Assignments</h3>
-          <div class="warhub-empty">No assignments yet.</div>
-        </div>
-      `;
+      </div>
+    ` : `
+      <div class="warhub-card">
+        <h3>Live Assignments</h3>
+        <div class="warhub-empty">No assignments yet.</div>
+      </div>
+    `;
 
     return `
       <div class="warhub-card">
@@ -2009,28 +2048,6 @@ ontimeout: () => resolve({
     `;
   }
 
-  function renderTabContent() {
-    switch (currentTab) {
-      case "instructions": return renderInstructionsTab();
-      case "war": return `${renderAccessBanner()}${renderWarTab()}`;
-      case "terms": return renderTermsTab();
-      case "members": return `${renderAccessBanner()}${renderMembersTab()}`;
-      case "enemies": return `${renderAccessBanner()}${renderEnemiesTab()}`;
-      case "hospital": return `${renderAccessBanner()}${renderHospitalTab()}`;
-      case "chain": return `${renderAccessBanner()}${renderChainTab()}`;
-      case "meddeals": return `${renderAccessBanner()}${renderMedDealsTab()}`;
-      case "targets": return `${renderAccessBanner()}${renderTargetsTab()}`;
-      case "assignments": return `${renderAccessBanner()}${renderAssignmentsTab()}`;
-      case "notes": return `${renderAccessBanner()}${renderNotesTab()}`;
-      case "analytics": return `${renderAccessBanner()}${renderAnalyticsTab()}`;
-      case "notifications": return `${renderAccessBanner()}${renderNotificationsTab()}`;
-      case "faction": return `${renderAccessBanner()}${renderFactionTab()}`;
-      case "admin": return renderAdminTab();
-      case "settings": return renderSettingsTab();
-      default: return `${renderAccessBanner()}${renderWarTab()}`;
-    }
-  }
-
   function renderAccessBanner() {
     const msg = accessSummaryMessage();
     if (!msg) return "";
@@ -2077,6 +2094,28 @@ ontimeout: () => resolve({
     return `<button class="warhub-tab ${active} ${locked}" data-tab="${esc(key)}">${esc(label)}</button>`;
   }
 
+  function renderTabContent() {
+    switch (currentTab) {
+      case "instructions": return renderInstructionsTab();
+      case "war": return `${renderAccessBanner()}${renderWarTab()}`;
+      case "terms": return renderTermsTab();
+      case "members": return `${renderAccessBanner()}${renderMembersTab()}`;
+      case "enemies": return `${renderAccessBanner()}${renderEnemiesTab()}`;
+      case "hospital": return `${renderAccessBanner()}${renderHospitalTab()}`;
+      case "chain": return `${renderAccessBanner()}${renderChainTab()}`;
+      case "meddeals": return `${renderAccessBanner()}${renderMedDealsTab()}`;
+      case "targets": return `${renderAccessBanner()}${renderTargetsTab()}`;
+      case "assignments": return `${renderAccessBanner()}${renderAssignmentsTab()}`;
+      case "notes": return `${renderAccessBanner()}${renderNotesTab()}`;
+      case "analytics": return `${renderAccessBanner()}${renderAnalyticsTab()}`;
+      case "notifications": return `${renderAccessBanner()}${renderNotificationsTab()}`;
+      case "faction": return `${renderAccessBanner()}${renderFactionTab()}`;
+      case "admin": return renderAdminTab();
+      case "settings": return renderSettingsTab();
+      default: return `${renderAccessBanner()}${renderWarTab()}`;
+    }
+  }
+
   function renderBody() {
     if (!overlay) return;
     overlay.innerHTML = `
@@ -2102,7 +2141,7 @@ ontimeout: () => resolve({
     restoreStatus();
   }
 
-  function clampElementPosition(el, left, top) {
+   function clampElementPosition(el, left, top) {
     const rect = el.getBoundingClientRect();
     const w = rect.width || parseInt(getComputedStyle(el).width, 10) || 320;
     const h = rect.height || parseInt(getComputedStyle(el).height, 10) || 320;
@@ -2272,84 +2311,6 @@ ontimeout: () => resolve({
     const handle = overlay?.querySelector("#warhub-drag-handle");
     if (!handle || !overlay) return;
     makeDraggable(handle, overlay, saveOverlayPos, updateBadge);
-  }
-
-  function mount() {
-    if (mounted) return;
-    mounted = true;
-
-    shield = document.createElement("div");
-    shield.id = "warhub-shield";
-    shield.textContent = "⚔️";
-
-    badge = document.createElement("div");
-    badge.id = "warhub-badge";
-
-    overlay = document.createElement("div");
-    overlay.id = "warhub-overlay";
-
-    document.body.appendChild(shield);
-    document.body.appendChild(badge);
-    document.body.appendChild(overlay);
-
-    const savedShield = GM_getValue(K_SHIELD_POS, null);
-    if (savedShield && typeof savedShield === "object") {
-      if (savedShield.left) shield.style.left = savedShield.left;
-      if (savedShield.top) shield.style.top = savedShield.top;
-      if (savedShield.right) shield.style.right = savedShield.right;
-      if (savedShield.bottom) shield.style.bottom = savedShield.bottom;
-    } else {
-      resetShieldPosition();
-    }
-
-    const savedOverlay = GM_getValue(K_OVERLAY_POS, null);
-    if (savedOverlay && typeof savedOverlay === "object") {
-      if (savedOverlay.left) overlay.style.left = savedOverlay.left;
-      if (savedOverlay.top) overlay.style.top = savedOverlay.top;
-      if (savedOverlay.right) overlay.style.right = savedOverlay.right;
-      if (savedOverlay.bottom) overlay.style.bottom = savedOverlay.bottom;
-    } else {
-      positionOverlayNearShield();
-    }
-
-    makeDraggable(shield, shield, saveShieldPos, () => {
-      updateBadge();
-      if (!GM_getValue(K_OVERLAY_POS, null) && !isOpen) positionOverlayNearShield();
-    });
-
-    shield.addEventListener("click", (e) => {
-      if (dragMoved || shield?.dataset.dragging === "1") return;
-      e.preventDefault();
-      e.stopPropagation();
-      toggleOverlay();
-    });
-
-    window.addEventListener("resize", () => {
-      clampToViewport(shield);
-      clampToViewport(overlay);
-      updateBadge();
-    });
-
-    renderBody();
-    if (isOpen) overlay.classList.add("open");
-    else overlay.classList.remove("open");
-    updateBadge();
-  }
-
-  function keepMounted() {
-    if (!document.body) return;
-    if (!document.getElementById("warhub-shield") || !document.getElementById("warhub-overlay")) {
-      mounted = false;
-      shield = null;
-      overlay = null;
-      badge = null;
-      mount();
-    }
-  }
-
-  function startMountWatcher() {
-    if (remountTimer) clearInterval(remountTimer);
-    remountTimer = setInterval(keepMounted, 2000);
   }
 
   async function loadAdminDashboard() {
@@ -2766,6 +2727,84 @@ ontimeout: () => resolve({
       updateBadge();
       setStatus("Positions reset.");
     });
+  }
+
+  function mount() {
+    if (mounted) return;
+    mounted = true;
+
+    shield = document.createElement("div");
+    shield.id = "warhub-shield";
+    shield.textContent = "⚔️";
+
+    badge = document.createElement("div");
+    badge.id = "warhub-badge";
+
+    overlay = document.createElement("div");
+    overlay.id = "warhub-overlay";
+
+    document.body.appendChild(shield);
+    document.body.appendChild(badge);
+    document.body.appendChild(overlay);
+
+    const savedShield = GM_getValue(K_SHIELD_POS, null);
+    if (savedShield && typeof savedShield === "object") {
+      if (savedShield.left) shield.style.left = savedShield.left;
+      if (savedShield.top) shield.style.top = savedShield.top;
+      if (savedShield.right) shield.style.right = savedShield.right;
+      if (savedShield.bottom) shield.style.bottom = savedShield.bottom;
+    } else {
+      resetShieldPosition();
+    }
+
+    const savedOverlay = GM_getValue(K_OVERLAY_POS, null);
+    if (savedOverlay && typeof savedOverlay === "object") {
+      if (savedOverlay.left) overlay.style.left = savedOverlay.left;
+      if (savedOverlay.top) overlay.style.top = savedOverlay.top;
+      if (savedOverlay.right) overlay.style.right = savedOverlay.right;
+      if (savedOverlay.bottom) overlay.style.bottom = savedOverlay.bottom;
+    } else {
+      positionOverlayNearShield();
+    }
+
+    makeDraggable(shield, shield, saveShieldPos, () => {
+      updateBadge();
+      if (!GM_getValue(K_OVERLAY_POS, null) && !isOpen) positionOverlayNearShield();
+    });
+
+    shield.addEventListener("click", (e) => {
+      if (dragMoved || shield?.dataset.dragging === "1") return;
+      e.preventDefault();
+      e.stopPropagation();
+      toggleOverlay();
+    });
+
+    window.addEventListener("resize", () => {
+      clampToViewport(shield);
+      clampToViewport(overlay);
+      updateBadge();
+    });
+
+    renderBody();
+    if (isOpen) overlay.classList.add("open");
+    else overlay.classList.remove("open");
+    updateBadge();
+  }
+
+  function keepMounted() {
+    if (!document.body) return;
+    if (!document.getElementById("warhub-shield") || !document.getElementById("warhub-overlay")) {
+      mounted = false;
+      shield = null;
+      overlay = null;
+      badge = null;
+      mount();
+    }
+  }
+
+  function startMountWatcher() {
+    if (remountTimer) clearInterval(remountTimer);
+    remountTimer = setInterval(keepMounted, 2000);
   }
 
   function startPolling() {
