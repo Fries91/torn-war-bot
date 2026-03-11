@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         War Hub ⚔️
 // @namespace    fries91-war-hub
-// @version      2.9.1
+// @version      2.9.2
 // @description  War Hub by Fries91. Faction-license aware overlay with draggable icon, draggable overlay, PDA friendly, shared war tools, faction member management, and payment lock handling.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -2085,23 +2085,27 @@ if (overlay) overlay.querySelectorAll('[data-overview-go]').forEach(function (bt
         document.body.appendChild(badge);
         document.body.appendChild(overlay);
         var savedShield = GM_getValue(K_SHIELD_POS, null);
-        if (savedShield && typeof savedShield === 'object') {
-            if (savedShield.left) shield.style.left = savedShield.left;
-            if (savedShield.top) shield.style.top = savedShield.top;
-            if (savedShield.right) shield.style.right = savedShield.right;
-            if (savedShield.bottom) shield.style.bottom = savedShield.bottom;
-        } else {
-            resetShieldPosition();
-        }
+if (savedShield && typeof savedShield === 'object') {
+    if (savedShield.left) shield.style.left = savedShield.left;
+    if (savedShield.top) shield.style.top = savedShield.top;
+    if (savedShield.right) shield.style.right = savedShield.right;
+    if (savedShield.bottom) shield.style.bottom = savedShield.bottom;
+} else {
+    resetShieldPosition();
+}
+clampToViewport(shield);
+saveShieldPos();
         var savedOverlay = GM_getValue(K_OVERLAY_POS, null);
-        if (savedOverlay && typeof savedOverlay === 'object') {
-            if (savedOverlay.left) overlay.style.left = savedOverlay.left;
-            if (savedOverlay.top) overlay.style.top = savedOverlay.top;
-            if (savedOverlay.right) overlay.style.right = savedOverlay.right;
-            if (savedOverlay.bottom) overlay.style.bottom = savedOverlay.bottom;
-        } else {
-            positionOverlayNearShield();
-        }
+if (savedOverlay && typeof savedOverlay === 'object') {
+    if (savedOverlay.left) overlay.style.left = savedOverlay.left;
+    if (savedOverlay.top) overlay.style.top = savedOverlay.top;
+    if (savedOverlay.right) overlay.style.right = savedOverlay.right;
+    if (savedOverlay.bottom) overlay.style.bottom = savedOverlay.bottom;
+} else {
+    positionOverlayNearShield();
+}
+clampToViewport(overlay);
+saveOverlayPos();
         makeDraggable(shield, shield, saveShieldPos, function () {
             updateBadge();
             if (!GM_getValue(K_OVERLAY_POS, null) && !isOpen) positionOverlayNearShield();
