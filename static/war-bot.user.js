@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         War Hub ⚔️
 // @namespace    fries91-war-hub
-// @version      2.8.7
+// @version      2.8.8
 // @description  War Hub by Fries91. Faction-license aware overlay with draggable icon, draggable overlay, PDA friendly, shared war tools, faction member management, and payment lock handling.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -37,23 +37,21 @@
     var PAYMENT_PLAYER = 'Fries91';
     var PRICE_PER_MEMBER = 2500000;
     var TAB_ORDER = [
-        ['instructions', 'Instructions'],
-        ['war', 'War'],
-        ['terms', 'Terms'],
-        ['members', 'Members'],
-        ['enemies', 'Enemies'],
-        ['hospital', 'Hospital'],
-        ['chain', 'Chain'],
-        ['meddeals', 'Med Deals'],
-        ['targets', 'Targets'],
-        ['assignments', 'Assignments'],
-        ['notes', 'Notes'],
-        ['analytics', 'Analytics'],
-        ['notifications', 'Alerts'],
-        ['faction', 'Faction'],
-        ['admin', 'Admin'],
-        ['settings', 'Settings']
-    ];
+    ['faction', 'Faction'],
+    ['war', 'War'],
+    ['chain', 'Chain'],
+    ['terms', 'Terms'],
+    ['members', 'Members'],
+    ['enemies', 'Enemies'],
+    ['hospital', 'Hospital'],
+    ['meddeals', 'Med Deals'],
+    ['targets', 'Targets'],
+    ['assignments', 'Assignments'],
+    ['notes', 'Notes'],
+    ['instructions', 'Instructions'],
+    ['settings', 'Settings'],
+    ['admin', 'Admin']
+];
     var state = null;
     var analyticsCache = null;
     var overlay = null;
@@ -62,7 +60,7 @@
     var mounted = false;
     var dragMoved = false;
     var isOpen = !!GM_getValue(K_OPEN, false);
-    var currentTab = GM_getValue(K_TAB, 'war');
+    var currentTab = GM_getValue(K_TAB, 'faction');
     if (currentTab === 'owner') currentTab = 'admin';
     var pollTimer = null;
     var remountTimer = null;
@@ -908,26 +906,24 @@
         return "<button class=\"warhub-tab ".concat(active, " ").concat(locked, "\" data-tab=\"").concat(esc(key), "\">").concat(esc(label), "</button>");
     }
     function renderTabContent() {
-        switch (currentTab) {
-            case 'instructions': return renderInstructionsTab();
-            case 'war': return "".concat(renderAccessBanner()).concat(renderWarTab());
-            case 'terms': return renderTermsTab();
-            case 'members': return "".concat(renderAccessBanner()).concat(renderMembersTab());
-            case 'enemies': return "".concat(renderAccessBanner()).concat(renderEnemiesTab());
-            case 'hospital': return "".concat(renderAccessBanner()).concat(renderHospitalTab());
-            case 'chain': return "".concat(renderAccessBanner()).concat(renderChainTab());
-            case 'meddeals': return "".concat(renderAccessBanner()).concat(renderMedDealsTab());
-            case 'targets': return "".concat(renderAccessBanner()).concat(renderTargetsTab());
-            case 'assignments': return "".concat(renderAccessBanner()).concat(renderAssignmentsTab());
-            case 'notes': return "".concat(renderAccessBanner()).concat(renderNotesTab());
-            case 'analytics': return "".concat(renderAccessBanner()).concat(renderAnalyticsTab());
-            case 'notifications': return "".concat(renderAccessBanner()).concat(renderNotificationsTab());
-            case 'faction': return "".concat(renderAccessBanner()).concat(renderFactionTab());
-            case 'admin': return renderAdminTab();
-            case 'settings': return renderSettingsTab();
-            default: return "".concat(renderAccessBanner()).concat(renderWarTab());
-        }
+    switch (currentTab) {
+        case 'faction': return "".concat(renderAccessBanner()).concat(renderFactionTab());
+        case 'war': return "".concat(renderAccessBanner()).concat(renderWarTab());
+        case 'chain': return "".concat(renderAccessBanner()).concat(renderChainTab());
+        case 'terms': return renderTermsTab();
+        case 'members': return "".concat(renderAccessBanner()).concat(renderMembersTab());
+        case 'enemies': return "".concat(renderAccessBanner()).concat(renderEnemiesTab());
+        case 'hospital': return "".concat(renderAccessBanner()).concat(renderHospitalTab());
+        case 'meddeals': return "".concat(renderAccessBanner()).concat(renderMedDealsTab());
+        case 'targets': return "".concat(renderAccessBanner()).concat(renderTargetsTab());
+        case 'assignments': return "".concat(renderAccessBanner()).concat(renderAssignmentsTab());
+        case 'notes': return "".concat(renderAccessBanner()).concat(renderNotesTab());
+        case 'instructions': return renderInstructionsTab();
+        case 'settings': return renderSettingsTab();
+        case 'admin': return renderAdminTab();
+        default: return "".concat(renderAccessBanner()).concat(renderFactionTab());
     }
+}
     function renderBody() {
         if (!overlay) return;
         overlay.innerHTML = "\n      <div class=\"warhub-head\" id=\"warhub-drag-handle\">\n        <div class=\"warhub-toprow\">\n          <div>\n            <div class=\"warhub-title\">War Hub</div>\n            <div class=\"warhub-sub\">Fries91 • Torn overlay</div>\n          </div>\n          <button class=\"warhub-close\" id=\"warhub-close-btn\" type=\"button\">Close</button>\n        </div>\n      </div>\n      <div class=\"warhub-tabs\">\n        ".concat(TAB_ORDER.map(function (_ref) {
