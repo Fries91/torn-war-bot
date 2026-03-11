@@ -746,19 +746,74 @@ def api_state():
 
     license_status = _build_license_status_payload(faction_id, viewer_user_id=user_id) if faction_id else {}
     faction_map = get_user_map_by_faction(faction_id) if faction_id else {}
+
+    # Logged-in user profile
     me = me_basic(api_key) or {}
 
-    faction_info = faction_basic(api_key) if api_key else {"ok": False, "members": []}
+    # Prefer live faction info from Torn over session-stored values
+    live_faction_id = str(me.get("faction_id") or faction_id or "").strip()
+    live_faction_name = str(me.get("faction_name") or faction_name or "").strip()
+
+    # Re-load faction scoped data with the live faction id if we have it
+    if live_faction_id and live_faction_id != faction_id:
+        faction_id = live_faction_id
+        faction_name = live_faction_name
+        license_status = _build_license_status_payload(faction_id, viewer_user_id=user_id) if faction_id else {}
+        faction_map = get_user_map_by_faction(faction_id) if faction_id else {}
+
+    # Use normal user key for personal/faction basic lookup
+    faction_info = faction_basic(api_key, faction_id=faction_id) if api_key else {"ok": False, "members": []}
+
+    # Find best key for war lookup:
+    # 1. explicit leader/faction key from faction map if present
+    # 2. current logged-in user's key as fallback
+    war_api_key = api_key
+
+    if faction_map:
+        leader_row = None
+
+        for _member_id, row in faction_map.items():
+            if not isinstance(row, dict):
+                continue
+
+            row_user_id = str(row.get("member_user_id") or row.get("user_id") or "")
+            row_api_key = str(row.get("member_api_key") or row.get("api_key") or "").strip()
+            row_position = str(row.get("position") or "").lower()
+            row_enabled = bool(row.get("enabled", True))
+
+            if row_api_key and ("leader" in row_position):
+                leader_row = row
+                break
+
+            if row_api_key and row_enabled and row_user_id == user_id:
+                war_api_key = row_api_key
+
+        if leader_row:
+            war_api_key = str(
+                leader_row.get("member_api_key")
+                or leader_row.get("api_key")
+                or war_api_key
+            ).strip()
+
     war_info = ranked_war_summary(
-        api_key,
-        my_faction_id=faction_id,
-        my_faction_name=faction_name,
-    ) if api_key else {
+        war_api_key,
+        my_faction_id=live_faction_id,
+        my_faction_name=live_faction_name,
+    ) if war_api_key else {
         "ok": True,
         "active": False,
         "registered": False,
         "has_war": False,
         "phase": "none",
+        "war_id": "",
+        "enemy_faction_id": "",
+        "enemy_faction_name": "",
+        "score_us": 0,
+        "score_them": 0,
+        "target_score": 0,
+        "chain_us": 0,
+        "chain_them": 0,
+        "status_text": "Currently not in war",
     }
 
     members = []
@@ -776,7 +831,7 @@ def api_state():
 
     raw_enemy_members = []
     if str(war_info.get("phase") or "") == "active" and enemy_faction_id:
-        enemy_info = _faction_basic_by_id(api_key, enemy_faction_id)
+        enemy_info = _faction_basic_by_id(war_api_key or api_key, enemy_faction_id)
         raw_enemy_members = enemy_info.get("members") or []
 
     enemies = _merge_enemy_state(raw_enemy_members, war_id)
@@ -800,8 +855,8 @@ def api_state():
     }
 
     our_faction = {
-        "faction_id": str(war_info.get("my_faction_id") or faction_id or ""),
-        "name": str(war_info.get("my_faction_name") or faction_name or ""),
+        "faction_id": str(war_info.get("my_faction_id") or live_faction_id or ""),
+        "name": str(war_info.get("my_faction_name") or live_faction_name or ""),
         "score": _to_int(war_info.get("score_us")),
         "chain": _to_int(war_info.get("chain_us")),
     }
