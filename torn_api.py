@@ -486,31 +486,49 @@ def faction_wars(api_key: str, faction_id: str = "") -> Dict[str, Any]:
     last_note = ""
 
     for selection in tries:
-        params = {"selections": selection, "key": api_key}
-        cache_suffix = "self"
+        attempt_list = []
 
         if faction_id:
-            params["ID"] = faction_id
-            cache_suffix = f"id_{faction_id}"
+            attempt_list.append((
+                f"{API_BASE}/faction/{faction_id}",
+                {"selections": selection, "key": api_key},
+                f"faction_{selection}_direct_{faction_id}",
+            ))
 
-        res = _safe_get(
+        attempt_list.append((
             f"{API_BASE}/faction/",
-            params,
-            cache_seconds=CACHE_TTL_FACTION_WARS,
-            cache_prefix=f"faction_{selection}_{cache_suffix}",
-        )
-        if not res.get("ok"):
-            last_note = str(res.get("error", "Unknown Torn API error"))
-            continue
+            {"selections": selection, "key": api_key, "ID": faction_id} if faction_id else {"selections": selection, "key": api_key},
+            f"faction_{selection}_upper_{faction_id or 'self'}",
+        ))
 
-        data = res.get("data") or {}
-        container_name, container = _find_war_container(data)
-        if container_name and container:
-            chosen_container_name = container_name
-            chosen_container = container
+        attempt_list.append((
+            f"{API_BASE}/faction/",
+            {"selections": selection, "key": api_key, "id": faction_id} if faction_id else {"selections": selection, "key": api_key},
+            f"faction_{selection}_lower_{faction_id or 'self'}",
+        ))
+
+        for url, params, cache_prefix in attempt_list:
+            res = _safe_get(
+                url,
+                params,
+                cache_seconds=CACHE_TTL_FACTION_WARS,
+                cache_prefix=cache_prefix,
+            )
+            if not res.get("ok"):
+                last_note = res.get("error", "Unknown Torn API error")
+                continue
+
+            data = res.get("data") or {}
+            container_name, container = _find_war_container(data)
+            if container_name and container:
+                chosen_container_name = container_name
+                chosen_container = container
+                break
+
+            last_note = f"No war container in selection '{selection}'. Raw keys: {list(data.keys())}"
+
+        if chosen_container:
             break
-
-        last_note = f"No ranked war data in selection '{selection}'. Raw keys: {list(data.keys())}"
 
     if not chosen_container:
         return {
@@ -539,70 +557,62 @@ def faction_wars(api_key: str, faction_id: str = "") -> Dict[str, Any]:
         if isinstance(factions_raw, dict):
             for fid, fdata in factions_raw.items():
                 if isinstance(fdata, dict):
-                    parsed_factions.append(
-                        {
-                            "faction_id": str(fid),
-                            "faction_name": _side_name(fdata),
-                            "score": _side_score(fdata),
-                            "chain": _side_chain(fdata),
-                            "raw": fdata,
-                        }
-                    )
+                    parsed_factions.append({
+                        "faction_id": str(fid),
+                        "faction_name": _side_name(fdata),
+                        "score": _side_score(fdata),
+                        "chain": _side_chain(fdata),
+                        "raw": fdata,
+                    })
 
         for key in ("faction_1", "faction1", "team_1", "team1"):
             side = war.get(key)
             if isinstance(side, dict):
                 sid = str(side.get("id") or side.get("faction_id") or "")
                 if sid and not any(x["faction_id"] == sid for x in parsed_factions):
-                    parsed_factions.append(
-                        {
-                            "faction_id": sid,
-                            "faction_name": _side_name(side),
-                            "score": _side_score(side),
-                            "chain": _side_chain(side),
-                            "raw": side,
-                        }
-                    )
+                    parsed_factions.append({
+                        "faction_id": sid,
+                        "faction_name": _side_name(side),
+                        "score": _side_score(side),
+                        "chain": _side_chain(side),
+                        "raw": side,
+                    })
 
         for key in ("faction_2", "faction2", "team_2", "team2"):
             side = war.get(key)
             if isinstance(side, dict):
                 sid = str(side.get("id") or side.get("faction_id") or "")
                 if sid and not any(x["faction_id"] == sid for x in parsed_factions):
-                    parsed_factions.append(
-                        {
-                            "faction_id": sid,
-                            "faction_name": _side_name(side),
-                            "score": _side_score(side),
-                            "chain": _side_chain(side),
-                            "raw": side,
-                        }
-                    )
+                    parsed_factions.append({
+                        "faction_id": sid,
+                        "faction_name": _side_name(side),
+                        "score": _side_score(side),
+                        "chain": _side_chain(side),
+                        "raw": side,
+                    })
 
         phase = _war_phase(war)
 
-        wars.append(
-            {
-                "war_id": str(war.get("id") or war_id),
-                "war_type": str(war.get("war_type") or chosen_container_name),
-                "status_text": str(war.get("status") or war.get("state") or ""),
-                "phase": phase,
-                "active": phase == "active",
-                "registered": phase in {"registered", "active"},
-                "finished": phase == "finished",
-                "start": _to_int(war.get("start") or war.get("start_time") or war.get("started"), 0),
-                "end": _to_int(war.get("end") or war.get("end_time") or war.get("ends"), 0),
-                "target_score": _to_int(
-                    war.get("target")
-                    or war.get("target_score")
-                    or war.get("goal")
-                    or war.get("score_target"),
-                    0,
-                ),
-                "factions": parsed_factions,
-                "raw": war,
-            }
-        )
+        wars.append({
+            "war_id": str(war.get("id") or war_id),
+            "war_type": str(war.get("war_type") or chosen_container_name),
+            "status_text": str(war.get("status") or war.get("state") or ""),
+            "phase": phase,
+            "active": phase == "active",
+            "registered": phase in {"registered", "active"},
+            "finished": phase == "finished",
+            "start": _to_int(war.get("start") or war.get("start_time") or war.get("started"), 0),
+            "end": _to_int(war.get("end") or war.get("end_time") or war.get("ends"), 0),
+            "target_score": _to_int(
+                war.get("target")
+                or war.get("target_score")
+                or war.get("goal")
+                or war.get("score_target"),
+                0,
+            ),
+            "factions": parsed_factions,
+            "raw": war,
+        })
 
     wars.sort(
         key=lambda x: (
