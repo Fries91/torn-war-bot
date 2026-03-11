@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         War Hub ⚔️
 // @namespace    fries91-war-hub
-// @version      2.9.0
+// @version      2.9.1
 // @description  War Hub by Fries91. Faction-license aware overlay with draggable icon, draggable overlay, PDA friendly, shared war tools, faction member management, and payment lock handling.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -1053,7 +1053,7 @@ function renderOverviewTab() {
                 <span class="warhub-count">' + fmtNum(allDibs.length) + '</span>\
             </div>\
             <div class="warhub-actions" style="margin-bottom:8px;">\
-                <button class="warhub-btn small" data-overview-go="dibs">Open Dibs</button>
+                <button class="warhub-btn small" data-overview-go="hospital">Open Dibs</button>
             </div>\
             <div class="warhub-list">' + dibsHtml + '</div>\
         </div>');
@@ -1525,7 +1525,7 @@ function renderChainTab() {
         case 'hospital': return "".concat(renderAccessBanner()).concat(renderHospitalTab());
         case 'meddeals': return "".concat(renderAccessBanner()).concat(renderMedDealsTab());
         case 'targets': return "".concat(renderAccessBanner()).concat(renderTargetsTab());
-        case 'dibs': return "".concat(renderAccessBanner()).concat(renderAssignmentsTab());
+        case 'assignments': return "".concat(renderAccessBanner()).concat(renderAssignmentsTab());
         case 'notes': return "".concat(renderAccessBanner()).concat(renderNotesTab());
         case 'instructions': return renderInstructionsTab();
         case 'settings': return renderSettingsTab();
