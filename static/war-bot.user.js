@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         War Hub ⚔️
 // @namespace    fries91-war-hub
-// @version      2.9.2
+// @version      2.9.3
 // @description  War Hub by Fries91. Faction-license aware overlay with draggable icon, draggable overlay, PDA friendly, shared war tools, faction member management, and payment lock handling.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -961,6 +961,10 @@ function hospitalMemberRow(x, enemy) {
 }
 
 function renderOverviewTab() {
+    if (!state) {
+        return renderAccessBanner() + '<div class="warhub-card"><div class="warhub-empty">Loading overview...</div></div>';
+    }
+
     var prefs = getOverviewBoxPrefs();
     var deals = arr((state && (state.medDeals || state.med_deals)) || []);
     var allDibs = arr((state && state.dibs) || []);
@@ -1046,18 +1050,18 @@ function renderOverviewTab() {
     }
 
     if (prefs.dibs) {
-        cards.push('\
-        <div class="warhub-card">\
-            <div class="warhub-section-title">\
-                <h3>Dibs</h3>\
-                <span class="warhub-count">' + fmtNum(allDibs.length) + '</span>\
-            </div>\
-            <div class="warhub-actions" style="margin-bottom:8px;">\
-                <button class="warhub-btn small" data-overview-go="hospital">Open Dibs</button>\
-            </div>\
-            <div class="warhub-list">' + dibsHtml + '</div>\
-        </div>');
-    }
+    cards.push('\
+    <div class="warhub-card">\
+        <div class="warhub-section-title">\
+            <h3>Dibs</h3>\
+            <span class="warhub-count">' + fmtNum(allDibs.length) + '</span>\
+        </div>\
+        <div class="warhub-actions" style="margin-bottom:8px;">\
+            <button class="warhub-btn small" data-overview-go="hospital">Open Dibs</button>\
+        </div>\
+        <div class="warhub-list">' + dibsHtml + '</div>\
+    </div>');
+}
 
     if (prefs.terms) {
         cards.push('\
