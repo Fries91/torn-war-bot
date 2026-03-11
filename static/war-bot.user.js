@@ -683,17 +683,31 @@
 
 function getMyUserId() {
     return String(
-        ((state === null || state === void 0 ? void 0 : state.me) && (((state === null || state === void 0 ? void 0 : state.me.user_id) || ((state === null || state === void 0 ? void 0 : state.me.id) || (state === null || state === void 0 ? void 0 : state.me.player_id)))) ||
-        ((state === null || state === void 0 ? void 0 : state.user) && (((state === null || state === void 0 ? void 0 : state.user.user_id) || ((state === null || state === void 0 ? void 0 : state.user.id) || (state === null || state === void 0 ? void 0 : state.user.player_id)))) ||
+        ((state === null || state === void 0 ? void 0 : state.me) && (
+            (state === null || state === void 0 ? void 0 : state.me.user_id) ||
+            (state === null || state === void 0 ? void 0 : state.me.id) ||
+            (state === null || state === void 0 ? void 0 : state.me.player_id)
+        )) ||
+        ((state === null || state === void 0 ? void 0 : state.user) && (
+            (state === null || state === void 0 ? void 0 : state.user.user_id) ||
+            (state === null || state === void 0 ? void 0 : state.user.id) ||
+            (state === null || state === void 0 ? void 0 : state.user.player_id)
+        )) ||
         ''
     );
 }
 
 function getMyUserName() {
     return String(
-        (((state === null || state === void 0 ? void 0 : state.me) && (((state === null || state === void 0 ? void 0 : state.me.name) || (state === null || state === void 0 ? void 0 : state.me.player_name))) ||
-        ((state === null || state === void 0 ? void 0 : state.user) && (((state === null || state === void 0 ? void 0 : state.user.name) || (state === null || state === void 0 ? void 0 : state.user.player_name))) ||
-        'You')
+        ((state === null || state === void 0 ? void 0 : state.me) && (
+            (state === null || state === void 0 ? void 0 : state.me.name) ||
+            (state === null || state === void 0 ? void 0 : state.me.player_name)
+        )) ||
+        ((state === null || state === void 0 ? void 0 : state.user) && (
+            (state === null || state === void 0 ? void 0 : state.user.name) ||
+            (state === null || state === void 0 ? void 0 : state.user.player_name)
+        )) ||
+        'You'
     );
 }
 
