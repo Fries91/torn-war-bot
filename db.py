@@ -1,4 +1,3 @@
-
 import os
 import secrets
 import sqlite3
@@ -8,7 +7,7 @@ from typing import Any, Dict, List, Optional
 DB_PATH = os.getenv("DB_PATH", "war_hub.db")
 TRIAL_DAYS = int(os.getenv("TRIAL_DAYS", "45"))
 DEFAULT_PAID_DAYS = int(os.getenv("DEFAULT_PAID_DAYS", "45"))
-PAYMENT_PLAYER = os.getenv("PAYMENT_PLAYER", "Fries91")
+PAYMENT_PLAYER = str(os.getenv("PAYMENT_PLAYER", "Fries91")).strip() or "Fries91"
 PAYMENT_PER_MEMBER = int(os.getenv("PAYMENT_PER_MEMBER", "2500000"))
 
 
@@ -88,8 +87,8 @@ def init_db():
             faction_name TEXT DEFAULT '',
             available INTEGER DEFAULT 1,
             chain_sitter INTEGER DEFAULT 0,
-            created_at TEXT,
-            last_seen_at TEXT
+            created_at TEXT DEFAULT '',
+            last_seen_at TEXT DEFAULT ''
         )
     """)
 
@@ -97,8 +96,8 @@ def init_db():
         CREATE TABLE IF NOT EXISTS sessions (
             token TEXT PRIMARY KEY,
             user_id TEXT NOT NULL,
-            created_at TEXT,
-            last_seen_at TEXT
+            created_at TEXT DEFAULT '',
+            last_seen_at TEXT DEFAULT ''
         )
     """)
 
@@ -106,11 +105,15 @@ def init_db():
         CREATE TABLE IF NOT EXISTS med_deals (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id TEXT NOT NULL,
+            creator_user_id TEXT DEFAULT '',
+            creator_name TEXT DEFAULT '',
+            faction_id TEXT DEFAULT '',
+            faction_name TEXT DEFAULT '',
             buyer_name TEXT DEFAULT '',
             seller_name TEXT DEFAULT '',
             amount INTEGER DEFAULT 0,
             notes TEXT DEFAULT '',
-            created_at TEXT
+            created_at TEXT DEFAULT ''
         )
     """)
 
@@ -121,7 +124,7 @@ def init_db():
             target_id TEXT DEFAULT '',
             target_name TEXT DEFAULT '',
             notes TEXT DEFAULT '',
-            created_at TEXT
+            created_at TEXT DEFAULT ''
         )
     """)
 
@@ -132,7 +135,7 @@ def init_db():
             target_id TEXT DEFAULT '',
             target_name TEXT DEFAULT '',
             reward_text TEXT DEFAULT '',
-            created_at TEXT
+            created_at TEXT DEFAULT ''
         )
     """)
 
@@ -143,7 +146,7 @@ def init_db():
             kind TEXT DEFAULT '',
             text TEXT DEFAULT '',
             seen INTEGER DEFAULT 0,
-            created_at TEXT
+            created_at TEXT DEFAULT ''
         )
     """)
 
@@ -163,7 +166,7 @@ def init_db():
             end_ts INTEGER DEFAULT 0,
             ts INTEGER DEFAULT 0,
             status_text TEXT DEFAULT '',
-            created_at TEXT
+            created_at TEXT DEFAULT ''
         )
     """)
 
@@ -414,69 +417,69 @@ def upsert_user(
     con = _con()
     cur = con.cursor()
 
-    try:
-        cols = set(_table_columns(cur, "users"))
+    cols = set(_table_columns(cur, "users"))
+    values = {
+        "user_id": str(user_id or ""),
+        "name": str(name or ""),
+        "api_key": str(api_key or ""),
+        "faction_id": str(faction_id or ""),
+        "faction_name": str(faction_name or ""),
+        "available": 1,
+        "chain_sitter": 0,
+        "created_at": now,
+        "last_seen_at": now,
+    }
 
-        # Build dynamic update/insert so old DBs do not crash
-        values = {
-            "user_id": str(user_id or ""),
-            "name": str(name or ""),
-            "api_key": str(api_key or ""),
-            "faction_id": str(faction_id or ""),
-            "faction_name": str(faction_name or ""),
-            "available": 1,
-            "chain_sitter": 0,
-            "created_at": now,
-            "last_seen_at": now,
-        }
+    cur.execute("SELECT user_id FROM users WHERE user_id = ?", (values["user_id"],))
+    existing = cur.fetchone()
 
-        cur.execute("SELECT user_id FROM users WHERE user_id = ?", (str(user_id or ""),))
-        existing = cur.fetchone()
+    if existing:
+        update_parts = []
+        update_vals = []
+        for key in ["name", "api_key", "faction_id", "faction_name", "last_seen_at"]:
+            if key in cols:
+                update_parts.append(f"{key} = ?")
+                update_vals.append(values[key])
 
-        if existing:
-            update_parts = []
-            update_vals = []
+        update_vals.append(values["user_id"])
+        cur.execute(
+            f"UPDATE users SET {', '.join(update_parts)} WHERE user_id = ?",
+            tuple(update_vals),
+        )
+    else:
+        insert_cols = []
+        insert_vals = []
+        placeholders = []
 
-            for key in ["name", "api_key", "faction_id", "faction_name", "last_seen_at"]:
-                if key in cols:
-                    update_parts.append(f"{key} = ?")
-                    update_vals.append(values[key])
+        for key in [
+            "user_id",
+            "name",
+            "api_key",
+            "faction_id",
+            "faction_name",
+            "available",
+            "chain_sitter",
+            "created_at",
+            "last_seen_at",
+        ]:
+            if key in cols:
+                insert_cols.append(key)
+                insert_vals.append(values[key])
+                placeholders.append("?")
 
-            update_vals.append(str(user_id or ""))
+        cur.execute(
+            f"INSERT INTO users ({', '.join(insert_cols)}) VALUES ({', '.join(placeholders)})",
+            tuple(insert_vals),
+        )
 
-            cur.execute(
-                f"UPDATE users SET {', '.join(update_parts)} WHERE user_id = ?",
-                tuple(update_vals),
-            )
-        else:
-            insert_cols = []
-            insert_vals = []
-            placeholders = []
-
-            for key in ["user_id", "name", "api_key", "faction_id", "faction_name", "available", "chain_sitter", "created_at", "last_seen_at"]:
-                if key in cols:
-                    insert_cols.append(key)
-                    insert_vals.append(values[key])
-                    placeholders.append("?")
-
-            cur.execute(
-                f"INSERT INTO users ({', '.join(insert_cols)}) VALUES ({', '.join(placeholders)})",
-                tuple(insert_vals),
-            )
-
-        con.commit()
-
-    except Exception as e:
-        print("UPSERT_USER ERROR:", repr(e))
-        raise
-    finally:
-        con.close()
+    con.commit()
+    con.close()
 
 
 def get_user(user_id: str) -> Optional[Dict[str, Any]]:
     con = _con()
     cur = con.cursor()
-    cur.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
+    cur.execute("SELECT * FROM users WHERE user_id = ?", (str(user_id),))
     row = cur.fetchone()
     con.close()
     return _row_to_dict(row)
@@ -485,13 +488,15 @@ def get_user(user_id: str) -> Optional[Dict[str, Any]]:
 def get_users_by_faction(faction_id: str) -> List[Dict[str, Any]]:
     if not faction_id:
         return []
+
     con = _con()
     cur = con.cursor()
     cur.execute("""
-        SELECT * FROM users
+        SELECT *
+        FROM users
         WHERE faction_id = ?
         ORDER BY LOWER(name) ASC
-    """, (faction_id,))
+    """, (str(faction_id),))
     rows = [dict(r) for r in cur.fetchall()]
     con.close()
     return rows
@@ -505,12 +510,13 @@ def get_user_map_by_faction(faction_id: str) -> Dict[str, Dict[str, Any]]:
 def create_session(user_id: str) -> str:
     token = secrets.token_hex(24)
     now = _utc_now()
+
     con = _con()
     cur = con.cursor()
     cur.execute("""
         INSERT INTO sessions (token, user_id, created_at, last_seen_at)
         VALUES (?, ?, ?, ?)
-    """, (token, user_id, now, now))
+    """, (token, str(user_id), now, now))
     con.commit()
     con.close()
     return token
@@ -519,7 +525,7 @@ def create_session(user_id: str) -> str:
 def get_session(token: str) -> Optional[Dict[str, Any]]:
     con = _con()
     cur = con.cursor()
-    cur.execute("SELECT * FROM sessions WHERE token = ?", (token,))
+    cur.execute("SELECT * FROM sessions WHERE token = ?", (str(token),))
     row = cur.fetchone()
     con.close()
     return _row_to_dict(row)
@@ -530,7 +536,7 @@ def touch_session(token: str):
     cur = con.cursor()
     cur.execute(
         "UPDATE sessions SET last_seen_at = ? WHERE token = ?",
-        (_utc_now(), token),
+        (_utc_now(), str(token)),
     )
     con.commit()
     con.close()
@@ -539,7 +545,7 @@ def touch_session(token: str):
 def delete_session(token: str):
     con = _con()
     cur = con.cursor()
-    cur.execute("DELETE FROM sessions WHERE token = ?", (token,))
+    cur.execute("DELETE FROM sessions WHERE token = ?", (str(token),))
     con.commit()
     con.close()
 
@@ -547,7 +553,7 @@ def delete_session(token: str):
 def delete_sessions_for_user(user_id: str):
     con = _con()
     cur = con.cursor()
-    cur.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
+    cur.execute("DELETE FROM sessions WHERE user_id = ?", (str(user_id),))
     con.commit()
     con.close()
 
@@ -559,7 +565,7 @@ def set_availability(user_id: str, available: int):
         UPDATE users
         SET available = ?, last_seen_at = ?
         WHERE user_id = ?
-    """, (1 if available else 0, _utc_now(), user_id))
+    """, (1 if available else 0, _utc_now(), str(user_id)))
     con.commit()
     con.close()
 
@@ -571,7 +577,7 @@ def set_chain_sitter(user_id: str, enabled: int):
         UPDATE users
         SET chain_sitter = ?, last_seen_at = ?
         WHERE user_id = ?
-    """, (1 if enabled else 0, _utc_now(), user_id))
+    """, (1 if enabled else 0, _utc_now(), str(user_id)))
     con.commit()
     con.close()
 
@@ -584,7 +590,8 @@ def add_med_deal(
     buyer_name: str,
     seller_name: str,
     notes: str,
-):
+) -> Dict[str, Any]:
+    now = _utc_now()
     con = _con()
     cur = con.cursor()
     cur.execute("""
@@ -602,29 +609,35 @@ def add_med_deal(
         )
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
-        creator_user_id,
-        creator_user_id,
-        creator_name,
-        faction_id,
-        faction_name,
-        buyer_name,
-        seller_name,
+        str(creator_user_id),
+        str(creator_user_id),
+        str(creator_name or ""),
+        str(faction_id or ""),
+        str(faction_name or ""),
+        str(buyer_name or ""),
+        str(seller_name or ""),
         0,
-        notes,
-        _utc_now(),
+        str(notes or ""),
+        now,
     ))
+    deal_id = cur.lastrowid
     con.commit()
+
+    cur.execute("SELECT * FROM med_deals WHERE id = ?", (int(deal_id),))
+    row = cur.fetchone()
     con.close()
+    return _row_to_dict(row) or {}
 
 
 def list_med_deals(user_id: str) -> List[Dict[str, Any]]:
     con = _con()
     cur = con.cursor()
     cur.execute("""
-        SELECT * FROM med_deals
+        SELECT *
+        FROM med_deals
         WHERE user_id = ?
         ORDER BY id DESC
-    """, (user_id,))
+    """, (str(user_id),))
     rows = [dict(r) for r in cur.fetchall()]
     con.close()
     return rows
@@ -641,7 +654,7 @@ def list_med_deals_for_faction(faction_id: str) -> List[Dict[str, Any]]:
         FROM med_deals
         WHERE faction_id = ?
         ORDER BY id DESC
-    """, (faction_id,))
+    """, (str(faction_id),))
     rows = [dict(r) for r in cur.fetchall()]
     con.close()
     return rows
@@ -653,30 +666,43 @@ def delete_med_deal(faction_id: str, deal_id: int):
     cur.execute("""
         DELETE FROM med_deals
         WHERE faction_id = ? AND id = ?
-    """, (faction_id, deal_id))
+    """, (str(faction_id), int(deal_id)))
     con.commit()
     con.close()
 
 
-def add_target(user_id: str, target_id: str, target_name: str, notes: str):
+def add_target(user_id: str, target_id: str, target_name: str, notes: str) -> Dict[str, Any]:
+    now = _utc_now()
     con = _con()
     cur = con.cursor()
     cur.execute("""
         INSERT INTO targets (user_id, target_id, target_name, notes, created_at)
         VALUES (?, ?, ?, ?, ?)
-    """, (user_id, target_id, target_name, notes, _utc_now()))
+    """, (
+        str(user_id),
+        str(target_id or ""),
+        str(target_name or ""),
+        str(notes or ""),
+        now,
+    ))
+    row_id = cur.lastrowid
     con.commit()
+
+    cur.execute("SELECT * FROM targets WHERE id = ?", (int(row_id),))
+    row = cur.fetchone()
     con.close()
+    return _row_to_dict(row) or {}
 
 
 def list_targets(user_id: str) -> List[Dict[str, Any]]:
     con = _con()
     cur = con.cursor()
     cur.execute("""
-        SELECT * FROM targets
+        SELECT *
+        FROM targets
         WHERE user_id = ?
         ORDER BY id DESC
-    """, (user_id,))
+    """, (str(user_id),))
     rows = [dict(r) for r in cur.fetchall()]
     con.close()
     return rows
@@ -685,30 +711,46 @@ def list_targets(user_id: str) -> List[Dict[str, Any]]:
 def delete_target(user_id: str, target_row_id: int):
     con = _con()
     cur = con.cursor()
-    cur.execute("DELETE FROM targets WHERE user_id = ? AND id = ?", (user_id, target_row_id))
+    cur.execute(
+        "DELETE FROM targets WHERE user_id = ? AND id = ?",
+        (str(user_id), int(target_row_id)),
+    )
     con.commit()
     con.close()
 
 
-def add_bounty(user_id: str, target_id: str, target_name: str, reward_text: str):
+def add_bounty(user_id: str, target_id: str, target_name: str, reward_text: str) -> Dict[str, Any]:
+    now = _utc_now()
     con = _con()
     cur = con.cursor()
     cur.execute("""
         INSERT INTO bounties (user_id, target_id, target_name, reward_text, created_at)
         VALUES (?, ?, ?, ?, ?)
-    """, (user_id, target_id, target_name, reward_text, _utc_now()))
+    """, (
+        str(user_id),
+        str(target_id or ""),
+        str(target_name or ""),
+        str(reward_text or ""),
+        now,
+    ))
+    row_id = cur.lastrowid
     con.commit()
+
+    cur.execute("SELECT * FROM bounties WHERE id = ?", (int(row_id),))
+    row = cur.fetchone()
     con.close()
+    return _row_to_dict(row) or {}
 
 
 def list_bounties(user_id: str) -> List[Dict[str, Any]]:
     con = _con()
     cur = con.cursor()
     cur.execute("""
-        SELECT * FROM bounties
+        SELECT *
+        FROM bounties
         WHERE user_id = ?
         ORDER BY id DESC
-    """, (user_id,))
+    """, (str(user_id),))
     rows = [dict(r) for r in cur.fetchall()]
     con.close()
     return rows
@@ -717,31 +759,46 @@ def list_bounties(user_id: str) -> List[Dict[str, Any]]:
 def delete_bounty(user_id: str, bounty_id: int):
     con = _con()
     cur = con.cursor()
-    cur.execute("DELETE FROM bounties WHERE user_id = ? AND id = ?", (user_id, bounty_id))
+    cur.execute(
+        "DELETE FROM bounties WHERE user_id = ? AND id = ?",
+        (str(user_id), int(bounty_id)),
+    )
     con.commit()
     con.close()
 
 
-def add_notification(user_id: str, kind: str, text: str):
+def add_notification(user_id: str, kind: str, text: str) -> Dict[str, Any]:
+    now = _utc_now()
     con = _con()
     cur = con.cursor()
     cur.execute("""
         INSERT INTO notifications (user_id, kind, text, seen, created_at)
         VALUES (?, ?, ?, 0, ?)
-    """, (user_id, kind, text, _utc_now()))
+    """, (
+        str(user_id),
+        str(kind or ""),
+        str(text or ""),
+        now,
+    ))
+    row_id = cur.lastrowid
     con.commit()
+
+    cur.execute("SELECT * FROM notifications WHERE id = ?", (int(row_id),))
+    row = cur.fetchone()
     con.close()
+    return _row_to_dict(row) or {}
 
 
 def list_notifications(user_id: str) -> List[Dict[str, Any]]:
     con = _con()
     cur = con.cursor()
     cur.execute("""
-        SELECT * FROM notifications
+        SELECT *
+        FROM notifications
         WHERE user_id = ?
         ORDER BY id DESC
         LIMIT 50
-    """, (user_id,))
+    """, (str(user_id),))
     rows = [dict(r) for r in cur.fetchall()]
     con.close()
     return rows
@@ -750,10 +807,9 @@ def list_notifications(user_id: str) -> List[Dict[str, Any]]:
 def mark_notifications_seen(user_id: str):
     con = _con()
     cur = con.cursor()
-    cur.execute("UPDATE notifications SET seen = 1 WHERE user_id = ?", (user_id,))
+    cur.execute("UPDATE notifications SET seen = 1 WHERE user_id = ?", (str(user_id),))
     con.commit()
     con.close()
-
 
 def save_war_snapshot(
     war_id: str,
@@ -768,53 +824,74 @@ def save_war_snapshot(
     start_ts: int,
     end_ts: int,
     status_text: str,
-):
+) -> Optional[Dict[str, Any]]:
     if not war_id:
-        return
+        return None
+
+    now = _utc_now()
+    ts = _utc_ts()
 
     con = _con()
     cur = con.cursor()
     cur.execute("""
         INSERT INTO war_snapshots (
-            war_id, faction_id, faction_name, enemy_faction_id, enemy_faction_name,
-            score_us, score_them, target_score, lead, start_ts, end_ts, ts, status_text, created_at
+            war_id,
+            faction_id,
+            faction_name,
+            enemy_faction_id,
+            enemy_faction_name,
+            score_us,
+            score_them,
+            target_score,
+            lead,
+            start_ts,
+            end_ts,
+            ts,
+            status_text,
+            created_at
         )
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
-        war_id,
-        faction_id,
-        faction_name,
-        enemy_faction_id,
-        enemy_faction_name,
+        str(war_id),
+        str(faction_id or ""),
+        str(faction_name or ""),
+        str(enemy_faction_id or ""),
+        str(enemy_faction_name or ""),
         int(score_us or 0),
         int(score_them or 0),
         int(target_score or 0),
         int(lead or 0),
         int(start_ts or 0),
         int(end_ts or 0),
-        _utc_ts(),
-        status_text,
-        _utc_now(),
+        ts,
+        str(status_text or ""),
+        now,
     ))
+    row_id = cur.lastrowid
 
     cur.execute("""
         DELETE FROM war_snapshots
         WHERE id NOT IN (
-            SELECT id FROM war_snapshots
+            SELECT id
+            FROM war_snapshots
             WHERE war_id = ?
             ORDER BY id DESC
             LIMIT 200
         )
         AND war_id = ?
-    """, (war_id, war_id))
+    """, (str(war_id), str(war_id)))
 
     con.commit()
+    cur.execute("SELECT * FROM war_snapshots WHERE id = ?", (int(row_id),))
+    row = cur.fetchone()
     con.close()
+    return _row_to_dict(row)
 
 
 def list_recent_war_snapshots(war_id: str, limit: int = 20) -> List[Dict[str, Any]]:
     if not war_id:
         return []
+
     con = _con()
     cur = con.cursor()
     cur.execute("""
@@ -823,7 +900,7 @@ def list_recent_war_snapshots(war_id: str, limit: int = 20) -> List[Dict[str, An
         WHERE war_id = ?
         ORDER BY id DESC
         LIMIT ?
-    """, (war_id, int(limit)))
+    """, (str(war_id), int(limit)))
     rows = [dict(r) for r in cur.fetchall()]
     con.close()
     return rows
@@ -832,12 +909,14 @@ def list_recent_war_snapshots(war_id: str, limit: int = 20) -> List[Dict[str, An
 def get_enemy_state_map(war_id: str) -> Dict[str, Dict[str, Any]]:
     if not war_id:
         return {}
+
     con = _con()
     cur = con.cursor()
     cur.execute("""
-        SELECT * FROM enemy_states
+        SELECT *
+        FROM enemy_states
         WHERE war_id = ?
-    """, (war_id,))
+    """, (str(war_id),))
     rows = [dict(r) for r in cur.fetchall()]
     con.close()
     return {str(r["user_id"]): r for r in rows}
@@ -849,16 +928,21 @@ def upsert_enemy_state(
     name: str,
     online_state: str,
     hospital_seconds: int,
-):
+) -> Optional[Dict[str, Any]]:
     if not war_id or not user_id:
-        return
+        return None
 
     now = _utc_now()
     con = _con()
     cur = con.cursor()
     cur.execute("""
         INSERT INTO enemy_states (
-            war_id, user_id, name, online_state, hospital_seconds, updated_at
+            war_id,
+            user_id,
+            name,
+            online_state,
+            hospital_seconds,
+            updated_at
         )
         VALUES (?, ?, ?, ?, ?, ?)
         ON CONFLICT(war_id, user_id) DO UPDATE SET
@@ -867,20 +951,30 @@ def upsert_enemy_state(
             hospital_seconds = excluded.hospital_seconds,
             updated_at = excluded.updated_at
     """, (
-        war_id,
-        user_id,
-        name,
-        online_state,
+        str(war_id),
+        str(user_id),
+        str(name or ""),
+        str(online_state or ""),
         int(hospital_seconds or 0),
         now,
     ))
     con.commit()
+
+    cur.execute("""
+        SELECT *
+        FROM enemy_states
+        WHERE war_id = ? AND user_id = ?
+        LIMIT 1
+    """, (str(war_id), str(user_id)))
+    row = cur.fetchone()
     con.close()
+    return _row_to_dict(row)
 
 
 def list_target_assignments_for_war(war_id: str) -> List[Dict[str, Any]]:
     if not war_id:
         return []
+
     con = _con()
     cur = con.cursor()
     cur.execute("""
@@ -896,7 +990,7 @@ def list_target_assignments_for_war(war_id: str) -> List[Dict[str, Any]]:
             END,
             LOWER(target_name) ASC,
             id DESC
-    """, (war_id,))
+    """, (str(war_id),))
     rows = [dict(r) for r in cur.fetchall()]
     con.close()
     return rows
@@ -912,8 +1006,9 @@ def upsert_target_assignment(
     assigned_by_name: str,
     priority: str,
     note: str,
-):
+) -> Optional[Dict[str, Any]]:
     now = _utc_now()
+
     con = _con()
     cur = con.cursor()
     cur.execute("""
@@ -940,20 +1035,33 @@ def upsert_target_assignment(
             note = excluded.note,
             updated_at = excluded.updated_at
     """, (
-        war_id,
-        target_id,
-        target_name,
-        assigned_to_user_id,
-        assigned_to_name,
-        assigned_by_user_id,
-        assigned_by_name,
-        priority or "normal",
-        note,
+        str(war_id),
+        str(target_id),
+        str(target_name or ""),
+        str(assigned_to_user_id or ""),
+        str(assigned_to_name or ""),
+        str(assigned_by_user_id or ""),
+        str(assigned_by_name or ""),
+        str(priority or "normal"),
+        str(note or ""),
         now,
         now,
     ))
     con.commit()
+
+    cur.execute("""
+        SELECT *
+        FROM target_assignments
+        WHERE war_id = ? AND target_id = ? AND assigned_to_user_id = ?
+        LIMIT 1
+    """, (
+        str(war_id),
+        str(target_id),
+        str(assigned_to_user_id or ""),
+    ))
+    row = cur.fetchone()
     con.close()
+    return _row_to_dict(row)
 
 
 def delete_target_assignment(assignment_id: int):
@@ -967,6 +1075,7 @@ def delete_target_assignment(assignment_id: int):
 def list_war_notes(war_id: str) -> List[Dict[str, Any]]:
     if not war_id:
         return []
+
     con = _con()
     cur = con.cursor()
     cur.execute("""
@@ -975,7 +1084,7 @@ def list_war_notes(war_id: str) -> List[Dict[str, Any]]:
         WHERE war_id = ?
         ORDER BY id DESC
         LIMIT 100
-    """, (war_id,))
+    """, (str(war_id),))
     rows = [dict(r) for r in cur.fetchall()]
     con.close()
     return rows
@@ -987,24 +1096,36 @@ def upsert_war_note(
     note: str,
     created_by_user_id: str,
     created_by_name: str,
-):
+) -> Optional[Dict[str, Any]]:
+    now = _utc_now()
+
     con = _con()
     cur = con.cursor()
     cur.execute("""
         INSERT INTO war_notes (
-            war_id, target_id, note, created_by_user_id, created_by_name, created_at
+            war_id,
+            target_id,
+            note,
+            created_by_user_id,
+            created_by_name,
+            created_at
         )
         VALUES (?, ?, ?, ?, ?, ?)
     """, (
-        war_id,
-        target_id,
-        note,
-        created_by_user_id,
-        created_by_name,
-        _utc_now(),
+        str(war_id),
+        str(target_id or ""),
+        str(note or ""),
+        str(created_by_user_id or ""),
+        str(created_by_name or ""),
+        now,
     ))
+    row_id = cur.lastrowid
     con.commit()
+
+    cur.execute("SELECT * FROM war_notes WHERE id = ?", (int(row_id),))
+    row = cur.fetchone()
     con.close()
+    return _row_to_dict(row)
 
 
 def delete_war_note(note_id: int):
@@ -1018,6 +1139,7 @@ def delete_war_note(note_id: int):
 def get_war_terms(war_id: str) -> Optional[Dict[str, Any]]:
     if not war_id:
         return None
+
     con = _con()
     cur = con.cursor()
     cur.execute("""
@@ -1025,7 +1147,7 @@ def get_war_terms(war_id: str) -> Optional[Dict[str, Any]]:
         FROM war_terms
         WHERE war_id = ?
         LIMIT 1
-    """, (war_id,))
+    """, (str(war_id),))
     row = cur.fetchone()
     con.close()
     return _row_to_dict(row)
@@ -1036,9 +1158,9 @@ def upsert_war_terms(
     terms_text: str,
     updated_by_user_id: str,
     updated_by_name: str,
-):
+) -> Optional[Dict[str, Any]]:
     if not war_id:
-        return
+        return None
 
     now = _utc_now()
     con = _con()
@@ -1059,23 +1181,33 @@ def upsert_war_terms(
             updated_by_name = excluded.updated_by_name,
             updated_at = excluded.updated_at
     """, (
-        war_id,
-        terms_text,
-        updated_by_user_id,
-        updated_by_name,
+        str(war_id),
+        str(terms_text or ""),
+        str(updated_by_user_id or ""),
+        str(updated_by_name or ""),
         now,
         now,
     ))
     con.commit()
+
+    cur.execute("""
+        SELECT *
+        FROM war_terms
+        WHERE war_id = ?
+        LIMIT 1
+    """, (str(war_id),))
+    row = cur.fetchone()
     con.close()
+    return _row_to_dict(row)
 
 
 def delete_war_terms(war_id: str):
     if not war_id:
         return
+
     con = _con()
     cur = con.cursor()
-    cur.execute("DELETE FROM war_terms WHERE war_id = ?", (war_id,))
+    cur.execute("DELETE FROM war_terms WHERE war_id = ?", (str(war_id),))
     con.commit()
     con.close()
 
@@ -1088,7 +1220,7 @@ def get_user_setting(user_id: str, key_name: str) -> Optional[str]:
         FROM user_settings
         WHERE user_id = ? AND key_name = ?
         LIMIT 1
-    """, (user_id, key_name))
+    """, (str(user_id), str(key_name)))
     row = cur.fetchone()
     con.close()
     return str(row["value_text"]) if row else None
@@ -1096,6 +1228,7 @@ def get_user_setting(user_id: str, key_name: str) -> Optional[str]:
 
 def set_user_setting(user_id: str, key_name: str, value_text: str):
     now = _utc_now()
+
     con = _con()
     cur = con.cursor()
     cur.execute("""
@@ -1105,9 +1238,9 @@ def set_user_setting(user_id: str, key_name: str, value_text: str):
             value_text = excluded.value_text,
             updated_at = excluded.updated_at
     """, (
-        user_id,
-        key_name,
-        value_text,
+        str(user_id),
+        str(key_name),
+        str(value_text or ""),
         now,
         now,
     ))
@@ -1115,13 +1248,30 @@ def set_user_setting(user_id: str, key_name: str, value_text: str):
     con.close()
 
 
-def add_audit_log(user_id: str, action: str, detail: str = ""):
+def add_audit_log(
+    actor_user_id: str = "",
+    actor_name: str = "",
+    action: str = "",
+    meta_json: Any = "",
+    user_id: str = "",
+    detail: str = "",
+):
+    final_user_id = str(actor_user_id or user_id or "")
+    final_detail = str(detail or meta_json or "")
+    if actor_name:
+        final_detail = f"{actor_name}: {final_detail}" if final_detail else str(actor_name)
+
     con = _con()
     cur = con.cursor()
     cur.execute("""
         INSERT INTO audit_log (user_id, action, detail, created_at)
         VALUES (?, ?, ?, ?)
-    """, (str(user_id or ""), str(action or ""), str(detail or ""), _utc_now()))
+    """, (
+        final_user_id,
+        str(action or ""),
+        final_detail,
+        _utc_now(),
+    ))
     con.commit()
     con.close()
 
@@ -1142,6 +1292,7 @@ def list_audit_log(limit: int = 100) -> List[Dict[str, Any]]:
 
 def cache_get(cache_key: str) -> Optional[str]:
     now_ts = _utc_ts()
+
     con = _con()
     cur = con.cursor()
     cur.execute("""
@@ -1158,6 +1309,7 @@ def cache_get(cache_key: str) -> Optional[str]:
 def cache_set(cache_key: str, payload_text: str, ttl_seconds: int):
     now = _utc_now()
     expires_at_ts = _utc_ts() + max(1, int(ttl_seconds))
+
     con = _con()
     cur = con.cursor()
     cur.execute("""
@@ -1167,7 +1319,13 @@ def cache_set(cache_key: str, payload_text: str, ttl_seconds: int):
             payload_text = excluded.payload_text,
             expires_at_ts = excluded.expires_at_ts,
             updated_at = excluded.updated_at
-    """, (str(cache_key), str(payload_text), expires_at_ts, now, now))
+    """, (
+        str(cache_key),
+        str(payload_text or ""),
+        expires_at_ts,
+        now,
+        now,
+    ))
     con.commit()
     con.close()
 
@@ -1180,12 +1338,14 @@ def cache_delete(cache_key: str):
     con.close()
 
 
-def cache_purge_expired():
+def cache_purge_expired() -> int:
     con = _con()
     cur = con.cursor()
     cur.execute("DELETE FROM api_cache WHERE expires_at_ts <= ?", (_utc_ts(),))
+    purged = cur.rowcount if cur.rowcount is not None else 0
     con.commit()
     con.close()
+    return int(purged)
 
 
 # =========================
@@ -1216,7 +1376,7 @@ def ensure_license_row(user_id: str, admin_key: str = "") -> Dict[str, Any]:
                 UPDATE user_licenses
                 SET admin_key = ?, updated_at = ?
                 WHERE user_id = ?
-            """, (admin_key, _utc_now(), str(user_id)))
+            """, (str(admin_key), _utc_now(), str(user_id)))
             con.commit()
             con.close()
             existing = get_license(user_id)
@@ -1246,7 +1406,7 @@ def ensure_license_row(user_id: str, admin_key: str = "") -> Dict[str, Any]:
         VALUES (?, ?, 0, '', '', '', 0, 'inactive', 0, '', '', '', '', ?, ?)
     """, (
         str(user_id),
-        admin_key or "",
+        str(admin_key or ""),
         now,
         now,
     ))
@@ -1281,7 +1441,7 @@ def start_trial_if_needed(user_id: str, admin_key: str = "") -> Dict[str, Any]:
             updated_at = ?
         WHERE user_id = ?
     """, (
-        admin_key or "",
+        str(admin_key or ""),
         now,
         expires,
         now,
@@ -1289,12 +1449,14 @@ def start_trial_if_needed(user_id: str, admin_key: str = "") -> Dict[str, Any]:
     ))
     con.commit()
     con.close()
-    add_audit_log(user_id, "trial_started", f"trial_expires_at={expires}")
+
+    add_audit_log(user_id=user_id, action="trial_started", detail=f"trial_expires_at={expires}")
     return compute_license_status(user_id)
 
 
 def set_license_admin_key(user_id: str, admin_key: str, active: int = 1):
     ensure_license_row(user_id, admin_key=admin_key)
+
     con = _con()
     cur = con.cursor()
     cur.execute("""
@@ -1302,7 +1464,7 @@ def set_license_admin_key(user_id: str, admin_key: str, active: int = 1):
         SET admin_key = ?, admin_key_active = ?, updated_at = ?
         WHERE user_id = ?
     """, (
-        admin_key or "",
+        str(admin_key or ""),
         1 if active else 0,
         _utc_now(),
         str(user_id),
@@ -1331,10 +1493,11 @@ def clear_license_admin_key(user_id: str, note: str = "trial_expired"):
                 ELSE last_payment_note
             END
         WHERE user_id = ?
-    """, (now, now, note, str(user_id)))
+    """, (now, now, str(note or ""), str(user_id)))
     con.commit()
     con.close()
-    add_audit_log(user_id, "license_cleared", note)
+
+    add_audit_log(user_id=user_id, action="license_cleared", detail=str(note or ""))
 
 
 def mark_payment_received(
@@ -1370,10 +1533,10 @@ def mark_payment_received(
         VALUES (?, ?, ?, ?, ?, ?, ?)
     """, (
         str(user_id),
-        payment_kind or "xanax",
+        str(payment_kind or "xanax"),
         int(amount or 0),
-        note or "",
-        received_by or PAYMENT_PLAYER,
+        str(note or ""),
+        str(received_by or PAYMENT_PLAYER),
         now,
         now,
     ))
@@ -1398,8 +1561,8 @@ def mark_payment_received(
     """, (
         new_paid_until,
         int(amount or 0),
-        payment_kind or "xanax",
-        note or "",
+        str(payment_kind or "xanax"),
+        str(note or ""),
         now,
         now,
         str(user_id),
@@ -1407,7 +1570,12 @@ def mark_payment_received(
 
     con.commit()
     con.close()
-    add_audit_log(user_id, "payment_received", f"{amount} {payment_kind} by {received_by}")
+
+    add_audit_log(
+        user_id=user_id,
+        action="payment_received",
+        detail=f"{int(amount or 0)} {payment_kind} by {received_by}",
+    )
     return compute_license_status(user_id)
 
 
@@ -1546,6 +1714,7 @@ def renew_after_payment(
 def force_expire_license(user_id: str, clear_key: bool = True) -> Dict[str, Any]:
     ensure_license_row(user_id)
     now = _utc_now()
+
     con = _con()
     cur = con.cursor()
     cur.execute("""
@@ -1567,7 +1736,7 @@ def force_expire_license(user_id: str, clear_key: bool = True) -> Dict[str, Any]
     if clear_key:
         clear_license_admin_key(user_id, note="forced_expire")
 
-    add_audit_log(user_id, "license_expired", "forced_expire")
+    add_audit_log(user_id=user_id, action="license_expired", detail="forced_expire")
     return compute_license_status(user_id)
 
 
@@ -1649,7 +1818,6 @@ def get_admin_dashboard_summary() -> Dict[str, Any]:
         "faction_licenses_total": faction_licenses_total,
     }
 
-
 # =========================
 # FACTION LICENSES
 # =========================
@@ -1657,6 +1825,7 @@ def get_admin_dashboard_summary() -> Dict[str, Any]:
 def get_faction_license(faction_id: str) -> Optional[Dict[str, Any]]:
     if not faction_id:
         return None
+
     con = _con()
     cur = con.cursor()
     cur.execute("""
@@ -1692,11 +1861,11 @@ def ensure_faction_license(
                 updated_at = ?
             WHERE faction_id = ?
         """, (
-            faction_name, faction_name,
-            leader_user_id, leader_user_id,
-            leader_name, leader_name,
-            leader_api_key, leader_api_key,
-            PAYMENT_PER_MEMBER,
+            str(faction_name or ""), str(faction_name or ""),
+            str(leader_user_id or ""), str(leader_user_id or ""),
+            str(leader_name or ""), str(leader_name or ""),
+            str(leader_api_key or ""), str(leader_api_key or ""),
+            int(PAYMENT_PER_MEMBER),
             _utc_now(),
             str(faction_id),
         ))
@@ -1733,11 +1902,11 @@ def ensure_faction_license(
         VALUES (?, ?, ?, ?, ?, '', '', '', 0, 'inactive', 0, 0, 0, ?, 0, '', '', '', ?, ?)
     """, (
         str(faction_id),
-        faction_name or "",
-        leader_user_id or "",
-        leader_name or "",
-        leader_api_key or "",
-        PAYMENT_PER_MEMBER,
+        str(faction_name or ""),
+        str(leader_user_id or ""),
+        str(leader_name or ""),
+        str(leader_api_key or ""),
+        int(PAYMENT_PER_MEMBER),
         now,
         now,
     ))
@@ -1765,6 +1934,7 @@ def ensure_faction_license_row(
 def list_faction_members(faction_id: str) -> List[Dict[str, Any]]:
     if not faction_id:
         return []
+
     con = _con()
     cur = con.cursor()
     cur.execute("""
@@ -1781,6 +1951,7 @@ def list_faction_members(faction_id: str) -> List[Dict[str, Any]]:
 def get_faction_member(faction_id: str, member_user_id: str) -> Optional[Dict[str, Any]]:
     if not faction_id or not member_user_id:
         return None
+
     con = _con()
     cur = con.cursor()
     cur.execute("""
@@ -1810,6 +1981,7 @@ def add_or_update_faction_member(
     position: str = "",
 ) -> Dict[str, Any]:
     now = _utc_now()
+
     con = _con()
     cur = con.cursor()
     cur.execute("""
@@ -1851,6 +2023,7 @@ def add_or_update_faction_member(
     ))
     con.commit()
     con.close()
+
     recalc_faction_license(faction_id)
     return get_faction_member(faction_id, member_user_id) or {}
 
@@ -1906,13 +2079,15 @@ def set_faction_member_enabled(
     ))
     con.commit()
     con.close()
+
     recalc_faction_license(faction_id)
 
     if changed_by_user_id:
         add_audit_log(
-            changed_by_user_id,
-            "faction_member_enabled_changed",
-            f"faction_id={faction_id} member_user_id={member_user_id} enabled={1 if enabled else 0} changed_by={changed_by_name}",
+            actor_user_id=str(changed_by_user_id),
+            actor_name=str(changed_by_name or ""),
+            action="faction_member_enabled_changed",
+            meta_json=f"faction_id={faction_id} member_user_id={member_user_id} enabled={1 if enabled else 0}",
         )
 
 
@@ -1925,6 +2100,7 @@ def delete_faction_member(faction_id: str, member_user_id: str):
     """, (str(faction_id), str(member_user_id)))
     con.commit()
     con.close()
+
     recalc_faction_license(faction_id)
 
 
@@ -2037,14 +2213,20 @@ def start_faction_trial_if_needed(
         str(leader_api_key or ""),
         now,
         expires,
-        PAYMENT_PER_MEMBER,
+        int(PAYMENT_PER_MEMBER),
         now,
         str(faction_id),
     ))
     con.commit()
     con.close()
+
     recalc_faction_license(faction_id)
-    add_audit_log(leader_user_id, "faction_trial_started", f"faction_id={faction_id}")
+    add_audit_log(
+        actor_user_id=str(leader_user_id or ""),
+        actor_name=str(leader_name or ""),
+        action="faction_trial_started",
+        meta_json=f"faction_id={faction_id}",
+    )
     return compute_faction_license_status(faction_id)
 
 
@@ -2164,9 +2346,11 @@ def compute_faction_license_status(faction_id: str, viewer_user_id: str = "") ->
 def renew_faction_after_payment(
     faction_id: str,
     amount: int,
+    payment_player: str = PAYMENT_PLAYER,
+    renewed_by: str = "",
     payment_kind: str = "cash",
     note: str = "",
-    received_by: str = PAYMENT_PLAYER,
+    received_by: str = "",
     extend_days: int = DEFAULT_PAID_DAYS,
 ) -> Dict[str, Any]:
     row = ensure_faction_license(faction_id)
@@ -2177,6 +2361,8 @@ def renew_faction_after_payment(
     base_dt = current_paid_until if current_paid_until and current_paid_until > now_dt else now_dt
     new_paid_until = (base_dt + timedelta(days=int(extend_days))).isoformat()
     now = now_dt.isoformat()
+
+    final_received_by = str(received_by or renewed_by or payment_player or PAYMENT_PLAYER)
 
     con = _con()
     cur = con.cursor()
@@ -2203,7 +2389,7 @@ def renew_faction_after_payment(
         int(amount or 0),
         str(payment_kind or "cash"),
         str(note or ""),
-        str(received_by or PAYMENT_PLAYER),
+        final_received_by,
         now,
         now,
     ))
@@ -2233,7 +2419,12 @@ def renew_faction_after_payment(
     con.commit()
     con.close()
 
-    add_audit_log(str(row.get("leader_user_id") or ""), "faction_payment_received", f"faction_id={faction_id} amount={amount}")
+    add_audit_log(
+        actor_user_id=str(row.get("leader_user_id") or ""),
+        actor_name=str(row.get("leader_name") or ""),
+        action="faction_payment_received",
+        meta_json=f"faction_id={faction_id} amount={int(amount or 0)} renewed_by={final_received_by}",
+    )
     return compute_faction_license_status(faction_id)
 
 
@@ -2261,6 +2452,7 @@ def force_expire_faction_license(faction_id: str) -> Dict[str, Any]:
 def get_faction_payment_history(faction_id: str, limit: int = 25) -> List[Dict[str, Any]]:
     if not faction_id:
         return []
+
     con = _con()
     cur = con.cursor()
     cur.execute("""
@@ -2304,6 +2496,7 @@ def list_all_faction_licenses(limit: int = 250) -> List[Dict[str, Any]]:
 def get_member_access_record(member_user_id: str) -> Optional[Dict[str, Any]]:
     if not member_user_id:
         return None
+
     con = _con()
     cur = con.cursor()
     cur.execute("""
@@ -2322,9 +2515,11 @@ def get_faction_license_for_member(member_user_id: str) -> Optional[Dict[str, An
     member = get_member_access_record(member_user_id)
     if not member:
         return None
+
     faction_id = str(member.get("faction_id") or "")
     if not faction_id:
         return None
+
     return compute_faction_license_status(faction_id, viewer_user_id=member_user_id)
 
 
