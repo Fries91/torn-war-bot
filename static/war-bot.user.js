@@ -1047,8 +1047,7 @@ function hospitalMemberRow(x, enemy) {
         '</div>\
       </div>';
 }
-
-     function renderChainTab() {
+function renderChainTab() {
     var members = arr((state && state.members) || []);
     var sitters = members.filter(function (x) {
         return !!x.chain_sitter;
