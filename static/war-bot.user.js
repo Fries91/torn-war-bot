@@ -823,7 +823,7 @@
         <div class=\"warhub-grid two\">\n\
           <div>\n\
             <label class=\"warhub-label\">User</label>\n\
-            <input class=\"warhub-input\" id=\"warhub-med-seller\" value=\"".concat(esc(myName), "\" readonly />\n\
+            <input class="warhub-input" id="warhub-med-seller" value=\"".concat(esc(myName), "\" readonly />\n\
           </div>\n\
           <div>\n\
             <label class=\"warhub-label\">Enemy</label>\n\
@@ -1204,8 +1204,11 @@
         var chOff = overlay ? overlay.querySelector('#warhub-set-chain-off') : null;
         if (chOff) chOff.addEventListener('click', _asyncToGenerator(function* () { yield doAction('POST', '/api/chain-sitter', { enabled: false }, 'Chain sitter disabled.'); }));
         var medAdd = overlay ? overlay.querySelector('#warhub-med-add') : null;
-    if (medAdd) medAdd.addEventListener('click', _asyncToGenerator(function* () {
-    var seller_name = cleanInputValue((overlay ? overlay.querySelector('#warhub-med-seller') : null).value || '');
+if (medAdd) medAdd.addEventListener('click', _asyncToGenerator(function* () {
+    var seller_name =
+        cleanInputValue((overlay ? overlay.querySelector('#warhub-med-seller') : null).value || '') ||
+        cleanInputValue((state && state.me && state.me.name) || (state && state.user && state.user.name) || (state && state.me && state.me.player_name) || (state && state.user && state.user.player_name) || '');
+
     var item_name = cleanInputValue((overlay ? overlay.querySelector('#warhub-med-item') : null).value || '');
     var note = cleanInputValue((overlay ? overlay.querySelector('#warhub-med-note') : null).value || '');
 
