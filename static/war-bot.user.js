@@ -688,9 +688,23 @@
     var last = x.last_action || x.last_action_relative || x.last || '—';
     var level = x.level ? ("Lvl " + x.level) : '';
 
-    var lifeCur = Number(x.life_current || x.current_life || 0);
-    var lifeMax = Number(x.life_max || x.maximum_life || 0);
-    var lifeText = lifeMax > 0 ? (lifeCur.toLocaleString() + "/" + lifeMax.toLocaleString()) : '—';
+    var lifeCur = Number(
+        x.life_current ||
+        x.current_life ||
+        x.life ||
+        0
+    );
+
+    var lifeMax = Number(
+        x.life_max ||
+        x.maximum_life ||
+        x.max_life ||
+        0
+    );
+
+    var lifeText = lifeMax > 0
+        ? (lifeCur.toLocaleString() + "/" + lifeMax.toLocaleString())
+        : (lifeCur > 0 ? lifeCur.toLocaleString() : '—');
 
     var energyCur = Number(
         x.energy_current ||
@@ -727,7 +741,8 @@
         <div class="warhub-row">\
           <div>\
             <div class="warhub-name">' + esc(name) + '</div>\
-            <div class="warhub-meta">' + esc([level, 'Life ' + lifeText, 'Energy ' + energyText, last].filter(Boolean).join(' • ')) + '</div>\
+            <div class="warhub-meta">' + esc([level, last].filter(Boolean).join(' • ')) + '</div>\
+            <div class="warhub-meta">' + esc(['Life ' + lifeText, 'Energy ' + energyText].join(' • ')) + '</div>\
           </div>\
           <div class="warhub-actions">\
             ' + pill + '\
