@@ -676,6 +676,137 @@
             offline: sortRosterGroup(offline, 'offline')
         };
     }
+
+    function getActiveDibs() {
+    return arr((state === null || state === void 0 ? void 0 : state.dibs) || []);
+}
+
+function getMyUserId() {
+    return String(
+        ((state === null || state === void 0 ? void 0 : state.me) && (((state === null || state === void 0 ? void 0 : state.me.user_id) || ((state === null || state === void 0 ? void 0 : state.me.id) || (state === null || state === void 0 ? void 0 : state.me.player_id)))) ||
+        ((state === null || state === void 0 ? void 0 : state.user) && (((state === null || state === void 0 ? void 0 : state.user.user_id) || ((state === null || state === void 0 ? void 0 : state.user.id) || (state === null || state === void 0 ? void 0 : state.user.player_id)))) ||
+        ''
+    );
+}
+
+function getMyUserName() {
+    return String(
+        (((state === null || state === void 0 ? void 0 : state.me) && (((state === null || state === void 0 ? void 0 : state.me.name) || (state === null || state === void 0 ? void 0 : state.me.player_name))) ||
+        ((state === null || state === void 0 ? void 0 : state.user) && (((state === null || state === void 0 ? void 0 : state.user.name) || (state === null || state === void 0 ? void 0 : state.user.player_name))) ||
+        'You')
+    );
+}
+
+function findDibsForTarget(targetId) {
+    var id = String(targetId || '');
+    return getActiveDibs().find(function (d) {
+        return String(d.target_id || d.enemy_id || d.user_id || '') === id;
+    }) || null;
+}
+
+function isDibsCooldownActive(dib) {
+    if (!dib) return false;
+    var until = dib.cooldown_until || dib.available_again_at || dib.locked_until || '';
+    if (!until) return false;
+    var ts = new Date(until).getTime();
+    return Number.isFinite(ts) && ts > Date.now();
+}
+
+function filterHospitalEnemiesForTab(list) {
+    return arr(list).filter(function (x) {
+        var id = String(x.user_id || x.id || x.player_id || '');
+        var dib = findDibsForTarget(id);
+        if (!dib) return true;
+        if (isDibsCooldownActive(dib)) return false;
+        if (String(dib.status || '').toLowerCase() === 'active') return false;
+        return true;
+    });
+}
+
+function renderDibsOverviewCard() {
+    var myId = getMyUserId();
+    var myDibs = getActiveDibs().filter(function (d) {
+        return String(d.assigned_to_user_id || d.user_id || '') === myId;
+    });
+
+    return '\
+      <div class="warhub-card">\
+        <div class="warhub-section-title">\
+          <h3>Dibs Overview</h3>\
+          <span class="warhub-count">' + fmtNum(myDibs.length) + '</span>\
+        </div>\
+        <div class="warhub-list">' +
+          (myDibs.length ? myDibs.map(function (d) {
+            var name = d.target_name || d.enemy_name || ('ID ' + (d.target_id || d.enemy_id || '—'));
+            var status = d.status || 'active';
+            var until = d.cooldown_until || d.available_again_at || '';
+            var extra = isDibsCooldownActive(d) ? ('Available again ' + fmtTs(until)) : status;
+            return '\
+              <div class="warhub-list-item">\
+                <div class="warhub-row">\
+                  <div>\
+                    <div class="warhub-name">' + esc(name) + '</div>\
+                    <div class="warhub-meta">' + esc(extra) + '</div>\
+                  </div>\
+                </div>\
+              </div>';
+          }).join('') : '<div class="warhub-empty">No dibs claimed.</div>') +
+        '</div>\
+      </div>';
+}
+
+function hospitalMemberRow(x, enemy) {
+    if (enemy === void 0) enemy = false;
+
+    var id = x.user_id || x.id || x.player_id || x.member_user_id || '';
+    var name = x.name || x.player_name || x.member_name || ("ID " + id);
+    var hosp = getHospSeconds(x);
+    var hospText = x.hospital_text || '';
+    var level = x.level ? ("Lvl " + x.level) : '';
+    var last = x.last_action || x.last_action_relative || x.last || '—';
+
+    var lifeCur = Number(x.life_current || x.current_life || x.life || 0);
+    var lifeMax = Number(x.life_max || x.maximum_life || x.max_life || 0);
+    var lifeText = lifeMax > 0 ? (lifeCur.toLocaleString() + "/" + lifeMax.toLocaleString()) : '—';
+
+    var energyCur = Number(x.energy_current || x.energy || x.energy_now || 0);
+    var energyMax = Number(x.energy_max || x.max_energy || 150);
+    var energyText = energyMax > 0 ? (energyCur.toLocaleString() + "/" + energyMax.toLocaleString()) : '—';
+
+    var dib = enemy ? findDibsForTarget(id) : null;
+    var dibMine = dib && String(dib.assigned_to_user_id || '') === getMyUserId();
+    var dibCooldown = dib && isDibsCooldownActive(dib);
+    var dibTaken = dib && !dibCooldown && !dibMine && String(dib.status || '').toLowerCase() === 'active';
+
+    var dibButton = '';
+    if (enemy) {
+        if (dibMine) {
+            dibButton = '<button class="warhub-btn small good" disabled>My Dibs</button>';
+        } else if (dibTaken) {
+            dibButton = '<button class="warhub-btn small" disabled>Taken</button>';
+        } else if (dibCooldown) {
+            dibButton = '<button class="warhub-btn small" disabled>Cooldown</button>';
+        } else {
+            dibButton = '<button class="warhub-btn small warn warhub-dibs-btn" data-target-id="' + esc(String(id)) + '" data-target-name="' + esc(name) + '">Dibs</button>';
+        }
+    }
+
+    return '\
+      <div class="warhub-list-item">\
+        <div class="warhub-row">\
+          <div>\
+            <div class="warhub-name">' + esc(name) + '</div>\
+            <div class="warhub-meta">' + esc([level, last].filter(Boolean).join(' • ')) + '</div>\
+            <div class="warhub-meta">' + esc(['Hosp ' + fmtHosp(hosp, hospText), 'Life ' + lifeText, 'Energy ' + energyText].join(' • ')) + '</div>\
+          </div>\
+          <div class="warhub-actions">\
+            <span class="warhub-pill hosp">Hosp ' + esc(fmtHosp(hosp, hospText)) + '</span>\
+            ' + dibButton + '\
+          </div>\
+        </div>\
+      </div>';
+}
+    
     function memberRow(x, enemy) {
     if (enemy === void 0) enemy = false;
 
@@ -868,19 +999,54 @@
         }), "\n    ");
     }
     function renderHospitalTab() {
-        var ours = sortHosp(arr((state === null || state === void 0 ? void 0 : state.members) || []).filter(function (x) {
-            return getHospSeconds(x) > 0;
-        }));
-        var theirs = sortHosp(arr((state === null || state === void 0 ? void 0 : state.enemies) || []).filter(function (x) {
-            return getHospSeconds(x) > 0;
-        }));
-        return "\n      ".concat(rosterCard('Our Hospital', ours, {
-            extraClass: 'hospital-box'
-        }), "\n      ").concat(rosterCard('Enemy Hospital', theirs, {
-            extraClass: 'hospital-box',
-            enemy: true
-        }), "\n    ");
-    }
+    var ours = sortHosp(arr((state === null || state === void 0 ? void 0 : state.members) || []).filter(function (x) {
+        return getHospSeconds(x) > 0;
+    }));
+
+    var enemyHospRaw = sortHosp(arr((state === null || state === void 0 ? void 0 : state.enemies) || []).filter(function (x) {
+        return getHospSeconds(x) > 0;
+    }));
+
+    var theirs = filterHospitalEnemiesForTab(enemyHospRaw);
+    var total = ours.length + theirs.length;
+
+    return '\
+      <div class="warhub-card">\
+        <div class="warhub-section-title">\
+          <h3>Hospital Overview</h3>\
+          <span class="warhub-count">' + fmtNum(total) + '</span>\
+        </div>\
+        <div class="warhub-grid two">\
+          <div class="warhub-metric">\
+            <div class="k">Our Hospital</div>\
+            <div class="v">' + fmtNum(ours.length) + '</div>\
+          </div>\
+          <div class="warhub-metric">\
+            <div class="k">Enemy Hospital</div>\
+            <div class="v">' + fmtNum(theirs.length) + '</div>\
+          </div>\
+        </div>\
+      </div>\
+      ' + renderDibsOverviewCard() + '\
+      <div class="warhub-card warhub-roster-card hospital-box">\
+        <div class="warhub-section-title">\
+          <h3>Our Hospital</h3>\
+          <span class="warhub-count">' + fmtNum(ours.length) + '</span>\
+        </div>\
+        <div class="warhub-list">' +
+          (ours.length ? ours.map(function (x) { return hospitalMemberRow(x, false); }).join('') : '<div class="warhub-empty">No one in our hospital.</div>') +
+        '</div>\
+      </div>\
+      <div class="warhub-card warhub-roster-card hospital-box">\
+        <div class="warhub-section-title">\
+          <h3>Enemy Hospital</h3>\
+          <span class="warhub-count">' + fmtNum(theirs.length) + '</span>\
+        </div>\
+        <div class="warhub-list">' +
+          (theirs.length ? theirs.map(function (x) { return hospitalMemberRow(x, true); }).join('') : '<div class="warhub-empty">No enemy in hospital.</div>') +
+        '</div>\
+      </div>';
+}
 
      function renderChainTab() {
     var members = arr((state && state.members) || []);
@@ -1415,6 +1581,7 @@ if (medAdd) medAdd.addEventListener('click', _asyncToGenerator(function* () {
 
     if (res) renderBody();
 }));
+        
         if (overlay) overlay.querySelectorAll('.warhub-del-med').forEach(function (btn) {
             btn.addEventListener('click', _asyncToGenerator(function* () {
                 var id = cleanInputValue(btn.getAttribute('data-id') || '');
@@ -1423,6 +1590,25 @@ if (medAdd) medAdd.addEventListener('click', _asyncToGenerator(function* () {
                 if (res) renderBody();
             }));
         });
+        if (overlay) overlay.querySelectorAll('.warhub-dibs-btn').forEach(function (btn) {
+    btn.addEventListener('click', _asyncToGenerator(function* () {
+        var targetId = cleanInputValue(btn.getAttribute('data-target-id') || '');
+        var targetName = cleanInputValue(btn.getAttribute('data-target-name') || '');
+
+        if (!targetId) return;
+
+        var res = yield doAction('POST', '/api/dibs', {
+            target_id: targetId,
+            target_name: targetName
+        }, 'Dibs claimed.', false);
+
+        if (res) {
+            yield loadState(true);
+            renderBody();
+        }
+    }));
+});
+        
         var targetSel = overlay ? overlay.querySelector('#warhub-target-enemy') : null;
         if (targetSel) targetSel.addEventListener('change', function () {
             var opt = targetSel.selectedOptions ? targetSel.selectedOptions[0] : null;
