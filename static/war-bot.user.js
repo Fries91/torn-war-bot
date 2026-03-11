@@ -1053,7 +1053,7 @@ function renderOverviewTab() {
                 <span class="warhub-count">' + fmtNum(allDibs.length) + '</span>\
             </div>\
             <div class="warhub-actions" style="margin-bottom:8px;">\
-                <button class="warhub-btn small" data-overview-go="assignments">Open Dibs</button>\
+                <button class="warhub-btn small" data-overview-go="dibs">Open Dibs</button>
             </div>\
             <div class="warhub-list">' + dibsHtml + '</div>\
         </div>');
@@ -1525,7 +1525,7 @@ function renderChainTab() {
         case 'hospital': return "".concat(renderAccessBanner()).concat(renderHospitalTab());
         case 'meddeals': return "".concat(renderAccessBanner()).concat(renderMedDealsTab());
         case 'targets': return "".concat(renderAccessBanner()).concat(renderTargetsTab());
-        case 'assignments': return "".concat(renderAccessBanner()).concat(renderAssignmentsTab());
+        case 'dibs': return "".concat(renderAccessBanner()).concat(renderAssignmentsTab());
         case 'notes': return "".concat(renderAccessBanner()).concat(renderNotesTab());
         case 'instructions': return renderInstructionsTab();
         case 'settings': return renderSettingsTab();
@@ -2027,19 +2027,28 @@ if (medAdd) medAdd.addEventListener('click', _asyncToGenerator(function* () {
             startPolling();
             setStatus("Refresh saved: ".concat(ms, "ms"));
         });
-        var resetPositions = overlay ? overlay.querySelector('#wh-reset-positions') : null;
-        if (resetPositions) resetPositions.addEventListener('click', function () {
-            GM_deleteValue(K_SHIELD_POS);
-            GM_deleteValue(K_OVERLAY_POS);
-            resetShieldPosition();
-            positionOverlayNearShield();
-            saveShieldPos();
-            saveOverlayPos();
-            updateBadge();
-            setStatus('Positions reset.');
-        });
-    }
-    var saveOverviewBoxes = overlay ? overlay.querySelector('#wh-save-overview-boxes') : null;
+        var saveRefresh = overlay ? overlay.querySelector('#wh-save-refresh') : null;
+if (saveRefresh) saveRefresh.addEventListener('click', function () {
+    var raw = cleanInputValue(overlay.querySelector('#wh-refresh-ms').value || '30000');
+    var ms = Math.max(10000, Number(raw) || 30000);
+    GM_setValue(K_REFRESH, ms);
+    startPolling();
+    setStatus("Refresh saved: ".concat(ms, "ms"));
+});
+
+var resetPositions = overlay ? overlay.querySelector('#wh-reset-positions') : null;
+if (resetPositions) resetPositions.addEventListener('click', function () {
+    GM_deleteValue(K_SHIELD_POS);
+    GM_deleteValue(K_OVERLAY_POS);
+    resetShieldPosition();
+    positionOverlayNearShield();
+    saveShieldPos();
+    saveOverlayPos();
+    updateBadge();
+    setStatus('Positions reset.');
+});
+
+var saveOverviewBoxes = overlay ? overlay.querySelector('#wh-save-overview-boxes') : null;
 if (saveOverviewBoxes) saveOverviewBoxes.addEventListener('click', function () {
     var prefs = {
         meddeals: !!(overlay.querySelector('#wh-overview-meddeals') && overlay.querySelector('#wh-overview-meddeals').checked),
@@ -2061,6 +2070,7 @@ if (overlay) overlay.querySelectorAll('[data-overview-go]').forEach(function (bt
         renderBody();
     });
 });
+}
     function mount() {
         if (mounted) return;
         mounted = true;
