@@ -1053,7 +1053,7 @@ function renderOverviewTab() {
                 <span class="warhub-count">' + fmtNum(allDibs.length) + '</span>\
             </div>\
             <div class="warhub-actions" style="margin-bottom:8px;">\
-                <button class="warhub-btn small" data-overview-go="hospital">Open Dibs</button>
+                <button class="warhub-btn small" data-overview-go="hospital">Open Dibs</button>\
             </div>\
             <div class="warhub-list">' + dibsHtml + '</div>\
         </div>');
