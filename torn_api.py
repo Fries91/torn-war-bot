@@ -245,7 +245,6 @@ def me_basic(api_key: str) -> Dict[str, Any]:
             "faction_name": "",
         }
 
-    # Use the plain /user endpoint form first because it is the most reliable
     res = _safe_get(
         f"{API_BASE}/user",
         {
@@ -256,7 +255,6 @@ def me_basic(api_key: str) -> Dict[str, Any]:
         cache_prefix="",
     )
 
-    # Fallback with trailing slash just in case
     if not res.get("ok"):
         res = _safe_get(
             f"{API_BASE}/user/",
@@ -475,21 +473,29 @@ def _side_chain(side_data: Dict[str, Any]) -> int:
     return 0
 
 
-def faction_wars(api_key: str) -> Dict[str, Any]:
+def faction_wars(api_key: str, faction_id: str = "") -> Dict[str, Any]:
+    faction_id = str(faction_id or "").strip()
     tries = ["rankedwars", "wars", "basic"]
     chosen_container_name = ""
     chosen_container: Dict[str, Any] = {}
     last_note = ""
 
     for selection in tries:
+        params = {
+            "selections": selection,
+            "key": api_key,
+        }
+
+        cache_suffix = "self"
+        if faction_id:
+            params["ID"] = faction_id
+            cache_suffix = f"id_{faction_id}"
+
         res = _safe_get(
             f"{API_BASE}/faction/",
-            {
-                "selections": selection,
-                "key": api_key,
-            },
+            params,
             cache_seconds=CACHE_TTL_FACTION_WARS,
-            cache_prefix=f"faction_{selection}",
+            cache_prefix=f"faction_{selection}_{cache_suffix}",
         )
         if not res.get("ok"):
             last_note = res.get("error", "Unknown Torn API error")
@@ -535,6 +541,34 @@ def faction_wars(api_key: str) -> Dict[str, Any]:
                     }
                 )
 
+        if not parsed_factions:
+            for key in ("faction_1", "faction1", "team_1", "team1"):
+                side = war.get(key)
+                if isinstance(side, dict):
+                    sid = str(side.get("id") or side.get("faction_id") or "")
+                    parsed_factions.append(
+                        {
+                            "faction_id": sid,
+                            "faction_name": _side_name(side),
+                            "score": _side_score(side),
+                            "chain": _side_chain(side),
+                            "raw": side,
+                        }
+                    )
+            for key in ("faction_2", "faction2", "team_2", "team2"):
+                side = war.get(key)
+                if isinstance(side, dict):
+                    sid = str(side.get("id") or side.get("faction_id") or "")
+                    parsed_factions.append(
+                        {
+                            "faction_id": sid,
+                            "faction_name": _side_name(side),
+                            "score": _side_score(side),
+                            "chain": _side_chain(side),
+                            "raw": side,
+                        }
+                    )
+
         phase = _war_phase(war)
 
         wars.append(
@@ -577,6 +611,10 @@ def faction_wars(api_key: str) -> Dict[str, Any]:
 
 
 def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: str = "") -> Dict[str, Any]:
+    me = me_basic(api_key)
+    resolved_my_faction_id = str(my_faction_id or me.get("faction_id") or "")
+    resolved_my_faction_name = str(my_faction_name or me.get("faction_name") or "")
+
     default = {
         "ok": True,
         "active": False,
@@ -585,8 +623,8 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
         "phase": "none",
         "war_id": "",
         "war_type": "",
-        "my_faction_id": str(my_faction_id or ""),
-        "my_faction_name": str(my_faction_name or ""),
+        "my_faction_id": resolved_my_faction_id,
+        "my_faction_name": resolved_my_faction_name,
         "enemy_faction_id": "",
         "enemy_faction_name": "",
         "enemy_members": [],
@@ -604,14 +642,13 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
         "source_note": "No registered or active ranked war found.",
     }
 
-    wars_res = faction_wars(api_key)
+    wars_res = faction_wars(api_key, faction_id=resolved_my_faction_id)
     if not wars_res.get("ok"):
         out = dict(default)
         out["source_note"] = wars_res.get("error", out["source_note"])
         return out
 
     wars = wars_res.get("wars") or []
-    my_faction_id = str(my_faction_id or "")
     chosen_war = None
 
     for war in wars:
@@ -620,13 +657,21 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
             continue
 
         faction_ids = [str(x.get("faction_id") or "") for x in factions]
-        if my_faction_id and my_faction_id not in faction_ids:
+        if resolved_my_faction_id and resolved_my_faction_id not in faction_ids:
             continue
 
         phase = str(war.get("phase") or "")
         if phase in {"registered", "active"}:
             chosen_war = war
             break
+
+    if not chosen_war:
+        if wars:
+            for war in wars:
+                phase = str(war.get("phase") or "")
+                if phase in {"registered", "active"}:
+                    chosen_war = war
+                    break
 
     if not chosen_war:
         out = dict(default)
@@ -638,9 +683,9 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
     my_side = None
     enemy_side = None
 
-    if my_faction_id:
+    if resolved_my_faction_id:
         for f in factions:
-            if str(f.get("faction_id") or "") == my_faction_id:
+            if str(f.get("faction_id") or "") == resolved_my_faction_id:
                 my_side = f
                 break
 
@@ -650,8 +695,12 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
                 enemy_side = f
                 break
 
-    my_id = str((my_side or {}).get("faction_id") or my_faction_id or "")
-    my_name = str((my_side or {}).get("faction_name") or my_faction_name or "")
+    if not my_side and len(factions) == 2:
+        my_side = factions[0]
+        enemy_side = factions[1]
+
+    my_id = str((my_side or {}).get("faction_id") or resolved_my_faction_id or "")
+    my_name = str((my_side or {}).get("faction_name") or resolved_my_faction_name or "")
 
     enemy_id = str((enemy_side or {}).get("faction_id") or "")
     enemy_name = str((enemy_side or {}).get("faction_name") or "")
