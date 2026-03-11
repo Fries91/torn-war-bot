@@ -676,24 +676,75 @@
             offline: sortRosterGroup(offline, 'offline')
         };
     }
-    function memberRow(x) {
-        var enemy = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : false;
-        var id = x.user_id || x.id || x.player_id || x.member_user_id || '';
-        var name = x.name || x.player_name || x.member_name || "ID ".concat(id);
-        var onlineState = String(x.online_state || x.online_status || x.status || 'offline').toLowerCase();
-        var hosp = getHospSeconds(x);
-        var hospText = x.hospital_text || '';
-        var last = x.last_action || x.last_action_relative || x.last || '—';
-        var level = x.level ? "Lvl ".concat(x.level) : '';
-        var lifeCur = Number(x.life_current || x.current_life || 0);
-        var lifeMax = Number(x.life_max || x.maximum_life || 0);
-        var lifeText = lifeMax > 0 ? "".concat(lifeCur.toLocaleString(), "/").concat(lifeMax.toLocaleString()) : '—';
-        var attackUrl = x.attack_url || (id ? "https://www.torn.com/loader.php?sid=attack&user2ID=".concat(id) : '#');
-        var enabled = !!x.enabled_under_license || !!x.member_access_enabled || !!x.enabled;
-        var leader = String(x.position || '').toLowerCase().includes('leader');
-        var pill = hosp > 0 ? "<span class=\"warhub-pill hosp\">Hosp ".concat(esc(fmtHosp(hosp, hospText)), "</span>") : onlineState.includes('online') ? '<span class="warhub-pill online">Online</span>' : onlineState.includes('idle') ? '<span class="warhub-pill idle">Idle</span>' : '<span class="warhub-pill offline">Offline</span>';
-        return "\n      <div class=\"warhub-list-item\">\n        <div class=\"warhub-row\">\n          <div>\n            <div class=\"warhub-name\">".concat(esc(name), "</div>\n            <div class=\"warhub-meta\">").concat(esc([level, "Life ".concat(lifeText), last].filter(Boolean).join(' • ')), "</div>\n          </div>\n          <div class=\"warhub-actions\">\n            ").concat(pill, "\n            ").concat(leader ? '<span class="warhub-pill leader">Leader</span>' : '', "\n            ").concat(!enemy && ((accessState === null || accessState === void 0 ? void 0 : accessState.isFactionLeader) || isOwnerSession()) ? "<span class=\"warhub-pill ".concat(enabled ? 'enabled' : 'disabled', "\">").concat(enabled ? 'Enabled' : 'Disabled', "</span>") : '', "\n          </div>\n        </div>\n        <div class=\"warhub-row\">\n          <div class=\"warhub-meta\">ID ").concat(esc(id || '—'), "</div>\n          <div class=\"warhub-actions\">\n            ").concat(id ? "<a class=\"warhub-btn small\" href=\"https://www.torn.com/profiles.php?XID=".concat(encodeURIComponent(id), "\" target=\"_blank\" rel=\"noopener noreferrer\">Profile</a>") : '', "\n            ").concat(id ? "<a class=\"warhub-btn small primary\" href=\"".concat(esc(attackUrl), "\" target=\"_blank\" rel=\"noopener noreferrer\">Attack</a>") : '', "\n            ").concat(enemy && id ? "<a class=\"warhub-btn small warn\" href=\"https://www.torn.com/bounties.php?userID=".concat(encodeURIComponent(id), "\" target=\"_blank\" rel=\"noopener noreferrer\">Bounty</a>") : '', "\n          </div>\n        </div>\n      </div>\n    ");
-    }
+    function memberRow(x, enemy) {
+    if (enemy === void 0) enemy = false;
+
+    var id = x.user_id || x.id || x.player_id || x.member_user_id || '';
+    var name = x.name || x.player_name || x.member_name || ("ID " + id);
+
+    var presence = getPresenceState(x);
+    var hosp = getHospSeconds(x);
+    var hospText = x.hospital_text || '';
+    var last = x.last_action || x.last_action_relative || x.last || '—';
+    var level = x.level ? ("Lvl " + x.level) : '';
+
+    var lifeCur = Number(x.life_current || x.current_life || 0);
+    var lifeMax = Number(x.life_max || x.maximum_life || 0);
+    var lifeText = lifeMax > 0 ? (lifeCur.toLocaleString() + "/" + lifeMax.toLocaleString()) : '—';
+
+    var energyCur = Number(
+        x.energy_current ||
+        x.energy ||
+        x.energy_now ||
+        x.energy_used_current ||
+        0
+    );
+
+    var energyMax = Number(
+        x.energy_max ||
+        x.max_energy ||
+        150
+    );
+
+    var energyText = energyMax > 0
+        ? (energyCur.toLocaleString() + "/" + energyMax.toLocaleString())
+        : (energyCur > 0 ? energyCur.toLocaleString() : '—');
+
+    var attackUrl = x.attack_url || (id ? ("https://www.torn.com/loader.php?sid=attack&user2ID=" + id) : '#');
+    var enabled = !!x.enabled_under_license || !!x.member_access_enabled || !!x.enabled;
+    var leader = String(x.position || '').toLowerCase().includes('leader');
+
+    var pill = hosp > 0
+        ? '<span class="warhub-pill hosp">Hosp ' + esc(fmtHosp(hosp, hospText)) + '</span>'
+        : presence === 'online'
+            ? '<span class="warhub-pill online">Online</span>'
+            : presence === 'idle'
+                ? '<span class="warhub-pill idle">Idle</span>'
+                : '<span class="warhub-pill offline">Offline</span>';
+
+    return '\
+      <div class="warhub-list-item">\
+        <div class="warhub-row">\
+          <div>\
+            <div class="warhub-name">' + esc(name) + '</div>\
+            <div class="warhub-meta">' + esc([level, 'Life ' + lifeText, 'Energy ' + energyText, last].filter(Boolean).join(' • ')) + '</div>\
+          </div>\
+          <div class="warhub-actions">\
+            ' + pill + '\
+            ' + (leader ? '<span class="warhub-pill leader">Leader</span>' : '') + '\
+            ' + (!enemy && ((accessState === null || accessState === void 0 ? void 0 : accessState.isFactionLeader) || isOwnerSession()) ? '<span class="warhub-pill ' + (enabled ? 'enabled' : 'disabled') + '">' + (enabled ? 'Enabled' : 'Disabled') + '</span>' : '') + '\
+          </div>\
+        </div>\
+        <div class="warhub-row">\
+          <div class="warhub-meta">ID ' + esc(id || '—') + '</div>\
+          <div class="warhub-actions">\
+            ' + (id ? '<a class="warhub-btn small" href="https://www.torn.com/profiles.php?XID=' + encodeURIComponent(id) + '" target="_blank" rel="noopener noreferrer">Profile</a>' : '') + '\
+            ' + (id ? '<a class="warhub-btn small primary" href="' + esc(attackUrl) + '" target="_blank" rel="noopener noreferrer">Attack</a>' : '') + '\
+            ' + (id ? '<a class="warhub-btn small warn" href="https://www.torn.com/bounties.php?userID=' + encodeURIComponent(id) + '" target="_blank" rel="noopener noreferrer">Bounty</a>' : '') + '\
+          </div>\
+        </div>\
+      </div>';
+}
     function rosterCard(title, items) {
         var opts = arguments.length > 2 && arguments[2] !== undefined ? arguments[2] : {};
         var extraClass = opts.extraClass || '';
@@ -738,17 +789,48 @@
         return "\n      <div class=\"warhub-card\">\n        <div class=\"warhub-section-title\">\n          <h3>War Terms</h3>\n          ".concat(locked ? '<span class="warhub-pill disabled">Leader Only</span>' : '', "\n        </div>\n        <label class=\"warhub-label\">War ID</label>\n        <input class=\"warhub-input\" id=\"warhub-terms-warid\" value=\"").concat(esc(warId), "\" readonly />\n        <div style=\"height:8px;\"></div>\n        <label class=\"warhub-label\">Terms</label>\n        <textarea class=\"warhub-textarea\" id=\"warhub-terms-text\" ").concat(locked ? 'readonly' : '', ">").concat(esc(termsText), "</textarea>\n        <div class=\"warhub-actions\" style=\"margin-top:8px;\">\n          <button class=\"warhub-btn primary\" id=\"warhub-terms-save\" ").concat(locked ? 'disabled' : '', ">Save Terms</button>\n          <button class=\"warhub-btn warn\" id=\"warhub-terms-delete\" ").concat(locked ? 'disabled' : '', ">Delete Terms</button>\n        </div>\n      </div>\n    ");
     }
     function renderMembersTab() {
-        var groups = splitRosterGroups((state === null || state === void 0 ? void 0 : state.members) || []);
-        return "\n      ".concat(rosterCard('Online Members', groups.online, {
-            extraClass: 'online-box'
-        }), "\n      ").concat(rosterCard('Idle Members', groups.idle, {
-            extraClass: 'idle-box'
-        }), "\n      ").concat(rosterCard('Hospital Members', groups.hospital, {
-            extraClass: 'hospital-box'
-        }), "\n      ").concat(rosterDropdown('Offline Members', groups.offline, {
-            extraClass: 'offline-box'
-        }), "\n    ");
-    }
+    var groups = splitRosterGroups((state === null || state === void 0 ? void 0 : state.members) || []);
+    var total = groups.online.length + groups.idle.length + groups.hospital.length + groups.offline.length;
+
+    return "\n\
+      <div class=\"warhub-card\">\n\
+        <div class=\"warhub-section-title\">\n\
+          <h3>Members Overview</h3>\n\
+          <span class=\"warhub-count\">".concat(fmtNum(total), "</span>\n\
+        </div>\n\
+        <div class=\"warhub-grid two\">\n\
+          <div class=\"warhub-metric\">\n\
+            <div class=\"k\">Online</div>\n\
+            <div class=\"v\">").concat(fmtNum(groups.online.length), "</div>\n\
+          </div>\n\
+          <div class=\"warhub-metric\">\n\
+            <div class=\"k\">Idle</div>\n\
+            <div class=\"v\">").concat(fmtNum(groups.idle.length), "</div>\n\
+          </div>\n\
+          <div class=\"warhub-metric\">\n\
+            <div class=\"k\">Hospital</div>\n\
+            <div class=\"v\">").concat(fmtNum(groups.hospital.length), "</div>\n\
+          </div>\n\
+          <div class=\"warhub-metric\">\n\
+            <div class=\"k\">Offline</div>\n\
+            <div class=\"v\">").concat(fmtNum(groups.offline.length), "</div>\n\
+          </div>\n\
+        </div>\n\
+      </div>\n\
+      ").concat(rosterCard('Online Members', groups.online, {
+        extraClass: 'online-box'
+    }), "\n\
+      ").concat(rosterCard('Idle Members', groups.idle, {
+        extraClass: 'idle-box'
+    }), "\n\
+      ").concat(rosterCard('Hospital Members', groups.hospital, {
+        extraClass: 'hospital-box'
+    }), "\n\
+      ").concat(rosterDropdown('Offline Members', groups.offline, {
+        extraClass: 'offline-box'
+    }), "\n\
+    ");
+}
     function renderEnemiesTab() {
         var enemies = arr((state === null || state === void 0 ? void 0 : state.enemies) || []);
         var hasWar = !!((state === null || state === void 0 ? void 0 : state.has_war) || (state === null || state === void 0 ? void 0 : state.war) && state.war.active || (state === null || state === void 0 ? void 0 : state.war) && state.war.war_id || (state === null || state === void 0 ? void 0 : state.enemy_faction_id) || (state === null || state === void 0 ? void 0 : state.enemyFaction) && state.enemyFaction.id || (state === null || state === void 0 ? void 0 : state.enemyFaction) && state.enemyFaction.faction_id);
