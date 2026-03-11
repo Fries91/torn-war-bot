@@ -1477,7 +1477,7 @@
       state?.terms?.terms ||
       "";
 
-    const locked = !accessState?.isFactionLeader;
+    const locked = !(accessState?.isFactionLeader || isOwnerSession());
 
     return `
       <div class="warhub-card">
@@ -1905,7 +1905,7 @@
 
       <div class="warhub-card">
         <h3>Manage Member Access</h3>
-        ${accessState?.isFactionLeader ? `
+        (accessState?.isFactionLeader || isOwnerSession())
           <div class="warhub-grid two">
             <div>
               <label class="warhub-label">Member User ID</label>
@@ -1949,8 +1949,8 @@
                   </div>
                   <div class="warhub-actions">
                     <span class="warhub-pill ${enabled ? "enabled" : "disabled"}">${enabled ? "Enabled" : "Disabled"}</span>
-                    ${accessState?.isFactionLeader ? `<button class="warhub-btn small ${enabled ? "" : "good"}" data-toggle-member="${esc(String(memberId))}" data-enabled="${enabled ? "0" : "1"}">${enabled ? "Disable" : "Enable"}</button>` : ``}
-                    ${accessState?.isFactionLeader ? `<button class="warhub-btn small warn" data-del-member="${esc(String(memberId))}">Delete</button>` : ``}
+                    ${(accessState?.isFactionLeader || isOwnerSession()) ? `<button class="warhub-btn small ${enabled ? "" : "good"}" data-toggle-member="${esc(String(memberId))}" data-enabled="${enabled ? "0" : "1"}">${enabled ? "Disable" : "Enable"}</button>` : ``}
+                    ${(accessState?.isFactionLeader || isOwnerSession()) ? `<button class="warhub-btn small warn" data-del-member="${esc(String(memberId))}">Delete</button>` : ``}
                   </div>
                 </div>
               </div>
@@ -2084,10 +2084,11 @@
   }
 
   function tabLocked(key) {
-    if (key === "admin") return !isOwnerSession();
-    if (key === "terms" || key === "faction") return !accessState?.isFactionLeader;
-    return false;
-  }
+  if (isOwnerSession()) return false;
+  if (key === "admin") return !isOwnerSession();
+  if (key === "terms" || key === "faction") return !accessState?.isFactionLeader;
+  return false;
+}
 
   function tabBtn(key, label) {
     const active = currentTab === key ? "active" : "";
