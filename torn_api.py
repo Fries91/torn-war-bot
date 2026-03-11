@@ -363,6 +363,8 @@ def faction_basic(api_key: str, faction_id: str = "") -> Dict[str, Any]:
             ),
         ]
 
+        best: Optional[Dict[str, Any]] = None
+
         for url, params, prefix in attempts:
             res = _safe_get(
                 url,
@@ -371,8 +373,15 @@ def faction_basic(api_key: str, faction_id: str = "") -> Dict[str, Any]:
                 cache_prefix=prefix,
             )
             built = _build_result(res, faction_id)
-            if built.get("ok"):
+
+            if built.get("ok") and built.get("members"):
                 return built
+
+            if built.get("ok") and best is None:
+                best = built
+
+        if best:
+            return best
 
         return {
             "ok": False,
@@ -394,7 +403,12 @@ def faction_basic(api_key: str, faction_id: str = "") -> Dict[str, Any]:
 
     my_faction_id = str(me.get("faction_id") or "")
     if not my_faction_id:
-        return {"ok": True, "faction_id": "", "faction_name": "", "members": []}
+        return {
+            "ok": True,
+            "faction_id": "",
+            "faction_name": "",
+            "members": [],
+        }
 
     return faction_basic(api_key, faction_id=my_faction_id)
 
