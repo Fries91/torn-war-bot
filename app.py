@@ -874,9 +874,9 @@ def api_state():
     enemy_faction_name = str(war_info.get("enemy_faction_name") or "").strip()
 
     raw_enemy_members = []
-    if str(war_info.get("phase") or "") == "active" and enemy_faction_id:
-        enemy_info = _faction_basic_by_id(war_api_key or api_key, enemy_faction_id)
-        raw_enemy_members = enemy_info.get("members") or []
+if enemy_faction_id and bool(war_info.get("has_war")):
+    enemy_info = _faction_basic_by_id(war_api_key or api_key, enemy_faction_id)
+    raw_enemy_members = enemy_info.get("members") or []
 
     enemies = _merge_enemy_state(raw_enemy_members, war_id)
 
