@@ -262,33 +262,56 @@
         };
     }
     function updateAccessFromPayload(payload, httpStatus, loggedInHint) {
-        var next = getAccessInfo(payload, httpStatus);
-        if (loggedInHint === true && !next.blocked) next.loggedIn = true;
-        if (loggedInHint === false) next.loggedIn = false;
-        if (next.blocked || next.paymentRequired || next.trialExpired) {
-            accessState = next;
-            clearBlockedCredentials();
-            saveAccessCache();
-            return next;
-        }
-        if (next.trialActive || next.expiresAt || next.daysLeft != null || next.factionId || next.isFactionLeader) {
-            accessState = _objectSpread(_objectSpread({}, accessState), {}, _defineProperty(_defineProperty(_defineProperty(_defineProperty(_defineProperty(_defineProperty(_defineProperty(_defineProperty(_defineProperty(_defineProperty({}, "loggedIn", loggedInHint === true ? true : accessState.loggedIn), "blocked", false), "paymentRequired", false), "trialExpired", false), "expiresAt", next.expiresAt), "daysLeft", next.daysLeft), "reason", next.reason), "message", next.message), "source", next.source), "lastSeenAt", next.lastSeenAt), "isOwner", next.isOwner), next);
-            saveAccessCache();
-            return accessState;
-        }
-        if (loggedInHint === true) {
-            accessState = _objectSpread(_objectSpread({}, accessState), {}, {
-                loggedIn: true,
+    var next = getAccessInfo(payload, httpStatus);
+    if (loggedInHint === true && !next.blocked) next.loggedIn = true;
+    if (loggedInHint === false) next.loggedIn = false;
+
+    if (next.blocked || next.paymentRequired || next.trialExpired) {
+        accessState = next;
+        clearBlockedCredentials();
+        saveAccessCache();
+        return next;
+    }
+
+    if (next.trialActive || next.expiresAt || next.daysLeft != null || next.factionId || next.isFactionLeader) {
+        accessState = _objectSpread(
+            _objectSpread(
+                _objectSpread({}, accessState),
+                next
+            ),
+            {},
+            {
+                loggedIn: loggedInHint === true ? true : accessState.loggedIn,
                 blocked: false,
                 paymentRequired: false,
                 trialExpired: false,
-                lastSeenAt: new Date().toISOString(),
-                isOwner: !!accessState.isOwner
-            });
-            saveAccessCache();
-        }
+                expiresAt: next.expiresAt,
+                daysLeft: next.daysLeft,
+                reason: next.reason,
+                message: next.message,
+                source: next.source,
+                lastSeenAt: next.lastSeenAt,
+                isOwner: next.isOwner
+            }
+        );
+        saveAccessCache();
         return accessState;
     }
+
+    if (loggedInHint === true) {
+        accessState = _objectSpread(_objectSpread({}, accessState), {}, {
+            loggedIn: true,
+            blocked: false,
+            paymentRequired: false,
+            trialExpired: false,
+            lastSeenAt: new Date().toISOString(),
+            isOwner: !!next.isOwner || !!accessState.isOwner
+        });
+        saveAccessCache();
+    }
+
+    return accessState;
+}
     function canUseProtectedFeatures() {
         if (isOwnerSession()) return true;
         return !(accessState !== null && accessState !== void 0 && accessState.blocked || accessState !== null && accessState !== void 0 && accessState.paymentRequired || accessState !== null && accessState !== void 0 && accessState.trialExpired);
