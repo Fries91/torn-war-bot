@@ -799,11 +799,72 @@
         }).join('') : '<div class="warhub-empty">No available members flagged.</div>', "\n        </div>\n      </div>\n\n      <div class=\"warhub-card\">\n        <h3>My Toggle</h3>\n        <div class=\"warhub-actions\">\n          <button class=\"warhub-btn good\" id=\"warhub-set-available\">Set Available</button>\n          <button class=\"warhub-btn\" id=\"warhub-set-unavailable\">Set Unavailable</button>\n          <button class=\"warhub-btn warn\" id=\"warhub-set-chain-on\">Chain Sitter On</button>\n          <button class=\"warhub-btn\" id=\"warhub-set-chain-off\">Chain Sitter Off</button>\n        </div>\n      </div>\n    ");
     }
     function renderMedDealsTab() {
-        var deals = arr((state === null || state === void 0 ? void 0 : state.medDeals) || (state === null || state === void 0 ? void 0 : state.med_deals) || []);
-        return "\n      <div class=\"warhub-card\">\n        <h3>Add Med Deal</h3>\n        <div class=\"warhub-grid two\">\n          <div>\n            <label class=\"warhub-label\">Seller</label>\n            <input class=\"warhub-input\" id=\"warhub-med-seller\" placeholder=\"Seller name\" />\n          </div>\n          <div>\n            <label class=\"warhub-label\">Item</label>\n            <input class=\"warhub-input\" id=\"warhub-med-item\" placeholder=\"Xanax / Med item\" />\n          </div>\n          <div>\n            <label class=\"warhub-label\">Price</label>\n            <input class=\"warhub-input\" id=\"warhub-med-price\" placeholder=\"$ / text\" />\n          </div>\n          <div>\n            <label class=\"warhub-label\">Note</label>\n            <input class=\"warhub-input\" id=\"warhub-med-note\" placeholder=\"Optional note\" />\n          </div>\n        </div>\n        <div class=\"warhub-actions\" style=\"margin-top:8px;\">\n          <button class=\"warhub-btn primary\" id=\"warhub-med-add\">Add Med Deal</button>\n        </div>\n      </div>\n\n      <div class=\"warhub-card\">\n        <div class=\"warhub-section-title\">\n          <h3>Med Deals</h3>\n          <span class=\"warhub-count\">".concat(deals.length, "</span>\n        </div>\n        <div class=\"warhub-list\">\n          ").concat(deals.length ? deals.map(function (x) {
-            return "\n            <div class=\"warhub-list-item\">\n              <div class=\"warhub-row\">\n                <div>\n                  <div class=\"warhub-name\">".concat(esc(x.seller_name || 'Unknown seller'), "</div>\n                  <div class=\"warhub-meta\">").concat(esc([x.item_name || x.buyer_name || '', x.price || '', x.note || ''].filter(Boolean).join(' • ')), "</div>\n                </div>\n                <div class=\"warhub-actions\">\n                  <button class=\"warhub-btn small warn warhub-del-med\" data-id=\"").concat(esc(String(x.id || x.deal_id || '')), "\">Delete</button>\n                </div>\n              </div>\n            </div>\n          ");
-        }).join('') : '<div class="warhub-empty">No med deals yet.</div>', "\n        </div>\n      </div>\n    ");
-    }
+    var deals = arr((state && state.medDeals) || (state && state.med_deals) || []);
+    var enemies = sortAlphabetical(arr((state && state.enemies) || []));
+    var hasWar = !!(
+        (state && state.has_war) ||
+        (state && state.war && state.war.active) ||
+        (state && state.war && state.war.war_id) ||
+        (state && state.enemy_faction_id) ||
+        (state && state.enemyFaction && state.enemyFaction.id) ||
+        enemies.length
+    );
+
+    return "\
+      <div class=\"warhub-card\">\n\
+        <h3>Add Med Deal</h3>\n\
+        <div class=\"warhub-grid two\">\n\
+          <div>\n\
+            <label class=\"warhub-label\">User</label>\n\
+            <input class=\"warhub-input\" id=\"warhub-med-seller\" placeholder=\"Your name / faction member name\" />\n\
+          </div>\n\
+          <div>\n\
+            <label class=\"warhub-label\">Enemy</label>\n\
+            <select class=\"warhub-select\" id=\"warhub-med-item\">\n\
+              <option value=\"\">".concat(hasWar ? 'Select enemy member' : 'Currently not in a war', "</option>\n\
+              ").concat(enemies.map(function (x) {
+                var id = x.user_id || x.id || x.player_id || '';
+                var name = x.name || x.player_name || "ID ".concat(id);
+                return "<option value=\"".concat(esc(name), "\" data-id=\"").concat(esc(String(id)), "\">").concat(esc(name), " [").concat(esc(String(id)), "]</option>");
+            }).join(''), "\n\
+            </select>\n\
+          </div>\n\
+        </div>\n\
+        <div style=\"height:8px;\"></div>\n\
+        <div>\n\
+          <label class=\"warhub-label\">Note</label>\n\
+          <input class=\"warhub-input\" id=\"warhub-med-note\" placeholder=\"Optional note\" />\n\
+        </div>\n\
+        <div class=\"warhub-actions\" style=\"margin-top:8px;\">\n\
+          <button class=\"warhub-btn primary\" id=\"warhub-med-add\">Add Med Deal</button>\n\
+        </div>\n\
+      </div>\n\
+\n\
+      <div class=\"warhub-card\">\n\
+        <div class=\"warhub-section-title\">\n\
+          <h3>Med Deals</h3>\n\
+          <span class=\"warhub-count\">").concat(deals.length, "</span>\n\
+        </div>\n\
+        <div class=\"warhub-list\">\n\
+          ").concat(deals.length ? deals.map(function (x) {
+            return "\
+            <div class=\"warhub-list-item\">\n\
+              <div class=\"warhub-row\">\n\
+                <div>\n\
+                  <div class=\"warhub-name\">".concat(esc(x.seller_name || x.created_by_name || 'Unknown user'), "</div>\n\
+                  <div class=\"warhub-meta\">").concat(esc([x.item_name || x.buyer_name || '', x.note || ''].filter(Boolean).join(' • ')), "</div>\n\
+                </div>\n\
+                <div class=\"warhub-actions\">\n\
+                  <button class=\"warhub-btn small warn warhub-del-med\" data-id=\"").concat(esc(String(x.id || x.deal_id || '')), "\">Delete</button>\n\
+                </div>\n\
+              </div>\n\
+            </div>\n\
+          ");
+        }).join('') : '<div class="warhub-empty">No med deals yet.</div>', "\n\
+        </div>\n\
+      </div>\n\
+    ");
+}
     function renderTargetsTab() {
         var targets = arr((state === null || state === void 0 ? void 0 : state.targets) || []);
         var enemies = sortAlphabetical(arr((state === null || state === void 0 ? void 0 : state.enemies) || []));
@@ -1136,15 +1197,25 @@
         var chOff = overlay ? overlay.querySelector('#warhub-set-chain-off') : null;
         if (chOff) chOff.addEventListener('click', _asyncToGenerator(function* () { yield doAction('POST', '/api/chain-sitter', { enabled: false }, 'Chain sitter disabled.'); }));
         var medAdd = overlay ? overlay.querySelector('#warhub-med-add') : null;
-        if (medAdd) medAdd.addEventListener('click', _asyncToGenerator(function* () {
-            var seller_name = cleanInputValue((overlay ? overlay.querySelector('#warhub-med-seller') : null).value || '');
-            var item_name = cleanInputValue((overlay ? overlay.querySelector('#warhub-med-item') : null).value || '');
-            var price = cleanInputValue((overlay ? overlay.querySelector('#warhub-med-price') : null).value || '');
-            var note = cleanInputValue((overlay ? overlay.querySelector('#warhub-med-note') : null).value || '');
-            if (!seller_name || !item_name) { setStatus('Seller and item are required.', true); return; }
-            var res = yield doAction('POST', '/api/med-deals', { seller_name: seller_name, item_name: item_name, price: price, note: note }, 'Med deal added.');
-            if (res) renderBody();
-        }));
+    if (medAdd) medAdd.addEventListener('click', _asyncToGenerator(function* () {
+    var seller_name = cleanInputValue((overlay ? overlay.querySelector('#warhub-med-seller') : null).value || '');
+    var item_name = cleanInputValue((overlay ? overlay.querySelector('#warhub-med-item') : null).value || '');
+    var note = cleanInputValue((overlay ? overlay.querySelector('#warhub-med-note') : null).value || '');
+
+    if (!seller_name || !item_name) {
+        setStatus('User and enemy are required.', true);
+        return;
+    }
+
+    var res = yield doAction('POST', '/api/med-deals', {
+        seller_name: seller_name,
+        item_name: item_name,
+        price: '',
+        note: note
+    }, 'Med deal added.');
+
+    if (res) renderBody();
+}));
         if (overlay) overlay.querySelectorAll('.warhub-del-med').forEach(function (btn) {
             btn.addEventListener('click', _asyncToGenerator(function* () {
                 var id = cleanInputValue(btn.getAttribute('data-id') || '');
