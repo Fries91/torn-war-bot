@@ -304,6 +304,20 @@ def _session_is_owner(user: Optional[Dict[str, Any]]) -> bool:
     return (uid and uid in _owner_ids()) or (name and name in _owner_names())
 
 
+def _can_manage_faction(user: Dict[str, Any], faction_id: str) -> bool:
+    if _session_is_owner(user):
+        return True
+
+    user_id = str((user or {}).get("user_id") or "").strip()
+    faction_id = str(faction_id or "").strip()
+    if not user_id or not faction_id:
+        return False
+
+    license_status = _build_license_status_payload(faction_id, viewer_user_id=user_id)
+    leader_user_id = str(license_status.get("leader_user_id") or "").strip()
+    return leader_user_id == user_id
+
+
 def require_owner(fn):
     @wraps(fn)
     @require_session
@@ -323,10 +337,7 @@ def require_leader_session(fn):
         if not faction_id:
             return err("No faction found.", 403)
 
-        lic = compute_faction_license_status(faction_id, viewer_user_id=str(user.get("user_id") or "")) or {}
-        leader_user_id = str(lic.get("leader_user_id") or "").strip()
-
-        if not _session_is_owner(user) and str(user.get("user_id") or "").strip() != leader_user_id:
+        if not _can_manage_faction(user, faction_id):
             return err("Leader access required.", 403)
         return fn(*args, **kwargs)
     return wrapper
@@ -747,26 +758,19 @@ def api_state():
     license_status = _build_license_status_payload(faction_id, viewer_user_id=user_id) if faction_id else {}
     faction_map = get_user_map_by_faction(faction_id) if faction_id else {}
 
-    # Logged-in user profile
     me = me_basic(api_key) or {}
 
-    # Prefer live faction info from Torn over session-stored values
     live_faction_id = str(me.get("faction_id") or faction_id or "").strip()
     live_faction_name = str(me.get("faction_name") or faction_name or "").strip()
 
-    # Re-load faction scoped data with the live faction id if we have it
     if live_faction_id and live_faction_id != faction_id:
         faction_id = live_faction_id
         faction_name = live_faction_name
         license_status = _build_license_status_payload(faction_id, viewer_user_id=user_id) if faction_id else {}
         faction_map = get_user_map_by_faction(faction_id) if faction_id else {}
 
-    # Use normal user key for personal/faction basic lookup
     faction_info = faction_basic(api_key, faction_id=faction_id) if api_key else {"ok": False, "members": []}
 
-    # Find best key for war lookup:
-    # 1. explicit leader/faction key from faction map if present
-    # 2. current logged-in user's key as fallback
     war_api_key = api_key
 
     if faction_map:
