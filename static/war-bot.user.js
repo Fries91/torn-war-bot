@@ -898,8 +898,9 @@
   }
 
   function canUseProtectedFeatures() {
-    return !(accessState?.blocked || accessState?.paymentRequired || accessState?.trialExpired);
-  }
+  if (isOwnerSession()) return true;
+  return !(accessState?.blocked || accessState?.paymentRequired || accessState?.trialExpired);
+}
 
   function ensureAllowedOrMessage() {
     if (canUseProtectedFeatures()) return true;
