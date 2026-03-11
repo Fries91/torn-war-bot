@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         War Hub ⚔️
 // @namespace    fries91-war-hub
-// @version      2.8.8
+// @version      2.8.9
 // @description  War Hub by Fries91. Faction-license aware overlay with draggable icon, draggable overlay, PDA friendly, shared war tools, faction member management, and payment lock handling.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -810,32 +810,19 @@
         enemies.length
     );
 
-    var myName =
-        (state && state.me && state.me.name) ||
-        (state && state.user && state.user.name) ||
-        (state && state.me && state.me.player_name) ||
-        (state && state.user && state.user.player_name) ||
-        'You';
-
     return "\
       <div class=\"warhub-card\">\n\
         <h3>Add Med Deal</h3>\n\
-        <div class=\"warhub-grid two\">\n\
-          <div>\n\
-            <label class=\"warhub-label\">User</label>\n\
-            <input class="warhub-input" id="warhub-med-seller" value=\"".concat(esc(myName), "\" readonly />\n\
-          </div>\n\
-          <div>\n\
-            <label class=\"warhub-label\">Enemy</label>\n\
-            <select class=\"warhub-select\" id=\"warhub-med-item\">\n\
-              <option value=\"\">").concat(hasWar ? 'Select enemy member' : 'Currently not in a war', "</option>\n\
-              ").concat(enemies.map(function (x) {
+        <div>\n\
+          <label class=\"warhub-label\">Enemy</label>\n\
+          <select class=\"warhub-select\" id=\"warhub-med-item\">\n\
+            <option value=\"\">".concat(hasWar ? 'Select enemy member' : 'Currently not in a war', "</option>\n\
+            ").concat(enemies.map(function (x) {
                 var id = x.user_id || x.id || x.player_id || '';
                 var name = x.name || x.player_name || "ID ".concat(id);
                 return "<option value=\"".concat(esc(name), "\" data-id=\"").concat(esc(String(id)), "\">").concat(esc(name), " [").concat(esc(String(id)), "]</option>");
             }).join(''), "\n\
-            </select>\n\
-          </div>\n\
+          </select>\n\
         </div>\n\
         <div style=\"height:8px;\"></div>\n\
         <div>\n\
@@ -854,7 +841,7 @@
         </div>\n\
         <div class=\"warhub-list\">\n\
           ").concat(deals.length ? deals.map(function (x) {
-            return "\
+                return "\
             <div class=\"warhub-list-item\">\n\
               <div class=\"warhub-row\">\n\
                 <div>\n\
@@ -867,7 +854,7 @@
               </div>\n\
             </div>\n\
           ");
-        }).join('') : '<div class="warhub-empty">No med deals yet.</div>', "\n\
+            }).join('') : '<div class="warhub-empty">No med deals yet.</div>', "\n\
         </div>\n\
       </div>\n\
     ");
@@ -1205,15 +1192,20 @@
         if (chOff) chOff.addEventListener('click', _asyncToGenerator(function* () { yield doAction('POST', '/api/chain-sitter', { enabled: false }, 'Chain sitter disabled.'); }));
         var medAdd = overlay ? overlay.querySelector('#warhub-med-add') : null;
 if (medAdd) medAdd.addEventListener('click', _asyncToGenerator(function* () {
-    var seller_name =
-        cleanInputValue((overlay ? overlay.querySelector('#warhub-med-seller') : null).value || '') ||
-        cleanInputValue((state && state.me && state.me.name) || (state && state.user && state.user.name) || (state && state.me && state.me.player_name) || (state && state.user && state.user.player_name) || '');
+    var itemField = overlay ? overlay.querySelector('#warhub-med-item') : null;
+    var noteField = overlay ? overlay.querySelector('#warhub-med-note') : null;
 
-    var item_name = cleanInputValue((overlay ? overlay.querySelector('#warhub-med-item') : null).value || '');
-    var note = cleanInputValue((overlay ? overlay.querySelector('#warhub-med-note') : null).value || '');
+    var seller_name = cleanInputValue(
+        (state && state.me && (state.me.name || state.me.player_name)) ||
+        (state && state.user && (state.user.name || state.user.player_name)) ||
+        ''
+    );
+
+    var item_name = cleanInputValue((itemField ? itemField.value : '') || '');
+    var note = cleanInputValue((noteField ? noteField.value : '') || '');
 
     if (!seller_name || !item_name) {
-        setStatus('User and enemy are required.', true);
+        setStatus('Enemy is required.', true);
         return;
     }
 
