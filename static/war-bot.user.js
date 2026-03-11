@@ -18,9 +18,8 @@
 
 (function () {
   "use strict";
-GM_deleteValue("warhub_shield_pos_v3");
-GM_deleteValue("warhub_overlay_pos_v3");
-GM_deleteValue("warhub_open_v3");
+
+  alert("War Hub started");
   
   if (window.__WAR_HUB_V285__) return;
   window.__WAR_HUB_V285__ = true;
