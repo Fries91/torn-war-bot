@@ -786,18 +786,125 @@
     }
 
      function renderChainTab() {
-        var sitters = arr((state === null || state === void 0 ? void 0 : state.members) || []).filter(function (x) {
-            return !!x.chain_sitter;
-        });
-        var avail = arr((state === null || state === void 0 ? void 0 : state.members) || []).filter(function (x) {
-            return !!x.available;
-        });
-        return "\n      <div class=\"warhub-card\">\n        <div class=\"warhub-section-title\">\n          <h3>Chain Helpers</h3>\n          <span class=\"warhub-count\">".concat(sitters.length, "</span>\n        </div>\n        <div class=\"warhub-list\">\n          ").concat(sitters.length ? sitters.map(function (x) {
+    var members = arr((state && state.members) || []);
+    var sitters = members.filter(function (x) {
+        return !!x.chain_sitter;
+    });
+    var avail = members.filter(function (x) {
+        return !!x.available;
+    });
+
+    var war = (state && state.war) || {};
+    var chainCount = Number(
+        (state && state.chain && state.chain.current) ||
+        (state && state.chain_count) ||
+        (war && war.chain_count) ||
+        (war && war.chain) ||
+        0
+    ) || 0;
+
+    var chainTimeout =
+        (state && state.chain && state.chain.timeout_text) ||
+        (state && state.chain_timeout_text) ||
+        (war && war.chain_timeout_text) ||
+        (state && state.chain && state.chain.timeout) ||
+        (war && war.chain_timeout) ||
+        '—';
+
+    var myUserId = String(
+        (state && state.me && (state.me.user_id || state.me.id || state.me.player_id)) ||
+        (state && state.user && (state.user.user_id || state.user.id || state.user.player_id)) ||
+        ''
+    );
+
+    var myMember = members.find(function (x) {
+        return String(x.user_id || x.id || x.player_id || x.member_user_id || '') === myUserId;
+    }) || {};
+
+    var myAvailable = !!myMember.available;
+    var myChainSitter = !!myMember.chain_sitter;
+
+    return "\
+      <div class=\"warhub-card\">\n\
+        <div class=\"warhub-section-title\">\n\
+          <h3>Chain Overview</h3>\n\
+        </div>\n\
+        <div class=\"warhub-grid two\">\n\
+          <div class=\"warhub-metric\">\n\
+            <div class=\"k\">Current Chain</div>\n\
+            <div class=\"v\">".concat(fmtNum(chainCount), "</div>\n\
+          </div>\n\
+          <div class=\"warhub-metric\">\n\
+            <div class=\"k\">Timeout</div>\n\
+            <div class=\"v\">").concat(esc(String(chainTimeout || '—')), "</div>\n\
+          </div>\n\
+          <div class=\"warhub-metric\">\n\
+            <div class=\"k\">Available Members</div>\n\
+            <div class=\"v\">").concat(fmtNum(avail.length), "</div>\n\
+          </div>\n\
+          <div class=\"warhub-metric\">\n\
+            <div class=\"k\">Chain Sitters</div>\n\
+            <div class=\"v\">").concat(fmtNum(sitters.length), "</div>\n\
+          </div>\n\
+        </div>\n\
+      </div>\n\
+\n\
+      <div class=\"warhub-card\">\n\
+        <h3>My Controls</h3>\n\
+        <div class=\"warhub-grid two\">\n\
+          <div class=\"warhub-list-item\">\n\
+            <div class=\"warhub-row\">\n\
+              <div>\n\
+                <div class=\"warhub-name\">Availability</div>\n\
+                <div class=\"warhub-meta\">Switch between unavailable and available</div>\n\
+              </div>\n\
+              <div class=\"warhub-actions\">\n\
+                <button class=\"warhub-btn ".concat(myAvailable ? '' : 'warn', "\" id=\"warhub-set-unavailable\">Unavailable</button>\n\
+                <button class=\"warhub-btn ").concat(myAvailable ? 'good' : '', "\" id=\"warhub-set-available\">Available</button>\n\
+              </div>\n\
+            </div>\n\
+          </div>\n\
+\n\
+          <div class=\"warhub-list-item\">\n\
+            <div class=\"warhub-row\">\n\
+              <div>\n\
+                <div class=\"warhub-name\">Chain Sitter</div>\n\
+                <div class=\"warhub-meta\">Switch chain sitter mode on or off</div>\n\
+              </div>\n\
+              <div class=\"warhub-actions\">\n\
+                <button class=\"warhub-btn ").concat(myChainSitter ? '' : 'warn', "\" id=\"warhub-set-chain-off\">Off</button>\n\
+                <button class=\"warhub-btn ").concat(myChainSitter ? 'good' : '', "\" id=\"warhub-set-chain-on\">On</button>\n\
+              </div>\n\
+            </div>\n\
+          </div>\n\
+        </div>\n\
+      </div>\n\
+\n\
+      <div class=\"warhub-card\">\n\
+        <div class=\"warhub-section-title\">\n\
+          <h3>Available Members</h3>\n\
+          <span class=\"warhub-count\">").concat(avail.length, "</span>\n\
+        </div>\n\
+        <div class=\"warhub-list\">\n\
+          ").concat(avail.length ? avail.map(function (x) {
             return memberRow(x, false);
-        }).join('') : '<div class="warhub-empty">No chain sitters enabled.</div>', "\n        </div>\n      </div>\n\n      <div class=\"warhub-card\">\n        <div class=\"warhub-section-title\">\n          <h3>Available Members</h3>\n          <span class=\"warhub-count\">").concat(avail.length, "</span>\n        </div>\n        <div class=\"warhub-list\">\n          ").concat(avail.length ? avail.map(function (x) {
+        }).join('') : '<div class="warhub-empty">No available members flagged.</div>', "\n\
+        </div>\n\
+      </div>\n\
+\n\
+      <div class=\"warhub-card\">\n\
+        <div class=\"warhub-section-title\">\n\
+          <h3>Chain Sitters</h3>\n\
+          <span class=\"warhub-count\">").concat(sitters.length, "</span>\n\
+        </div>\n\
+        <div class=\"warhub-list\">\n\
+          ").concat(sitters.length ? sitters.map(function (x) {
             return memberRow(x, false);
-        }).join('') : '<div class="warhub-empty">No available members flagged.</div>', "\n        </div>\n      </div>\n\n      <div class=\"warhub-card\">\n        <h3>My Toggle</h3>\n        <div class=\"warhub-actions\">\n          <button class=\"warhub-btn good\" id=\"warhub-set-available\">Set Available</button>\n          <button class=\"warhub-btn\" id=\"warhub-set-unavailable\">Set Unavailable</button>\n          <button class=\"warhub-btn warn\" id=\"warhub-set-chain-on\">Chain Sitter On</button>\n          <button class=\"warhub-btn\" id=\"warhub-set-chain-off\">Chain Sitter Off</button>\n        </div>\n      </div>\n    ");
-    }
+        }).join('') : '<div class="warhub-empty">No chain sitters enabled.</div>', "\n\
+        </div>\n\
+      </div>\n\
+    ");
+}
     function renderMedDealsTab() {
     var deals = arr((state && state.medDeals) || (state && state.med_deals) || []);
     var enemies = sortAlphabetical(arr((state && state.enemies) || []));
