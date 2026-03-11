@@ -816,6 +816,7 @@ def api_state():
     war_api_key = api_key
     if faction_map:
         leader_row = None
+
         for _, row in faction_map.items():
             if not isinstance(row, dict):
                 continue
@@ -825,7 +826,7 @@ def api_state():
             row_position = str(row.get("position") or "").lower()
             row_enabled = bool(row.get("enabled", True))
 
-            if row_api_key and ("leader" in row_position):
+            if row_api_key and "leader" in row_position:
                 leader_row = row
                 break
 
@@ -874,9 +875,11 @@ def api_state():
     enemy_faction_name = str(war_info.get("enemy_faction_name") or "").strip()
 
     raw_enemy_members = []
-if enemy_faction_id and bool(war_info.get("has_war")):
-    enemy_info = _faction_basic_by_id(war_api_key or api_key, enemy_faction_id)
-    raw_enemy_members = enemy_info.get("members") or []
+    if enemy_faction_id and bool(war_info.get("has_war")):
+        enemy_info = _faction_basic_by_id(war_api_key or api_key, enemy_faction_id)
+        raw_enemy_members = enemy_info.get("members") or []
+        if not enemy_faction_name:
+            enemy_faction_name = str(enemy_info.get("faction_name") or "").strip()
 
     enemies = _merge_enemy_state(raw_enemy_members, war_id)
 
