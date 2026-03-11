@@ -1,7 +1,8 @@
+import inspect
 import os
 from datetime import datetime, timezone
 from functools import wraps
-from typing import Any, Dict, Optional, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from dotenv import load_dotenv
 from flask import Flask, jsonify, request, send_from_directory
@@ -46,7 +47,6 @@ from db import (
     get_user_setting,
     set_user_setting,
     add_audit_log,
-    cache_purge_expired,
     ensure_faction_license_row,
     start_faction_trial_if_needed,
     compute_faction_license_status,
@@ -95,10 +95,6 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def now_ts() -> int:
-    return int(datetime.now(timezone.utc).timestamp())
-
-
 def ok(data: Optional[Dict[str, Any]] = None, **kwargs):
     payload = {"ok": True}
     if data:
@@ -127,6 +123,26 @@ def _safe_bool(value: Any) -> bool:
         return value
     s = str(value or "").strip().lower()
     return s in {"1", "true", "yes", "y", "on", "enabled"}
+
+
+def _require_json() -> Dict[str, Any]:
+    if request.is_json:
+        return request.get_json(silent=True) or {}
+
+    data = request.form.to_dict() or {}
+    if data:
+        return data
+
+    if request.data:
+        try:
+            import json
+            parsed = json.loads(request.data.decode("utf-8"))
+            if isinstance(parsed, dict):
+                return parsed
+        except Exception:
+            pass
+
+    return {}
 
 
 def _check_request_origin() -> bool:
@@ -178,53 +194,9 @@ def _after(resp):
     return with_cors(resp)
 
 
-@app.route("/health", methods=["GET"])
-def health():
-    return ok(app=APP_NAME, now=utc_now(), base_url=BASE_URL())
-
-
-@app.route("/", methods=["GET"])
-def index():
-    if os.path.isdir(app.static_folder):
-        index_path = os.path.join(app.static_folder, "index.html")
-        if os.path.isfile(index_path):
-            return send_from_directory(app.static_folder, "index.html")
-    return ok(message=f"{APP_NAME} server is running.", now=utc_now())
-
-
-@app.route("/static/<path:filename>", methods=["GET"])
-def static_files(filename: str):
-    return send_from_directory(app.static_folder, filename)
-
-
-@app.route("/favicon.ico", methods=["GET"])
-def favicon():
-    if os.path.isdir(app.static_folder):
-        fav = os.path.join(app.static_folder, "favicon.ico")
-        if os.path.isfile(fav):
-            return send_from_directory(app.static_folder, "favicon.ico")
-    return ("", 204)
-
-
-@app.route("/api/ping", methods=["GET"])
-def api_ping():
-    return ok(message="pong", now=utc_now())
-
-
-@app.route("/api/config", methods=["GET"])
-def api_config():
-    return ok(
-        payment_player=PAYMENT_PLAYER,
-        faction_member_price=FACTION_MEMBER_PRICE,
-        default_refresh_seconds=DEFAULT_REFRESH_SECONDS,
-        base_url=BASE_URL(),
-    )
-
-
-@app.route("/api/options", methods=["OPTIONS"])
-@app.route("/api/auth", methods=["OPTIONS"])
-@app.route("/api/state", methods=["OPTIONS"])
-def api_options():
+@app.route("/api/<path:_path>", methods=["OPTIONS"])
+@app.route("/<path:_path>", methods=["OPTIONS"])
+def api_options(_path: str):
     return with_cors(ok(message="ok"))
 
 
@@ -245,6 +217,7 @@ def _session_user():
     user = get_user(sess.get("user_id"))
     if not user:
         return None, None
+
     return sess, user
 
 
@@ -253,6 +226,7 @@ def require_session(fn):
     def wrapper(*args, **kwargs):
         if request.method == "OPTIONS":
             return with_cors(ok(message="ok"))
+
         if not _check_request_origin():
             return err("Blocked request origin.", 403)
 
@@ -275,9 +249,11 @@ def _owner_ids() -> set:
             x = x.strip()
             if x:
                 out.add(x)
+
     owner_id = str(os.getenv("OWNER_USER_ID", "")).strip()
     if owner_id:
         out.add(owner_id)
+
     return out
 
 
@@ -289,9 +265,11 @@ def _owner_names() -> set:
             x = x.strip().lower()
             if x:
                 out.add(x)
+
     owner_name = str(os.getenv("OWNER_NAME", "")).strip().lower()
     if owner_name:
         out.add(owner_name)
+
     out.add("fries91")
     return out
 
@@ -302,6 +280,14 @@ def _session_is_owner(user: Optional[Dict[str, Any]]) -> bool:
     uid = str(user.get("user_id", "")).strip()
     name = str(user.get("name", "")).strip().lower()
     return (uid and uid in _owner_ids()) or (name and name in _owner_names())
+
+
+def _build_license_status_payload(faction_id: str, viewer_user_id: str = "") -> Dict[str, Any]:
+    status = compute_faction_license_status(faction_id, viewer_user_id=viewer_user_id) or {}
+    status["faction_id"] = str(status.get("faction_id") or faction_id or "")
+    status["payment_player"] = PAYMENT_PLAYER
+    status["faction_member_price"] = FACTION_MEMBER_PRICE
+    return status
 
 
 def _can_manage_faction(user: Dict[str, Any], faction_id: str) -> bool:
@@ -325,6 +311,7 @@ def require_owner(fn):
         if not _session_is_owner(request.user):
             return err("Owner access only.", 403)
         return fn(*args, **kwargs)
+
     return wrapper
 
 
@@ -339,7 +326,9 @@ def require_leader_session(fn):
 
         if not _can_manage_faction(user, faction_id):
             return err("Leader access required.", 403)
+
         return fn(*args, **kwargs)
+
     return wrapper
 
 
@@ -347,9 +336,11 @@ def _seconds_to_text(seconds: int) -> str:
     sec = max(0, int(seconds or 0))
     if sec <= 0:
         return "0m"
+
     days, rem = divmod(sec, 86400)
     hours, rem = divmod(rem, 3600)
     mins, _ = divmod(rem, 60)
+
     parts = []
     if days:
         parts.append(f"{days}d")
@@ -357,6 +348,7 @@ def _seconds_to_text(seconds: int) -> str:
         parts.append(f"{hours}h")
     if mins or not parts:
         parts.append(f"{mins}m")
+
     return " ".join(parts)
 
 
@@ -595,35 +587,101 @@ def _normalize_member_access_row(row: Dict[str, Any]) -> Dict[str, Any]:
     r["member_user_id"] = str(r.get("member_user_id") or "")
     r["member_name"] = str(r.get("member_name") or "")
     r["position"] = str(r.get("position") or "")
+
     r["member_api_key_masked"] = ""
     api_key = str(r.get("member_api_key") or "")
     if api_key:
         r["member_api_key_masked"] = ("*" * max(0, len(api_key) - 4)) + api_key[-4:]
+
     r["enabled"] = 1 if _safe_bool(r.get("enabled")) else 0
     return r
 
 
-def _build_license_status_payload(faction_id: str, viewer_user_id: str = "") -> Dict[str, Any]:
-    status = compute_faction_license_status(faction_id, viewer_user_id=viewer_user_id) or {}
-    status["faction_id"] = str(status.get("faction_id") or faction_id or "")
-    status["payment_player"] = PAYMENT_PLAYER
-    status["faction_member_price"] = FACTION_MEMBER_PRICE
-    return status
+def _add_med_deal_compat(
+    *,
+    user: Dict[str, Any],
+    seller_name: str,
+    item_name: str,
+    price: str,
+    note: str,
+):
+    faction_id = str(user.get("faction_id") or "").strip()
+    faction_name = str(user.get("faction_name") or "").strip()
+    user_id = str(user.get("user_id") or "").strip()
+    user_name = str(user.get("name") or "").strip()
+
+    try:
+        sig = inspect.signature(add_med_deal)
+        param_count = len(sig.parameters)
+
+        if param_count >= 7:
+            return add_med_deal(
+                creator_user_id=user_id,
+                creator_name=user_name,
+                faction_id=faction_id,
+                faction_name=faction_name,
+                buyer_name=item_name,
+                seller_name=seller_name,
+                notes=note or price,
+            )
+
+        return add_med_deal(faction_id, seller_name, item_name, price, note)
+    except TypeError:
+        return add_med_deal(faction_id, seller_name, item_name, price, note)
 
 
-def _require_json():
-    if request.is_json:
-        return request.get_json(silent=True) or {}
-    data = request.form.to_dict() or {}
-    if not data and request.data:
-        try:
-            import json
-            parsed = json.loads(request.data.decode("utf-8"))
-            if isinstance(parsed, dict):
-                return parsed
-        except Exception:
-            pass
-    return data
+def _delete_med_deal_compat(faction_id: str, deal_id: int):
+    try:
+        sig = inspect.signature(delete_med_deal)
+        param_count = len(sig.parameters)
+        if param_count >= 2:
+            return delete_med_deal(faction_id, int(deal_id))
+        return delete_med_deal(int(deal_id))
+    except TypeError:
+        return delete_med_deal(faction_id, int(deal_id))
+
+
+@app.route("/health", methods=["GET"])
+def health():
+    return ok(app=APP_NAME, now=utc_now(), base_url=BASE_URL())
+
+
+@app.route("/", methods=["GET"])
+def index():
+    if os.path.isdir(app.static_folder):
+        index_path = os.path.join(app.static_folder, "index.html")
+        if os.path.isfile(index_path):
+            return send_from_directory(app.static_folder, "index.html")
+    return ok(message=f"{APP_NAME} server is running.", now=utc_now())
+
+
+@app.route("/static/<path:filename>", methods=["GET"])
+def static_files(filename: str):
+    return send_from_directory(app.static_folder, filename)
+
+
+@app.route("/favicon.ico", methods=["GET"])
+def favicon():
+    if os.path.isdir(app.static_folder):
+        fav = os.path.join(app.static_folder, "favicon.ico")
+        if os.path.isfile(fav):
+            return send_from_directory(app.static_folder, "favicon.ico")
+    return ("", 204)
+
+
+@app.route("/api/ping", methods=["GET"])
+def api_ping():
+    return ok(message="pong", now=utc_now())
+
+
+@app.route("/api/config", methods=["GET"])
+def api_config():
+    return ok(
+        payment_player=PAYMENT_PLAYER,
+        faction_member_price=FACTION_MEMBER_PRICE,
+        default_refresh_seconds=DEFAULT_REFRESH_SECONDS,
+        base_url=BASE_URL(),
+    )
 
 
 @app.route("/api/auth", methods=["POST"])
@@ -634,7 +692,6 @@ def api_auth():
 
         data = _require_json()
         api_key = str(data.get("api_key") or "").strip()
-
         if not api_key:
             return err("Missing api_key.", 400)
 
@@ -651,39 +708,29 @@ def api_auth():
         faction_id = str(me.get("faction_id") or "").strip()
         faction_name = str(me.get("faction_name") or "").strip()
 
-        try:
-            upsert_user(
-                user_id=user_id,
-                name=name,
-                api_key=api_key,
-                faction_id=faction_id,
-                faction_name=faction_name,
-            )
-        except Exception as e:
-            return err("upsert_user failed.", 500, details=str(e))
+        upsert_user(
+            user_id=user_id,
+            name=name,
+            api_key=api_key,
+            faction_id=faction_id,
+            faction_name=faction_name,
+        )
 
         if faction_id:
-            try:
-                ensure_faction_license_row(
-                    faction_id=faction_id,
-                    faction_name=faction_name,
-                    leader_user_id=user_id,
-                    leader_name=name,
-                    leader_api_key=api_key,
-                )
-            except Exception as e:
-                return err("ensure_faction_license_row failed.", 500, details=str(e))
-
-            try:
-                start_faction_trial_if_needed(
-                    faction_id=faction_id,
-                    faction_name=faction_name,
-                    leader_user_id=user_id,
-                    leader_name=name,
-                    leader_api_key=api_key,
-                )
-            except Exception as e:
-                return err("start_faction_trial_if_needed failed.", 500, details=str(e))
+            ensure_faction_license_row(
+                faction_id=faction_id,
+                faction_name=faction_name,
+                leader_user_id=user_id,
+                leader_name=name,
+                leader_api_key=api_key,
+            )
+            start_faction_trial_if_needed(
+                faction_id=faction_id,
+                faction_name=faction_name,
+                leader_user_id=user_id,
+                leader_name=name,
+                leader_api_key=api_key,
+            )
 
         license_status = _build_license_status_payload(faction_id, viewer_user_id=user_id) if faction_id else {}
         is_owner = _session_is_owner({"name": name, "user_id": user_id})
@@ -713,11 +760,8 @@ def api_auth():
                         license=license_status,
                     )
 
-        try:
-            delete_sessions_for_user(user_id)
-            token = create_session(user_id)
-        except Exception as e:
-            return err("create_session failed.", 500, details=str(e))
+        delete_sessions_for_user(user_id)
+        token = create_session(user_id)
 
         return ok(
             message="Authenticated.",
@@ -733,7 +777,6 @@ def api_auth():
             license=license_status,
         )
     except Exception as e:
-        print("AUTH ERROR:", repr(e))
         return err("Login failed.", 500, details=str(e))
 
 
@@ -759,7 +802,6 @@ def api_state():
     faction_map = get_user_map_by_faction(faction_id) if faction_id else {}
 
     me = me_basic(api_key) or {}
-
     live_faction_id = str(me.get("faction_id") or faction_id or "").strip()
     live_faction_name = str(me.get("faction_name") or faction_name or "").strip()
 
@@ -772,11 +814,9 @@ def api_state():
     faction_info = faction_basic(api_key, faction_id=faction_id) if api_key else {"ok": False, "members": []}
 
     war_api_key = api_key
-
     if faction_map:
         leader_row = None
-
-        for _member_id, row in faction_map.items():
+        for _, row in faction_map.items():
             if not isinstance(row, dict):
                 continue
 
@@ -840,38 +880,6 @@ def api_state():
 
     enemies = _merge_enemy_state(raw_enemy_members, war_id)
 
-    war_payload = {
-        "war_id": war_id,
-        "status": war_info.get("status_text") or (
-            "War active"
-            if war_info.get("active")
-            else "War registered"
-            if war_info.get("registered")
-            else "Currently not in war"
-        ),
-        "active": bool(war_info.get("active")),
-        "registered": bool(war_info.get("registered")),
-        "phase": str(war_info.get("phase") or "none"),
-        "war_type": str(war_info.get("war_type") or ""),
-        "start": _to_int(war_info.get("start")),
-        "end": _to_int(war_info.get("end")),
-        "target_score": _to_int(war_info.get("target_score")),
-    }
-
-    our_faction = {
-        "faction_id": str(war_info.get("my_faction_id") or live_faction_id or ""),
-        "name": str(war_info.get("my_faction_name") or live_faction_name or ""),
-        "score": _to_int(war_info.get("score_us")),
-        "chain": _to_int(war_info.get("chain_us")),
-    }
-
-    enemy_faction = {
-        "faction_id": enemy_faction_id,
-        "name": enemy_faction_name,
-        "score": _to_int(war_info.get("score_them")),
-        "chain": _to_int(war_info.get("chain_them")),
-    }
-
     assignments = [_normalize_assignment(x) for x in (list_target_assignments_for_war(war_id) if war_id else [])]
     notes = [_normalize_note(x) for x in (list_war_notes(war_id) if war_id else [])]
     terms = get_war_terms(war_id) if war_id else {}
@@ -900,9 +908,35 @@ def api_state():
         },
         settings=settings,
         license=license_status,
-        war=war_payload,
-        faction=our_faction,
-        enemy_faction=enemy_faction,
+        war={
+            "war_id": war_id,
+            "status": war_info.get("status_text") or (
+                "War active"
+                if war_info.get("active")
+                else "War registered"
+                if war_info.get("registered")
+                else "Currently not in war"
+            ),
+            "active": bool(war_info.get("active")),
+            "registered": bool(war_info.get("registered")),
+            "phase": str(war_info.get("phase") or "none"),
+            "war_type": str(war_info.get("war_type") or ""),
+            "start": _to_int(war_info.get("start")),
+            "end": _to_int(war_info.get("end")),
+            "target_score": _to_int(war_info.get("target_score")),
+        },
+        faction={
+            "faction_id": str(war_info.get("my_faction_id") or live_faction_id or ""),
+            "name": str(war_info.get("my_faction_name") or live_faction_name or ""),
+            "score": _to_int(war_info.get("score_us")),
+            "chain": _to_int(war_info.get("chain_us")),
+        },
+        enemy_faction={
+            "faction_id": enemy_faction_id,
+            "name": enemy_faction_name,
+            "score": _to_int(war_info.get("score_them")),
+            "chain": _to_int(war_info.get("chain_them")),
+        },
         members=members,
         enemies=enemies,
         assignments=assignments,
@@ -928,6 +962,7 @@ def api_set_availability():
     user = request.user or {}
     data = _require_json()
     available = 1 if _safe_bool(data.get("available")) else 0
+
     set_availability(str(user.get("user_id") or ""), available)
     add_audit_log(
         actor_user_id=str(user.get("user_id") or ""),
@@ -944,6 +979,7 @@ def api_chain_sitter():
     user = request.user or {}
     data = _require_json()
     enabled = 1 if _safe_bool(data.get("enabled")) else 0
+
     set_chain_sitter(str(user.get("user_id") or ""), enabled)
     add_audit_log(
         actor_user_id=str(user.get("user_id") or ""),
@@ -984,8 +1020,8 @@ def api_list_med_deals():
 def api_add_med_deal():
     user = request.user or {}
     data = _require_json()
-    faction_id = str(user.get("faction_id") or "")
-    if not faction_id:
+
+    if not str(user.get("faction_id") or "").strip():
         return err("No faction found.", 400)
 
     seller_name = str(data.get("seller_name") or "").strip()
@@ -993,7 +1029,13 @@ def api_add_med_deal():
     price = str(data.get("price") or "").strip()
     note = str(data.get("note") or "").strip()
 
-    item = add_med_deal(faction_id, seller_name, item_name, price, note)
+    item = _add_med_deal_compat(
+        user=user,
+        seller_name=seller_name,
+        item_name=item_name,
+        price=price,
+        note=note,
+    )
     return ok(message="Med deal added.", item=item)
 
 
@@ -1005,7 +1047,7 @@ def api_delete_med_deal(deal_id: int):
     if not faction_id:
         return err("No faction found.", 400)
 
-    delete_med_deal(faction_id, int(deal_id))
+    _delete_med_deal_compat(faction_id, int(deal_id))
     return ok(message="Med deal deleted.", id=deal_id)
 
 
@@ -1112,6 +1154,7 @@ def api_save_war_snapshot():
         my_faction_id=str(user.get("faction_id") or ""),
         my_faction_name=str(user.get("faction_name") or ""),
     )
+
     if not str(payload.get("war_id") or ""):
         return err("No active ranked war.", 400)
 
@@ -1282,6 +1325,7 @@ def api_delete_terms():
     war_id = str(request.args.get("war_id") or "").strip()
     if not war_id:
         return err("Missing war_id.", 400)
+
     delete_war_terms(war_id)
     return ok(message="War terms deleted.")
 
@@ -1293,6 +1337,7 @@ def api_faction_license():
     faction_id = str(user.get("faction_id") or "")
     if not faction_id:
         return err("No faction found.", 400)
+
     return ok(item=_build_license_status_payload(faction_id, viewer_user_id=str(user.get("user_id") or "")))
 
 
@@ -1493,33 +1538,6 @@ def api_owner_factions_expire_alias(faction_id: str):
     return api_admin_faction_license_expire(faction_id)
 
 
-@app.route("/api/debug/session", methods=["GET"])
-@require_session
-def api_debug_session():
-    return ok(
-        session=request.session or {},
-        user={
-            "user_id": str((request.user or {}).get("user_id") or ""),
-            "name": str((request.user or {}).get("name") or ""),
-            "faction_id": str((request.user or {}).get("faction_id") or ""),
-            "faction_name": str((request.user or {}).get("faction_name") or ""),
-            "is_owner": _session_is_owner(request.user),
-        },
-    )
-
-
-@app.route("/api/debug/compile-check", methods=["GET"])
-def api_debug_compile_check():
-    return ok(message="app.py compiled and routes loaded.")
-
-
-@app.route("/api/debug/cache-purge", methods=["POST"])
-@require_owner
-def api_debug_cache_purge():
-    purged = cache_purge_expired()
-    return ok(message="Cache purge complete.", purged=purged)
-
-
 @app.errorhandler(404)
 def not_found(e):
     return err("Not Found", 404, details=str(e))
@@ -1532,7 +1550,6 @@ def not_allowed(e):
 
 @app.errorhandler(Exception)
 def handle_error(e):
-    print("UNHANDLED ERROR:", repr(e))
     return err("Unhandled error.", 500, details=str(e))
 
 
