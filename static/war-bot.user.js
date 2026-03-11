@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         War Hub ⚔️
 // @namespace    fries91-war-hub
-// @version      2.9.3
+// @version      2.9.4
 // @description  War Hub by Fries91. Faction-license aware overlay with draggable icon, draggable overlay, PDA friendly, shared war tools, faction member management, and payment lock handling.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -2025,14 +2025,6 @@ if (medAdd) medAdd.addEventListener('click', _asyncToGenerator(function* () {
         }));
         var saveRefresh = overlay ? overlay.querySelector('#wh-save-refresh') : null;
         if (saveRefresh) saveRefresh.addEventListener('click', function () {
-            var raw = cleanInputValue(overlay.querySelector('#wh-refresh-ms').value || '30000');
-            var ms = Math.max(10000, Number(raw) || 30000);
-            GM_setValue(K_REFRESH, ms);
-            startPolling();
-            setStatus("Refresh saved: ".concat(ms, "ms"));
-        });
-        var saveRefresh = overlay ? overlay.querySelector('#wh-save-refresh') : null;
-if (saveRefresh) saveRefresh.addEventListener('click', function () {
     var raw = cleanInputValue(overlay.querySelector('#wh-refresh-ms').value || '30000');
     var ms = Math.max(10000, Number(raw) || 30000);
     GM_setValue(K_REFRESH, ms);
