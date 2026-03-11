@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         War Hub ⚔️
 // @namespace    fries91-war-hub
-// @version      2.8.6
+// @version      2.8.7
 // @description  War Hub by Fries91. Faction-license aware overlay with draggable icon, draggable overlay, PDA friendly, shared war tools, faction member management, and payment lock handling.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -17,2841 +17,1517 @@
 // ==/UserScript==
 
 (function () {
-  "use strict";
-
-  document.body.style.outline = "6px solid red";
-  
-  if (window.__WAR_HUB_V285__) return;
-  window.__WAR_HUB_V285__ = true;
-
-  const BASE_URL = "https://torn-war-bot.onrender.com";
-
-  const K_API_KEY = "warhub_api_key_v3";
-  const K_ADMIN_KEY = "warhub_admin_key_v3";
-  const K_OWNER_TOKEN = "warhub_owner_token_v3";
-  const K_SESSION = "warhub_session_v3";
-  const K_OPEN = "warhub_open_v3";
-  const K_TAB = "warhub_tab_v3";
-  const K_SHIELD_POS = "warhub_shield_pos_v3";
-  const K_OVERLAY_POS = "warhub_overlay_pos_v3";
-  const K_REFRESH = "warhub_refresh_ms_v3";
-  const K_NOTES = "warhub_notes_v3";
-  const K_LOCAL_NOTIFICATIONS = "warhub_local_notifications_v3";
-  const K_ACCESS_CACHE = "warhub_access_cache_v3";
-
-  let factionMembersCache = null;
-
-  const PAYMENT_PLAYER = "Fries91";
-  const PRICE_PER_MEMBER = 2500000;
-
-  const TAB_ORDER = [
-    ["instructions", "Instructions"],
-    ["war", "War"],
-    ["terms", "Terms"],
-    ["members", "Members"],
-    ["enemies", "Enemies"],
-    ["hospital", "Hospital"],
-    ["chain", "Chain"],
-    ["meddeals", "Med Deals"],
-    ["targets", "Targets"],
-    ["assignments", "Assignments"],
-    ["notes", "Notes"],
-    ["analytics", "Analytics"],
-    ["notifications", "Alerts"],
-    ["faction", "Faction"],
-    ["admin", "Admin"],
-    ["settings", "Settings"],
-  ];
-
-  let state = null;
-  let analyticsCache = null;
-  let overlay = null;
-  let shield = null;
-  let badge = null;
-  let mounted = false;
-  let dragMoved = false;
-  let isOpen = !!GM_getValue(K_OPEN, false);
-  let currentTab = GM_getValue(K_TAB, "war");
-  if (currentTab === "owner") currentTab = "admin";
-  let pollTimer = null;
-  let remountTimer = null;
-  let loadInFlight = false;
-  let lastStatusMsg = "";
-  let lastStatusErr = false;
-  let accessState = normalizeAccessCache(GM_getValue(K_ACCESS_CACHE, null));
-
-  const css = `
-    #warhub-shield {
-      position: fixed !important;
-      z-index: 2147483647 !important;
-      width: 42px !important;
-      height: 42px !important;
-      border-radius: 12px !important;
-      display: flex !important;
-      align-items: center !important;
-      justify-content: center !important;
-      font-size: 22px !important;
-      line-height: 1 !important;
-      cursor: grab !important;
-      user-select: none !important;
-      -webkit-user-select: none !important;
-      -webkit-touch-callout: none !important;
-      touch-action: none !important;
-      box-shadow: 0 8px 24px rgba(0,0,0,.45) !important;
-      border: 1px solid rgba(255,255,255,.10) !important;
-      background: radial-gradient(circle at 30% 20%, rgba(220,75,75,.98), rgba(110,12,12,.98) 55%, rgba(48,6,6,.98)) !important;
-      color: #fff !important;
-      top: 120px !important;
-      right: 14px !important;
-      left: auto !important;
-      bottom: auto !important;
-      opacity: 1 !important;
-      visibility: visible !important;
-      pointer-events: auto !important;
+    'use strict';
+    if (window.__WAR_HUB_V285__) return;
+    window.__WAR_HUB_V285__ = true;
+    var BASE_URL = 'https://torn-war-bot.onrender.com';
+    var K_API_KEY = 'warhub_api_key_v3';
+    var K_ADMIN_KEY = 'warhub_admin_key_v3';
+    var K_OWNER_TOKEN = 'warhub_owner_token_v3';
+    var K_SESSION = 'warhub_session_v3';
+    var K_OPEN = 'warhub_open_v3';
+    var K_TAB = 'warhub_tab_v3';
+    var K_SHIELD_POS = 'warhub_shield_pos_v3';
+    var K_OVERLAY_POS = 'warhub_overlay_pos_v3';
+    var K_REFRESH = 'warhub_refresh_ms_v3';
+    var K_NOTES = 'warhub_notes_v3';
+    var K_LOCAL_NOTIFICATIONS = 'warhub_local_notifications_v3';
+    var K_ACCESS_CACHE = 'warhub_access_cache_v3';
+    var factionMembersCache = null;
+    var PAYMENT_PLAYER = 'Fries91';
+    var PRICE_PER_MEMBER = 2500000;
+    var TAB_ORDER = [
+        ['instructions', 'Instructions'],
+        ['war', 'War'],
+        ['terms', 'Terms'],
+        ['members', 'Members'],
+        ['enemies', 'Enemies'],
+        ['hospital', 'Hospital'],
+        ['chain', 'Chain'],
+        ['meddeals', 'Med Deals'],
+        ['targets', 'Targets'],
+        ['assignments', 'Assignments'],
+        ['notes', 'Notes'],
+        ['analytics', 'Analytics'],
+        ['notifications', 'Alerts'],
+        ['faction', 'Faction'],
+        ['admin', 'Admin'],
+        ['settings', 'Settings']
+    ];
+    var state = null;
+    var analyticsCache = null;
+    var overlay = null;
+    var shield = null;
+    var badge = null;
+    var mounted = false;
+    var dragMoved = false;
+    var isOpen = !!GM_getValue(K_OPEN, false);
+    var currentTab = GM_getValue(K_TAB, 'war');
+    if (currentTab === 'owner') currentTab = 'admin';
+    var pollTimer = null;
+    var remountTimer = null;
+    var loadInFlight = false;
+    var lastStatusMsg = '';
+    var lastStatusErr = false;
+    var accessState = normalizeAccessCache(GM_getValue(K_ACCESS_CACHE, null));
+    var css = "\n    #warhub-shield {\n      position: fixed !important;\n      z-index: 2147483647 !important;\n      width: 42px !important;\n      height: 42px !important;\n      border-radius: 12px !important;\n      display: flex !important;\n      align-items: center !important;\n      justify-content: center !important;\n      font-size: 22px !important;\n      line-height: 1 !important;\n      cursor: grab !important;\n      user-select: none !important;\n      -webkit-user-select: none !important;\n      -webkit-touch-callout: none !important;\n      touch-action: none !important;\n      box-shadow: 0 8px 24px rgba(0,0,0,.45) !important;\n      border: 1px solid rgba(255,255,255,.10) !important;\n      background: radial-gradient(circle at 30% 20%, rgba(220,75,75,.98), rgba(110,12,12,.98) 55%, rgba(48,6,6,.98)) !important;\n      color: #fff !important;\n      top: 120px !important;\n      right: 14px !important;\n      left: auto !important;\n      bottom: auto !important;\n      opacity: 1 !important;\n      visibility: visible !important;\n      pointer-events: auto !important;\n    }\n    #warhub-shield.dragging { cursor: grabbing !important; }\n\n    #warhub-badge {\n      position: fixed !important;\n      z-index: 2147483647 !important;\n      min-width: 16px !important;\n      height: 16px !important;\n      padding: 0 4px !important;\n      border-radius: 999px !important;\n      background: #ffd54a !important;\n      color: #111 !important;\n      font-size: 10px !important;\n      line-height: 16px !important;\n      text-align: center !important;\n      font-weight: 800 !important;\n      box-shadow: 0 3px 12px rgba(0,0,0,.45) !important;\n      display: none !important;\n      pointer-events: none !important;\n    }\n\n    #warhub-overlay {\n      position: fixed !important;\n      z-index: 2147483646 !important;\n      right: 12px !important;\n      top: 170px !important;\n      width: min(96vw, 520px) !important;\n      height: min(88vh, 900px) !important;\n      max-height: 88vh !important;\n      min-height: 420px !important;\n      overflow: hidden !important;\n      border-radius: 14px !important;\n      background: linear-gradient(180deg, #171717, #0c0c0c) !important;\n      color: #f2f2f2 !important;\n      border: 1px solid rgba(255,255,255,.08) !important;\n      box-shadow: 0 16px 38px rgba(0,0,0,.54) !important;\n      display: none !important;\n      font-family: -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif !important;\n      left: auto !important;\n      bottom: auto !important;\n      flex-direction: column !important;\n      box-sizing: border-box !important;\n      opacity: 1 !important;\n      visibility: visible !important;\n    }\n    #warhub-overlay.open { display: flex !important; }\n\n    #warhub-overlay *,\n    #warhub-overlay *::before,\n    #warhub-overlay *::after {\n      box-sizing: border-box !important;\n    }\n\n    .warhub-head {\n      padding: 10px 12px 9px !important;\n      border-bottom: 1px solid rgba(255,255,255,.08) !important;\n      background: linear-gradient(180deg, rgba(170,18,18,.30), rgba(20,20,20,.20)) !important;\n      cursor: grab !important;\n      user-select: none !important;\n      -webkit-user-select: none !important;\n      -webkit-touch-callout: none !important;\n      touch-action: none !important;\n      flex: 0 0 auto !important;\n      display: block !important;\n      width: 100% !important;\n      min-height: 54px !important;\n    }\n    .warhub-head.dragging { cursor: grabbing !important; }\n\n    .warhub-toprow {\n      display: flex !important;\n      align-items: center !important;\n      justify-content: space-between !important;\n      gap: 10px !important;\n      width: 100% !important;\n    }\n\n    .warhub-title {\n      font-weight: 800 !important;\n      font-size: 16px !important;\n      letter-spacing: .2px !important;\n      color: #fff !important;\n    }\n    .warhub-sub {\n      opacity: .72 !important;\n      font-size: 11px !important;\n      margin-top: 2px !important;\n      color: #fff !important;\n    }\n\n    .warhub-close {\n      appearance: none !important;\n      -webkit-appearance: none !important;\n      border: 0 !important;\n      border-radius: 9px !important;\n      background: rgba(255,255,255,.08) !important;\n      color: #fff !important;\n      padding: 5px 9px !important;\n      font-weight: 700 !important;\n      cursor: pointer !important;\n      font-size: 12px !important;\n      flex: 0 0 auto !important;\n      display: inline-flex !important;\n      align-items: center !important;\n      justify-content: center !important;\n      min-height: 30px !important;\n    }\n\n    .warhub-tabs {\n      display: flex !important;\n      flex: 0 0 auto !important;\n      flex-wrap: nowrap !important;\n      align-items: center !important;\n      gap: 6px !important;\n      padding: 8px !important;\n      overflow-x: auto !important;\n      overflow-y: hidden !important;\n      border-bottom: 1px solid rgba(255,255,255,.08) !important;\n      background: rgba(255,255,255,.02) !important;\n      scrollbar-width: thin !important;\n      -webkit-overflow-scrolling: touch !important;\n      width: 100% !important;\n      min-height: 48px !important;\n      max-height: 48px !important;\n      white-space: nowrap !important;\n    }\n\n    .warhub-tab {\n      appearance: none !important;\n      -webkit-appearance: none !important;\n      border: 0 !important;\n      border-radius: 999px !important;\n      background: rgba(255,255,255,.07) !important;\n      color: #fff !important;\n      padding: 6px 10px !important;\n      font-size: 11px !important;\n      font-weight: 700 !important;\n      white-space: nowrap !important;\n      cursor: pointer !important;\n      flex: 0 0 auto !important;\n      display: inline-flex !important;\n      align-items: center !important;\n      justify-content: center !important;\n      min-height: 30px !important;\n      line-height: 1.1 !important;\n      opacity: 1 !important;\n      visibility: visible !important;\n      gap: 6px !important;\n    }\n    .warhub-tab.active {\n      background: linear-gradient(180deg, #d23333, #831515) !important;\n      color: #fff !important;\n    }\n    .warhub-tab.locked {\n      opacity: .55 !important;\n    }\n\n    .warhub-body {\n      padding: 8px !important;\n      overflow-y: auto !important;\n      overflow-x: hidden !important;\n      -webkit-overflow-scrolling: touch !important;\n      flex: 1 1 auto !important;\n      min-height: 0 !important;\n      width: 100% !important;\n      display: block !important;\n    }\n\n    .warhub-status {\n      display: none !important;\n      margin-bottom: 8px !important;\n      padding: 8px 10px !important;\n      border-radius: 10px !important;\n      font-size: 12px !important;\n      background: rgba(255,255,255,.06) !important;\n      color: #fff !important;\n    }\n    .warhub-status.show { display: block !important; }\n    .warhub-status.err {\n      background: rgba(185,52,52,.22) !important;\n      color: #ffdcdc !important;\n    }\n\n    .warhub-banner {\n      margin-bottom: 8px !important;\n      padding: 10px 12px !important;\n      border-radius: 12px !important;\n      border: 1px solid rgba(255,255,255,.10) !important;\n      background: rgba(255,255,255,.05) !important;\n      color: #fff !important;\n    }\n    .warhub-banner.payment {\n      background: linear-gradient(180deg, rgba(150,43,43,.38), rgba(72,19,19,.26)) !important;\n      border-color: rgba(255,130,130,.22) !important;\n    }\n    .warhub-banner.trial {\n      background: linear-gradient(180deg, rgba(164,116,25,.34), rgba(83,59,12,.22)) !important;\n      border-color: rgba(255,215,118,.22) !important;\n    }\n    .warhub-banner.good {\n      background: linear-gradient(180deg, rgba(35,140,82,.30), rgba(21,96,58,.20)) !important;\n      border-color: rgba(109,214,143,.18) !important;\n    }\n\n    .warhub-grid { display: grid !important; gap: 8px !important; }\n    .warhub-grid.two { grid-template-columns: repeat(2, minmax(0,1fr)) !important; }\n    .warhub-grid.three { grid-template-columns: repeat(3, minmax(0,1fr)) !important; }\n\n    .warhub-card {\n      border: 1px solid rgba(255,255,255,.07) !important;\n      background: rgba(255,255,255,.03) !important;\n      border-radius: 12px !important;\n      padding: 10px !important;\n      margin-bottom: 8px !important;\n      overflow: hidden !important;\n      color: #fff !important;\n    }\n\n    .warhub-card h3 {\n      margin: 0 0 8px !important;\n      font-size: 13px !important;\n      font-weight: 800 !important;\n      letter-spacing: .2px !important;\n      color: #fff !important;\n    }\n\n    .warhub-section-title {\n      display: flex !important;\n      align-items: center !important;\n      justify-content: space-between !important;\n      gap: 8px !important;\n      margin-bottom: 8px !important;\n    }\n\n    .warhub-count {\n      padding: 4px 8px !important;\n      border-radius: 999px !important;\n      background: rgba(255,255,255,.08) !important;\n      font-size: 11px !important;\n      font-weight: 800 !important;\n      color: #fff !important;\n    }\n\n    .warhub-roster-card.hospital-box {\n      border-color: rgba(255,130,130,.16) !important;\n      background: linear-gradient(180deg, rgba(145,37,37,.18), rgba(255,255,255,.03)) !important;\n    }\n\n    .warhub-roster-card.online-box {\n      border-color: rgba(109,214,143,.16) !important;\n      background: linear-gradient(180deg, rgba(31,120,63,.18), rgba(255,255,255,.03)) !important;\n    }\n\n    .warhub-roster-card.idle-box {\n      border-color: rgba(255,215,118,.16) !important;\n      background: linear-gradient(180deg, rgba(145,114,27,.18), rgba(255,255,255,.03)) !important;\n    }\n\n    .warhub-roster-card.offline-box {\n      border-color: rgba(180,180,180,.12) !important;\n      background: linear-gradient(180deg, rgba(70,70,70,.18), rgba(255,255,255,.03)) !important;\n    }\n\n    .warhub-dropdown {\n      border: 1px solid rgba(255,255,255,.07) !important;\n      border-radius: 12px !important;\n      background: rgba(255,255,255,.03) !important;\n      margin-bottom: 8px !important;\n      overflow: hidden !important;\n    }\n\n    .warhub-dropdown summary {\n      list-style: none !important;\n      cursor: pointer !important;\n      padding: 10px !important;\n      user-select: none !important;\n      outline: none !important;\n    }\n\n    .warhub-dropdown summary::-webkit-details-marker {\n      display: none !important;\n    }\n\n    .warhub-dropdown-body {\n      padding: 0 10px 10px 10px !important;\n    }\n\n    .warhub-metric {\n      border-radius: 10px !important;\n      background: rgba(255,255,255,.05) !important;\n      padding: 8px !important;\n      min-height: 54px !important;\n    }\n    .warhub-metric .k {\n      opacity: .7 !important;\n      font-size: 10px !important;\n      text-transform: uppercase !important;\n      letter-spacing: .45px !important;\n      color: #fff !important;\n    }\n    .warhub-metric .v {\n      font-size: 16px !important;\n      font-weight: 800 !important;\n      margin-top: 4px !important;\n      word-break: break-word !important;\n      color: #fff !important;\n    }\n\n    .warhub-score-us {\n      background: linear-gradient(180deg, rgba(31,120,63,.40), rgba(17,67,35,.28)) !important;\n      border: 1px solid rgba(109,214,143,.18) !important;\n    }\n    .warhub-score-them {\n      background: linear-gradient(180deg, rgba(145,37,37,.40), rgba(88,18,18,.28)) !important;\n      border: 1px solid rgba(255,130,130,.18) !important;\n    }\n    .warhub-score-lead {\n      background: linear-gradient(180deg, rgba(145,114,27,.38), rgba(97,72,13,.26)) !important;\n      border: 1px solid rgba(255,215,118,.18) !important;\n    }\n\n    .warhub-list { display: grid !important; gap: 6px !important; }\n\n    .warhub-list-item {\n      border-radius: 10px !important;\n      background: rgba(255,255,255,.04) !important;\n      padding: 8px !important;\n      display: grid !important;\n      gap: 4px !important;\n      color: #fff !important;\n    }\n\n    .warhub-row {\n      display: flex !important;\n      align-items: center !important;\n      justify-content: space-between !important;\n      gap: 8px !important;\n      flex-wrap: wrap !important;\n    }\n\n    .warhub-name { font-weight: 700 !important; color: #fff !important; }\n    .warhub-meta { opacity: .76 !important; font-size: 11px !important; color: #fff !important; }\n    .warhub-empty { opacity: .75 !important; font-size: 12px !important; color: #fff !important; }\n    .warhub-actions { display: flex !important; gap: 6px !important; flex-wrap: wrap !important; }\n\n    .warhub-btn, .warhub-input, .warhub-select, .warhub-textarea {\n      font: inherit !important;\n      border-radius: 10px !important;\n      border: 1px solid rgba(255,255,255,.10) !important;\n      background: rgba(255,255,255,.05) !important;\n      color: #fff !important;\n    }\n\n    .warhub-btn {\n      appearance: none !important;\n      -webkit-appearance: none !important;\n      padding: 7px 10px !important;\n      cursor: pointer !important;\n      font-size: 12px !important;\n      font-weight: 700 !important;\n      text-decoration: none !important;\n      display: inline-flex !important;\n      align-items: center !important;\n      justify-content: center !important;\n    }\n\n    .warhub-btn.primary { background: linear-gradient(180deg, #cc3737, #821616) !important; border-color: rgba(255,255,255,.12) !important; }\n    .warhub-btn.good { background: linear-gradient(180deg, #238c52, #15603a) !important; }\n    .warhub-btn.warn { background: linear-gradient(180deg, #af7b22, #775114) !important; }\n    .warhub-btn.small { padding: 5px 8px !important; font-size: 11px !important; }\n    .warhub-btn[disabled] { opacity: .45 !important; cursor: not-allowed !important; }\n\n    .warhub-input, .warhub-select, .warhub-textarea {\n      width: 100% !important;\n      padding: 8px 10px !important;\n      font-size: 12px !important;\n    }\n\n    .warhub-input[readonly] {\n      opacity: .9 !important;\n      background: rgba(255,255,255,.035) !important;\n    }\n\n    .warhub-textarea { min-height: 94px !important; resize: vertical !important; }\n\n    .warhub-label {\n      font-size: 11px !important;\n      opacity: .74 !important;\n      margin-bottom: 4px !important;\n      display: block !important;\n      color: #fff !important;\n    }\n\n    .warhub-pill {\n      display: inline-flex !important;\n      align-items: center !important;\n      gap: 6px !important;\n      padding: 4px 8px !important;\n      border-radius: 999px !important;\n      background: rgba(255,255,255,.07) !important;\n      font-size: 11px !important;\n      font-weight: 700 !important;\n    }\n    .warhub-pill.online { background: rgba(40,140,90,.20) !important; color: #b7ffd5 !important; }\n    .warhub-pill.idle { background: rgba(197,141,46,.22) !important; color: #ffe3a5 !important; }\n    .warhub-pill.offline { background: rgba(113,113,113,.20) !important; color: #dadada !important; }\n    .warhub-pill.hosp { background: rgba(181,62,62,.24) !important; color: #ffd0d0 !important; }\n    .warhub-pill.leader { background: rgba(66,110,185,.24) !important; color: #d3e3ff !important; }\n    .warhub-pill.enabled { background: rgba(35,140,82,.22) !important; color: #b7ffd5 !important; }\n    .warhub-pill.disabled { background: rgba(145,37,37,.24) !important; color: #ffd0d0 !important; }\n\n    .warhub-divider {\n      height: 1px !important;\n      background: rgba(255,255,255,.07) !important;\n      margin: 8px 0 !important;\n    }\n\n    .warhub-mini { font-size: 11px !important; opacity: .78 !important; color: #fff !important; }\n    .warhub-link { color: #fff !important; text-decoration: none !important; }\n\n    .warhub-section-scroll {\n      max-height: 52vh !important;\n      overflow-y: auto !important;\n      overflow-x: hidden !important;\n      -webkit-overflow-scrolling: touch !important;\n      padding-right: 2px !important;\n    }\n\n    .warhub-payment-line {\n      padding: 8px 10px !important;\n      border-radius: 10px !important;\n      background: rgba(255,255,255,.06) !important;\n      font-weight: 800 !important;\n      text-align: center !important;\n      margin-top: 8px !important;\n    }\n\n    @media (max-width: 700px) {\n      #warhub-overlay {\n        width: 98vw !important;\n        height: 88vh !important;\n        min-height: 360px !important;\n        top: 56px !important;\n        left: 1vw !important;\n        right: 1vw !important;\n        border-radius: 12px !important;\n      }\n      .warhub-grid.two, .warhub-grid.three { grid-template-columns: 1fr !important; }\n      .warhub-body { padding-bottom: 18px !important; }\n      #warhub-shield {\n        width: 40px !important;\n        height: 40px !important;\n        font-size: 21px !important;\n      }\n      .warhub-section-scroll { max-height: 34vh !important; }\n      .warhub-tabs {\n        min-height: 44px !important;\n        max-height: 44px !important;\n      }\n    }\n  ";
+    GM_addStyle(css);
+    function esc(v) {
+        return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
     }
-    #warhub-shield.dragging { cursor: grabbing !important; }
-
-    #warhub-badge {
-      position: fixed !important;
-      z-index: 2147483647 !important;
-      min-width: 16px !important;
-      height: 16px !important;
-      padding: 0 4px !important;
-      border-radius: 999px !important;
-      background: #ffd54a !important;
-      color: #111 !important;
-      font-size: 10px !important;
-      line-height: 16px !important;
-      text-align: center !important;
-      font-weight: 800 !important;
-      box-shadow: 0 3px 12px rgba(0,0,0,.45) !important;
-      display: none !important;
-      pointer-events: none !important;
+    function fmtNum(v) {
+        var n = Number(v);
+        return Number.isFinite(n) ? n.toLocaleString() : '—';
     }
-
-    #warhub-overlay {
-      position: fixed !important;
-      z-index: 2147483646 !important;
-      right: 12px !important;
-      top: 170px !important;
-      width: min(96vw, 520px) !important;
-      height: min(88vh, 900px) !important;
-      max-height: 88vh !important;
-      min-height: 420px !important;
-      overflow: hidden !important;
-      border-radius: 14px !important;
-      background: linear-gradient(180deg, #171717, #0c0c0c) !important;
-      color: #f2f2f2 !important;
-      border: 1px solid rgba(255,255,255,.08) !important;
-      box-shadow: 0 16px 38px rgba(0,0,0,.54) !important;
-      display: none !important;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
-      left: auto !important;
-      bottom: auto !important;
-      flex-direction: column !important;
-      box-sizing: border-box !important;
-      opacity: 1 !important;
-      visibility: visible !important;
+    function fmtMoney(v) {
+        var n = Number(v);
+        return Number.isFinite(n) ? "$".concat(n.toLocaleString()) : '—';
     }
-    #warhub-overlay.open { display: flex !important; }
-
-    #warhub-overlay *,
-    #warhub-overlay *::before,
-    #warhub-overlay *::after {
-      box-sizing: border-box !important;
+    function fmtHosp(v, txt) {
+        if (txt) return txt;
+        var n = Number(v);
+        return Number.isFinite(n) && n > 0 ? "".concat(n, "s") : '—';
     }
-
-    .warhub-head {
-      padding: 10px 12px 9px !important;
-      border-bottom: 1px solid rgba(255,255,255,.08) !important;
-      background: linear-gradient(180deg, rgba(170,18,18,.30), rgba(20,20,20,.20)) !important;
-      cursor: grab !important;
-      user-select: none !important;
-      -webkit-user-select: none !important;
-      -webkit-touch-callout: none !important;
-      touch-action: none !important;
-      flex: 0 0 auto !important;
-      display: block !important;
-      width: 100% !important;
-      min-height: 54px !important;
+    function fmtTs(v) {
+        if (!v) return '—';
+        try {
+            var d = new Date(v);
+            if (Number.isNaN(d.getTime())) return String(v);
+            return d.toLocaleString();
+        } catch (_unused) {
+            return String(v);
+        }
     }
-    .warhub-head.dragging { cursor: grabbing !important; }
-
-    .warhub-toprow {
-      display: flex !important;
-      align-items: center !important;
-      justify-content: space-between !important;
-      gap: 10px !important;
-      width: 100% !important;
+    function fmtDaysLeftFromIso(v) {
+        if (!v) return null;
+        try {
+            var ms = new Date(v).getTime() - Date.now();
+            if (!Number.isFinite(ms)) return null;
+            return Math.ceil(ms / 86400000);
+        } catch (_unused2) {
+            return null;
+        }
     }
-
-    .warhub-title {
-      font-weight: 800 !important;
-      font-size: 16px !important;
-      letter-spacing: .2px !important;
-      color: #fff !important;
+    function arr(v) {
+        return Array.isArray(v) ? v : [];
     }
-    .warhub-sub {
-      opacity: .72 !important;
-      font-size: 11px !important;
-      margin-top: 2px !important;
-      color: #fff !important;
+    function cleanInputValue(v) {
+        return String(v || '').replace(/[\u200B-\u200D\uFEFF]/g, '').trim().replace(/^['"]+|['"]+$/g, '').trim();
     }
-
-    .warhub-close {
-      appearance: none !important;
-      -webkit-appearance: none !important;
-      border: 0 !important;
-      border-radius: 9px !important;
-      background: rgba(255,255,255,.08) !important;
-      color: #fff !important;
-      padding: 5px 9px !important;
-      font-weight: 700 !important;
-      cursor: pointer !important;
-      font-size: 12px !important;
-      flex: 0 0 auto !important;
-      display: inline-flex !important;
-      align-items: center !important;
-      justify-content: center !important;
-      min-height: 30px !important;
+    function getNotes() {
+        return String(GM_getValue(K_NOTES, '') || '');
     }
-
-    .warhub-tabs {
-      display: flex !important;
-      flex: 0 0 auto !important;
-      flex-wrap: nowrap !important;
-      align-items: center !important;
-      gap: 6px !important;
-      padding: 8px !important;
-      overflow-x: auto !important;
-      overflow-y: hidden !important;
-      border-bottom: 1px solid rgba(255,255,255,.08) !important;
-      background: rgba(255,255,255,.02) !important;
-      scrollbar-width: thin !important;
-      -webkit-overflow-scrolling: touch !important;
-      width: 100% !important;
-      min-height: 48px !important;
-      max-height: 48px !important;
-      white-space: nowrap !important;
+    function setNotes(v) {
+        GM_setValue(K_NOTES, String(v || ''));
     }
-
-    .warhub-tab {
-      appearance: none !important;
-      -webkit-appearance: none !important;
-      border: 0 !important;
-      border-radius: 999px !important;
-      background: rgba(255,255,255,.07) !important;
-      color: #fff !important;
-      padding: 6px 10px !important;
-      font-size: 11px !important;
-      font-weight: 700 !important;
-      white-space: nowrap !important;
-      cursor: pointer !important;
-      flex: 0 0 auto !important;
-      display: inline-flex !important;
-      align-items: center !important;
-      justify-content: center !important;
-      min-height: 30px !important;
-      line-height: 1.1 !important;
-      opacity: 1 !important;
-      visibility: visible !important;
-      gap: 6px !important;
+    function getLocalNotifications() {
+        return arr(GM_getValue(K_LOCAL_NOTIFICATIONS, []));
     }
-    .warhub-tab.active {
-      background: linear-gradient(180deg, #d23333, #831515) !important;
-      color: #fff !important;
+    function setLocalNotifications(v) {
+        GM_setValue(K_LOCAL_NOTIFICATIONS, arr(v));
     }
-    .warhub-tab.locked {
-      opacity: .55 !important;
+    function mergedNotifications() {
+        return [].concat(_toConsumableArray(arr(state && state.notifications)), _toConsumableArray(getLocalNotifications())).slice(0, 50);
     }
-
-    .warhub-body {
-      padding: 8px !important;
-      overflow-y: auto !important;
-      overflow-x: hidden !important;
-      -webkit-overflow-scrolling: touch !important;
-      flex: 1 1 auto !important;
-      min-height: 0 !important;
-      width: 100% !important;
-      display: block !important;
+    function unreadCount() {
+        return mergedNotifications().length;
     }
-
-    .warhub-status {
-      display: none !important;
-      margin-bottom: 8px !important;
-      padding: 8px 10px !important;
-      border-radius: 10px !important;
-      font-size: 12px !important;
-      background: rgba(255,255,255,.06) !important;
-      color: #fff !important;
+    function setStatus(msg) {
+        var isErr = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : false;
+        lastStatusMsg = String(msg || '');
+        lastStatusErr = !!isErr;
+        var box = overlay ? overlay.querySelector('#warhub-status') : null;
+        if (!box) return;
+        if (!msg) {
+            box.className = 'warhub-status';
+            box.textContent = '';
+            return;
+        }
+        box.className = "warhub-status show ".concat(isErr ? 'err' : '').trim();
+        box.textContent = msg;
     }
-    .warhub-status.show { display: block !important; }
-    .warhub-status.err {
-      background: rgba(185,52,52,.22) !important;
-      color: #ffdcdc !important;
+    function restoreStatus() {
+        if (lastStatusMsg) setStatus(lastStatusMsg, lastStatusErr);
     }
-
-    .warhub-banner {
-      margin-bottom: 8px !important;
-      padding: 10px 12px !important;
-      border-radius: 12px !important;
-      border: 1px solid rgba(255,255,255,.10) !important;
-      background: rgba(255,255,255,.05) !important;
-      color: #fff !important;
+    function normalizeAccessCache(raw) {
+        var a = raw && _typeof(raw) === 'object' ? raw : {};
+        return {
+            loggedIn: !!a.loggedIn,
+            blocked: !!a.blocked,
+            paymentRequired: !!a.paymentRequired,
+            trialActive: !!a.trialActive,
+            trialExpired: !!a.trialExpired,
+            expiresAt: a.expiresAt || '',
+            daysLeft: Number.isFinite(Number(a.daysLeft)) ? Number(a.daysLeft) : null,
+            reason: a.reason || '',
+            message: a.message || '',
+            source: a.source || '',
+            lastSeenAt: a.lastSeenAt || '',
+            factionId: a.factionId || '',
+            factionName: a.factionName || '',
+            isFactionLeader: !!a.isFactionLeader,
+            memberEnabled: !!a.memberEnabled,
+            pricePerMember: Number.isFinite(Number(a.pricePerMember)) ? Number(a.pricePerMember) : PRICE_PER_MEMBER,
+            paymentPlayer: a.paymentPlayer || PAYMENT_PLAYER,
+            isOwner: !!a.isOwner
+        };
     }
-    .warhub-banner.payment {
-      background: linear-gradient(180deg, rgba(150,43,43,.38), rgba(72,19,19,.26)) !important;
-      border-color: rgba(255,130,130,.22) !important;
+    function saveAccessCache() {
+        GM_setValue(K_ACCESS_CACHE, accessState || {});
     }
-    .warhub-banner.trial {
-      background: linear-gradient(180deg, rgba(164,116,25,.34), rgba(83,59,12,.22)) !important;
-      border-color: rgba(255,215,118,.22) !important;
+    function clearSavedKeys() {
+        GM_deleteValue(K_API_KEY);
+        GM_deleteValue(K_ADMIN_KEY);
+        GM_deleteValue(K_SESSION);
     }
-    .warhub-banner.good {
-      background: linear-gradient(180deg, rgba(35,140,82,.30), rgba(21,96,58,.20)) !important;
-      border-color: rgba(109,214,143,.18) !important;
+    function clearBlockedCredentials() {
+        clearSavedKeys();
     }
-
-    .warhub-grid { display: grid !important; gap: 8px !important; }
-    .warhub-grid.two { grid-template-columns: repeat(2, minmax(0,1fr)) !important; }
-    .warhub-grid.three { grid-template-columns: repeat(3, minmax(0,1fr)) !important; }
-
-    .warhub-card {
-      border: 1px solid rgba(255,255,255,.07) !important;
-      background: rgba(255,255,255,.03) !important;
-      border-radius: 12px !important;
-      padding: 10px !important;
-      margin-bottom: 8px !important;
-      overflow: hidden !important;
-      color: #fff !important;
+    function accessSummaryMessage() {
+        if (!accessState) return '';
+        var paymentPlayer = accessState.paymentPlayer || PAYMENT_PLAYER;
+        var ppm = accessState.pricePerMember || PRICE_PER_MEMBER;
+        if (accessState.paymentRequired || accessState.blocked || accessState.trialExpired) {
+            return accessState.message || accessState.reason || "Faction access locked. Payment goes to ".concat(paymentPlayer, ".");
+        }
+        if (accessState.trialActive) {
+            if (accessState.daysLeft != null) {
+                if (accessState.daysLeft <= 0) return "Faction trial ends today. Billing is ".concat(fmtMoney(ppm), " per enabled member.");
+                return "Faction trial active. ".concat(accessState.daysLeft, " day").concat(accessState.daysLeft === 1 ? '' : 's', " left.");
+            }
+            if (accessState.expiresAt) return "Faction trial active until ".concat(fmtTs(accessState.expiresAt), ".");
+            return 'Faction trial active.';
+        }
+        return '';
     }
-
-    .warhub-card h3 {
-      margin: 0 0 8px !important;
-      font-size: 13px !important;
-      font-weight: 800 !important;
-      letter-spacing: .2px !important;
-      color: #fff !important;
+    function isOwnerSession() {
+        return !!((accessState === null || accessState === void 0 ? void 0 : accessState.isOwner) || (state === null || state === void 0 ? void 0 : state.me) && state.me.is_owner || (state === null || state === void 0 ? void 0 : state.user) && state.user.is_owner || (state === null || state === void 0 ? void 0 : state.owner) && state.owner.is_owner);
     }
-
-    .warhub-section-title {
-      display: flex !important;
-      align-items: center !important;
-      justify-content: space-between !important;
-      gap: 8px !important;
-      margin-bottom: 8px !important;
+    function getAccessInfo(payload, httpStatus) {
+        var d = payload && _typeof(payload) === 'object' ? payload : {};
+        var access = d.access && _typeof(d.access) === 'object' ? d.access : {};
+        var payment = d.payment && _typeof(d.payment) === 'object' ? d.payment : {};
+        var factionAccess = d.faction_access && _typeof(d.faction_access) === 'object' ? d.faction_access : {};
+        var memberAccess = d.member_access && _typeof(d.member_access) === 'object' ? d.member_access : {};
+        var paymentRequired = !!d.payment_required || !!d.requires_payment || !!d.paymentRequired || !!access.payment_required || !!access.requires_payment || !!access.paymentRequired;
+        var blocked = !!d.blocked || !!d.access_blocked || !!d.locked || !!d.denied || !!access.blocked || !!access.access_blocked || !!access.locked || !!access.denied || paymentRequired;
+        var expiresAt = d.trial_expires_at || d.trialEndsAt || d.expires_at || access.trial_expires_at || access.trialEndsAt || access.expires_at || '';
+        var explicitDaysLeft = d.trial_days_left != null ? d.trial_days_left : d.days_left != null ? d.days_left : access.trial_days_left != null ? access.trial_days_left : access.days_left != null ? access.days_left : null;
+        var computedDaysLeft = explicitDaysLeft != null ? Number(explicitDaysLeft) : fmtDaysLeftFromIso(expiresAt);
+        var trialExpired = !!d.trial_expired || !!d.expired || !!access.trial_expired || !!access.expired || computedDaysLeft != null && computedDaysLeft < 0 && !paymentRequired ? true : false;
+        var trialActive = !!d.trial_active || !!access.trial_active || computedDaysLeft != null && computedDaysLeft >= 0 && !paymentRequired && !trialExpired;
+        var accessStatus = String(d.access_status || d.status || access.status || access.access_status || '').toLowerCase();
+        var reason = d.reason || d.block_reason || d.error || access.reason || access.block_reason || memberAccess.reason || '';
+        var message = d.message || d.notice || d.details || access.message || access.notice || payment.message || '';
+        var finalBlocked = blocked;
+        var finalPaymentRequired = paymentRequired;
+        var finalTrialExpired = trialExpired;
+        if (accessStatus.includes('payment')) {
+            finalBlocked = true;
+            finalPaymentRequired = true;
+            finalTrialExpired = true;
+        } else if (accessStatus.includes('expired')) {
+            finalBlocked = true;
+            finalTrialExpired = true;
+        } else if (accessStatus.includes('blocked') || accessStatus.includes('locked') || accessStatus.includes('denied')) {
+            finalBlocked = true;
+        }
+        if ((httpStatus === 402 || httpStatus === 403) && !message) {
+            message = "Faction access blocked. Payment goes to ".concat(payment.required_player || PAYMENT_PLAYER, ".");
+        }
+        if (finalPaymentRequired && !message) {
+            message = "Faction payment required. Payment goes to ".concat(payment.required_player || PAYMENT_PLAYER, ".");
+        } else if (finalBlocked && !message) {
+            message = reason || 'Faction access locked.';
+        }
+        return {
+            loggedIn: false,
+            blocked: finalBlocked,
+            paymentRequired: finalPaymentRequired,
+            trialActive: !!trialActive && !finalBlocked,
+            trialExpired: finalTrialExpired || finalPaymentRequired,
+            expiresAt: expiresAt || '',
+            daysLeft: Number.isFinite(computedDaysLeft) ? computedDaysLeft : null,
+            reason: String(reason || ''),
+            message: String(message || ''),
+            source: String(accessStatus || ''),
+            lastSeenAt: new Date().toISOString(),
+            factionId: d.faction_id || (d.faction && d.faction.id) || (d.me && d.me.faction_id) || '',
+            factionName: d.faction_name || (d.faction && d.faction.name) || (d.me && d.me.faction_name) || '',
+            isFactionLeader: !!d.is_faction_leader || !!factionAccess.is_faction_leader || !!(d.me && d.me.is_faction_leader),
+            memberEnabled: !!memberAccess.enabled || !!factionAccess.member_enabled || !!memberAccess.allowed,
+            pricePerMember: Number(payment.price_per_enabled_member || payment.price_per_member || PRICE_PER_MEMBER) || PRICE_PER_MEMBER,
+            paymentPlayer: String(payment.required_player || PAYMENT_PLAYER),
+            isOwner: !!d.is_owner || !!(d.user && d.user.is_owner) || !!(d.me && d.me.is_owner) || !!(d.owner && d.owner.is_owner) || !!factionAccess.is_owner
+        };
     }
-
-    .warhub-count {
-      padding: 4px 8px !important;
-      border-radius: 999px !important;
-      background: rgba(255,255,255,.08) !important;
-      font-size: 11px !important;
-      font-weight: 800 !important;
-      color: #fff !important;
+    function updateAccessFromPayload(payload, httpStatus, loggedInHint) {
+        var next = getAccessInfo(payload, httpStatus);
+        if (loggedInHint === true && !next.blocked) next.loggedIn = true;
+        if (loggedInHint === false) next.loggedIn = false;
+        if (next.blocked || next.paymentRequired || next.trialExpired) {
+            accessState = next;
+            clearBlockedCredentials();
+            saveAccessCache();
+            return next;
+        }
+        if (next.trialActive || next.expiresAt || next.daysLeft != null || next.factionId || next.isFactionLeader) {
+            accessState = _objectSpread(_objectSpread({}, accessState), {}, _defineProperty(_defineProperty(_defineProperty(_defineProperty(_defineProperty(_defineProperty(_defineProperty(_defineProperty(_defineProperty(_defineProperty({}, "loggedIn", loggedInHint === true ? true : accessState.loggedIn), "blocked", false), "paymentRequired", false), "trialExpired", false), "expiresAt", next.expiresAt), "daysLeft", next.daysLeft), "reason", next.reason), "message", next.message), "source", next.source), "lastSeenAt", next.lastSeenAt), "isOwner", next.isOwner), next);
+            saveAccessCache();
+            return accessState;
+        }
+        if (loggedInHint === true) {
+            accessState = _objectSpread(_objectSpread({}, accessState), {}, {
+                loggedIn: true,
+                blocked: false,
+                paymentRequired: false,
+                trialExpired: false,
+                lastSeenAt: new Date().toISOString(),
+                isOwner: !!accessState.isOwner
+            });
+            saveAccessCache();
+        }
+        return accessState;
     }
-
-    .warhub-roster-card.hospital-box {
-      border-color: rgba(255,130,130,.16) !important;
-      background: linear-gradient(180deg, rgba(145,37,37,.18), rgba(255,255,255,.03)) !important;
+    function canUseProtectedFeatures() {
+        if (isOwnerSession()) return true;
+        return !(accessState !== null && accessState !== void 0 && accessState.blocked || accessState !== null && accessState !== void 0 && accessState.paymentRequired || accessState !== null && accessState !== void 0 && accessState.trialExpired);
     }
-
-    .warhub-roster-card.online-box {
-      border-color: rgba(109,214,143,.16) !important;
-      background: linear-gradient(180deg, rgba(31,120,63,.18), rgba(255,255,255,.03)) !important;
-    }
-
-    .warhub-roster-card.idle-box {
-      border-color: rgba(255,215,118,.16) !important;
-      background: linear-gradient(180deg, rgba(145,114,27,.18), rgba(255,255,255,.03)) !important;
-    }
-
-    .warhub-roster-card.offline-box {
-      border-color: rgba(180,180,180,.12) !important;
-      background: linear-gradient(180deg, rgba(70,70,70,.18), rgba(255,255,255,.03)) !important;
-    }
-
-    .warhub-dropdown {
-      border: 1px solid rgba(255,255,255,.07) !important;
-      border-radius: 12px !important;
-      background: rgba(255,255,255,.03) !important;
-      margin-bottom: 8px !important;
-      overflow: hidden !important;
-    }
-
-    .warhub-dropdown summary {
-      list-style: none !important;
-      cursor: pointer !important;
-      padding: 10px !important;
-      user-select: none !important;
-      outline: none !important;
-    }
-
-    .warhub-dropdown summary::-webkit-details-marker {
-      display: none !important;
-    }
-
-    .warhub-dropdown-body {
-      padding: 0 10px 10px 10px !important;
-    }
-
-    .warhub-metric {
-      border-radius: 10px !important;
-      background: rgba(255,255,255,.05) !important;
-      padding: 8px !important;
-      min-height: 54px !important;
-    }
-    .warhub-metric .k {
-      opacity: .7 !important;
-      font-size: 10px !important;
-      text-transform: uppercase !important;
-      letter-spacing: .45px !important;
-      color: #fff !important;
-    }
-    .warhub-metric .v {
-      font-size: 16px !important;
-      font-weight: 800 !important;
-      margin-top: 4px !important;
-      word-break: break-word !important;
-      color: #fff !important;
-    }
-
-    .warhub-score-us {
-      background: linear-gradient(180deg, rgba(31,120,63,.40), rgba(17,67,35,.28)) !important;
-      border: 1px solid rgba(109,214,143,.18) !important;
-    }
-    .warhub-score-them {
-      background: linear-gradient(180deg, rgba(145,37,37,.40), rgba(88,18,18,.28)) !important;
-      border: 1px solid rgba(255,130,130,.18) !important;
-    }
-    .warhub-score-lead {
-      background: linear-gradient(180deg, rgba(145,114,27,.38), rgba(97,72,13,.26)) !important;
-      border: 1px solid rgba(255,215,118,.18) !important;
-    }
-
-    .warhub-list { display: grid !important; gap: 6px !important; }
-
-    .warhub-list-item {
-      border-radius: 10px !important;
-      background: rgba(255,255,255,.04) !important;
-      padding: 8px !important;
-      display: grid !important;
-      gap: 4px !important;
-      color: #fff !important;
-    }
-
-    .warhub-row {
-      display: flex !important;
-      align-items: center !important;
-      justify-content: space-between !important;
-      gap: 8px !important;
-      flex-wrap: wrap !important;
-    }
-
-    .warhub-name { font-weight: 700 !important; color: #fff !important; }
-    .warhub-meta { opacity: .76 !important; font-size: 11px !important; color: #fff !important; }
-    .warhub-empty { opacity: .75 !important; font-size: 12px !important; color: #fff !important; }
-    .warhub-actions { display: flex !important; gap: 6px !important; flex-wrap: wrap !important; }
-
-    .warhub-btn, .warhub-input, .warhub-select, .warhub-textarea {
-      font: inherit !important;
-      border-radius: 10px !important;
-      border: 1px solid rgba(255,255,255,.10) !important;
-      background: rgba(255,255,255,.05) !important;
-      color: #fff !important;
-    }
-
-    .warhub-btn {
-      appearance: none !important;
-      -webkit-appearance: none !important;
-      padding: 7px 10px !important;
-      cursor: pointer !important;
-      font-size: 12px !important;
-      font-weight: 700 !important;
-      text-decoration: none !important;
-      display: inline-flex !important;
-      align-items: center !important;
-      justify-content: center !important;
-    }
-
-    .warhub-btn.primary { background: linear-gradient(180deg, #cc3737, #821616) !important; border-color: rgba(255,255,255,.12) !important; }
-    .warhub-btn.good { background: linear-gradient(180deg, #238c52, #15603a) !important; }
-    .warhub-btn.warn { background: linear-gradient(180deg, #af7b22, #775114) !important; }
-    .warhub-btn.small { padding: 5px 8px !important; font-size: 11px !important; }
-    .warhub-btn[disabled] { opacity: .45 !important; cursor: not-allowed !important; }
-
-    .warhub-input, .warhub-select, .warhub-textarea {
-      width: 100% !important;
-      padding: 8px 10px !important;
-      font-size: 12px !important;
-    }
-
-    .warhub-input[readonly] {
-      opacity: .9 !important;
-      background: rgba(255,255,255,.035) !important;
-    }
-
-    .warhub-textarea { min-height: 94px !important; resize: vertical !important; }
-
-    .warhub-label {
-      font-size: 11px !important;
-      opacity: .74 !important;
-      margin-bottom: 4px !important;
-      display: block !important;
-      color: #fff !important;
-    }
-
-    .warhub-pill {
-      display: inline-flex !important;
-      align-items: center !important;
-      gap: 6px !important;
-      padding: 4px 8px !important;
-      border-radius: 999px !important;
-      background: rgba(255,255,255,.07) !important;
-      font-size: 11px !important;
-      font-weight: 700 !important;
-    }
-    .warhub-pill.online { background: rgba(40,140,90,.20) !important; color: #b7ffd5 !important; }
-    .warhub-pill.idle { background: rgba(197,141,46,.22) !important; color: #ffe3a5 !important; }
-    .warhub-pill.offline { background: rgba(113,113,113,.20) !important; color: #dadada !important; }
-    .warhub-pill.hosp { background: rgba(181,62,62,.24) !important; color: #ffd0d0 !important; }
-    .warhub-pill.leader { background: rgba(66,110,185,.24) !important; color: #d3e3ff !important; }
-    .warhub-pill.enabled { background: rgba(35,140,82,.22) !important; color: #b7ffd5 !important; }
-    .warhub-pill.disabled { background: rgba(145,37,37,.24) !important; color: #ffd0d0 !important; }
-
-    .warhub-divider {
-      height: 1px !important;
-      background: rgba(255,255,255,.07) !important;
-      margin: 8px 0 !important;
-    }
-
-    .warhub-mini { font-size: 11px !important; opacity: .78 !important; color: #fff !important; }
-    .warhub-link { color: #fff !important; text-decoration: none !important; }
-
-    .warhub-section-scroll {
-      max-height: 52vh !important;
-      overflow-y: auto !important;
-      overflow-x: hidden !important;
-      -webkit-overflow-scrolling: touch !important;
-      padding-right: 2px !important;
-    }
-
-    .warhub-payment-line {
-      padding: 8px 10px !important;
-      border-radius: 10px !important;
-      background: rgba(255,255,255,.06) !important;
-      font-weight: 800 !important;
-      text-align: center !important;
-      margin-top: 8px !important;
-    }
-
-    @media (max-width: 700px) {
-      #warhub-overlay {
-        width: 98vw !important;
-        height: 88vh !important;
-        min-height: 360px !important;
-        top: 56px !important;
-        left: 1vw !important;
-        right: 1vw !important;
-        border-radius: 12px !important;
-      }
-      .warhub-grid.two, .warhub-grid.three { grid-template-columns: 1fr !important; }
-      .warhub-body { padding-bottom: 18px !important; }
-      #warhub-shield {
-        width: 40px !important;
-        height: 40px !important;
-        font-size: 21px !important;
-      }
-      .warhub-section-scroll { max-height: 34vh !important; }
-      .warhub-tabs {
-        min-height: 44px !important;
-        max-height: 44px !important;
-      }
-    }
-  `;
-  GM_addStyle(css);
-
-  function esc(v) {
-    return String(v == null ? "" : v)
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#39;");
-  }
-
-  function fmtNum(v) {
-    const n = Number(v);
-    return Number.isFinite(n) ? n.toLocaleString() : "—";
-  }
-
-  function fmtMoney(v) {
-    const n = Number(v);
-    return Number.isFinite(n) ? `$${n.toLocaleString()}` : "—";
-  }
-
-  function fmtHosp(v, txt) {
-    if (txt) return txt;
-    const n = Number(v);
-    return Number.isFinite(n) && n > 0 ? `${n}s` : "—";
-  }
-
-  function fmtTs(v) {
-    if (!v) return "—";
-    try {
-      const d = new Date(v);
-      if (Number.isNaN(d.getTime())) return String(v);
-      return d.toLocaleString();
-    } catch {
-      return String(v);
-    }
-  }
-
-  function fmtDaysLeftFromIso(v) {
-    if (!v) return null;
-    try {
-      const ms = new Date(v).getTime() - Date.now();
-      if (!Number.isFinite(ms)) return null;
-      return Math.ceil(ms / 86400000);
-    } catch {
-      return null;
-    }
-  }
-
-  function arr(v) {
-    return Array.isArray(v) ? v : [];
-  }
-
-  function cleanInputValue(v) {
-    return String(v || "")
-      .replace(/[\u200B-\u200D\uFEFF]/g, "")
-      .trim()
-      .replace(/^['"]+|['"]+$/g, "")
-      .trim();
-  }
-
-  function getNotes() {
-    return String(GM_getValue(K_NOTES, "") || "");
-  }
-
-  function setNotes(v) {
-    GM_setValue(K_NOTES, String(v || ""));
-  }
-
-  function getLocalNotifications() {
-    return arr(GM_getValue(K_LOCAL_NOTIFICATIONS, []));
-  }
-
-  function setLocalNotifications(v) {
-    GM_setValue(K_LOCAL_NOTIFICATIONS, arr(v));
-  }
-
-  function mergedNotifications() {
-    return [...arr(state?.notifications), ...getLocalNotifications()].slice(0, 50);
-  }
-
-  function unreadCount() {
-    return mergedNotifications().length;
-  }
-
-  function setStatus(msg, isErr = false) {
-    lastStatusMsg = String(msg || "");
-    lastStatusErr = !!isErr;
-    const box = overlay?.querySelector("#warhub-status");
-    if (!box) return;
-    if (!msg) {
-      box.className = "warhub-status";
-      box.textContent = "";
-      return;
-    }
-    box.className = `warhub-status show ${isErr ? "err" : ""}`.trim();
-    box.textContent = msg;
-  }
-
-  function restoreStatus() {
-    if (lastStatusMsg) setStatus(lastStatusMsg, lastStatusErr);
-  }
-
-  function normalizeAccessCache(raw) {
-    const a = raw && typeof raw === "object" ? raw : {};
-    return {
-      loggedIn: !!a.loggedIn,
-      blocked: !!a.blocked,
-      paymentRequired: !!a.paymentRequired,
-      trialActive: !!a.trialActive,
-      trialExpired: !!a.trialExpired,
-      expiresAt: a.expiresAt || "",
-      daysLeft: Number.isFinite(Number(a.daysLeft)) ? Number(a.daysLeft) : null,
-      reason: a.reason || "",
-      message: a.message || "",
-      source: a.source || "",
-      lastSeenAt: a.lastSeenAt || "",
-      factionId: a.factionId || "",
-      factionName: a.factionName || "",
-      isFactionLeader: !!a.isFactionLeader,
-      memberEnabled: !!a.memberEnabled,
-      pricePerMember: Number.isFinite(Number(a.pricePerMember)) ? Number(a.pricePerMember) : PRICE_PER_MEMBER,
-      paymentPlayer: a.paymentPlayer || PAYMENT_PLAYER,
-      isOwner: !!a.isOwner,
-    };
-  }
-
-  function saveAccessCache() {
-    GM_setValue(K_ACCESS_CACHE, accessState || {});
-  }
-
-  function clearSavedKeys() {
-    GM_deleteValue(K_API_KEY);
-    GM_deleteValue(K_ADMIN_KEY);
-    GM_deleteValue(K_SESSION);
-  }
-
-  function clearBlockedCredentials() {
-    clearSavedKeys();
-  }
-
-  function accessSummaryMessage() {
-    if (!accessState) return "";
-    const paymentPlayer = accessState.paymentPlayer || PAYMENT_PLAYER;
-    const ppm = accessState.pricePerMember || PRICE_PER_MEMBER;
-
-    if (accessState.paymentRequired || accessState.blocked || accessState.trialExpired) {
-      return accessState.message || accessState.reason || `Faction access locked. Payment goes to ${paymentPlayer}.`;
-    }
-
-    if (accessState.trialActive) {
-      if (accessState.daysLeft != null) {
-        if (accessState.daysLeft <= 0) return `Faction trial ends today. Billing is ${fmtMoney(ppm)} per enabled member.`;
-        return `Faction trial active. ${accessState.daysLeft} day${accessState.daysLeft === 1 ? "" : "s"} left.`;
-      }
-      if (accessState.expiresAt) return `Faction trial active until ${fmtTs(accessState.expiresAt)}.`;
-      return "Faction trial active.";
-    }
-
-    return "";
-  }
-
-  function isOwnerSession() {
-    return !!(accessState?.isOwner || state?.me?.is_owner || state?.user?.is_owner || state?.owner?.is_owner);
-  }
-
-  function getAccessInfo(payload, httpStatus) {
-    const d = payload && typeof payload === "object" ? payload : {};
-    const access = d.access && typeof d.access === "object" ? d.access : {};
-    const payment = d.payment && typeof d.payment === "object" ? d.payment : {};
-    const factionAccess = d.faction_access && typeof d.faction_access === "object" ? d.faction_access : {};
-    const memberAccess = d.member_access && typeof d.member_access === "object" ? d.member_access : {};
-
-    const paymentRequired =
-      !!d.payment_required ||
-      !!d.requires_payment ||
-      !!d.paymentRequired ||
-      !!access.payment_required ||
-      !!access.requires_payment ||
-      !!access.paymentRequired;
-
-    const blocked =
-      !!d.blocked ||
-      !!d.access_blocked ||
-      !!d.locked ||
-      !!d.denied ||
-      !!access.blocked ||
-      !!access.access_blocked ||
-      !!access.locked ||
-      !!access.denied ||
-      paymentRequired;
-
-    const expiresAt =
-      d.trial_expires_at ||
-      d.trialEndsAt ||
-      d.expires_at ||
-      access.trial_expires_at ||
-      access.trialEndsAt ||
-      access.expires_at ||
-      "";
-
-    const explicitDaysLeft = d.trial_days_left ?? d.days_left ?? access.trial_days_left ?? access.days_left;
-    const computedDaysLeft = explicitDaysLeft != null ? Number(explicitDaysLeft) : fmtDaysLeftFromIso(expiresAt);
-
-    const trialExpired =
-      !!d.trial_expired ||
-      !!d.expired ||
-      !!access.trial_expired ||
-      !!access.expired ||
-      ((computedDaysLeft != null && computedDaysLeft < 0) && !paymentRequired ? true : false);
-
-    const trialActive =
-      !!d.trial_active ||
-      !!access.trial_active ||
-      ((computedDaysLeft != null && computedDaysLeft >= 0) && !paymentRequired && !trialExpired);
-
-    const accessStatus = String(
-      d.access_status ||
-      d.status ||
-      access.status ||
-      access.access_status ||
-      ""
-    ).toLowerCase();
-
-    const reason =
-      d.reason ||
-      d.block_reason ||
-      d.error ||
-      access.reason ||
-      access.block_reason ||
-      memberAccess.reason ||
-      "";
-
-    let message =
-      d.message ||
-      d.notice ||
-      d.details ||
-      access.message ||
-      access.notice ||
-      payment.message ||
-      "";
-
-    let finalBlocked = blocked;
-    let finalPaymentRequired = paymentRequired;
-    let finalTrialExpired = trialExpired;
-
-    if (accessStatus.includes("payment")) {
-      finalBlocked = true;
-      finalPaymentRequired = true;
-      finalTrialExpired = true;
-    } else if (accessStatus.includes("expired")) {
-      finalBlocked = true;
-      finalTrialExpired = true;
-    } else if (accessStatus.includes("blocked") || accessStatus.includes("locked") || accessStatus.includes("denied")) {
-      finalBlocked = true;
-    }
-
-    if ((httpStatus === 402 || httpStatus === 403) && !message) {
-      message = `Faction access blocked. Payment goes to ${payment.required_player || PAYMENT_PLAYER}.`;
-    }
-
-    if (finalPaymentRequired && !message) {
-      message = `Faction payment required. Payment goes to ${payment.required_player || PAYMENT_PLAYER}.`;
-    } else if (finalBlocked && !message) {
-      message = reason || "Faction access locked.";
-    }
-
-    return {
-      loggedIn: false,
-      blocked: finalBlocked,
-      paymentRequired: finalPaymentRequired,
-      trialActive: !!trialActive && !finalBlocked,
-      trialExpired: finalTrialExpired || finalPaymentRequired,
-      expiresAt: expiresAt || "",
-      daysLeft: Number.isFinite(computedDaysLeft) ? computedDaysLeft : null,
-      reason: String(reason || ""),
-      message: String(message || ""),
-      source: String(accessStatus || ""),
-      lastSeenAt: new Date().toISOString(),
-      factionId: d.faction_id || d?.faction?.id || d?.me?.faction_id || "",
-      factionName: d.faction_name || d?.faction?.name || d?.me?.faction_name || "",
-      isFactionLeader: !!d.is_faction_leader || !!factionAccess.is_faction_leader || !!d?.me?.is_faction_leader,
-      memberEnabled: !!memberAccess.enabled || !!factionAccess.member_enabled || !!memberAccess.allowed,
-      pricePerMember: Number(payment.price_per_enabled_member || payment.price_per_member || PRICE_PER_MEMBER) || PRICE_PER_MEMBER,
-      paymentPlayer: String(payment.required_player || PAYMENT_PLAYER),
-      isOwner: !!d.is_owner || !!d?.user?.is_owner || !!d?.me?.is_owner || !!d?.owner?.is_owner || !!factionAccess.is_owner,
-    };
-  }
-
-  function updateAccessFromPayload(payload, httpStatus, loggedInHint) {
-    const next = getAccessInfo(payload, httpStatus);
-    if (loggedInHint === true && !next.blocked) next.loggedIn = true;
-    if (loggedInHint === false) next.loggedIn = false;
-
-    if (next.blocked || next.paymentRequired || next.trialExpired) {
-      accessState = next;
-      clearBlockedCredentials();
-      saveAccessCache();
-      return next;
-    }
-
-    if (next.trialActive || next.expiresAt || next.daysLeft != null || next.factionId || next.isFactionLeader) {
-      accessState = {
-        ...accessState,
-        ...next,
-        loggedIn: loggedInHint === true ? true : accessState.loggedIn,
-        blocked: false,
-        paymentRequired: false,
-        trialExpired: false,
-      };
-      saveAccessCache();
-      return accessState;
-    }
-
-    if (loggedInHint === true) {
-      accessState = {
-        ...accessState,
-        loggedIn: true,
-        blocked: false,
-        paymentRequired: false,
-        trialExpired: false,
-        lastSeenAt: new Date().toISOString(),
-        isOwner: !!accessState.isOwner,
-      };
-      saveAccessCache();
-    }
-
-    return accessState;
-  }
-
-  function canUseProtectedFeatures() {
-  if (isOwnerSession()) return true;
-  return !(accessState?.blocked || accessState?.paymentRequired || accessState?.trialExpired);
-}
-
-  function ensureAllowedOrMessage() {
-    if (canUseProtectedFeatures()) return true;
-    setStatus(accessSummaryMessage() || "Faction access locked.", true);
-    renderBody();
-    return false;
-  }
-
-  function gmXhr(method, path, body, extraHeaders) {
-    return new Promise((resolve) => {
-      const token = cleanInputValue(GM_getValue(K_SESSION, ""));
-      const url = `${BASE_URL}${path}`;
-      const headers = { Accept: "application/json", ...(extraHeaders || {}) };
-      if (token) headers["X-Session-Token"] = token;
-      if (body != null) headers["Content-Type"] = "application/json";
-
-      GM_xmlhttpRequest({
-        method,
-        url,
-        headers,
-        data: body != null ? JSON.stringify(body) : undefined,
-        timeout: 60000,
-        onload: (res) => {
-          let json = null;
-          try { json = JSON.parse(res.responseText || "{}"); } catch {}
-          resolve({
-            ok: res.status >= 200 && res.status < 300 && (!json || json.ok !== false),
-            status: res.status,
-            data: json,
-            error: json?.error || json?.details || (res.status >= 400 ? `HTTP ${res.status}` : "Request failed"),
-          });
-        },
-        onerror: () => resolve({
-          ok: false,
-          status: 0,
-          data: null,
-          error: `Network error: ${method} ${path}`,
-        }),
-        ontimeout: () => resolve({
-          ok: false,
-          status: 0,
-          data: null,
-          error: `Request timed out: ${method} ${path}`,
-        }),
-      });
-    });
-  }
-
-  async function healthCheck() {
-    return gmXhr("GET", "/health");
-  }
-
-  async function login(showDebug = false) {
-    const apiKey = cleanInputValue(GM_getValue(K_API_KEY, ""));
-    if (!apiKey) return false;
-
-    if (showDebug) setStatus("Trying login with saved API key...");
-
-    const res = await gmXhr("POST", "/api/auth", { api_key: apiKey });
-    updateAccessFromPayload(res.data, res.status, false);
-
-    if (!res.ok) {
-      if (accessState?.blocked || accessState?.paymentRequired || accessState?.trialExpired) {
-        setStatus(accessSummaryMessage() || "Faction access blocked.", true);
+    function ensureAllowedOrMessage() {
+        if (canUseProtectedFeatures()) return true;
+        setStatus(accessSummaryMessage() || 'Faction access locked.', true);
         renderBody();
         return false;
-      }
-      setStatus(res.error || "Login failed.", true);
-      return false;
     }
-
-    const token = res.data?.token || res.data?.session_token || res.data?.session;
-    if (token) {
-      GM_setValue(K_SESSION, cleanInputValue(token));
-      updateAccessFromPayload(res.data, res.status, true);
-      return true;
-    }
-
-    if (accessState?.blocked || accessState?.paymentRequired || accessState?.trialExpired) {
-      setStatus(accessSummaryMessage() || "Faction access blocked.", true);
-      renderBody();
-      return false;
-    }
-
-    setStatus("Login failed.", true);
-    return false;
-  }
-
-  async function req(method, path, body) {
-    if (!canUseProtectedFeatures() && path !== "/health" && path !== "/api/auth") {
-      return {
-        ok: false,
-        status: 403,
-        data: { ok: false, payment_required: true, message: accessSummaryMessage() || "Faction access blocked." },
-        error: accessSummaryMessage() || "Faction access blocked.",
-      };
-    }
-
-    let res = await gmXhr(method, path, body);
-    updateAccessFromPayload(res.data, res.status, !!cleanInputValue(GM_getValue(K_SESSION, "")));
-
-    if (accessState?.blocked || accessState?.paymentRequired || accessState?.trialExpired) {
-      return {
-        ok: false,
-        status: res.status || 403,
-        data: res.data,
-        error: accessSummaryMessage() || res.error || "Faction access blocked.",
-      };
-    }
-
-    if (!res.ok && (res.status === 401 || res.status === 403)) {
-      const ok = await login(false);
-      if (ok) {
-        res = await gmXhr(method, path, body);
-        updateAccessFromPayload(res.data, res.status, true);
-      }
-    }
-
-    return res;
-  }
-
-  async function adminReq(method, path, body) {
-    if (!isOwnerSession()) {
-      return { ok: false, status: 403, data: null, error: "Admin access required." };
-    }
-    return req(method, path, body);
-  }
-
-  function normalizeState(data) {
-    const s = data || {};
-    const me = s.me || s.user || {};
-    const war = { ...(s.war || s.war_info || {}) };
-    if (war.active == null) war.active = !!(s.has_war || war.war_id || war.id);
-
-    const faction = s.faction || s.my_faction || {};
-
-    const enemyFactionRaw = s.enemy_faction || s.opponent || war.enemy_faction || {};
-    const enemyFactionId =
-      enemyFactionRaw.id ||
-      enemyFactionRaw.faction_id ||
-      s.enemy_faction_id ||
-      war.enemy_faction_id ||
-      war.opponent_faction_id ||
-      "";
-    const enemyFactionName =
-      enemyFactionRaw.name ||
-      s.enemy_faction_name ||
-      war.enemy_faction_name ||
-      war.opponent_faction_name ||
-      "";
-
-    const enemyFaction = {
-      ...enemyFactionRaw,
-      id: enemyFactionId,
-      faction_id: enemyFactionRaw.faction_id || enemyFactionId,
-      name: enemyFactionName || "Enemy Faction",
-    };
-
-    const members = arr(s.members || faction.members || s.member_list);
-    const enemies = arr(
-      s.enemies ||
-      s.enemy_members ||
-      enemyFaction.members ||
-      war.enemy_members
-    );
-
-    const hospital = s.hospital || {};
-    const medDeals = arr(s.med_deals || s.medDeals || s.deals).map((x) => ({
-      ...x,
-      seller_name: x?.seller_name || x?.seller || x?.created_by || "",
-      buyer_name: x?.buyer_name || x?.buyer || x?.item_name || "",
-      note: x?.note || x?.notes || "",
-    }));
-    const targets = arr(s.targets || s.smart_targets || s.assignable_targets);
-    const assignments = arr(s.assignments || s.target_assignments);
-    const notifications = arr(s.notifications || s.alerts);
-    const chainSitters = arr(s.chain_sitters || s.chainSitters || s.chain_helpers);
-    const notes = arr(s.war_notes || s.notes || []);
-    const warTerms = s.war_terms || s.terms || null;
-    const medDealBuyers = arr(s.med_deal_buyers || enemies);
-    const medDealsMessage = String(s.med_deals_message || war.message || enemyFaction.message || "").trim();
-    const factionLicense = s.faction_license || s.license || {};
-    const factionAccess = s.faction_access || {};
-    const factionManagement = s.faction_management || {};
-    const payment = s.payment || {};
-    const hasWar = !!(
-      s.has_war ||
-      war.active ||
-      war.war_id ||
-      war.id ||
-      enemyFactionId ||
-      enemies.length
-    );
-
-    updateAccessFromPayload(s, 200, !!cleanInputValue(GM_getValue(K_SESSION, "")));
-
-    return {
-      ...s,
-      has_war: hasWar,
-      me,
-      war,
-      faction,
-      enemyFaction,
-      enemy_faction: s.enemy_faction || enemyFaction,
-      enemy_faction_id: s.enemy_faction_id || enemyFactionId,
-      enemy_faction_name: s.enemy_faction_name || enemyFactionName,
-      members,
-      enemies,
-      hospital,
-      medDeals,
-      targets,
-      assignments,
-      notifications,
-      chainSitters,
-      notes,
-      warTerms,
-      medDealBuyers,
-      medDealsMessage,
-      factionLicense,
-      factionAccess,
-      factionManagement,
-      payment,
-    };
-  }
-
-   async function loadState(silent = false) {
-    if (loadInFlight) return;
-    if (!canUseProtectedFeatures()) {
-      if (!silent) setStatus(accessSummaryMessage() || "Faction access blocked.", true);
-      renderBody();
-      return;
-    }
-
-    loadInFlight = true;
-    try {
-      const res = await req("GET", "/api/state");
-      if (!res.ok) {
-        if (!silent) setStatus(res.error || "Could not load state.", true);
-        if (accessState?.blocked || accessState?.paymentRequired || accessState?.trialExpired) renderBody();
-        return;
-      }
-      state = normalizeState(res.data || {});
-      if (accessState?.isFactionLeader && !factionMembersCache) loadFactionMembers().catch(() => null);
-      if (!silent) setStatus("");
-      if (overlay && isOpen) renderBody();
-      updateBadge();
-      if (overlay && isOpen && currentTab === "admin" && isOwnerSession()) loadAdminDashboard().catch(() => null);
-    } finally {
-      loadInFlight = false;
-    }
-  }
-
-  async function loadAnalytics() {
-    analyticsCache = analyticsCache || {};
-    return analyticsCache;
-  }
-
-  async function loadFactionMembers(force = false) {
-    if (!accessState?.isFactionLeader) {
-      factionMembersCache = null;
-      return null;
-    }
-    if (factionMembersCache && !force) return factionMembersCache;
-
-    const res = await req("GET", "/api/faction/members");
-    if (!res.ok) {
-      setStatus(res.error || "Could not load faction member access.", true);
-      return null;
-    }
-
-    factionMembersCache = {
-      ...(res.data || {}),
-      members: arr(res.data?.items || res.data?.members || []),
-    };
-    return factionMembersCache;
-  }
-
-  async function refreshLeaderFactionData() {
-    if (!accessState?.isFactionLeader) return;
-    await loadFactionMembers(true);
-    await loadState(true);
-    renderBody();
-  }
-
-  async function doAction(method, path, body, okMsg, reload = true) {
-    if (!ensureAllowedOrMessage()) return null;
-    const res = await req(method, path, body);
-    if (!res.ok) {
-      setStatus(res.error || "Action failed.", true);
-      return null;
-    }
-    if (okMsg) setStatus(okMsg);
-    if (reload) await loadState(true);
-    return res;
-  }
-
-  function getHospSeconds(x) {
-    return Number(
-      x?.hospital_seconds ||
-      x?.hosp_time ||
-      x?.hospital_time ||
-      x?.status?.until ||
-      0
-    ) || 0;
-  }
-
-  function getPresenceState(x) {
-    const hosp = getHospSeconds(x);
-    if (hosp > 0) return "hospital";
-    const raw = String(x?.online_state || x?.online_status || x?.status || "").toLowerCase();
-    if (raw.includes("online")) return "online";
-    if (raw.includes("idle")) return "idle";
-    return "offline";
-  }
-
-  function sortHosp(list) {
-    return [...arr(list)].sort((a, b) => getHospSeconds(a) - getHospSeconds(b));
-  }
-
-  function sortAlphabetical(list) {
-    return [...arr(list)].sort((a, b) => {
-      const an = String(a?.name || a?.player_name || a?.member_name || "").toLowerCase();
-      const bn = String(b?.name || b?.player_name || b?.member_name || "").toLowerCase();
-      return an.localeCompare(bn);
-    });
-  }
-
-  function sortRosterGroup(list, type) {
-    if (type === "hospital") return sortHosp(list);
-    return sortAlphabetical(list);
-  }
-
-  function splitRosterGroups(list) {
-    const hospital = [];
-    const online = [];
-    const idle = [];
-    const offline = [];
-
-    arr(list).forEach((x) => {
-      const stateName = getPresenceState(x);
-      if (stateName === "hospital") hospital.push(x);
-      else if (stateName === "online") online.push(x);
-      else if (stateName === "idle") idle.push(x);
-      else offline.push(x);
-    });
-
-    return {
-      hospital: sortRosterGroup(hospital, "hospital"),
-      online: sortRosterGroup(online, "online"),
-      idle: sortRosterGroup(idle, "idle"),
-      offline: sortRosterGroup(offline, "offline"),
-    };
-  }
-
-  function memberRow(x, enemy = false) {
-    const id = x.user_id || x.id || x.player_id || x.member_user_id || "";
-    const name = x.name || x.player_name || x.member_name || `ID ${id}`;
-    const onlineState = String(x.online_state || x.online_status || x.status || "offline").toLowerCase();
-    const hosp = getHospSeconds(x);
-    const hospText = x.hospital_text || "";
-    const last = x.last_action || x.last_action_relative || x.last || "—";
-    const level = x.level ? `Lvl ${x.level}` : "";
-    const lifeCur = Number(x.life_current || x.current_life || 0);
-    const lifeMax = Number(x.life_max || x.maximum_life || 0);
-    const lifeText = lifeMax > 0 ? `${lifeCur.toLocaleString()}/${lifeMax.toLocaleString()}` : "—";
-    const attackUrl = x.attack_url || (id ? `https://www.torn.com/loader.php?sid=attack&user2ID=${id}` : "#");
-    const enabled = !!x.enabled_under_license || !!x.member_access_enabled || !!x.enabled;
-    const leader = String(x.position || "").toLowerCase().includes("leader");
-
-    const pill =
-      hosp > 0
-        ? `<span class="warhub-pill hosp">Hosp ${esc(fmtHosp(hosp, hospText))}</span>`
-        : onlineState.includes("online")
-          ? `<span class="warhub-pill online">Online</span>`
-          : onlineState.includes("idle")
-            ? `<span class="warhub-pill idle">Idle</span>`
-            : `<span class="warhub-pill offline">Offline</span>`;
-
-    return `
-      <div class="warhub-list-item">
-        <div class="warhub-row">
-          <div>
-            <div class="warhub-name">${esc(name)}</div>
-            <div class="warhub-meta">${esc([level, `Life ${lifeText}`, last].filter(Boolean).join(" • "))}</div>
-          </div>
-          <div class="warhub-actions">
-            ${pill}
-            ${leader ? `<span class="warhub-pill leader">Leader</span>` : ``}
-            ${!enemy && accessState?.isFactionLeader ? `<span class="warhub-pill ${enabled ? "enabled" : "disabled"}">${enabled ? "Enabled" : "Disabled"}</span>` : ``}
-          </div>
-        </div>
-        <div class="warhub-row">
-          <div class="warhub-meta">ID ${esc(id || "—")}</div>
-          <div class="warhub-actions">
-            ${id ? `<a class="warhub-btn small" href="https://www.torn.com/profiles.php?XID=${encodeURIComponent(id)}" target="_blank" rel="noopener noreferrer">Profile</a>` : ``}
-            ${id ? `<a class="warhub-btn small primary" href="${esc(attackUrl)}" target="_blank" rel="noopener noreferrer">Attack</a>` : ``}
-            ${enemy && id ? `<a class="warhub-btn small warn" href="https://www.torn.com/bounties.php?userID=${encodeURIComponent(id)}" target="_blank" rel="noopener noreferrer">Bounty</a>` : ``}
-          </div>
-        </div>
-      </div>
-    `;
-  }
-
-  function rosterCard(title, items, opts = {}) {
-    const extraClass = opts.extraClass || "";
-    const content = arr(items).length
-      ? arr(items).map((x) => memberRow(x, !!opts.enemy)).join("")
-      : `<div class="warhub-empty">No ${esc(title.toLowerCase())}.</div>`;
-
-    return `
-      <div class="warhub-card warhub-roster-card ${esc(extraClass)}">
-        <div class="warhub-section-title">
-          <h3>${esc(title)}</h3>
-          <span class="warhub-count">${arr(items).length}</span>
-        </div>
-        <div class="warhub-list">${content}</div>
-      </div>
-    `;
-  }
-
-  function rosterDropdown(title, items, opts = {}) {
-    const extraClass = opts.extraClass || "";
-    const openAttr = opts.open ? "open" : "";
-    const content = arr(items).length
-      ? arr(items).map((x) => memberRow(x, !!opts.enemy)).join("")
-      : `<div class="warhub-empty">No ${esc(title.toLowerCase())}.</div>`;
-
-    return `
-      <details class="warhub-dropdown ${esc(extraClass)}" ${openAttr}>
-        <summary>
-          <div class="warhub-row">
-            <strong>${esc(title)}</strong>
-            <span class="warhub-count">${arr(items).length}</span>
-          </div>
-        </summary>
-        <div class="warhub-dropdown-body">
-          <div class="warhub-list">${content}</div>
-        </div>
-      </details>
-    `;
-  }
-
-  function renderInstructionsTab() {
-    const banner = accessSummaryMessage()
-      ? `<div class="warhub-banner ${accessState?.paymentRequired || accessState?.blocked || accessState?.trialExpired ? "payment" : accessState?.trialActive ? "trial" : "good"}">
-          <div><strong>Faction Access</strong></div>
-          <div class="warhub-mini" style="margin-top:6px;">${esc(accessSummaryMessage())}</div>
-        </div>`
-      : "";
-
-    return `
-      ${banner}
-      <div class="warhub-card">
-        <h3>Getting Started</h3>
-        <div class="warhub-list">
-          <div class="warhub-list-item">
-            <div class="warhub-name">1. Save your Torn API key</div>
-            <div class="warhub-meta">Open Settings and paste your personal API key, then press Save Keys.</div>
-          </div>
-          <div class="warhub-list-item">
-            <div class="warhub-name">2. Login to War Hub</div>
-            <div class="warhub-meta">Press Login in Settings. Once connected, the overlay will load your faction and war state.</div>
-          </div>
-          <div class="warhub-list-item">
-            <div class="warhub-name">3. Leader-only faction access</div>
-            <div class="warhub-meta">Faction leaders can manage member access from the Faction tab when licensing is enabled.</div>
-          </div>
-          <div class="warhub-list-item">
-            <div class="warhub-name">4. Use tabs for shared tools</div>
-            <div class="warhub-meta">War, Terms, Targets, Assignments, Notes, and Med Deals are shared faction tools.</div>
-          </div>
-        </div>
-      </div>
-
-      <div class="warhub-card">
-        <h3>Terms of Service</h3>
-        <div class="warhub-mini" style="line-height:1.5;">
-          This script is for faction coordination and convenience. You are responsible for your own Torn account, your own API key,
-          and anything you enter into this tool. Do not share full-access secrets with people you do not trust.
-        </div>
-      </div>
-
-      <div class="warhub-card">
-        <h3>API Key Storage</h3>
-        <div class="warhub-mini" style="line-height:1.5;">
-          Your API key and session token are stored locally in your userscript storage on your device/browser.
-          The server receives your API key only when you log in or when actions require backend sync.
-          Faction-leader managed member access may store member API keys on the backend if the leader enters them in the Faction tab.
-        </div>
-      </div>
-    `;
-  }
-
-  function renderWarTab() {
-    const war = state?.war || {};
-    const our = state?.faction || state?.our_faction || {};
-    const enemy = state?.enemyFaction || state?.enemy_faction || {};
-    const enemyFactionId = enemy?.faction_id || enemy?.id || state?.enemy_faction_id || state?.war?.enemy_faction_id || state?.war?.opponent_faction_id || "";
-    const enemyFactionName = enemy?.name || state?.enemy_faction_name || state?.war?.enemy_faction_name || state?.war?.opponent_faction_name || "—";
-    const scoreUs = Number(state?.score?.our || war?.our_score || our?.score || 0) || 0;
-    const scoreThem = Number(state?.score?.enemy || war?.enemy_score || enemy?.score || 0) || 0;
-    const target = Number(state?.score?.target || war?.target_score || war?.target || 0) || 0;
-    const lead = scoreUs - scoreThem;
-    const hasWar = !!(state?.has_war || war?.active || war?.war_id || war?.id || enemyFactionId || arr(state?.enemies).length);
-
-    if (!hasWar) {
-      return `
-        <div class="warhub-card">
-          <h3>War</h3>
-          <div class="warhub-empty">Currently not in a war.</div>
-        </div>
-      `;
-    }
-
-    return `
-      <div class="warhub-card">
-        <div class="warhub-section-title">
-          <h3>War Overview</h3>
-          <span class="warhub-count">${esc(String(war?.war_id || war?.id || "Live"))}</span>
-        </div>
-
-        <div class="warhub-grid three">
-          <div class="warhub-metric warhub-score-us">
-            <div class="k">Our Score</div>
-            <div class="v">${fmtNum(scoreUs)}</div>
-          </div>
-          <div class="warhub-metric warhub-score-them">
-            <div class="k">Enemy Score</div>
-            <div class="v">${fmtNum(scoreThem)}</div>
-          </div>
-          <div class="warhub-metric warhub-score-lead">
-            <div class="k">${lead >= 0 ? "Lead" : "Behind"}</div>
-            <div class="v">${fmtNum(Math.abs(lead))}</div>
-          </div>
-        </div>
-
-        <div class="warhub-divider"></div>
-
-        <div class="warhub-grid two">
-          <div class="warhub-metric">
-            <div class="k">Our Faction</div>
-            <div class="v">${esc(our?.name || state?.user?.faction_name || "—")}</div>
-          </div>
-          <div class="warhub-metric">
-            <div class="k">Enemy Faction</div>
-            <div class="v">${esc(enemyFactionName)}</div>
-          </div>
-          <div class="warhub-metric">
-            <div class="k">Target Score</div>
-            <div class="v">${fmtNum(target)}</div>
-          </div>
-          <div class="warhub-metric">
-            <div class="k">Status</div>
-            <div class="v">${esc(war?.status || "Active")}</div>
-          </div>
-        </div>
-
-        <div class="warhub-divider"></div>
-
-        <div class="warhub-actions">
-          <button class="warhub-btn primary" id="warhub-save-snapshot">Save Snapshot</button>
-          ${enemyFactionId ? `<a class="warhub-btn" href="https://www.torn.com/factions.php?step=profile&ID=${encodeURIComponent(enemyFactionId)}" target="_blank" rel="noopener noreferrer">Enemy Faction</a>` : ``}
-        </div>
-      </div>
-    `;
-  }
-
-  function renderTermsTab() {
-    const warId = state?.war?.war_id || state?.war?.id || "";
-    const termsText =
-      state?.warTerms?.terms_text ||
-      state?.warTerms?.terms ||
-      state?.terms?.terms_text ||
-      state?.terms?.terms ||
-      "";
-
-    const locked = !(accessState?.isFactionLeader || isOwnerSession());
-
-    return `
-      <div class="warhub-card">
-        <div class="warhub-section-title">
-          <h3>War Terms</h3>
-          ${locked ? `<span class="warhub-pill disabled">Leader Only</span>` : ``}
-        </div>
-        <label class="warhub-label">War ID</label>
-        <input class="warhub-input" id="warhub-terms-warid" value="${esc(warId)}" readonly />
-        <div style="height:8px;"></div>
-        <label class="warhub-label">Terms</label>
-        <textarea class="warhub-textarea" id="warhub-terms-text" ${locked ? "readonly" : ""}>${esc(termsText)}</textarea>
-        <div class="warhub-actions" style="margin-top:8px;">
-          <button class="warhub-btn primary" id="warhub-terms-save" ${locked ? "disabled" : ""}>Save Terms</button>
-          <button class="warhub-btn warn" id="warhub-terms-delete" ${locked ? "disabled" : ""}>Delete Terms</button>
-        </div>
-      </div>
-    `;
-  }
-
-  function renderMembersTab() {
-    const groups = splitRosterGroups(state?.members || []);
-    return `
-      ${rosterCard("Online Members", groups.online, { extraClass: "online-box" })}
-      ${rosterCard("Idle Members", groups.idle, { extraClass: "idle-box" })}
-      ${rosterCard("Hospital Members", groups.hospital, { extraClass: "hospital-box" })}
-      ${rosterDropdown("Offline Members", groups.offline, { extraClass: "offline-box" })}
-    `;
-  }
-
-  function renderEnemiesTab() {
-    const enemies = arr(state?.enemies || []);
-    const hasWar = !!(state?.has_war || state?.war?.active || state?.war?.war_id || state?.enemy_faction_id || state?.enemyFaction?.id || state?.enemyFaction?.faction_id);
-    if (!enemies.length && !hasWar) {
-      return `
-        <div class="warhub-card">
-          <h3>Enemies</h3>
-          <div class="warhub-empty">Currently not in a war.</div>
-        </div>
-      `;
-    }
-
-    const groups = splitRosterGroups(enemies);
-    return `
-      ${rosterCard("Enemy Online", groups.online, { extraClass: "online-box", enemy: true })}
-      ${rosterCard("Enemy Idle", groups.idle, { extraClass: "idle-box", enemy: true })}
-      ${rosterCard("Enemy Hospital", groups.hospital, { extraClass: "hospital-box", enemy: true })}
-      ${rosterDropdown("Enemy Offline", groups.offline, { extraClass: "offline-box", enemy: true })}
-    `;
-  }
-
-  function renderHospitalTab() {
-    const ours = sortHosp(arr(state?.members || []).filter((x) => getHospSeconds(x) > 0));
-    const theirs = sortHosp(arr(state?.enemies || []).filter((x) => getHospSeconds(x) > 0));
-
-    return `
-      ${rosterCard("Our Hospital", ours, { extraClass: "hospital-box" })}
-      ${rosterCard("Enemy Hospital", theirs, { extraClass: "hospital-box", enemy: true })}
-    `;
-  }
-
-  function renderChainTab() {
-    const sitters = arr(state?.members || []).filter((x) => !!x.chain_sitter);
-    const avail = arr(state?.members || []).filter((x) => !!x.available);
-    return `
-      <div class="warhub-card">
-        <div class="warhub-section-title">
-          <h3>Chain Helpers</h3>
-          <span class="warhub-count">${sitters.length}</span>
-        </div>
-        <div class="warhub-list">
-          ${sitters.length ? sitters.map((x) => memberRow(x, false)).join("") : `<div class="warhub-empty">No chain sitters enabled.</div>`}
-        </div>
-      </div>
-
-      <div class="warhub-card">
-        <div class="warhub-section-title">
-          <h3>Available Members</h3>
-          <span class="warhub-count">${avail.length}</span>
-        </div>
-        <div class="warhub-list">
-          ${avail.length ? avail.map((x) => memberRow(x, false)).join("") : `<div class="warhub-empty">No available members flagged.</div>`}
-        </div>
-      </div>
-
-      <div class="warhub-card">
-        <h3>My Toggle</h3>
-        <div class="warhub-actions">
-          <button class="warhub-btn good" id="warhub-set-available">Set Available</button>
-          <button class="warhub-btn" id="warhub-set-unavailable">Set Unavailable</button>
-          <button class="warhub-btn warn" id="warhub-set-chain-on">Chain Sitter On</button>
-          <button class="warhub-btn" id="warhub-set-chain-off">Chain Sitter Off</button>
-        </div>
-      </div>
-    `;
-  }
-
-  function renderMedDealsTab() {
-    const deals = arr(state?.medDeals || state?.med_deals || []);
-    return `
-      <div class="warhub-card">
-        <h3>Add Med Deal</h3>
-        <div class="warhub-grid two">
-          <div>
-            <label class="warhub-label">Seller</label>
-            <input class="warhub-input" id="warhub-med-seller" placeholder="Seller name" />
-          </div>
-          <div>
-            <label class="warhub-label">Item</label>
-            <input class="warhub-input" id="warhub-med-item" placeholder="Xanax / Med item" />
-          </div>
-          <div>
-            <label class="warhub-label">Price</label>
-            <input class="warhub-input" id="warhub-med-price" placeholder="$ / text" />
-          </div>
-          <div>
-            <label class="warhub-label">Note</label>
-            <input class="warhub-input" id="warhub-med-note" placeholder="Optional note" />
-          </div>
-        </div>
-        <div class="warhub-actions" style="margin-top:8px;">
-          <button class="warhub-btn primary" id="warhub-med-add">Add Med Deal</button>
-        </div>
-      </div>
-
-      <div class="warhub-card">
-        <div class="warhub-section-title">
-          <h3>Med Deals</h3>
-          <span class="warhub-count">${deals.length}</span>
-        </div>
-        <div class="warhub-list">
-          ${deals.length ? deals.map((x) => `
-            <div class="warhub-list-item">
-              <div class="warhub-row">
-                <div>
-                  <div class="warhub-name">${esc(x.seller_name || "Unknown seller")}</div>
-                  <div class="warhub-meta">${esc([x.item_name || x.buyer_name || "", x.price || "", x.note || ""].filter(Boolean).join(" • "))}</div>
-                </div>
-                <div class="warhub-actions">
-                  <button class="warhub-btn small warn warhub-del-med" data-id="${esc(String(x.id || x.deal_id || ""))}">Delete</button>
-                </div>
-              </div>
-            </div>
-          `).join("") : `<div class="warhub-empty">No med deals yet.</div>`}
-        </div>
-      </div>
-    `;
-  }
-
-  function renderTargetsTab() {
-    const targets = arr(state?.targets || []);
-    const enemies = sortAlphabetical(arr(state?.enemies || []));
-    return `
-      <div class="warhub-card">
-        <h3>Add Target</h3>
-        <div class="warhub-grid two">
-          <div>
-            <label class="warhub-label">Enemy</label>
-            <select class="warhub-select" id="warhub-target-enemy">
-              <option value="">Select enemy</option>
-              ${enemies.map((x) => {
-                const id = x.user_id || x.id || "";
-                const name = x.name || `ID ${id}`;
-                return `<option value="${esc(String(id))}" data-name="${esc(name)}">${esc(name)} [${esc(String(id))}]</option>`;
-              }).join("")}
-            </select>
-          </div>
-          <div>
-            <label class="warhub-label">Target ID</label>
-            <input class="warhub-input" id="warhub-target-id" placeholder="Target ID" />
-          </div>
-        </div>
-        <div style="height:8px;"></div>
-        <label class="warhub-label">Notes / Reason</label>
-        <input class="warhub-input" id="warhub-target-notes" placeholder="Optional notes" />
-        <div class="warhub-actions" style="margin-top:8px;">
-          <button class="warhub-btn primary" id="warhub-target-add">Add Target</button>
-        </div>
-      </div>
-
-      <div class="warhub-card">
-        <div class="warhub-section-title">
-          <h3>Targets</h3>
-          <span class="warhub-count">${targets.length}</span>
-        </div>
-        <div class="warhub-list">
-          ${targets.length ? targets.map((x) => {
-            const id = x.target_id || x.user_id || "";
-            const name = x.target_name || x.name || `ID ${id}`;
-            const rowId = x.id || x.target_row_id || "";
-            return `
-              <div class="warhub-list-item">
-                <div class="warhub-row">
-                  <div>
-                    <div class="warhub-name">${esc(name)}</div>
-                    <div class="warhub-meta">${esc([`ID ${id}`, x.notes || x.reason || ""].filter(Boolean).join(" • "))}</div>
-                  </div>
-                  <div class="warhub-actions">
-                    ${id ? `<a class="warhub-btn small primary" href="https://www.torn.com/loader.php?sid=attack&user2ID=${encodeURIComponent(id)}" target="_blank" rel="noopener noreferrer">Attack</a>` : ``}
-                    <button class="warhub-btn small warn warhub-del-target" data-id="${esc(String(rowId))}">Delete</button>
-                  </div>
-                </div>
-              </div>
-            `;
-          }).join("") : `<div class="warhub-empty">No targets saved.</div>`}
-        </div>
-      </div>
-    `;
-  }
-
-  function renderAssignmentsTab() {
-    const warId = String(state?.war?.war_id || state?.war?.id || "");
-    const managed = arr(state?.factionManagement?.members || factionMembersCache?.members || []).filter((m) => {
-      const uid = String(m.member_user_id || m.user_id || "");
-      return uid && !!m.enabled;
-    });
-    const rows = arr(state?.assignments || []).length ? `
-      <div class="warhub-card">
-        <div class="warhub-section-title">
-          <h3 style="margin:0;">Live Assignments</h3>
-          <span class="warhub-count">${fmtNum(arr(state.assignments).length)}</span>
-        </div>
-        <div class="warhub-list">
-          ${arr(state.assignments).map((a) => {
-            const id = String(a.id || "");
-            const assigned = a.assigned_to_name || a.assignee || "Unassigned";
-            const targetName = a.target_name || a.target || a.target_id || "Unknown";
-            const attack = a.target_attack_url || (a.target_id ? `https://www.torn.com/loader.php?sid=attack&user2ID=${encodeURIComponent(String(a.target_id))}` : "");
-            return `
-              <div class="warhub-list-item">
-                <div class="warhub-row">
-                  <div>
-                    <div class="warhub-name">${esc(targetName)}</div>
-                    <div class="warhub-meta">${esc([`Assigned: ${assigned}`, a.priority || "normal", a.note || ""].filter(Boolean).join(" • "))}</div>
-                  </div>
-                  <div class="warhub-actions">
-                    ${attack ? `<a class="warhub-btn small primary warhub-link" href="${esc(attack)}" target="_blank" rel="noopener noreferrer">Attack</a>` : ""}
-                    ${id ? `<button class="warhub-btn small warn" data-del-assignment-live="${esc(id)}">Delete</button>` : ""}
-                  </div>
-                </div>
-              </div>
-            `;
-          }).join("")}
-        </div>
-      </div>
-    ` : `
-      <div class="warhub-card">
-        <h3>Live Assignments</h3>
-        <div class="warhub-empty">No assignments yet.</div>
-      </div>
-    `;
-
-    return `
-      <div class="warhub-card">
-        <h3>Assign Target</h3>
-        <div class="warhub-grid two">
-          <div>
-            <label class="warhub-label">War ID</label>
-            <input class="warhub-input" id="wh-assignment-war-id" value="${esc(warId)}" readonly>
-          </div>
-          <div>
-            <label class="warhub-label">Target ID</label>
-            <input class="warhub-input" id="wh-assignment-target-id" placeholder="Enemy target ID">
-          </div>
-          <div>
-            <label class="warhub-label">Target Name</label>
-            <input class="warhub-input" id="wh-assignment-target-name" placeholder="Optional target name">
-          </div>
-          <div>
-            <label class="warhub-label">Assign To</label>
-            <select class="warhub-select" id="wh-assignment-member">
-              <option value="">Select enabled member</option>
-              ${managed.map((m) => {
-                const uid = String(m.member_user_id || m.user_id || "");
-                const nm = String(m.member_name || m.name || uid);
-                return `<option value="${esc(uid)}" data-name="${esc(nm)}">${esc(nm)} [${esc(uid)}]</option>`;
-              }).join("")}
-            </select>
-          </div>
-        </div>
-        <div style="height:8px;"></div>
-        <div class="warhub-grid two">
-          <div>
-            <label class="warhub-label">Priority</label>
-            <select class="warhub-select" id="wh-assignment-priority">
-              <option value="normal">Normal</option>
-              <option value="high">High</option>
-              <option value="low">Low</option>
-            </select>
-          </div>
-          <div>
-            <label class="warhub-label">Note</label>
-            <input class="warhub-input" id="wh-assignment-note" placeholder="Optional note">
-          </div>
-        </div>
-        <div class="warhub-actions" style="margin-top:8px;">
-          <button class="warhub-btn primary" id="wh-save-assignment">Save Assignment</button>
-        </div>
-      </div>
-      ${rows}
-    `;
-  }
-
-  function renderNotesTab() {
-    const localNotes = getNotes();
-    const shared = arr(state?.notes || []);
-    return `
-      <div class="warhub-card">
-        <h3>Local Notes</h3>
-        <label class="warhub-label">Your personal notes</label>
-        <textarea class="warhub-textarea" id="wh-notes">${esc(localNotes)}</textarea>
-        <div class="warhub-actions" style="margin-top:8px;">
-          <button class="warhub-btn primary" id="wh-save-notes">Save Local</button>
-          <button class="warhub-btn warn" id="wh-clear-notes">Clear Local</button>
-        </div>
-      </div>
-
-      <div class="warhub-card">
-        <h3>Shared War Note</h3>
-        <div class="warhub-grid two">
-          <div>
-            <label class="warhub-label">War ID</label>
-            <input class="warhub-input" id="wh-note-war-id" value="${esc(String(state?.war?.war_id || state?.war?.id || ""))}" readonly>
-          </div>
-          <div>
-            <label class="warhub-label">Target ID</label>
-            <input class="warhub-input" id="wh-note-target-id" placeholder="Enemy target ID">
-          </div>
-        </div>
-        <div style="height:8px;"></div>
-        <label class="warhub-label">Note</label>
-        <textarea class="warhub-textarea" id="wh-note-text" placeholder="Shared note for this target"></textarea>
-        <div class="warhub-actions" style="margin-top:8px;">
-          <button class="warhub-btn primary" id="wh-add-server-note">Save Shared Note</button>
-        </div>
-      </div>
-
-      <div class="warhub-card">
-        <div class="warhub-section-title">
-          <h3>Shared Notes</h3>
-          <span class="warhub-count">${fmtNum(shared.length)}</span>
-        </div>
-        <div class="warhub-list">
-          ${shared.length ? shared.map((x) => noteRow(x)).join("") : `<div class="warhub-empty">No shared notes yet.</div>`}
-        </div>
-      </div>
-    `;
-  }
-
-  function renderAnalyticsTab() {
-    const snaps = arr(state?.snapshots || []);
-    return `
-      <div class="warhub-card">
-        <h3>Analytics</h3>
-        <div class="warhub-grid three">
-          <div class="warhub-metric">
-            <div class="k">Snapshots</div>
-            <div class="v">${fmtNum(snaps.length)}</div>
-          </div>
-          <div class="warhub-metric">
-            <div class="k">Members</div>
-            <div class="v">${fmtNum(arr(state?.members || []).length)}</div>
-          </div>
-          <div class="warhub-metric">
-            <div class="k">Enemies</div>
-            <div class="v">${fmtNum(arr(state?.enemies || []).length)}</div>
-          </div>
-        </div>
-      </div>
-    `;
-  }
-
-  function renderNotificationsTab() {
-    const items = mergedNotifications();
-    return `
-      <div class="warhub-card">
-        <div class="warhub-section-title">
-          <h3>Notifications</h3>
-          <span class="warhub-count">${fmtNum(items.length)}</span>
-        </div>
-        <div class="warhub-list">
-          ${items.length ? items.map((x) => `
-            <div class="warhub-list-item">
-              <div class="warhub-name">${esc(x.title || x.kind || "Notification")}</div>
-              <div class="warhub-meta">${esc(x.body || x.text || x.message || "")}</div>
-              <div class="warhub-mini">${esc(fmtTs(x.created_at || x.ts || ""))}</div>
-            </div>
-          `).join("") : `<div class="warhub-empty">No notifications.</div>`}
-        </div>
-        <div class="warhub-actions" style="margin-top:8px;">
-          <button class="warhub-btn" id="wh-mark-alerts-seen">Refresh / Mark Seen</button>
-          <button class="warhub-btn warn" id="wh-clear-alerts">Clear Local</button>
-        </div>
-      </div>
-    `;
-  }
-
-  function renderFactionTab() {
-    const license = state?.factionLicense || state?.license || {};
-    const members = arr(factionMembersCache?.members || []);
-    const status = license.status || (accessState?.paymentRequired ? "payment_required" : accessState?.trialActive ? "trial" : "active");
-
-    return `
-      <div class="warhub-card">
-        <h3>Faction License</h3>
-        <div class="warhub-grid two">
-          <div class="warhub-metric">
-            <div class="k">Status</div>
-            <div class="v">${esc(status)}</div>
-          </div>
-          <div class="warhub-metric">
-            <div class="k">Faction</div>
-            <div class="v">${esc(state?.user?.faction_name || accessState?.factionName || "—")}</div>
-          </div>
-          <div class="warhub-metric">
-            <div class="k">Payment Player</div>
-            <div class="v">${esc(license.payment_player || accessState?.paymentPlayer || PAYMENT_PLAYER)}</div>
-          </div>
-          <div class="warhub-metric">
-            <div class="k">Price / Enabled Member</div>
-            <div class="v">${fmtMoney(license.faction_member_price || accessState?.pricePerMember || PRICE_PER_MEMBER)}</div>
-          </div>
-        </div>
-      </div>
-
-      <div class="warhub-card">
-        <h3>Manage Member Access</h3>
-        (accessState?.isFactionLeader || isOwnerSession())
-          <div class="warhub-grid two">
-            <div>
-              <label class="warhub-label">Member User ID</label>
-              <input class="warhub-input" id="wh-fm-userid" placeholder="User ID">
-            </div>
-            <div>
-              <label class="warhub-label">Member Name</label>
-              <input class="warhub-input" id="wh-fm-name" placeholder="Member name">
-            </div>
-            <div>
-              <label class="warhub-label">Member API Key</label>
-              <input class="warhub-input" id="wh-fm-key" placeholder="Member API key">
-            </div>
-            <div>
-              <label class="warhub-label">Position</label>
-              <input class="warhub-input" id="wh-fm-position" placeholder="Position">
-            </div>
-          </div>
-          <div class="warhub-actions" style="margin-top:8px;">
-            <button class="warhub-btn primary" id="wh-fm-save">Save Member Access</button>
-          </div>
-        ` : `<div class="warhub-empty">Leader access required.</div>`}
-      </div>
-
-      <div class="warhub-card">
-        <div class="warhub-section-title">
-          <h3>Faction Members</h3>
-          <span class="warhub-count">${fmtNum(members.length)}</span>
-        </div>
-        <div class="warhub-list">
-          ${members.length ? members.map((x) => {
-            const memberId = x.member_user_id || x.user_id || "";
-            const memberName = x.member_name || x.name || `ID ${memberId}`;
-            const enabled = !!x.enabled;
-            return `
-              <div class="warhub-list-item">
-                <div class="warhub-row">
-                  <div>
-                    <div class="warhub-name">${esc(memberName)}</div>
-                    <div class="warhub-meta">${esc([`ID ${memberId}`, x.position || "", x.member_api_key_masked || ""].filter(Boolean).join(" • "))}</div>
-                  </div>
-                  <div class="warhub-actions">
-                    <span class="warhub-pill ${enabled ? "enabled" : "disabled"}">${enabled ? "Enabled" : "Disabled"}</span>
-                    ${(accessState?.isFactionLeader || isOwnerSession()) ? `<button class="warhub-btn small ${enabled ? "" : "good"}" data-toggle-member="${esc(String(memberId))}" data-enabled="${enabled ? "0" : "1"}">${enabled ? "Disable" : "Enable"}</button>` : ``}
-                    ${(accessState?.isFactionLeader || isOwnerSession()) ? `<button class="warhub-btn small warn" data-del-member="${esc(String(memberId))}">Delete</button>` : ``}
-                  </div>
-                </div>
-              </div>
-            `;
-          }).join("") : `<div class="warhub-empty">No member access rows yet.</div>`}
-        </div>
-      </div>
-    `;
-  }
-
-  function renderAdminTab() {
-    if (!isOwnerSession()) {
-      return `
-        <div class="warhub-card">
-          <h3>Admin</h3>
-          <div class="warhub-empty">Owner access required.</div>
-        </div>
-      `;
-    }
-
-    const dash = state?.adminDashboard || {};
-    const items = arr(dash.items || dash.factions || []);
-    const summary = dash.summary || {};
-
-    return `
-      <div class="warhub-card">
-        <h3>Owner Dashboard</h3>
-        <div class="warhub-grid two">
-          <div class="warhub-metric"><div class="k">Factions</div><div class="v">${fmtNum(summary.faction_licenses_total || items.length || 0)}</div></div>
-          <div class="warhub-metric"><div class="k">Trials</div><div class="v">${fmtNum(summary.trials_total || 0)}</div></div>
-          <div class="warhub-metric"><div class="k">Paid</div><div class="v">${fmtNum(summary.paid_total || 0)}</div></div>
-          <div class="warhub-metric"><div class="k">Payment Required</div><div class="v">${fmtNum(summary.payment_required_total || 0)}</div></div>
-        </div>
-      </div>
-
-      <div class="warhub-card">
-        <h3>Faction Licenses</h3>
-        <div class="warhub-list">
-          ${items.length ? items.map((x) => {
-            const factionId = x.faction_id || x.id || "";
-            const factionName = x.faction_name || x.name || `Faction ${factionId}`;
-            return `
-              <div class="warhub-list-item">
-                <div class="warhub-row">
-                  <div>
-                    <div class="warhub-name">${esc(factionName)}</div>
-                    <div class="warhub-meta">${esc([`ID ${factionId}`, x.status || "", x.leader_name || "", x.expires_at ? fmtTs(x.expires_at) : ""].filter(Boolean).join(" • "))}</div>
-                  </div>
-                  <div class="warhub-actions">
-                    <button class="warhub-btn small" data-admin-history="${esc(String(factionId))}">History</button>
-                    <button class="warhub-btn small good" data-admin-renew="${esc(String(factionId))}">Renew</button>
-                    <button class="warhub-btn small warn" data-admin-expire="${esc(String(factionId))}">Expire</button>
-                  </div>
-                </div>
-              </div>
-            `;
-          }).join("") : `<div class="warhub-empty">No faction licenses found.</div>`}
-        </div>
-      </div>
-    `;
-  }
-
-  function renderSettingsTab() {
-    const apiKey = cleanInputValue(GM_getValue(K_API_KEY, ""));
-    const refreshMs = Number(GM_getValue(K_REFRESH, 30000)) || 30000;
-    return `
-      <div class="warhub-card">
-        <h3>Keys</h3>
-        <label class="warhub-label">Your Torn API Key</label>
-        <input class="warhub-input" id="wh-api-key" value="${esc(apiKey)}" placeholder="Paste your API key">
-        <div class="warhub-actions" style="margin-top:8px;">
-          <button class="warhub-btn primary" id="wh-save-keys">Save Keys</button>
-          <button class="warhub-btn" id="wh-login-btn">Login</button>
-          <button class="warhub-btn warn" id="wh-logout-btn">Logout</button>
-        </div>
-      </div>
-
-      <div class="warhub-card">
-        <h3>Polling</h3>
-        <label class="warhub-label">Refresh every (ms)</label>
-        <input class="warhub-input" id="wh-refresh-ms" value="${esc(String(refreshMs))}">
-        <div class="warhub-actions" style="margin-top:8px;">
-          <button class="warhub-btn" id="wh-save-refresh">Save Refresh</button>
-          <button class="warhub-btn" id="wh-reset-positions">Reset Positions</button>
-        </div>
-      </div>
-
-      <div class="warhub-card">
-        <h3>Access Info</h3>
-        <div class="warhub-mini" style="line-height:1.6;">
-          Payment player: <strong>${esc(accessState?.paymentPlayer || PAYMENT_PLAYER)}</strong><br>
-          Price per enabled member: <strong>${esc(fmtMoney(accessState?.pricePerMember || PRICE_PER_MEMBER))}</strong><br>
-          ${accessSummaryMessage() ? `Status: <strong>${esc(accessSummaryMessage())}</strong>` : `Status: <strong>Ready</strong>`}
-        </div>
-      </div>
-    `;
-  }
-
-  function renderAccessBanner() {
-    const msg = accessSummaryMessage();
-    if (!msg) return "";
-    const cls = accessState?.paymentRequired || accessState?.blocked || accessState?.trialExpired
-      ? "payment"
-      : accessState?.trialActive
-        ? "trial"
-        : "good";
-    return `
-      <div class="warhub-banner ${cls}">
-        <div><strong>Faction Access</strong></div>
-        <div class="warhub-mini" style="margin-top:6px;">${esc(msg)}</div>
-      </div>
-    `;
-  }
-
-  function noteRow(x) {
-    const id = String(x.id || x.note_id || "");
-    return `
-      <div class="warhub-list-item">
-        <div class="warhub-row">
-          <div>
-            <div class="warhub-name">${esc(x.target_name || `Target ${x.target_id || "—"}`)}</div>
-            <div class="warhub-meta">${esc(x.note || "")}</div>
-            <div class="warhub-mini">${esc([x.created_by_name || x.updated_by_name || "", fmtTs(x.created_at || x.updated_at || "")].filter(Boolean).join(" • "))}</div>
-          </div>
-          <div class="warhub-actions">
-            ${id ? `<button class="warhub-btn small warn" data-del-note-live="${esc(id)}">Delete</button>` : ``}
-          </div>
-        </div>
-      </div>
-    `;
-  }
-
-  function tabLocked(key) {
-  if (isOwnerSession()) return false;
-  if (key === "admin") return !isOwnerSession();
-  if (key === "terms" || key === "faction") return !accessState?.isFactionLeader;
-  return false;
-}
-
-  function tabBtn(key, label) {
-    const active = currentTab === key ? "active" : "";
-    const locked = tabLocked(key) ? "locked" : "";
-    return `<button class="warhub-tab ${active} ${locked}" data-tab="${esc(key)}">${esc(label)}</button>`;
-  }
-
-  function renderTabContent() {
-    switch (currentTab) {
-      case "instructions": return renderInstructionsTab();
-      case "war": return `${renderAccessBanner()}${renderWarTab()}`;
-      case "terms": return renderTermsTab();
-      case "members": return `${renderAccessBanner()}${renderMembersTab()}`;
-      case "enemies": return `${renderAccessBanner()}${renderEnemiesTab()}`;
-      case "hospital": return `${renderAccessBanner()}${renderHospitalTab()}`;
-      case "chain": return `${renderAccessBanner()}${renderChainTab()}`;
-      case "meddeals": return `${renderAccessBanner()}${renderMedDealsTab()}`;
-      case "targets": return `${renderAccessBanner()}${renderTargetsTab()}`;
-      case "assignments": return `${renderAccessBanner()}${renderAssignmentsTab()}`;
-      case "notes": return `${renderAccessBanner()}${renderNotesTab()}`;
-      case "analytics": return `${renderAccessBanner()}${renderAnalyticsTab()}`;
-      case "notifications": return `${renderAccessBanner()}${renderNotificationsTab()}`;
-      case "faction": return `${renderAccessBanner()}${renderFactionTab()}`;
-      case "admin": return renderAdminTab();
-      case "settings": return renderSettingsTab();
-      default: return `${renderAccessBanner()}${renderWarTab()}`;
-    }
-  }
-
-  function renderBody() {
-    if (!overlay) return;
-    overlay.innerHTML = `
-      <div class="warhub-head" id="warhub-drag-handle">
-        <div class="warhub-toprow">
-          <div>
-            <div class="warhub-title">War Hub</div>
-            <div class="warhub-sub">Fries91 • Torn overlay</div>
-          </div>
-          <button class="warhub-close" id="warhub-close-btn" type="button">Close</button>
-        </div>
-      </div>
-      <div class="warhub-tabs">
-        ${TAB_ORDER.map(([key, label]) => tabBtn(key, label)).join("")}
-      </div>
-      <div class="warhub-body">
-        <div id="warhub-status" class="warhub-status"></div>
-        ${renderTabContent()}
-      </div>
-    `;
-    bindOverlayEvents();
-    bindOverlayDrag();
-    restoreStatus();
-  }
-
-   function clampElementPosition(el, left, top) {
-    const rect = el.getBoundingClientRect();
-    const w = rect.width || parseInt(getComputedStyle(el).width, 10) || 320;
-    const h = rect.height || parseInt(getComputedStyle(el).height, 10) || 320;
-    const maxLeft = Math.max(4, window.innerWidth - w - 4);
-    const maxTop = Math.max(4, window.innerHeight - h - 4);
-    const clampedLeft = Math.min(Math.max(4, left), maxLeft);
-    const clampedTop = Math.min(Math.max(4, top), maxTop);
-    el.style.left = `${clampedLeft}px`;
-    el.style.top = `${clampedTop}px`;
-    el.style.right = "auto";
-    el.style.bottom = "auto";
-  }
-
-  function clampToViewport(el) {
-    if (!el) return;
-    const rect = el.getBoundingClientRect();
-    clampElementPosition(el, rect.left, rect.top);
-  }
-
-  function updateBadge() {
-    if (!shield || !badge) return;
-    const n = unreadCount();
-    if (!n) {
-      badge.style.display = "none";
-      return;
-    }
-    const r = shield.getBoundingClientRect();
-    badge.style.display = "block";
-    badge.textContent = String(n > 99 ? "99+" : n);
-    badge.style.left = `${r.right - 10}px`;
-    badge.style.top = `${r.top - 6}px`;
-    badge.style.right = "auto";
-    badge.style.bottom = "auto";
-  }
-
-  function resetShieldPosition() {
-    if (!shield) return;
-    shield.style.left = "auto";
-    shield.style.top = "120px";
-    shield.style.right = "14px";
-    shield.style.bottom = "auto";
-    if (window.innerWidth <= 700) {
-      shield.style.right = "8px";
-      shield.style.top = "82px";
-    }
-  }
-
-  function positionOverlayNearShield() {
-    if (!shield || !overlay) return;
-    const sr = shield.getBoundingClientRect();
-    const overlayWidth = Math.min(window.innerWidth - 16, 520);
-    let left = sr.right - overlayWidth;
-    let top = sr.bottom + 8;
-    if (window.innerWidth <= 700) {
-      left = 6;
-      top = 54;
-    }
-    clampElementPosition(overlay, left, top);
-  }
-
-  function openOverlay() {
-    if (!overlay) return;
-    isOpen = true;
-    GM_setValue(K_OPEN, true);
-    overlay.classList.add("open");
-    if (!GM_getValue(K_OVERLAY_POS, null)) positionOverlayNearShield();
-    clampToViewport(overlay);
-    renderBody();
-  }
-
-  function closeOverlay() {
-    if (!overlay) return;
-    isOpen = false;
-    GM_setValue(K_OPEN, false);
-    overlay.classList.remove("open");
-  }
-
-  function toggleOverlay() {
-    if (isOpen) closeOverlay();
-    else openOverlay();
-  }
-
-  function saveOverlayPos() {
-    if (!overlay) return;
-    GM_setValue(K_OVERLAY_POS, {
-      left: overlay.style.left || "",
-      top: overlay.style.top || "",
-      right: overlay.style.right || "",
-      bottom: overlay.style.bottom || "",
-    });
-  }
-
-  function saveShieldPos() {
-    if (!shield) return;
-    GM_setValue(K_SHIELD_POS, {
-      left: shield.style.left || "",
-      top: shield.style.top || "",
-      right: shield.style.right || "",
-      bottom: shield.style.bottom || "",
-    });
-  }
-
-  function makeDraggable(handleEl, moveEl, saveFn, extra) {
-    let active = null;
-    let startX = 0;
-    let startY = 0;
-    let startLeft = 0;
-    let startTop = 0;
-    let moved = false;
-    const THRESHOLD = 6;
-
-    function cleanup() {
-      document.removeEventListener("pointermove", onMove, true);
-      document.removeEventListener("pointerup", onUp, true);
-      document.removeEventListener("pointercancel", onUp, true);
-      handleEl.classList.remove("dragging");
-      moveEl.classList.remove("dragging");
-      moveEl.dataset.dragging = "0";
-      active = null;
-    }
-
-    function onMove(e) {
-      if (active !== e.pointerId) return;
-      const dx = e.clientX - startX;
-      const dy = e.clientY - startY;
-      if (!moved && (Math.abs(dx) >= THRESHOLD || Math.abs(dy) >= THRESHOLD)) moved = true;
-      if (!moved) return;
-      e.preventDefault();
-      dragMoved = true;
-      handleEl.classList.add("dragging");
-      moveEl.classList.add("dragging");
-      moveEl.dataset.dragging = "1";
-      clampElementPosition(moveEl, startLeft + dx, startTop + dy);
-      if (typeof extra === "function") extra();
-    }
-
-    function onUp(e) {
-      if (active !== e.pointerId) return;
-      if (moved && typeof saveFn === "function") saveFn();
-      setTimeout(() => { dragMoved = false; }, 120);
-      cleanup();
-    }
-
-    handleEl.addEventListener("pointerdown", (e) => {
-      const t = e.target;
-      if (t && (t.closest("button") || t.closest("a") || t.closest("input") || t.closest("textarea") || t.closest("select") || t.closest("summary"))) return;
-      active = e.pointerId;
-      moved = false;
-      dragMoved = false;
-      const rect = moveEl.getBoundingClientRect();
-      startX = e.clientX;
-      startY = e.clientY;
-      startLeft = rect.left;
-      startTop = rect.top;
-      moveEl.style.left = `${rect.left}px`;
-      moveEl.style.top = `${rect.top}px`;
-      moveEl.style.right = "auto";
-      moveEl.style.bottom = "auto";
-      handleEl.setPointerCapture?.(e.pointerId);
-      document.addEventListener("pointermove", onMove, true);
-      document.addEventListener("pointerup", onUp, true);
-      document.addEventListener("pointercancel", onUp, true);
-    });
-  }
-
-  function bindOverlayDrag() {
-    const handle = overlay?.querySelector("#warhub-drag-handle");
-    if (!handle || !overlay) return;
-    makeDraggable(handle, overlay, saveOverlayPos, updateBadge);
-  }
-
-  async function loadAdminDashboard() {
-    if (!isOwnerSession()) return null;
-    const res = await adminReq("GET", "/api/admin/faction-licenses");
-    if (!res.ok) {
-      setStatus(res.error || "Could not load owner dashboard.", true);
-      return null;
-    }
-    state = state || {};
-    state.adminDashboard = {
-      ...(res.data || {}),
-      items: arr(res.data?.items || res.data?.factions || []),
-      summary: res.data?.summary || {},
-    };
-    if (overlay && isOpen && currentTab === "admin") renderBody();
-    return state.adminDashboard;
-  }
-
-  function bindOverlayEvents() {
-    overlay?.querySelectorAll("[data-tab]").forEach((btn) => {
-      btn.addEventListener("click", async () => {
-        const tab = btn.getAttribute("data-tab") || "war";
-        currentTab = tab;
-        GM_setValue(K_TAB, currentTab);
-
-        if (tab === "faction" && accessState?.isFactionLeader) {
-          await loadFactionMembers(true);
-        }
-        if (tab === "admin" && isOwnerSession()) {
-          await loadAdminDashboard();
-        }
-
-        renderBody();
-      });
-    });
-
-    overlay?.querySelector("#warhub-close-btn")?.addEventListener("click", () => {
-      closeOverlay();
-    });
-
-    overlay?.querySelector("#warhub-save-snapshot")?.addEventListener("click", async () => {
-      await doAction("POST", "/api/war/snapshot", {}, "War snapshot saved.");
-    });
-
-    overlay?.querySelector("#warhub-set-available")?.addEventListener("click", async () => {
-      await doAction("POST", "/api/availability", { available: true }, "Availability set to available.");
-    });
-
-    overlay?.querySelector("#warhub-set-unavailable")?.addEventListener("click", async () => {
-      await doAction("POST", "/api/availability", { available: false }, "Availability set to unavailable.");
-    });
-
-    overlay?.querySelector("#warhub-set-chain-on")?.addEventListener("click", async () => {
-      await doAction("POST", "/api/chain-sitter", { enabled: true }, "Chain sitter enabled.");
-    });
-
-    overlay?.querySelector("#warhub-set-chain-off")?.addEventListener("click", async () => {
-      await doAction("POST", "/api/chain-sitter", { enabled: false }, "Chain sitter disabled.");
-    });
-
-    overlay?.querySelector("#warhub-med-add")?.addEventListener("click", async () => {
-      const seller_name = cleanInputValue(overlay.querySelector("#warhub-med-seller")?.value || "");
-      const item_name = cleanInputValue(overlay.querySelector("#warhub-med-item")?.value || "");
-      const price = cleanInputValue(overlay.querySelector("#warhub-med-price")?.value || "");
-      const note = cleanInputValue(overlay.querySelector("#warhub-med-note")?.value || "");
-
-      if (!seller_name || !item_name) {
-        setStatus("Seller and item are required.", true);
-        return;
-      }
-
-      const res = await doAction("POST", "/api/med-deals", { seller_name, item_name, price, note }, "Med deal added.");
-      if (res) renderBody();
-    });
-
-    overlay?.querySelectorAll(".warhub-del-med").forEach((btn) => {
-      btn.addEventListener("click", async () => {
-        const id = cleanInputValue(btn.getAttribute("data-id") || "");
-        if (!id) return;
-        const res = await doAction("DELETE", `/api/med-deals/${encodeURIComponent(id)}`, null, "Med deal deleted.");
-        if (res) renderBody();
-      });
-    });
-
-    overlay?.querySelector("#warhub-target-enemy")?.addEventListener("change", () => {
-      const sel = overlay.querySelector("#warhub-target-enemy");
-      const opt = sel?.selectedOptions?.[0];
-      const id = cleanInputValue(opt?.value || "");
-      overlay.querySelector("#warhub-target-id").value = id;
-    });
-
-    overlay?.querySelector("#warhub-target-add")?.addEventListener("click", async () => {
-      const sel = overlay.querySelector("#warhub-target-enemy");
-      const opt = sel?.selectedOptions?.[0];
-      const target_id = cleanInputValue(overlay.querySelector("#warhub-target-id")?.value || opt?.value || "");
-      const target_name = cleanInputValue(opt?.dataset?.name || "");
-      const notes = cleanInputValue(overlay.querySelector("#warhub-target-notes")?.value || "");
-
-      if (!target_id) {
-        setStatus("Target ID is required.", true);
-        return;
-      }
-
-      const res = await doAction("POST", "/api/targets", { target_id, target_name, notes }, "Target added.");
-      if (res) renderBody();
-    });
-
-    overlay?.querySelectorAll(".warhub-del-target").forEach((btn) => {
-      btn.addEventListener("click", async () => {
-        const id = cleanInputValue(btn.getAttribute("data-id") || "");
-        if (!id) return;
-        const res = await doAction("DELETE", `/api/targets/${encodeURIComponent(id)}`, null, "Target deleted.");
-        if (res) renderBody();
-      });
-    });
-
-    overlay?.querySelector("#wh-save-assignment")?.addEventListener("click", async () => {
-      const war_id = cleanInputValue(state?.war?.war_id || state?.war?.id || "");
-      const target_id = cleanInputValue(overlay.querySelector("#wh-assignment-target-id")?.value || "");
-      const target_name = cleanInputValue(overlay.querySelector("#wh-assignment-target-name")?.value || "");
-      const sel = overlay.querySelector("#wh-assignment-member");
-      const opt = sel?.selectedOptions?.[0];
-      const assigned_to_user_id = cleanInputValue(opt?.value || "");
-      const assigned_to_name = cleanInputValue(opt?.dataset?.name || "");
-      const priority = cleanInputValue(overlay.querySelector("#wh-assignment-priority")?.value || "normal");
-      const note = cleanInputValue(overlay.querySelector("#wh-assignment-note")?.value || "");
-
-      if (!war_id || !target_id) {
-        setStatus("War ID and target ID are required.", true);
-        return;
-      }
-
-      const res = await doAction("POST", "/api/war/assignments", {
-        war_id,
-        target_id,
-        target_name,
-        assigned_to_user_id,
-        assigned_to_name,
-        priority,
-        note,
-      }, "Assignment saved.");
-
-      if (res) renderBody();
-    });
-
-    overlay?.querySelectorAll("[data-del-assignment-live]").forEach((btn) => {
-      btn.addEventListener("click", async () => {
-        const id = cleanInputValue(btn.getAttribute("data-del-assignment-live") || "");
-        if (!id) return;
-        const res = await doAction("DELETE", `/api/war/assignments/${encodeURIComponent(id)}`, null, "Assignment deleted.");
-        if (res) renderBody();
-      });
-    });
-
-    overlay?.querySelector("#wh-save-notes")?.addEventListener("click", () => {
-      const txt = overlay.querySelector("#wh-notes")?.value || "";
-      setNotes(txt);
-      setStatus("Local notes saved.");
-    });
-
-    overlay?.querySelector("#wh-clear-notes")?.addEventListener("click", () => {
-      setNotes("");
-      renderBody();
-      setStatus("Local notes cleared.");
-    });
-
-    overlay?.querySelector("#wh-add-server-note")?.addEventListener("click", async () => {
-      const war_id = cleanInputValue(state?.war?.war_id || state?.war?.id || "");
-      const target_id = cleanInputValue(overlay.querySelector("#wh-note-target-id")?.value || "");
-      const note = cleanInputValue(overlay.querySelector("#wh-note-text")?.value || "");
-
-      if (!war_id || !target_id || !note) {
-        setStatus("War ID, target ID and note are required.", true);
-        return;
-      }
-
-      const res = await doAction("POST", "/api/war/notes", { war_id, target_id, note }, "Shared note saved.");
-      if (res) renderBody();
-    });
-
-    overlay?.querySelectorAll("[data-del-note-live]").forEach((btn) => {
-      btn.addEventListener("click", async () => {
-        const id = cleanInputValue(btn.getAttribute("data-del-note-live") || "");
-        if (!id) return;
-        const res = await doAction("DELETE", `/api/war/notes/${encodeURIComponent(id)}`, null, "Shared note deleted.");
-        if (res) renderBody();
-      });
-    });
-
-    overlay?.querySelector("#warhub-terms-save")?.addEventListener("click", async () => {
-      const war_id = cleanInputValue(state?.war?.war_id || state?.war?.id || "");
-      const terms = cleanInputValue(overlay.querySelector("#warhub-terms-text")?.value || "");
-      if (!war_id) {
-        setStatus("No active war detected.", true);
-        return;
-      }
-      const res = await doAction("POST", "/api/war-terms", { war_id, terms }, "War terms saved.");
-      if (res) renderBody();
-    });
-
-    overlay?.querySelector("#warhub-terms-delete")?.addEventListener("click", async () => {
-      const war_id = cleanInputValue(state?.war?.war_id || state?.war?.id || "");
-      if (!war_id) {
-        setStatus("No active war detected.", true);
-        return;
-      }
-      const res = await doAction("DELETE", `/api/war-terms?war_id=${encodeURIComponent(war_id)}`, null, "War terms deleted.");
-      if (res) renderBody();
-    });
-
-    overlay?.querySelector("#wh-mark-alerts-seen")?.addEventListener("click", async () => {
-      const res = await req("GET", "/api/notifications");
-      if (!res.ok) {
-        setStatus(res.error || "Could not refresh notifications.", true);
-        return;
-      }
-      setStatus("Notifications refreshed.");
-      await loadState(true);
-      renderBody();
-    });
-
-    overlay?.querySelector("#wh-clear-alerts")?.addEventListener("click", () => {
-      setLocalNotifications([]);
-      updateBadge();
-      renderBody();
-      setStatus("Local notifications cleared.");
-    });
-
-    overlay?.querySelector("#wh-fm-save")?.addEventListener("click", async () => {
-      const member_user_id = cleanInputValue(overlay.querySelector("#wh-fm-userid")?.value || "");
-      const member_name = cleanInputValue(overlay.querySelector("#wh-fm-name")?.value || "");
-      const member_api_key = cleanInputValue(overlay.querySelector("#wh-fm-key")?.value || "");
-      const position = cleanInputValue(overlay.querySelector("#wh-fm-position")?.value || "");
-
-      if (!member_user_id) {
-        setStatus("Member user ID is required.", true);
-        return;
-      }
-
-      const res = await doAction("POST", "/api/faction/members", {
-        member_user_id,
-        member_name,
-        member_api_key,
-        enabled: true,
-        position,
-      }, "Faction member access saved.", false);
-
-      if (res) {
-        await refreshLeaderFactionData();
-        setStatus("Faction member access saved.");
-      }
-    });
-
-    overlay?.querySelectorAll("[data-toggle-member]").forEach((btn) => {
-      btn.addEventListener("click", async () => {
-        const memberId = cleanInputValue(btn.getAttribute("data-toggle-member") || "");
-        const enabled = cleanInputValue(btn.getAttribute("data-enabled") || "") === "1";
-        if (!memberId) return;
-
-        const res = await doAction(
-          "POST",
-          `/api/faction/members/${encodeURIComponent(memberId)}/enable`,
-          { enabled },
-          enabled ? "Member enabled." : "Member disabled.",
-          false
-        );
-
-        if (res) {
-          await refreshLeaderFactionData();
-        }
-      });
-    });
-
-    overlay?.querySelectorAll("[data-del-member]").forEach((btn) => {
-      btn.addEventListener("click", async () => {
-        const memberId = cleanInputValue(btn.getAttribute("data-del-member") || "");
-        if (!memberId) return;
-
-        const res = await doAction(
-          "DELETE",
-          `/api/faction/members/${encodeURIComponent(memberId)}`,
-          null,
-          "Faction member removed.",
-          false
-        );
-
-        if (res) {
-          await refreshLeaderFactionData();
-        }
-      });
-    });
-
-    overlay?.querySelectorAll("[data-admin-history]").forEach((btn) => {
-      btn.addEventListener("click", async () => {
-        const factionId = cleanInputValue(btn.getAttribute("data-admin-history") || "");
-        if (!factionId) return;
-
-        const res = await adminReq("GET", `/api/admin/faction-licenses/${encodeURIComponent(factionId)}/history`);
-        if (!res.ok) {
-          setStatus(res.error || "Could not load payment history.", true);
-          return;
-        }
-
-        const items = arr(res.data?.items || []);
-        const lines = items.length
-          ? items.map((x) => {
-              const amount = x.amount != null ? fmtMoney(x.amount) : "—";
-              const when = fmtTs(x.created_at || x.ts || x.time || "");
-              const by = x.renewed_by || x.created_by || x.payment_player || "";
-              return `${when} • ${amount}${by ? ` • ${by}` : ""}`;
-            }).join("\n")
-          : "No payment history found.";
-
-        alert(lines);
-      });
-    });
-
-    overlay?.querySelectorAll("[data-admin-renew]").forEach((btn) => {
-      btn.addEventListener("click", async () => {
-        const factionId = cleanInputValue(btn.getAttribute("data-admin-renew") || "");
-        if (!factionId) return;
-
-        const amountText = prompt("Renew faction for how much?", String(PRICE_PER_MEMBER));
-        if (amountText == null) return;
-        const amount = Number(String(amountText).replace(/[^\d.-]/g, ""));
-        if (!Number.isFinite(amount) || amount <= 0) {
-          setStatus("Invalid renewal amount.", true);
-          return;
-        }
-
-        const note = prompt("Optional note for renewal:", "") || "";
-
-        const res = await adminReq("POST", `/api/admin/faction-licenses/${encodeURIComponent(factionId)}/renew`, {
-          amount,
-          note,
+    function gmXhr(method, path, body, extraHeaders) {
+        return new Promise(function (resolve) {
+            var token = cleanInputValue(GM_getValue(K_SESSION, ''));
+            var url = "".concat(BASE_URL).concat(path);
+            var headers = _objectSpread({
+                Accept: 'application/json'
+            }, extraHeaders || {});
+            if (token) headers['X-Session-Token'] = token;
+            if (body != null) headers['Content-Type'] = 'application/json';
+            GM_xmlhttpRequest({
+                method: method,
+                url: url,
+                headers: headers,
+                data: body != null ? JSON.stringify(body) : undefined,
+                timeout: 60000,
+                onload: function onload(res) {
+                    var json = null;
+                    try {
+                        json = JSON.parse(res.responseText || '{}');
+                    } catch (_unused3) {}
+                    resolve({
+                        ok: res.status >= 200 && res.status < 300 && (!json || json.ok !== false),
+                        status: res.status,
+                        data: json,
+                        error: (json === null || json === void 0 ? void 0 : json.error) || (json === null || json === void 0 ? void 0 : json.details) || (res.status >= 400 ? "HTTP ".concat(res.status) : 'Request failed')
+                    });
+                },
+                onerror: function onerror() {
+                    return resolve({
+                        ok: false,
+                        status: 0,
+                        data: null,
+                        error: "Network error: ".concat(method, " ").concat(path)
+                    });
+                },
+                ontimeout: function ontimeout() {
+                    return resolve({
+                        ok: false,
+                        status: 0,
+                        data: null,
+                        error: "Request timed out: ".concat(method, " ").concat(path)
+                    });
+                }
+            });
         });
+    }
+    function healthCheck() {
+        return _healthCheck.apply(this, arguments);
+    }
+    function _healthCheck() {
+        _healthCheck = _asyncToGenerator(function* () {
+            return gmXhr('GET', '/health');
+        });
+        return _healthCheck.apply(this, arguments);
+    }
+    function login() {
+        return _login.apply(this, arguments);
+    }
+    function _login() {
+        _login = _asyncToGenerator(function* () {
+            var showDebug = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : false;
+            var apiKey = cleanInputValue(GM_getValue(K_API_KEY, ''));
+            if (!apiKey) return false;
+            if (showDebug) setStatus('Trying login with saved API key...');
+            var res = yield gmXhr('POST', '/api/auth', {
+                api_key: apiKey
+            });
+            updateAccessFromPayload(res.data, res.status, false);
+            if (!res.ok) {
+                if ((accessState === null || accessState === void 0 ? void 0 : accessState.blocked) || (accessState === null || accessState === void 0 ? void 0 : accessState.paymentRequired) || (accessState === null || accessState === void 0 ? void 0 : accessState.trialExpired)) {
+                    setStatus(accessSummaryMessage() || 'Faction access blocked.', true);
+                    renderBody();
+                    return false;
+                }
+                setStatus(res.error || 'Login failed.', true);
+                return false;
+            }
+            var token = (res.data === null || res.data === void 0 ? void 0 : res.data.token) || (res.data === null || res.data === void 0 ? void 0 : res.data.session_token) || (res.data === null || res.data === void 0 ? void 0 : res.data.session);
+            if (token) {
+                GM_setValue(K_SESSION, cleanInputValue(token));
+                updateAccessFromPayload(res.data, res.status, true);
+                return true;
+            }
+            if ((accessState === null || accessState === void 0 ? void 0 : accessState.blocked) || (accessState === null || accessState === void 0 ? void 0 : accessState.paymentRequired) || (accessState === null || accessState === void 0 ? void 0 : accessState.trialExpired)) {
+                setStatus(accessSummaryMessage() || 'Faction access blocked.', true);
+                renderBody();
+                return false;
+            }
+            setStatus('Login failed.', true);
+            return false;
+        });
+        return _login.apply(this, arguments);
+    }
 
-        if (!res.ok) {
-          setStatus(res.error || "Renew failed.", true);
-          return;
+     function req(method, path, body) {
+        return _req.apply(this, arguments);
+    }
+    function _req() {
+        _req = _asyncToGenerator(function* (method, path, body) {
+            if (!canUseProtectedFeatures() && path !== '/health' && path !== '/api/auth') {
+                return {
+                    ok: false,
+                    status: 403,
+                    data: {
+                        ok: false,
+                        payment_required: true,
+                        message: accessSummaryMessage() || 'Faction access blocked.'
+                    },
+                    error: accessSummaryMessage() || 'Faction access blocked.'
+                };
+            }
+            var res = yield gmXhr(method, path, body);
+            updateAccessFromPayload(res.data, res.status, !!cleanInputValue(GM_getValue(K_SESSION, '')));
+            if ((accessState === null || accessState === void 0 ? void 0 : accessState.blocked) || (accessState === null || accessState === void 0 ? void 0 : accessState.paymentRequired) || (accessState === null || accessState === void 0 ? void 0 : accessState.trialExpired)) {
+                return {
+                    ok: false,
+                    status: res.status || 403,
+                    data: res.data,
+                    error: accessSummaryMessage() || res.error || 'Faction access blocked.'
+                };
+            }
+            if (!res.ok && (res.status === 401 || res.status === 403)) {
+                var okLogin = yield login(false);
+                if (okLogin) {
+                    res = yield gmXhr(method, path, body);
+                    updateAccessFromPayload(res.data, res.status, true);
+                }
+            }
+            return res;
+        });
+        return _req.apply(this, arguments);
+    }
+    function adminReq(method, path, body) {
+        return _adminReq.apply(this, arguments);
+    }
+    function _adminReq() {
+        _adminReq = _asyncToGenerator(function* (method, path, body) {
+            if (!isOwnerSession()) {
+                return {
+                    ok: false,
+                    status: 403,
+                    data: null,
+                    error: 'Admin access required.'
+                };
+            }
+            return req(method, path, body);
+        });
+        return _adminReq.apply(this, arguments);
+    }
+    function normalizeState(data) {
+        var s = data || {};
+        var me = s.me || s.user || {};
+        var war = _objectSpread({}, s.war || s.war_info || {});
+        if (war.active == null) war.active = !!(s.has_war || war.war_id || war.id);
+        var faction = s.faction || s.my_faction || {};
+        var enemyFactionRaw = s.enemy_faction || s.opponent || war.enemy_faction || {};
+        var enemyFactionId = enemyFactionRaw.id || enemyFactionRaw.faction_id || s.enemy_faction_id || war.enemy_faction_id || war.opponent_faction_id || '';
+        var enemyFactionName = enemyFactionRaw.name || s.enemy_faction_name || war.enemy_faction_name || war.opponent_faction_name || '';
+        var enemyFaction = _objectSpread(_objectSpread({}, enemyFactionRaw), {}, {
+            id: enemyFactionId,
+            faction_id: enemyFactionRaw.faction_id || enemyFactionId,
+            name: enemyFactionName || 'Enemy Faction'
+        });
+        var members = arr(s.members || faction.members || s.member_list);
+        var enemies = arr(s.enemies || s.enemy_members || enemyFaction.members || war.enemy_members);
+        var hospital = s.hospital || {};
+        var medDeals = arr(s.med_deals || s.medDeals || s.deals).map(function (x) {
+            return _objectSpread(_objectSpread({}, x), {}, {
+                seller_name: (x === null || x === void 0 ? void 0 : x.seller_name) || (x === null || x === void 0 ? void 0 : x.seller) || (x === null || x === void 0 ? void 0 : x.created_by) || '',
+                buyer_name: (x === null || x === void 0 ? void 0 : x.buyer_name) || (x === null || x === void 0 ? void 0 : x.buyer) || (x === null || x === void 0 ? void 0 : x.item_name) || '',
+                note: (x === null || x === void 0 ? void 0 : x.note) || (x === null || x === void 0 ? void 0 : x.notes) || ''
+            });
+        });
+        var targets = arr(s.targets || s.smart_targets || s.assignable_targets);
+        var assignments = arr(s.assignments || s.target_assignments);
+        var notifications = arr(s.notifications || s.alerts);
+        var chainSitters = arr(s.chain_sitters || s.chainSitters || s.chain_helpers);
+        var notes = arr(s.war_notes || s.notes || []);
+        var warTerms = s.war_terms || s.terms || null;
+        var medDealBuyers = arr(s.med_deal_buyers || enemies);
+        var medDealsMessage = String(s.med_deals_message || war.message || enemyFaction.message || '').trim();
+        var factionLicense = s.faction_license || s.license || {};
+        var factionAccess = s.faction_access || {};
+        var factionManagement = s.faction_management || {};
+        var payment = s.payment || {};
+        var hasWar = !!(s.has_war || war.active || war.war_id || war.id || enemyFactionId || enemies.length);
+        updateAccessFromPayload(s, 200, !!cleanInputValue(GM_getValue(K_SESSION, '')));
+        return _objectSpread(_objectSpread({}, s), {}, {
+            has_war: hasWar,
+            me: me,
+            war: war,
+            faction: faction,
+            enemyFaction: enemyFaction,
+            enemy_faction: s.enemy_faction || enemyFaction,
+            enemy_faction_id: s.enemy_faction_id || enemyFactionId,
+            enemy_faction_name: s.enemy_faction_name || enemyFactionName,
+            members: members,
+            enemies: enemies,
+            hospital: hospital,
+            medDeals: medDeals,
+            targets: targets,
+            assignments: assignments,
+            notifications: notifications,
+            chainSitters: chainSitters,
+            notes: notes,
+            warTerms: warTerms,
+            medDealBuyers: medDealBuyers,
+            medDealsMessage: medDealsMessage,
+            factionLicense: factionLicense,
+            factionAccess: factionAccess,
+            factionManagement: factionManagement,
+            payment: payment
+        });
+    }
+    function loadState() {
+        return _loadState.apply(this, arguments);
+    }
+    function _loadState() {
+        _loadState = _asyncToGenerator(function* () {
+            var silent = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : false;
+            if (loadInFlight) return;
+            if (!canUseProtectedFeatures()) {
+                if (!silent) setStatus(accessSummaryMessage() || 'Faction access blocked.', true);
+                renderBody();
+                return;
+            }
+            loadInFlight = true;
+            try {
+                var res = yield req('GET', '/api/state');
+                if (!res.ok) {
+                    if (!silent) setStatus(res.error || 'Could not load state.', true);
+                    if ((accessState === null || accessState === void 0 ? void 0 : accessState.blocked) || (accessState === null || accessState === void 0 ? void 0 : accessState.paymentRequired) || (accessState === null || accessState === void 0 ? void 0 : accessState.trialExpired)) renderBody();
+                    return;
+                }
+                state = normalizeState(res.data || {});
+                if ((accessState === null || accessState === void 0 ? void 0 : accessState.isFactionLeader) && !factionMembersCache) loadFactionMembers()["catch"](function () {
+                    return null;
+                });
+                if (!silent) setStatus('');
+                if (overlay && isOpen) renderBody();
+                updateBadge();
+                if (overlay && isOpen && currentTab === 'admin' && isOwnerSession()) loadAdminDashboard()["catch"](function () {
+                    return null;
+                });
+            } finally {
+                loadInFlight = false;
+            }
+        });
+        return _loadState.apply(this, arguments);
+    }
+    function loadAnalytics() {
+        return _loadAnalytics.apply(this, arguments);
+    }
+    function _loadAnalytics() {
+        _loadAnalytics = _asyncToGenerator(function* () {
+            analyticsCache = analyticsCache || {};
+            return analyticsCache;
+        });
+        return _loadAnalytics.apply(this, arguments);
+    }
+    function loadFactionMembers() {
+        return _loadFactionMembers.apply(this, arguments);
+    }
+    function _loadFactionMembers() {
+        _loadFactionMembers = _asyncToGenerator(function* () {
+            var force = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : false;
+            if (!(accessState !== null && accessState !== void 0 && accessState.isFactionLeader) && !isOwnerSession()) {
+                factionMembersCache = null;
+                return null;
+            }
+            if (factionMembersCache && !force) return factionMembersCache;
+            var res = yield req('GET', '/api/faction/members');
+            if (!res.ok) {
+                setStatus(res.error || 'Could not load faction member access.', true);
+                return null;
+            }
+            factionMembersCache = _objectSpread(_objectSpread({}, res.data || {}), {}, {
+                members: arr((res.data === null || res.data === void 0 ? void 0 : res.data.items) || (res.data === null || res.data === void 0 ? void 0 : res.data.members) || [])
+            });
+            return factionMembersCache;
+        });
+        return _loadFactionMembers.apply(this, arguments);
+    }
+    function refreshLeaderFactionData() {
+        return _refreshLeaderFactionData.apply(this, arguments);
+    }
+    function _refreshLeaderFactionData() {
+        _refreshLeaderFactionData = _asyncToGenerator(function* () {
+            if (!(accessState !== null && accessState !== void 0 && accessState.isFactionLeader) && !isOwnerSession()) return;
+            yield loadFactionMembers(true);
+            yield loadState(true);
+            renderBody();
+        });
+        return _refreshLeaderFactionData.apply(this, arguments);
+    }
+    function doAction(method, path, body, okMsg) {
+        return _doAction.apply(this, arguments);
+    }
+    function _doAction() {
+        _doAction = _asyncToGenerator(function* (method, path, body, okMsg) {
+            var reload = arguments.length > 4 && arguments[4] !== undefined ? arguments[4] : true;
+            if (!ensureAllowedOrMessage()) return null;
+            var res = yield req(method, path, body);
+            if (!res.ok) {
+                setStatus(res.error || 'Action failed.', true);
+                return null;
+            }
+            if (okMsg) setStatus(okMsg);
+            if (reload) yield loadState(true);
+            return res;
+        });
+        return _doAction.apply(this, arguments);
+    }
+    function getHospSeconds(x) {
+        return Number((x === null || x === void 0 ? void 0 : x.hospital_seconds) || (x === null || x === void 0 ? void 0 : x.hosp_time) || (x === null || x === void 0 ? void 0 : x.hospital_time) || (x === null || x === void 0 ? void 0 : x.status) && x.status.until || 0) || 0;
+    }
+    function getPresenceState(x) {
+        var hosp = getHospSeconds(x);
+        if (hosp > 0) return 'hospital';
+        var raw = String((x === null || x === void 0 ? void 0 : x.online_state) || (x === null || x === void 0 ? void 0 : x.online_status) || (x === null || x === void 0 ? void 0 : x.status) || '').toLowerCase();
+        if (raw.includes('online')) return 'online';
+        if (raw.includes('idle')) return 'idle';
+        return 'offline';
+    }
+    function sortHosp(list) {
+        return [].concat(_toConsumableArray(arr(list))).sort(function (a, b) {
+            return getHospSeconds(a) - getHospSeconds(b);
+        });
+    }
+    function sortAlphabetical(list) {
+        return [].concat(_toConsumableArray(arr(list))).sort(function (a, b) {
+            var an = String((a === null || a === void 0 ? void 0 : a.name) || (a === null || a === void 0 ? void 0 : a.player_name) || (a === null || a === void 0 ? void 0 : a.member_name) || '').toLowerCase();
+            var bn = String((b === null || b === void 0 ? void 0 : b.name) || (b === null || b === void 0 ? void 0 : b.player_name) || (b === null || b === void 0 ? void 0 : b.member_name) || '').toLowerCase();
+            return an.localeCompare(bn);
+        });
+    }
+    function sortRosterGroup(list, type) {
+        if (type === 'hospital') return sortHosp(list);
+        return sortAlphabetical(list);
+    }
+    function splitRosterGroups(list) {
+        var hospital = [];
+        var online = [];
+        var idle = [];
+        var offline = [];
+        arr(list).forEach(function (x) {
+            var stateName = getPresenceState(x);
+            if (stateName === 'hospital') hospital.push(x);else if (stateName === 'online') online.push(x);else if (stateName === 'idle') idle.push(x);else offline.push(x);
+        });
+        return {
+            hospital: sortRosterGroup(hospital, 'hospital'),
+            online: sortRosterGroup(online, 'online'),
+            idle: sortRosterGroup(idle, 'idle'),
+            offline: sortRosterGroup(offline, 'offline')
+        };
+    }
+    function memberRow(x) {
+        var enemy = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : false;
+        var id = x.user_id || x.id || x.player_id || x.member_user_id || '';
+        var name = x.name || x.player_name || x.member_name || "ID ".concat(id);
+        var onlineState = String(x.online_state || x.online_status || x.status || 'offline').toLowerCase();
+        var hosp = getHospSeconds(x);
+        var hospText = x.hospital_text || '';
+        var last = x.last_action || x.last_action_relative || x.last || '—';
+        var level = x.level ? "Lvl ".concat(x.level) : '';
+        var lifeCur = Number(x.life_current || x.current_life || 0);
+        var lifeMax = Number(x.life_max || x.maximum_life || 0);
+        var lifeText = lifeMax > 0 ? "".concat(lifeCur.toLocaleString(), "/").concat(lifeMax.toLocaleString()) : '—';
+        var attackUrl = x.attack_url || (id ? "https://www.torn.com/loader.php?sid=attack&user2ID=".concat(id) : '#');
+        var enabled = !!x.enabled_under_license || !!x.member_access_enabled || !!x.enabled;
+        var leader = String(x.position || '').toLowerCase().includes('leader');
+        var pill = hosp > 0 ? "<span class=\"warhub-pill hosp\">Hosp ".concat(esc(fmtHosp(hosp, hospText)), "</span>") : onlineState.includes('online') ? '<span class="warhub-pill online">Online</span>' : onlineState.includes('idle') ? '<span class="warhub-pill idle">Idle</span>' : '<span class="warhub-pill offline">Offline</span>';
+        return "\n      <div class=\"warhub-list-item\">\n        <div class=\"warhub-row\">\n          <div>\n            <div class=\"warhub-name\">".concat(esc(name), "</div>\n            <div class=\"warhub-meta\">").concat(esc([level, "Life ".concat(lifeText), last].filter(Boolean).join(' • ')), "</div>\n          </div>\n          <div class=\"warhub-actions\">\n            ").concat(pill, "\n            ").concat(leader ? '<span class="warhub-pill leader">Leader</span>' : '', "\n            ").concat(!enemy && ((accessState === null || accessState === void 0 ? void 0 : accessState.isFactionLeader) || isOwnerSession()) ? "<span class=\"warhub-pill ".concat(enabled ? 'enabled' : 'disabled', "\">").concat(enabled ? 'Enabled' : 'Disabled', "</span>") : '', "\n          </div>\n        </div>\n        <div class=\"warhub-row\">\n          <div class=\"warhub-meta\">ID ").concat(esc(id || '—'), "</div>\n          <div class=\"warhub-actions\">\n            ").concat(id ? "<a class=\"warhub-btn small\" href=\"https://www.torn.com/profiles.php?XID=".concat(encodeURIComponent(id), "\" target=\"_blank\" rel=\"noopener noreferrer\">Profile</a>") : '', "\n            ").concat(id ? "<a class=\"warhub-btn small primary\" href=\"".concat(esc(attackUrl), "\" target=\"_blank\" rel=\"noopener noreferrer\">Attack</a>") : '', "\n            ").concat(enemy && id ? "<a class=\"warhub-btn small warn\" href=\"https://www.torn.com/bounties.php?userID=".concat(encodeURIComponent(id), "\" target=\"_blank\" rel=\"noopener noreferrer\">Bounty</a>") : '', "\n          </div>\n        </div>\n      </div>\n    ");
+    }
+    function rosterCard(title, items) {
+        var opts = arguments.length > 2 && arguments[2] !== undefined ? arguments[2] : {};
+        var extraClass = opts.extraClass || '';
+        var content = arr(items).length ? arr(items).map(function (x) {
+            return memberRow(x, !!opts.enemy);
+        }).join('') : "<div class=\"warhub-empty\">No ".concat(esc(title.toLowerCase()), ".</div>");
+        return "\n      <div class=\"warhub-card warhub-roster-card ".concat(esc(extraClass), "\">\n        <div class=\"warhub-section-title\">\n          <h3>").concat(esc(title), "</h3>\n          <span class=\"warhub-count\">").concat(arr(items).length, "</span>\n        </div>\n        <div class=\"warhub-list\">").concat(content, "</div>\n      </div>\n    ");
+    }
+    function rosterDropdown(title, items) {
+        var opts = arguments.length > 2 && arguments[2] !== undefined ? arguments[2] : {};
+        var extraClass = opts.extraClass || '';
+        var openAttr = opts.open ? 'open' : '';
+        var content = arr(items).length ? arr(items).map(function (x) {
+            return memberRow(x, !!opts.enemy);
+        }).join('') : "<div class=\"warhub-empty\">No ".concat(esc(title.toLowerCase()), ".</div>");
+        return "\n      <details class=\"warhub-dropdown ".concat(esc(extraClass), "\" ").concat(openAttr, ">\n        <summary>\n          <div class=\"warhub-row\">\n            <strong>").concat(esc(title), "</strong>\n            <span class=\"warhub-count\">").concat(arr(items).length, "</span>\n          </div>\n        </summary>\n        <div class=\"warhub-dropdown-body\">\n          <div class=\"warhub-list\">").concat(content, "</div>\n        </div>\n      </details>\n    ");
+    }
+    function renderInstructionsTab() {
+        var banner = accessSummaryMessage() ? "<div class=\"warhub-banner ".concat((accessState !== null && accessState !== void 0 && accessState.paymentRequired) || (accessState !== null && accessState !== void 0 && accessState.blocked) || (accessState !== null && accessState !== void 0 && accessState.trialExpired) ? 'payment' : (accessState !== null && accessState !== void 0 && accessState.trialActive) ? 'trial' : 'good', "\">\n          <div><strong>Faction Access</strong></div>\n          <div class=\"warhub-mini\" style=\"margin-top:6px;\">").concat(esc(accessSummaryMessage()), "</div>\n        </div>") : '';
+        return "\n      ".concat(banner, "\n      <div class=\"warhub-card\">\n        <h3>Getting Started</h3>\n        <div class=\"warhub-list\">\n          <div class=\"warhub-list-item\">\n            <div class=\"warhub-name\">1. Save your Torn API key</div>\n            <div class=\"warhub-meta\">Open Settings and paste your personal API key, then press Save Keys.</div>\n          </div>\n          <div class=\"warhub-list-item\">\n            <div class=\"warhub-name\">2. Login to War Hub</div>\n            <div class=\"warhub-meta\">Press Login in Settings. Once connected, the overlay will load your faction and war state.</div>\n          </div>\n          <div class=\"warhub-list-item\">\n            <div class=\"warhub-name\">3. Leader-only faction access</div>\n            <div class=\"warhub-meta\">Faction leaders can manage member access from the Faction tab when licensing is enabled.</div>\n          </div>\n          <div class=\"warhub-list-item\">\n            <div class=\"warhub-name\">4. Use tabs for shared tools</div>\n            <div class=\"warhub-meta\">War, Terms, Targets, Assignments, Notes, and Med Deals are shared faction tools.</div>\n          </div>\n        </div>\n      </div>\n\n      <div class=\"warhub-card\">\n        <h3>Terms of Service</h3>\n        <div class=\"warhub-mini\" style=\"line-height:1.5;\">\n          This script is for faction coordination and convenience. You are responsible for your own Torn account, your own API key,\n          and anything you enter into this tool. Do not share full-access secrets with people you do not trust.\n        </div>\n      </div>\n\n      <div class=\"warhub-card\">\n        <h3>API Key Storage</h3>\n        <div class=\"warhub-mini\" style=\"line-height:1.5;\">\n          Your API key and session token are stored locally in your userscript storage on your device/browser.\n          The server receives your API key only when you log in or when actions require backend sync.\n          Faction-leader managed member access may store member API keys on the backend if the leader enters them in the Faction tab.\n        </div>\n      </div>\n    ");
+    }
+    function renderWarTab() {
+        var war = (state === null || state === void 0 ? void 0 : state.war) || {};
+        var our = (state === null || state === void 0 ? void 0 : state.faction) || (state === null || state === void 0 ? void 0 : state.our_faction) || {};
+        var enemy = (state === null || state === void 0 ? void 0 : state.enemyFaction) || (state === null || state === void 0 ? void 0 : state.enemy_faction) || {};
+        var enemyFactionId = (enemy === null || enemy === void 0 ? void 0 : enemy.faction_id) || (enemy === null || enemy === void 0 ? void 0 : enemy.id) || (state === null || state === void 0 ? void 0 : state.enemy_faction_id) || (state === null || state === void 0 ? void 0 : state.war) && state.war.enemy_faction_id || (state === null || state === void 0 ? void 0 : state.war) && state.war.opponent_faction_id || '';
+        var enemyFactionName = (enemy === null || enemy === void 0 ? void 0 : enemy.name) || (state === null || state === void 0 ? void 0 : state.enemy_faction_name) || (state === null || state === void 0 ? void 0 : state.war) && state.war.enemy_faction_name || (state === null || state === void 0 ? void 0 : state.war) && state.war.opponent_faction_name || '—';
+        var scoreUs = Number((state === null || state === void 0 ? void 0 : state.score) && state.score.our || (war === null || war === void 0 ? void 0 : war.our_score) || (our === null || our === void 0 ? void 0 : our.score) || 0) || 0;
+        var scoreThem = Number((state === null || state === void 0 ? void 0 : state.score) && state.score.enemy || (war === null || war === void 0 ? void 0 : war.enemy_score) || (enemy === null || enemy === void 0 ? void 0 : enemy.score) || 0) || 0;
+        var target = Number((state === null || state === void 0 ? void 0 : state.score) && state.score.target || (war === null || war === void 0 ? void 0 : war.target_score) || (war === null || war === void 0 ? void 0 : war.target) || 0) || 0;
+        var lead = scoreUs - scoreThem;
+        var hasWar = !!((state === null || state === void 0 ? void 0 : state.has_war) || (war === null || war === void 0 ? void 0 : war.active) || (war === null || war === void 0 ? void 0 : war.war_id) || (war === null || war === void 0 ? void 0 : war.id) || enemyFactionId || arr(state && state.enemies).length);
+        if (!hasWar) {
+            return "\n        <div class=\"warhub-card\">\n          <h3>War</h3>\n          <div class=\"warhub-empty\">Currently not in a war.</div>\n        </div>\n      ";
         }
-
-        setStatus("Faction renewed.");
-        await loadAdminDashboard();
-      });
-    });
-
-    overlay?.querySelectorAll("[data-admin-expire]").forEach((btn) => {
-      btn.addEventListener("click", async () => {
-        const factionId = cleanInputValue(btn.getAttribute("data-admin-expire") || "");
-        if (!factionId) return;
-
-        const confirmExpire = confirm(`Expire faction ${factionId}?`);
-        if (!confirmExpire) return;
-
-        const res = await adminReq("POST", `/api/admin/faction-licenses/${encodeURIComponent(factionId)}/expire`, {});
-        if (!res.ok) {
-          setStatus(res.error || "Expire failed.", true);
-          return;
+        return "\n      <div class=\"warhub-card\">\n        <div class=\"warhub-section-title\">\n          <h3>War Overview</h3>\n          <span class=\"warhub-count\">".concat(esc(String((war === null || war === void 0 ? void 0 : war.war_id) || (war === null || war === void 0 ? void 0 : war.id) || 'Live')), "</span>\n        </div>\n\n        <div class=\"warhub-grid three\">\n          <div class=\"warhub-metric warhub-score-us\">\n            <div class=\"k\">Our Score</div>\n            <div class=\"v\">").concat(fmtNum(scoreUs), "</div>\n          </div>\n          <div class=\"warhub-metric warhub-score-them\">\n            <div class=\"k\">Enemy Score</div>\n            <div class=\"v\">").concat(fmtNum(scoreThem), "</div>\n          </div>\n          <div class=\"warhub-metric warhub-score-lead\">\n            <div class=\"k\">").concat(lead >= 0 ? 'Lead' : 'Behind', "</div>\n            <div class=\"v\">").concat(fmtNum(Math.abs(lead)), "</div>\n          </div>\n        </div>\n\n        <div class=\"warhub-divider\"></div>\n\n        <div class=\"warhub-grid two\">\n          <div class=\"warhub-metric\">\n            <div class=\"k\">Our Faction</div>\n            <div class=\"v\">").concat(esc((our === null || our === void 0 ? void 0 : our.name) || (state === null || state === void 0 ? void 0 : state.user) && state.user.faction_name || '—'), "</div>\n          </div>\n          <div class=\"warhub-metric\">\n            <div class=\"k\">Enemy Faction</div>\n            <div class=\"v\">").concat(esc(enemyFactionName), "</div>\n          </div>\n          <div class=\"warhub-metric\">\n            <div class=\"k\">Target Score</div>\n            <div class=\"v\">").concat(fmtNum(target), "</div>\n          </div>\n          <div class=\"warhub-metric\">\n            <div class=\"k\">Status</div>\n            <div class=\"v\">").concat(esc((war === null || war === void 0 ? void 0 : war.status) || 'Active'), "</div>\n          </div>\n        </div>\n\n        <div class=\"warhub-divider\"></div>\n\n        <div class=\"warhub-actions\">\n          <button class=\"warhub-btn primary\" id=\"warhub-save-snapshot\">Save Snapshot</button>\n          ").concat(enemyFactionId ? "<a class=\"warhub-btn\" href=\"https://www.torn.com/factions.php?step=profile&ID=".concat(encodeURIComponent(enemyFactionId), "\" target=\"_blank\" rel=\"noopener noreferrer\">Enemy Faction</a>") : '', "\n        </div>\n      </div>\n    ");
+    }
+    function renderTermsTab() {
+        var warId = (state === null || state === void 0 ? void 0 : state.war) && state.war.war_id || (state === null || state === void 0 ? void 0 : state.war) && state.war.id || '';
+        var termsText = (state === null || state === void 0 ? void 0 : state.warTerms) && state.warTerms.terms_text || (state === null || state === void 0 ? void 0 : state.warTerms) && state.warTerms.terms || (state === null || state === void 0 ? void 0 : state.terms) && state.terms.terms_text || (state === null || state === void 0 ? void 0 : state.terms) && state.terms.terms || '';
+        var locked = !((accessState === null || accessState === void 0 ? void 0 : accessState.isFactionLeader) || isOwnerSession());
+        return "\n      <div class=\"warhub-card\">\n        <div class=\"warhub-section-title\">\n          <h3>War Terms</h3>\n          ".concat(locked ? '<span class="warhub-pill disabled">Leader Only</span>' : '', "\n        </div>\n        <label class=\"warhub-label\">War ID</label>\n        <input class=\"warhub-input\" id=\"warhub-terms-warid\" value=\"").concat(esc(warId), "\" readonly />\n        <div style=\"height:8px;\"></div>\n        <label class=\"warhub-label\">Terms</label>\n        <textarea class=\"warhub-textarea\" id=\"warhub-terms-text\" ").concat(locked ? 'readonly' : '', ">").concat(esc(termsText), "</textarea>\n        <div class=\"warhub-actions\" style=\"margin-top:8px;\">\n          <button class=\"warhub-btn primary\" id=\"warhub-terms-save\" ").concat(locked ? 'disabled' : '', ">Save Terms</button>\n          <button class=\"warhub-btn warn\" id=\"warhub-terms-delete\" ").concat(locked ? 'disabled' : '', ">Delete Terms</button>\n        </div>\n      </div>\n    ");
+    }
+    function renderMembersTab() {
+        var groups = splitRosterGroups((state === null || state === void 0 ? void 0 : state.members) || []);
+        return "\n      ".concat(rosterCard('Online Members', groups.online, {
+            extraClass: 'online-box'
+        }), "\n      ").concat(rosterCard('Idle Members', groups.idle, {
+            extraClass: 'idle-box'
+        }), "\n      ").concat(rosterCard('Hospital Members', groups.hospital, {
+            extraClass: 'hospital-box'
+        }), "\n      ").concat(rosterDropdown('Offline Members', groups.offline, {
+            extraClass: 'offline-box'
+        }), "\n    ");
+    }
+    function renderEnemiesTab() {
+        var enemies = arr((state === null || state === void 0 ? void 0 : state.enemies) || []);
+        var hasWar = !!((state === null || state === void 0 ? void 0 : state.has_war) || (state === null || state === void 0 ? void 0 : state.war) && state.war.active || (state === null || state === void 0 ? void 0 : state.war) && state.war.war_id || (state === null || state === void 0 ? void 0 : state.enemy_faction_id) || (state === null || state === void 0 ? void 0 : state.enemyFaction) && state.enemyFaction.id || (state === null || state === void 0 ? void 0 : state.enemyFaction) && state.enemyFaction.faction_id);
+        if (!enemies.length && !hasWar) {
+            return "\n        <div class=\"warhub-card\">\n          <h3>Enemies</h3>\n          <div class=\"warhub-empty\">Currently not in a war.</div>\n        </div>\n      ";
         }
+        var groups = splitRosterGroups(enemies);
+        return "\n      ".concat(rosterCard('Enemy Online', groups.online, {
+            extraClass: 'online-box',
+            enemy: true
+        }), "\n      ").concat(rosterCard('Enemy Idle', groups.idle, {
+            extraClass: 'idle-box',
+            enemy: true
+        }), "\n      ").concat(rosterCard('Enemy Hospital', groups.hospital, {
+            extraClass: 'hospital-box',
+            enemy: true
+        }), "\n      ").concat(rosterDropdown('Enemy Offline', groups.offline, {
+            extraClass: 'offline-box',
+            enemy: true
+        }), "\n    ");
+    }
+    function renderHospitalTab() {
+        var ours = sortHosp(arr((state === null || state === void 0 ? void 0 : state.members) || []).filter(function (x) {
+            return getHospSeconds(x) > 0;
+        }));
+        var theirs = sortHosp(arr((state === null || state === void 0 ? void 0 : state.enemies) || []).filter(function (x) {
+            return getHospSeconds(x) > 0;
+        }));
+        return "\n      ".concat(rosterCard('Our Hospital', ours, {
+            extraClass: 'hospital-box'
+        }), "\n      ").concat(rosterCard('Enemy Hospital', theirs, {
+            extraClass: 'hospital-box',
+            enemy: true
+        }), "\n    ");
+    }
 
-        setStatus("Faction expired.");
-        await loadAdminDashboard();
-      });
-    });
-
-    overlay?.querySelector("#wh-save-keys")?.addEventListener("click", () => {
-      const apiKey = cleanInputValue(overlay.querySelector("#wh-api-key")?.value || "");
-      GM_setValue(K_API_KEY, apiKey);
-      setStatus("API key saved locally.");
-    });
-
-    overlay?.querySelector("#wh-login-btn")?.addEventListener("click", async () => {
-      const apiKey = cleanInputValue(overlay.querySelector("#wh-api-key")?.value || "");
-      if (apiKey) GM_setValue(K_API_KEY, apiKey);
-
-      const okLogin = await login(true);
-      if (!okLogin) return;
-
-      setStatus("Login successful.");
-      await loadState(true);
-      renderBody();
-    });
-
-    overlay?.querySelector("#wh-logout-btn")?.addEventListener("click", async () => {
-      await req("POST", "/api/logout", {});
-      clearSavedKeys();
-      state = null;
-      analyticsCache = null;
-      factionMembersCache = null;
-      accessState = normalizeAccessCache({});
-      saveAccessCache();
-      renderBody();
-      updateBadge();
-      setStatus("Logged out.");
-    });
-
-    overlay?.querySelector("#wh-save-refresh")?.addEventListener("click", () => {
-      const raw = cleanInputValue(overlay.querySelector("#wh-refresh-ms")?.value || "30000");
-      const ms = Math.max(10000, Number(raw) || 30000);
-      GM_setValue(K_REFRESH, ms);
-      startPolling();
-      setStatus(`Refresh saved: ${ms}ms`);
-    });
-
-    overlay?.querySelector("#wh-reset-positions")?.addEventListener("click", () => {
-      GM_deleteValue(K_SHIELD_POS);
-      GM_deleteValue(K_OVERLAY_POS);
-      resetShieldPosition();
-      positionOverlayNearShield();
-      saveShieldPos();
-      saveOverlayPos();
-      updateBadge();
-      setStatus("Positions reset.");
-    });
-  }
-
-  function mount() {
-    if (mounted) return;
-    mounted = true;
-
-    shield = document.createElement("div");
-    shield.id = "warhub-shield";
-    shield.textContent = "⚔️";
-
-    badge = document.createElement("div");
-    badge.id = "warhub-badge";
-
-    overlay = document.createElement("div");
-    overlay.id = "warhub-overlay";
-
-    document.body.appendChild(shield);
-    document.body.appendChild(badge);
-    document.body.appendChild(overlay);
-
-    const savedShield = GM_getValue(K_SHIELD_POS, null);
-    if (savedShield && typeof savedShield === "object") {
-      if (savedShield.left) shield.style.left = savedShield.left;
-      if (savedShield.top) shield.style.top = savedShield.top;
-      if (savedShield.right) shield.style.right = savedShield.right;
-      if (savedShield.bottom) shield.style.bottom = savedShield.bottom;
+     function renderChainTab() {
+        var sitters = arr((state === null || state === void 0 ? void 0 : state.members) || []).filter(function (x) {
+            return !!x.chain_sitter;
+        });
+        var avail = arr((state === null || state === void 0 ? void 0 : state.members) || []).filter(function (x) {
+            return !!x.available;
+        });
+        return "\n      <div class=\"warhub-card\">\n        <div class=\"warhub-section-title\">\n          <h3>Chain Helpers</h3>\n          <span class=\"warhub-count\">".concat(sitters.length, "</span>\n        </div>\n        <div class=\"warhub-list\">\n          ").concat(sitters.length ? sitters.map(function (x) {
+            return memberRow(x, false);
+        }).join('') : '<div class="warhub-empty">No chain sitters enabled.</div>', "\n        </div>\n      </div>\n\n      <div class=\"warhub-card\">\n        <div class=\"warhub-section-title\">\n          <h3>Available Members</h3>\n          <span class=\"warhub-count\">").concat(avail.length, "</span>\n        </div>\n        <div class=\"warhub-list\">\n          ").concat(avail.length ? avail.map(function (x) {
+            return memberRow(x, false);
+        }).join('') : '<div class="warhub-empty">No available members flagged.</div>', "\n        </div>\n      </div>\n\n      <div class=\"warhub-card\">\n        <h3>My Toggle</h3>\n        <div class=\"warhub-actions\">\n          <button class=\"warhub-btn good\" id=\"warhub-set-available\">Set Available</button>\n          <button class=\"warhub-btn\" id=\"warhub-set-unavailable\">Set Unavailable</button>\n          <button class=\"warhub-btn warn\" id=\"warhub-set-chain-on\">Chain Sitter On</button>\n          <button class=\"warhub-btn\" id=\"warhub-set-chain-off\">Chain Sitter Off</button>\n        </div>\n      </div>\n    ");
+    }
+    function renderMedDealsTab() {
+        var deals = arr((state === null || state === void 0 ? void 0 : state.medDeals) || (state === null || state === void 0 ? void 0 : state.med_deals) || []);
+        return "\n      <div class=\"warhub-card\">\n        <h3>Add Med Deal</h3>\n        <div class=\"warhub-grid two\">\n          <div>\n            <label class=\"warhub-label\">Seller</label>\n            <input class=\"warhub-input\" id=\"warhub-med-seller\" placeholder=\"Seller name\" />\n          </div>\n          <div>\n            <label class=\"warhub-label\">Item</label>\n            <input class=\"warhub-input\" id=\"warhub-med-item\" placeholder=\"Xanax / Med item\" />\n          </div>\n          <div>\n            <label class=\"warhub-label\">Price</label>\n            <input class=\"warhub-input\" id=\"warhub-med-price\" placeholder=\"$ / text\" />\n          </div>\n          <div>\n            <label class=\"warhub-label\">Note</label>\n            <input class=\"warhub-input\" id=\"warhub-med-note\" placeholder=\"Optional note\" />\n          </div>\n        </div>\n        <div class=\"warhub-actions\" style=\"margin-top:8px;\">\n          <button class=\"warhub-btn primary\" id=\"warhub-med-add\">Add Med Deal</button>\n        </div>\n      </div>\n\n      <div class=\"warhub-card\">\n        <div class=\"warhub-section-title\">\n          <h3>Med Deals</h3>\n          <span class=\"warhub-count\">".concat(deals.length, "</span>\n        </div>\n        <div class=\"warhub-list\">\n          ").concat(deals.length ? deals.map(function (x) {
+            return "\n            <div class=\"warhub-list-item\">\n              <div class=\"warhub-row\">\n                <div>\n                  <div class=\"warhub-name\">".concat(esc(x.seller_name || 'Unknown seller'), "</div>\n                  <div class=\"warhub-meta\">").concat(esc([x.item_name || x.buyer_name || '', x.price || '', x.note || ''].filter(Boolean).join(' • ')), "</div>\n                </div>\n                <div class=\"warhub-actions\">\n                  <button class=\"warhub-btn small warn warhub-del-med\" data-id=\"").concat(esc(String(x.id || x.deal_id || '')), "\">Delete</button>\n                </div>\n              </div>\n            </div>\n          ");
+        }).join('') : '<div class="warhub-empty">No med deals yet.</div>', "\n        </div>\n      </div>\n    ");
+    }
+    function renderTargetsTab() {
+        var targets = arr((state === null || state === void 0 ? void 0 : state.targets) || []);
+        var enemies = sortAlphabetical(arr((state === null || state === void 0 ? void 0 : state.enemies) || []));
+        return "\n      <div class=\"warhub-card\">\n        <h3>Add Target</h3>\n        <div class=\"warhub-grid two\">\n          <div>\n            <label class=\"warhub-label\">Enemy</label>\n            <select class=\"warhub-select\" id=\"warhub-target-enemy\">\n              <option value=\"\">Select enemy</option>\n              ".concat(enemies.map(function (x) {
+            var id = x.user_id || x.id || '';
+            var name = x.name || "ID ".concat(id);
+            return "<option value=\"".concat(esc(String(id)), "\" data-name=\"").concat(esc(name), "\">").concat(esc(name), " [").concat(esc(String(id)), "]</option>");
+        }).join(''), "\n            </select>\n          </div>\n          <div>\n            <label class=\"warhub-label\">Target ID</label>\n            <input class=\"warhub-input\" id=\"warhub-target-id\" placeholder=\"Target ID\" />\n          </div>\n        </div>\n        <div style=\"height:8px;\"></div>\n        <label class=\"warhub-label\">Notes / Reason</label>\n        <input class=\"warhub-input\" id=\"warhub-target-notes\" placeholder=\"Optional notes\" />\n        <div class=\"warhub-actions\" style=\"margin-top:8px;\">\n          <button class=\"warhub-btn primary\" id=\"warhub-target-add\">Add Target</button>\n        </div>\n      </div>\n\n      <div class=\"warhub-card\">\n        <div class=\"warhub-section-title\">\n          <h3>Targets</h3>\n          <span class=\"warhub-count\">").concat(targets.length, "</span>\n        </div>\n        <div class=\"warhub-list\">\n          ").concat(targets.length ? targets.map(function (x) {
+            var id = x.target_id || x.user_id || '';
+            var name = x.target_name || x.name || "ID ".concat(id);
+            var rowId = x.id || x.target_row_id || '';
+            return "\n              <div class=\"warhub-list-item\">\n                <div class=\"warhub-row\">\n                  <div>\n                    <div class=\"warhub-name\">".concat(esc(name), "</div>\n                    <div class=\"warhub-meta\">").concat(esc(["ID ".concat(id), x.notes || x.reason || ''].filter(Boolean).join(' • ')), "</div>\n                  </div>\n                  <div class=\"warhub-actions\">\n                    ").concat(id ? "<a class=\"warhub-btn small primary\" href=\"https://www.torn.com/loader.php?sid=attack&user2ID=".concat(encodeURIComponent(id), "\" target=\"_blank\" rel=\"noopener noreferrer\">Attack</a>") : '', "\n                    <button class=\"warhub-btn small warn warhub-del-target\" data-id=\"").concat(esc(String(rowId)), "\">Delete</button>\n                  </div>\n                </div>\n              </div>\n            ");
+        }).join('') : '<div class="warhub-empty">No targets saved.</div>', "\n        </div>\n      </div>\n    ");
+    }
+    function renderAssignmentsTab() {
+        var warId = String((state === null || state === void 0 ? void 0 : state.war) && state.war.war_id || (state === null || state === void 0 ? void 0 : state.war) && state.war.id || '');
+        var managed = arr((state === null || state === void 0 ? void 0 : state.factionManagement) && state.factionManagement.members || (factionMembersCache === null || factionMembersCache === void 0 ? void 0 : factionMembersCache.members) || []).filter(function (m) {
+            var uid = String(m.member_user_id || m.user_id || '');
+            return uid && !!m.enabled;
+        });
+        var rows = arr((state === null || state === void 0 ? void 0 : state.assignments) || []).length ? "\n      <div class=\"warhub-card\">\n        <div class=\"warhub-section-title\">\n          <h3 style=\"margin:0;\">Live Assignments</h3>\n          <span class=\"warhub-count\">".concat(fmtNum(arr(state.assignments).length), "</span>\n        </div>\n        <div class=\"warhub-list\">\n          ").concat(arr(state.assignments).map(function (a) {
+            var id = String(a.id || '');
+            var assigned = a.assigned_to_name || a.assignee || 'Unassigned';
+            var targetName = a.target_name || a.target || a.target_id || 'Unknown';
+            var attack = a.target_attack_url || (a.target_id ? "https://www.torn.com/loader.php?sid=attack&user2ID=".concat(encodeURIComponent(String(a.target_id))) : '');
+            return "\n                <div class=\"warhub-list-item\">\n                  <div class=\"warhub-row\">\n                    <div>\n                      <div class=\"warhub-name\">".concat(esc(targetName), "</div>\n                      <div class=\"warhub-meta\">").concat(esc(["Assigned: ".concat(assigned), a.priority || 'normal', a.note || ''].filter(Boolean).join(' • ')), "</div>\n                    </div>\n                    <div class=\"warhub-actions\">\n                      ").concat(attack ? "<a class=\"warhub-btn small primary warhub-link\" href=\"".concat(esc(attack), "\" target=\"_blank\" rel=\"noopener noreferrer\">Attack</a>") : '', "\n                      ").concat(id ? "<button class=\"warhub-btn small warn\" data-del-assignment-live=\"".concat(esc(id), "\">Delete</button>") : '', "\n                    </div>\n                  </div>\n                </div>\n              ");
+        }).join(''), "\n        </div>\n      </div>\n    ") : "\n      <div class=\"warhub-card\">\n        <h3>Live Assignments</h3>\n        <div class=\"warhub-empty\">No assignments yet.</div>\n      </div>\n    ";
+        return "\n      <div class=\"warhub-card\">\n        <h3>Assign Target</h3>\n        <div class=\"warhub-grid two\">\n          <div>\n            <label class=\"warhub-label\">War ID</label>\n            <input class=\"warhub-input\" id=\"wh-assignment-war-id\" value=\"".concat(esc(warId), "\" readonly>\n          </div>\n          <div>\n            <label class=\"warhub-label\">Target ID</label>\n            <input class=\"warhub-input\" id=\"wh-assignment-target-id\" placeholder=\"Enemy target ID\">\n          </div>\n          <div>\n            <label class=\"warhub-label\">Target Name</label>\n            <input class=\"warhub-input\" id=\"wh-assignment-target-name\" placeholder=\"Optional target name\">\n          </div>\n          <div>\n            <label class=\"warhub-label\">Assign To</label>\n            <select class=\"warhub-select\" id=\"wh-assignment-member\">\n              <option value=\"\">Select enabled member</option>\n              ").concat(managed.map(function (m) {
+            var uid = String(m.member_user_id || m.user_id || '');
+            var nm = String(m.member_name || m.name || uid);
+            return "<option value=\"".concat(esc(uid), "\" data-name=\"").concat(esc(nm), "\">").concat(esc(nm), " [").concat(esc(uid), "]</option>");
+        }).join(''), "\n            </select>\n          </div>\n        </div>\n        <div style=\"height:8px;\"></div>\n        <div class=\"warhub-grid two\">\n          <div>\n            <label class=\"warhub-label\">Priority</label>\n            <select class=\"warhub-select\" id=\"wh-assignment-priority\">\n              <option value=\"normal\">Normal</option>\n              <option value=\"high\">High</option>\n              <option value=\"low\">Low</option>\n            </select>\n          </div>\n          <div>\n            <label class=\"warhub-label\">Note</label>\n            <input class=\"warhub-input\" id=\"wh-assignment-note\" placeholder=\"Optional note\">\n          </div>\n        </div>\n        <div class=\"warhub-actions\" style=\"margin-top:8px;\">\n          <button class=\"warhub-btn primary\" id=\"wh-save-assignment\">Save Assignment</button>\n        </div>\n      </div>\n      ").concat(rows, "\n    ");
+    }
+    function noteRow(x) {
+        var id = String(x.id || x.note_id || '');
+        return "\n      <div class=\"warhub-list-item\">\n        <div class=\"warhub-row\">\n          <div>\n            <div class=\"warhub-name\">".concat(esc(x.target_name || "Target ".concat(x.target_id || '—')), "</div>\n            <div class=\"warhub-meta\">").concat(esc(x.note || ''), "</div>\n            <div class=\"warhub-mini\">").concat(esc([x.created_by_name || x.updated_by_name || '', fmtTs(x.created_at || x.updated_at || '')].filter(Boolean).join(' • ')), "</div>\n          </div>\n          <div class=\"warhub-actions\">\n            ").concat(id ? "<button class=\"warhub-btn small warn\" data-del-note-live=\"".concat(esc(id), "\">Delete</button>") : '', "\n          </div>\n        </div>\n      </div>\n    ");
+    }
+    function renderNotesTab() {
+        var localNotes = getNotes();
+        var shared = arr((state === null || state === void 0 ? void 0 : state.notes) || []);
+        return "\n      <div class=\"warhub-card\">\n        <h3>Local Notes</h3>\n        <label class=\"warhub-label\">Your personal notes</label>\n        <textarea class=\"warhub-textarea\" id=\"wh-notes\">".concat(esc(localNotes), "</textarea>\n        <div class=\"warhub-actions\" style=\"margin-top:8px;\">\n          <button class=\"warhub-btn primary\" id=\"wh-save-notes\">Save Local</button>\n          <button class=\"warhub-btn warn\" id=\"wh-clear-notes\">Clear Local</button>\n        </div>\n      </div>\n\n      <div class=\"warhub-card\">\n        <h3>Shared War Note</h3>\n        <div class=\"warhub-grid two\">\n          <div>\n            <label class=\"warhub-label\">War ID</label>\n            <input class=\"warhub-input\" id=\"wh-note-war-id\" value=\"").concat(esc(String((state === null || state === void 0 ? void 0 : state.war) && state.war.war_id || (state === null || state === void 0 ? void 0 : state.war) && state.war.id || '')), "\" readonly>\n          </div>\n          <div>\n            <label class=\"warhub-label\">Target ID</label>\n            <input class=\"warhub-input\" id=\"wh-note-target-id\" placeholder=\"Enemy target ID\">\n          </div>\n        </div>\n        <div style=\"height:8px;\"></div>\n        <label class=\"warhub-label\">Note</label>\n        <textarea class=\"warhub-textarea\" id=\"wh-note-text\" placeholder=\"Shared note for this target\"></textarea>\n        <div class=\"warhub-actions\" style=\"margin-top:8px;\">\n          <button class=\"warhub-btn primary\" id=\"wh-add-server-note\">Save Shared Note</button>\n        </div>\n      </div>\n\n      <div class=\"warhub-card\">\n        <div class=\"warhub-section-title\">\n          <h3>Shared Notes</h3>\n          <span class=\"warhub-count\">").concat(fmtNum(shared.length), "</span>\n        </div>\n        <div class=\"warhub-list\">\n          ").concat(shared.length ? shared.map(function (x) {
+            return noteRow(x);
+        }).join('') : '<div class="warhub-empty">No shared notes yet.</div>', "\n        </div>\n      </div>\n    ");
+    }
+    function renderAnalyticsTab() {
+        var snaps = arr((state === null || state === void 0 ? void 0 : state.snapshots) || []);
+        return "\n      <div class=\"warhub-card\">\n        <h3>Analytics</h3>\n        <div class=\"warhub-grid three\">\n          <div class=\"warhub-metric\">\n            <div class=\"k\">Snapshots</div>\n            <div class=\"v\">".concat(fmtNum(snaps.length), "</div>\n          </div>\n          <div class=\"warhub-metric\">\n            <div class=\"k\">Members</div>\n            <div class=\"v\">").concat(fmtNum(arr((state === null || state === void 0 ? void 0 : state.members) || []).length), "</div>\n          </div>\n          <div class=\"warhub-metric\">\n            <div class=\"k\">Enemies</div>\n            <div class=\"v\">").concat(fmtNum(arr((state === null || state === void 0 ? void 0 : state.enemies) || []).length), "</div>\n          </div>\n        </div>\n      </div>\n    ");
+    }
+    function renderNotificationsTab() {
+        var items = mergedNotifications();
+        return "\n      <div class=\"warhub-card\">\n        <div class=\"warhub-section-title\">\n          <h3>Notifications</h3>\n          <span class=\"warhub-count\">".concat(fmtNum(items.length), "</span>\n        </div>\n        <div class=\"warhub-list\">\n          ").concat(items.length ? items.map(function (x) {
+            return "\n            <div class=\"warhub-list-item\">\n              <div class=\"warhub-name\">".concat(esc(x.title || x.kind || 'Notification'), "</div>\n              <div class=\"warhub-meta\">").concat(esc(x.body || x.text || x.message || ''), "</div>\n              <div class=\"warhub-mini\">").concat(esc(fmtTs(x.created_at || x.ts || '')), "</div>\n            </div>\n          ");
+        }).join('') : '<div class="warhub-empty">No notifications.</div>', "\n        </div>\n        <div class=\"warhub-actions\" style=\"margin-top:8px;\">\n          <button class=\"warhub-btn\" id=\"wh-mark-alerts-seen\">Refresh / Mark Seen</button>\n          <button class=\"warhub-btn warn\" id=\"wh-clear-alerts\">Clear Local</button>\n        </div>\n      </div>\n    ");
+    }
+    function renderFactionTab() {
+        var license = (state === null || state === void 0 ? void 0 : state.factionLicense) || (state === null || state === void 0 ? void 0 : state.license) || {};
+        var members = arr((factionMembersCache === null || factionMembersCache === void 0 ? void 0 : factionMembersCache.members) || []);
+        var status = license.status || ((accessState === null || accessState === void 0 ? void 0 : accessState.paymentRequired) ? 'payment_required' : (accessState === null || accessState === void 0 ? void 0 : accessState.trialActive) ? 'trial' : 'active');
+        var canManage = !!((accessState === null || accessState === void 0 ? void 0 : accessState.isFactionLeader) || isOwnerSession());
+        return "\n      <div class=\"warhub-card\">\n        <h3>Faction License</h3>\n        <div class=\"warhub-grid two\">\n          <div class=\"warhub-metric\"><div class=\"k\">Status</div><div class=\"v\">".concat(esc(status), "</div></div>\n          <div class=\"warhub-metric\"><div class=\"k\">Faction</div><div class=\"v\">").concat(esc((state === null || state === void 0 ? void 0 : state.user) && state.user.faction_name || (accessState === null || accessState === void 0 ? void 0 : accessState.factionName) || '—'), "</div></div>\n          <div class=\"warhub-metric\"><div class=\"k\">Payment Player</div><div class=\"v\">").concat(esc(license.payment_player || (accessState === null || accessState === void 0 ? void 0 : accessState.paymentPlayer) || PAYMENT_PLAYER), "</div></div>\n          <div class=\"warhub-metric\"><div class=\"k\">Price / Enabled Member</div><div class=\"v\">").concat(fmtMoney(license.faction_member_price || (accessState === null || accessState === void 0 ? void 0 : accessState.pricePerMember) || PRICE_PER_MEMBER), "</div></div>\n        </div>\n      </div>\n\n      <div class=\"warhub-card\">\n        <h3>Manage Member Access</h3>\n        ").concat(canManage ? "\n          <div class=\"warhub-grid two\">\n            <div>\n              <label class=\"warhub-label\">Member User ID</label>\n              <input class=\"warhub-input\" id=\"wh-fm-userid\" placeholder=\"User ID\">\n            </div>\n            <div>\n              <label class=\"warhub-label\">Member Name</label>\n              <input class=\"warhub-input\" id=\"wh-fm-name\" placeholder=\"Member name\">\n            </div>\n            <div>\n              <label class=\"warhub-label\">Member API Key</label>\n              <input class=\"warhub-input\" id=\"wh-fm-key\" placeholder=\"Member API key\">\n            </div>\n            <div>\n              <label class=\"warhub-label\">Position</label>\n              <input class=\"warhub-input\" id=\"wh-fm-position\" placeholder=\"Position\">\n            </div>\n          </div>\n          <div class=\"warhub-actions\" style=\"margin-top:8px;\">\n            <button class=\"warhub-btn primary\" id=\"wh-fm-save\">Save Member Access</button>\n          </div>\n        " : '<div class=\"warhub-empty\">Leader access required.</div>', "\n      </div>\n\n      <div class=\"warhub-card\">\n        <div class=\"warhub-section-title\">\n          <h3>Faction Members</h3>\n          <span class=\"warhub-count\">").concat(fmtNum(members.length), "</span>\n        </div>\n        <div class=\"warhub-list\">\n          ").concat(members.length ? members.map(function (x) {
+            var memberId = x.member_user_id || x.user_id || '';
+            var memberName = x.member_name || x.name || "ID ".concat(memberId);
+            var enabled = !!x.enabled;
+            return "\n              <div class=\"warhub-list-item\">\n                <div class=\"warhub-row\">\n                  <div>\n                    <div class=\"warhub-name\">".concat(esc(memberName), "</div>\n                    <div class=\"warhub-meta\">").concat(esc(["ID ".concat(memberId), x.position || '', x.member_api_key_masked || ''].filter(Boolean).join(' • ')), "</div>\n                  </div>\n                  <div class=\"warhub-actions\">\n                    <span class=\"warhub-pill ").concat(enabled ? 'enabled' : 'disabled', "\">").concat(enabled ? 'Enabled' : 'Disabled', "</span>\n                    ").concat(canManage ? "<button class=\"warhub-btn small ".concat(enabled ? '' : 'good', "\" data-toggle-member=\"").concat(esc(String(memberId)), "\" data-enabled=\"").concat(enabled ? '0' : '1', "\">").concat(enabled ? 'Disable' : 'Enable', "</button>") : '', "\n                    ").concat(canManage ? "<button class=\"warhub-btn small warn\" data-del-member=\"".concat(esc(String(memberId)), "\">Delete</button>") : '', "\n                  </div>\n                </div>\n              </div>\n            ");
+        }).join('') : '<div class="warhub-empty">No member access rows yet.</div>', "\n        </div>\n      </div>\n    ");
+    }
+    function renderAdminTab() {
+        if (!isOwnerSession()) {
+            return "\n        <div class=\"warhub-card\">\n          <h3>Admin</h3>\n          <div class=\"warhub-empty\">Owner access required.</div>\n        </div>\n      ";
+        }
+        var dash = (state === null || state === void 0 ? void 0 : state.adminDashboard) || {};
+        var items = arr(dash.items || dash.factions || []);
+        var summary = dash.summary || {};
+        return "\n      <div class=\"warhub-card\">\n        <h3>Owner Dashboard</h3>\n        <div class=\"warhub-grid two\">\n          <div class=\"warhub-metric\"><div class=\"k\">Factions</div><div class=\"v\">".concat(fmtNum(summary.faction_licenses_total || items.length || 0), "</div></div>\n          <div class=\"warhub-metric\"><div class=\"k\">Trials</div><div class=\"v\">").concat(fmtNum(summary.trials_total || 0), "</div></div>\n          <div class=\"warhub-metric\"><div class=\"k\">Paid</div><div class=\"v\">").concat(fmtNum(summary.paid_total || 0), "</div></div>\n          <div class=\"warhub-metric\"><div class=\"k\">Payment Required</div><div class=\"v\">").concat(fmtNum(summary.payment_required_total || 0), "</div></div>\n        </div>\n      </div>\n\n      <div class=\"warhub-card\">\n        <h3>Faction Licenses</h3>\n        <div class=\"warhub-list\">\n          ").concat(items.length ? items.map(function (x) {
+            var factionId = x.faction_id || x.id || '';
+            var factionName = x.faction_name || x.name || "Faction ".concat(factionId);
+            return "\n              <div class=\"warhub-list-item\">\n                <div class=\"warhub-row\">\n                  <div>\n                    <div class=\"warhub-name\">".concat(esc(factionName), "</div>\n                    <div class=\"warhub-meta\">").concat(esc(["ID ".concat(factionId), x.status || '', x.leader_name || '', x.expires_at ? fmtTs(x.expires_at) : ''].filter(Boolean).join(' • ')), "</div>\n                  </div>\n                  <div class=\"warhub-actions\">\n                    <button class=\"warhub-btn small\" data-admin-history=\"").concat(esc(String(factionId)), "\">History</button>\n                    <button class=\"warhub-btn small good\" data-admin-renew=\"").concat(esc(String(factionId)), "\">Renew</button>\n                    <button class=\"warhub-btn small warn\" data-admin-expire=\"").concat(esc(String(factionId)), "\">Expire</button>\n                  </div>\n                </div>\n              </div>\n            ");
+        }).join('') : '<div class="warhub-empty">No faction licenses found.</div>', "\n        </div>\n      </div>\n    ");
+    }
+    function renderSettingsTab() {
+        var apiKey = cleanInputValue(GM_getValue(K_API_KEY, ''));
+        var refreshMs = Number(GM_getValue(K_REFRESH, 30000)) || 30000;
+        return "\n      <div class=\"warhub-card\">\n        <h3>Keys</h3>\n        <label class=\"warhub-label\">Your Torn API Key</label>\n        <input class=\"warhub-input\" id=\"wh-api-key\" value=\"".concat(esc(apiKey), "\" placeholder=\"Paste your API key\">\n        <div class=\"warhub-actions\" style=\"margin-top:8px;\">\n          <button class=\"warhub-btn primary\" id=\"wh-save-keys\">Save Keys</button>\n          <button class=\"warhub-btn\" id=\"wh-login-btn\">Login</button>\n          <button class=\"warhub-btn warn\" id=\"wh-logout-btn\">Logout</button>\n        </div>\n      </div>\n\n      <div class=\"warhub-card\">\n        <h3>Polling</h3>\n        <label class=\"warhub-label\">Refresh every (ms)</label>\n        <input class=\"warhub-input\" id=\"wh-refresh-ms\" value=\"").concat(esc(String(refreshMs)), "\">\n        <div class=\"warhub-actions\" style=\"margin-top:8px;\">\n          <button class=\"warhub-btn\" id=\"wh-save-refresh\">Save Refresh</button>\n          <button class=\"warhub-btn\" id=\"wh-reset-positions\">Reset Positions</button>\n        </div>\n      </div>\n\n      <div class=\"warhub-card\">\n        <h3>Access Info</h3>\n        <div class=\"warhub-mini\" style=\"line-height:1.6;\">\n          Payment player: <strong>").concat(esc((accessState === null || accessState === void 0 ? void 0 : accessState.paymentPlayer) || PAYMENT_PLAYER), "</strong><br>\n          Price per enabled member: <strong>").concat(esc(fmtMoney((accessState === null || accessState === void 0 ? void 0 : accessState.pricePerMember) || PRICE_PER_MEMBER)), "</strong><br>\n          ").concat(accessSummaryMessage() ? "Status: <strong>".concat(esc(accessSummaryMessage()), "</strong>") : 'Status: <strong>Ready</strong>', "\n        </div>\n      </div>\n    ");
+    }
+    function renderAccessBanner() {
+        var msg = accessSummaryMessage();
+        if (!msg) return '';
+        var cls = (accessState === null || accessState === void 0 ? void 0 : accessState.paymentRequired) || (accessState === null || accessState === void 0 ? void 0 : accessState.blocked) || (accessState === null || accessState === void 0 ? void 0 : accessState.trialExpired) ? 'payment' : (accessState === null || accessState === void 0 ? void 0 : accessState.trialActive) ? 'trial' : 'good';
+        return "\n      <div class=\"warhub-banner ".concat(cls, "\">\n        <div><strong>Faction Access</strong></div>\n        <div class=\"warhub-mini\" style=\"margin-top:6px;\">").concat(esc(msg), "</div>\n      </div>\n    ");
+    }
+    function tabLocked(key) {
+        if (isOwnerSession()) return false;
+        if (key === 'admin') return !isOwnerSession();
+        if (key === 'terms' || key === 'faction') return !(accessState !== null && accessState !== void 0 && accessState.isFactionLeader);
+        return false;
+    }
+    function tabBtn(key, label) {
+        var active = currentTab === key ? 'active' : '';
+        var locked = tabLocked(key) ? 'locked' : '';
+        return "<button class=\"warhub-tab ".concat(active, " ").concat(locked, "\" data-tab=\"").concat(esc(key), "\">").concat(esc(label), "</button>");
+    }
+    function renderTabContent() {
+        switch (currentTab) {
+            case 'instructions': return renderInstructionsTab();
+            case 'war': return "".concat(renderAccessBanner()).concat(renderWarTab());
+            case 'terms': return renderTermsTab();
+            case 'members': return "".concat(renderAccessBanner()).concat(renderMembersTab());
+            case 'enemies': return "".concat(renderAccessBanner()).concat(renderEnemiesTab());
+            case 'hospital': return "".concat(renderAccessBanner()).concat(renderHospitalTab());
+            case 'chain': return "".concat(renderAccessBanner()).concat(renderChainTab());
+            case 'meddeals': return "".concat(renderAccessBanner()).concat(renderMedDealsTab());
+            case 'targets': return "".concat(renderAccessBanner()).concat(renderTargetsTab());
+            case 'assignments': return "".concat(renderAccessBanner()).concat(renderAssignmentsTab());
+            case 'notes': return "".concat(renderAccessBanner()).concat(renderNotesTab());
+            case 'analytics': return "".concat(renderAccessBanner()).concat(renderAnalyticsTab());
+            case 'notifications': return "".concat(renderAccessBanner()).concat(renderNotificationsTab());
+            case 'faction': return "".concat(renderAccessBanner()).concat(renderFactionTab());
+            case 'admin': return renderAdminTab();
+            case 'settings': return renderSettingsTab();
+            default: return "".concat(renderAccessBanner()).concat(renderWarTab());
+        }
+    }
+    function renderBody() {
+        if (!overlay) return;
+        overlay.innerHTML = "\n      <div class=\"warhub-head\" id=\"warhub-drag-handle\">\n        <div class=\"warhub-toprow\">\n          <div>\n            <div class=\"warhub-title\">War Hub</div>\n            <div class=\"warhub-sub\">Fries91 • Torn overlay</div>\n          </div>\n          <button class=\"warhub-close\" id=\"warhub-close-btn\" type=\"button\">Close</button>\n        </div>\n      </div>\n      <div class=\"warhub-tabs\">\n        ".concat(TAB_ORDER.map(function (_ref) {
+            var key = _ref[0], label = _ref[1];
+            return tabBtn(key, label);
+        }).join(''), "\n      </div>\n      <div class=\"warhub-body\">\n        <div id=\"warhub-status\" class=\"warhub-status\"></div>\n        ").concat(renderTabContent(), "\n      </div>\n    ");
+        bindOverlayEvents();
+        bindOverlayDrag();
+        restoreStatus();
+    }
+    function clampElementPosition(el, left, top) {
+        var rect = el.getBoundingClientRect();
+        var w = rect.width || parseInt(getComputedStyle(el).width, 10) || 320;
+        var h = rect.height || parseInt(getComputedStyle(el).height, 10) || 320;
+        var maxLeft = Math.max(4, window.innerWidth - w - 4);
+        var maxTop = Math.max(4, window.innerHeight - h - 4);
+        var clampedLeft = Math.min(Math.max(4, left), maxLeft);
+        var clampedTop = Math.min(Math.max(4, top), maxTop);
+        el.style.left = "".concat(clampedLeft, "px");
+        el.style.top = "".concat(clampedTop, "px");
+        el.style.right = 'auto';
+        el.style.bottom = 'auto';
+    }
+    function clampToViewport(el) {
+        if (!el) return;
+        var rect = el.getBoundingClientRect();
+        clampElementPosition(el, rect.left, rect.top);
+    }
+    function updateBadge() {
+        if (!shield || !badge) return;
+        var n = unreadCount();
+        if (!n) {
+            badge.style.display = 'none';
+            return;
+        }
+        var r = shield.getBoundingClientRect();
+        badge.style.display = 'block';
+        badge.textContent = String(n > 99 ? '99+' : n);
+        badge.style.left = "".concat(r.right - 10, "px");
+        badge.style.top = "".concat(r.top - 6, "px");
+        badge.style.right = 'auto';
+        badge.style.bottom = 'auto';
+    }
+    function resetShieldPosition() {
+        if (!shield) return;
+        shield.style.left = 'auto';
+        shield.style.top = '120px';
+        shield.style.right = '14px';
+        shield.style.bottom = 'auto';
+        if (window.innerWidth <= 700) {
+            shield.style.right = '8px';
+            shield.style.top = '82px';
+        }
+    }
+    function positionOverlayNearShield() {
+        if (!shield || !overlay) return;
+        var sr = shield.getBoundingClientRect();
+        var overlayWidth = Math.min(window.innerWidth - 16, 520);
+        var left = sr.right - overlayWidth;
+        var top = sr.bottom + 8;
+        if (window.innerWidth <= 700) {
+            left = 6;
+            top = 54;
+        }
+        clampElementPosition(overlay, left, top);
+    }
+    function openOverlay() {
+        if (!overlay) return;
+        isOpen = true;
+        GM_setValue(K_OPEN, true);
+        overlay.classList.add('open');
+        if (!GM_getValue(K_OVERLAY_POS, null)) positionOverlayNearShield();
+        clampToViewport(overlay);
+        renderBody();
+    }
+    function closeOverlay() {
+        if (!overlay) return;
+        isOpen = false;
+        GM_setValue(K_OPEN, false);
+        overlay.classList.remove('open');
+    }
+    function toggleOverlay() {
+        if (isOpen) closeOverlay(); else openOverlay();
+    }
+    function saveOverlayPos() {
+        if (!overlay) return;
+        GM_setValue(K_OVERLAY_POS, {
+            left: overlay.style.left || '',
+            top: overlay.style.top || '',
+            right: overlay.style.right || '',
+            bottom: overlay.style.bottom || ''
+        });
+    }
+    function saveShieldPos() {
+        if (!shield) return;
+        GM_setValue(K_SHIELD_POS, {
+            left: shield.style.left || '',
+            top: shield.style.top || '',
+            right: shield.style.right || '',
+            bottom: shield.style.bottom || ''
+        });
+    }
+    function makeDraggable(handleEl, moveEl, saveFn, extra) {
+        var active = null;
+        var startX = 0;
+        var startY = 0;
+        var startLeft = 0;
+        var startTop = 0;
+        var moved = false;
+        var THRESHOLD = 6;
+        function cleanup() {
+            document.removeEventListener('pointermove', onMove, true);
+            document.removeEventListener('pointerup', onUp, true);
+            document.removeEventListener('pointercancel', onUp, true);
+            handleEl.classList.remove('dragging');
+            moveEl.classList.remove('dragging');
+            moveEl.dataset.dragging = '0';
+            active = null;
+        }
+        function onMove(e) {
+            if (active !== e.pointerId) return;
+            var dx = e.clientX - startX;
+            var dy = e.clientY - startY;
+            if (!moved && (Math.abs(dx) >= THRESHOLD || Math.abs(dy) >= THRESHOLD)) moved = true;
+            if (!moved) return;
+            e.preventDefault();
+            dragMoved = true;
+            handleEl.classList.add('dragging');
+            moveEl.classList.add('dragging');
+            moveEl.dataset.dragging = '1';
+            clampElementPosition(moveEl, startLeft + dx, startTop + dy);
+            if (typeof extra === 'function') extra();
+        }
+        function onUp(e) {
+            if (active !== e.pointerId) return;
+            if (moved && typeof saveFn === 'function') saveFn();
+            setTimeout(function () {
+                dragMoved = false;
+            }, 120);
+            cleanup();
+        }
+        handleEl.addEventListener('pointerdown', function (e) {
+            var t = e.target;
+            if (t && (t.closest('button') || t.closest('a') || t.closest('input') || t.closest('textarea') || t.closest('select') || t.closest('summary'))) return;
+            active = e.pointerId;
+            moved = false;
+            dragMoved = false;
+            var rect = moveEl.getBoundingClientRect();
+            startX = e.clientX;
+            startY = e.clientY;
+            startLeft = rect.left;
+            startTop = rect.top;
+            moveEl.style.left = "".concat(rect.left, "px");
+            moveEl.style.top = "".concat(rect.top, "px");
+            moveEl.style.right = 'auto';
+            moveEl.style.bottom = 'auto';
+            if (handleEl.setPointerCapture) handleEl.setPointerCapture(e.pointerId);
+            document.addEventListener('pointermove', onMove, true);
+            document.addEventListener('pointerup', onUp, true);
+            document.addEventListener('pointercancel', onUp, true);
+        });
+    }
+    function bindOverlayDrag() {
+        var handle = overlay ? overlay.querySelector('#warhub-drag-handle') : null;
+        if (!handle || !overlay) return;
+        makeDraggable(handle, overlay, saveOverlayPos, updateBadge);
+    }
+    function loadAdminDashboard() {
+        return _loadAdminDashboard.apply(this, arguments);
+    }
+    function _loadAdminDashboard() {
+        _loadAdminDashboard = _asyncToGenerator(function* () {
+            if (!isOwnerSession()) return null;
+            var res = yield adminReq('GET', '/api/admin/faction-licenses');
+            if (!res.ok) {
+                setStatus(res.error || 'Could not load owner dashboard.', true);
+                return null;
+            }
+            state = state || {};
+            state.adminDashboard = _objectSpread(_objectSpread({}, res.data || {}), {}, {
+                items: arr((res.data === null || res.data === void 0 ? void 0 : res.data.items) || (res.data === null || res.data === void 0 ? void 0 : res.data.factions) || []),
+                summary: (res.data === null || res.data === void 0 ? void 0 : res.data.summary) || {}
+            });
+            if (overlay && isOpen && currentTab === 'admin') renderBody();
+            return state.adminDashboard;
+        });
+        return _loadAdminDashboard.apply(this, arguments);
+    }
+    function bindOverlayEvents() {
+        if (overlay) overlay.querySelectorAll('[data-tab]').forEach(function (btn) {
+            btn.addEventListener('click', _asyncToGenerator(function* () {
+                var tab = btn.getAttribute('data-tab') || 'war';
+                currentTab = tab;
+                GM_setValue(K_TAB, currentTab);
+                if (tab === 'faction' && ((accessState === null || accessState === void 0 ? void 0 : accessState.isFactionLeader) || isOwnerSession())) yield loadFactionMembers(true);
+                if (tab === 'admin' && isOwnerSession()) yield loadAdminDashboard();
+                renderBody();
+            }));
+        });
+        var closeBtn = overlay ? overlay.querySelector('#warhub-close-btn') : null;
+        if (closeBtn) closeBtn.addEventListener('click', function () { closeOverlay(); });
+        var snapBtn = overlay ? overlay.querySelector('#warhub-save-snapshot') : null;
+        if (snapBtn) snapBtn.addEventListener('click', _asyncToGenerator(function* () { yield doAction('POST', '/api/war/snapshot', {}, 'War snapshot saved.'); }));
+        var avOn = overlay ? overlay.querySelector('#warhub-set-available') : null;
+        if (avOn) avOn.addEventListener('click', _asyncToGenerator(function* () { yield doAction('POST', '/api/availability', { available: true }, 'Availability set to available.'); }));
+        var avOff = overlay ? overlay.querySelector('#warhub-set-unavailable') : null;
+        if (avOff) avOff.addEventListener('click', _asyncToGenerator(function* () { yield doAction('POST', '/api/availability', { available: false }, 'Availability set to unavailable.'); }));
+        var chOn = overlay ? overlay.querySelector('#warhub-set-chain-on') : null;
+        if (chOn) chOn.addEventListener('click', _asyncToGenerator(function* () { yield doAction('POST', '/api/chain-sitter', { enabled: true }, 'Chain sitter enabled.'); }));
+        var chOff = overlay ? overlay.querySelector('#warhub-set-chain-off') : null;
+        if (chOff) chOff.addEventListener('click', _asyncToGenerator(function* () { yield doAction('POST', '/api/chain-sitter', { enabled: false }, 'Chain sitter disabled.'); }));
+        var medAdd = overlay ? overlay.querySelector('#warhub-med-add') : null;
+        if (medAdd) medAdd.addEventListener('click', _asyncToGenerator(function* () {
+            var seller_name = cleanInputValue((overlay ? overlay.querySelector('#warhub-med-seller') : null).value || '');
+            var item_name = cleanInputValue((overlay ? overlay.querySelector('#warhub-med-item') : null).value || '');
+            var price = cleanInputValue((overlay ? overlay.querySelector('#warhub-med-price') : null).value || '');
+            var note = cleanInputValue((overlay ? overlay.querySelector('#warhub-med-note') : null).value || '');
+            if (!seller_name || !item_name) { setStatus('Seller and item are required.', true); return; }
+            var res = yield doAction('POST', '/api/med-deals', { seller_name: seller_name, item_name: item_name, price: price, note: note }, 'Med deal added.');
+            if (res) renderBody();
+        }));
+        if (overlay) overlay.querySelectorAll('.warhub-del-med').forEach(function (btn) {
+            btn.addEventListener('click', _asyncToGenerator(function* () {
+                var id = cleanInputValue(btn.getAttribute('data-id') || '');
+                if (!id) return;
+                var res = yield doAction('DELETE', "/api/med-deals/".concat(encodeURIComponent(id)), null, 'Med deal deleted.');
+                if (res) renderBody();
+            }));
+        });
+        var targetSel = overlay ? overlay.querySelector('#warhub-target-enemy') : null;
+        if (targetSel) targetSel.addEventListener('change', function () {
+            var opt = targetSel.selectedOptions ? targetSel.selectedOptions[0] : null;
+            var id = cleanInputValue((opt === null || opt === void 0 ? void 0 : opt.value) || '');
+            overlay.querySelector('#warhub-target-id').value = id;
+        });
+        var targetAdd = overlay ? overlay.querySelector('#warhub-target-add') : null;
+        if (targetAdd) targetAdd.addEventListener('click', _asyncToGenerator(function* () {
+            var sel = overlay.querySelector('#warhub-target-enemy');
+            var opt = sel && sel.selectedOptions ? sel.selectedOptions[0] : null;
+            var target_id = cleanInputValue((overlay.querySelector('#warhub-target-id').value) || ((opt === null || opt === void 0 ? void 0 : opt.value) || ''));
+            var target_name = cleanInputValue((opt === null || opt === void 0 ? void 0 : opt.dataset.name) || '');
+            var notes = cleanInputValue(overlay.querySelector('#warhub-target-notes').value || '');
+            if (!target_id) { setStatus('Target ID is required.', true); return; }
+            var res = yield doAction('POST', '/api/targets', { target_id: target_id, target_name: target_name, notes: notes }, 'Target added.');
+            if (res) renderBody();
+        }));
+        if (overlay) overlay.querySelectorAll('.warhub-del-target').forEach(function (btn) {
+            btn.addEventListener('click', _asyncToGenerator(function* () {
+                var id = cleanInputValue(btn.getAttribute('data-id') || '');
+                if (!id) return;
+                var res = yield doAction('DELETE', "/api/targets/".concat(encodeURIComponent(id)), null, 'Target deleted.');
+                if (res) renderBody();
+            }));
+        });
+        var saveAssign = overlay ? overlay.querySelector('#wh-save-assignment') : null;
+        if (saveAssign) saveAssign.addEventListener('click', _asyncToGenerator(function* () {
+            var war_id = cleanInputValue(((state === null || state === void 0 ? void 0 : state.war) && state.war.war_id) || ((state === null || state === void 0 ? void 0 : state.war) && state.war.id) || '');
+            var target_id = cleanInputValue(overlay.querySelector('#wh-assignment-target-id').value || '');
+            var target_name = cleanInputValue(overlay.querySelector('#wh-assignment-target-name').value || '');
+            var sel = overlay.querySelector('#wh-assignment-member');
+            var opt = sel && sel.selectedOptions ? sel.selectedOptions[0] : null;
+            var assigned_to_user_id = cleanInputValue((opt === null || opt === void 0 ? void 0 : opt.value) || '');
+            var assigned_to_name = cleanInputValue((opt === null || opt === void 0 ? void 0 : opt.dataset.name) || '');
+            var priority = cleanInputValue(overlay.querySelector('#wh-assignment-priority').value || 'normal');
+            var note = cleanInputValue(overlay.querySelector('#wh-assignment-note').value || '');
+            if (!war_id || !target_id) { setStatus('War ID and target ID are required.', true); return; }
+            var res = yield doAction('POST', '/api/war/assignments', {
+                war_id: war_id,
+                target_id: target_id,
+                target_name: target_name,
+                assigned_to_user_id: assigned_to_user_id,
+                assigned_to_name: assigned_to_name,
+                priority: priority,
+                note: note
+            }, 'Assignment saved.');
+            if (res) renderBody();
+        }));
+        if (overlay) overlay.querySelectorAll('[data-del-assignment-live]').forEach(function (btn) {
+            btn.addEventListener('click', _asyncToGenerator(function* () {
+                var id = cleanInputValue(btn.getAttribute('data-del-assignment-live') || '');
+                if (!id) return;
+                var res = yield doAction('DELETE', "/api/war/assignments/".concat(encodeURIComponent(id)), null, 'Assignment deleted.');
+                if (res) renderBody();
+            }));
+        });
+        var saveNotes = overlay ? overlay.querySelector('#wh-save-notes') : null;
+        if (saveNotes) saveNotes.addEventListener('click', function () {
+            var txt = overlay.querySelector('#wh-notes').value || '';
+            setNotes(txt);
+            setStatus('Local notes saved.');
+        });
+        var clearNotes = overlay ? overlay.querySelector('#wh-clear-notes') : null;
+        if (clearNotes) clearNotes.addEventListener('click', function () {
+            setNotes('');
+            renderBody();
+            setStatus('Local notes cleared.');
+        });
+        var addServerNote = overlay ? overlay.querySelector('#wh-add-server-note') : null;
+        if (addServerNote) addServerNote.addEventListener('click', _asyncToGenerator(function* () {
+            var war_id = cleanInputValue(((state === null || state === void 0 ? void 0 : state.war) && state.war.war_id) || ((state === null || state === void 0 ? void 0 : state.war) && state.war.id) || '');
+            var target_id = cleanInputValue(overlay.querySelector('#wh-note-target-id').value || '');
+            var note = cleanInputValue(overlay.querySelector('#wh-note-text').value || '');
+            if (!war_id || !target_id || !note) { setStatus('War ID, target ID and note are required.', true); return; }
+            var res = yield doAction('POST', '/api/war/notes', { war_id: war_id, target_id: target_id, note: note }, 'Shared note saved.');
+            if (res) renderBody();
+        }));
+        if (overlay) overlay.querySelectorAll('[data-del-note-live]').forEach(function (btn) {
+            btn.addEventListener('click', _asyncToGenerator(function* () {
+                var id = cleanInputValue(btn.getAttribute('data-del-note-live') || '');
+                if (!id) return;
+                var res = yield doAction('DELETE', "/api/war/notes/".concat(encodeURIComponent(id)), null, 'Shared note deleted.');
+                if (res) renderBody();
+            }));
+        });
+        var saveTerms = overlay ? overlay.querySelector('#warhub-terms-save') : null;
+        if (saveTerms) saveTerms.addEventListener('click', _asyncToGenerator(function* () {
+            var war_id = cleanInputValue(((state === null || state === void 0 ? void 0 : state.war) && state.war.war_id) || ((state === null || state === void 0 ? void 0 : state.war) && state.war.id) || '');
+            var terms = cleanInputValue(overlay.querySelector('#warhub-terms-text').value || '');
+            if (!war_id) { setStatus('No active war detected.', true); return; }
+            var res = yield doAction('POST', '/api/war-terms', { war_id: war_id, terms: terms }, 'War terms saved.');
+            if (res) renderBody();
+        }));
+        var delTerms = overlay ? overlay.querySelector('#warhub-terms-delete') : null;
+        if (delTerms) delTerms.addEventListener('click', _asyncToGenerator(function* () {
+            var war_id = cleanInputValue(((state === null || state === void 0 ? void 0 : state.war) && state.war.war_id) || ((state === null || state === void 0 ? void 0 : state.war) && state.war.id) || '');
+            if (!war_id) { setStatus('No active war detected.', true); return; }
+            var res = yield doAction('DELETE', "/api/war-terms?war_id=".concat(encodeURIComponent(war_id)), null, 'War terms deleted.');
+            if (res) renderBody();
+        }));
+        var refreshAlerts = overlay ? overlay.querySelector('#wh-mark-alerts-seen') : null;
+        if (refreshAlerts) refreshAlerts.addEventListener('click', _asyncToGenerator(function* () {
+            var res = yield req('GET', '/api/notifications');
+            if (!res.ok) { setStatus(res.error || 'Could not refresh notifications.', true); return; }
+            setStatus('Notifications refreshed.');
+            yield loadState(true);
+            renderBody();
+        }));
+        var clearAlerts = overlay ? overlay.querySelector('#wh-clear-alerts') : null;
+        if (clearAlerts) clearAlerts.addEventListener('click', function () {
+            setLocalNotifications([]);
+            updateBadge();
+            renderBody();
+            setStatus('Local notifications cleared.');
+        });
+        var saveFactionMember = overlay ? overlay.querySelector('#wh-fm-save') : null;
+        if (saveFactionMember) saveFactionMember.addEventListener('click', _asyncToGenerator(function* () {
+            var member_user_id = cleanInputValue(overlay.querySelector('#wh-fm-userid').value || '');
+            var member_name = cleanInputValue(overlay.querySelector('#wh-fm-name').value || '');
+            var member_api_key = cleanInputValue(overlay.querySelector('#wh-fm-key').value || '');
+            var position = cleanInputValue(overlay.querySelector('#wh-fm-position').value || '');
+            if (!member_user_id) { setStatus('Member user ID is required.', true); return; }
+            var res = yield doAction('POST', '/api/faction/members', {
+                member_user_id: member_user_id,
+                member_name: member_name,
+                member_api_key: member_api_key,
+                enabled: true,
+                position: position
+            }, 'Faction member access saved.', false);
+            if (res) { yield refreshLeaderFactionData(); setStatus('Faction member access saved.'); }
+        }));
+        if (overlay) overlay.querySelectorAll('[data-toggle-member]').forEach(function (btn) {
+            btn.addEventListener('click', _asyncToGenerator(function* () {
+                var memberId = cleanInputValue(btn.getAttribute('data-toggle-member') || '');
+                var enabled = cleanInputValue(btn.getAttribute('data-enabled') || '') === '1';
+                if (!memberId) return;
+                var res = yield doAction('POST', "/api/faction/members/".concat(encodeURIComponent(memberId), "/enable"), { enabled: enabled }, enabled ? 'Member enabled.' : 'Member disabled.', false);
+                if (res) yield refreshLeaderFactionData();
+            }));
+        });
+        if (overlay) overlay.querySelectorAll('[data-del-member]').forEach(function (btn) {
+            btn.addEventListener('click', _asyncToGenerator(function* () {
+                var memberId = cleanInputValue(btn.getAttribute('data-del-member') || '');
+                if (!memberId) return;
+                var res = yield doAction('DELETE', "/api/faction/members/".concat(encodeURIComponent(memberId)), null, 'Faction member removed.', false);
+                if (res) yield refreshLeaderFactionData();
+            }));
+        });
+        if (overlay) overlay.querySelectorAll('[data-admin-history]').forEach(function (btn) {
+            btn.addEventListener('click', _asyncToGenerator(function* () {
+                var factionId = cleanInputValue(btn.getAttribute('data-admin-history') || '');
+                if (!factionId) return;
+                var res = yield adminReq('GET', "/api/admin/faction-licenses/".concat(encodeURIComponent(factionId), "/history"));
+                if (!res.ok) { setStatus(res.error || 'Could not load payment history.', true); return; }
+                var items = arr((res.data === null || res.data === void 0 ? void 0 : res.data.items) || []);
+                var lines = items.length ? items.map(function (x) {
+                    var amount = x.amount != null ? fmtMoney(x.amount) : '—';
+                    var when = fmtTs(x.created_at || x.ts || x.time || '');
+                    var by = x.renewed_by || x.created_by || x.payment_player || '';
+                    return "".concat(when, " • ").concat(amount).concat(by ? " • ".concat(by) : '');
+                }).join('\n') : 'No payment history found.';
+                alert(lines);
+            }));
+        });
+        if (overlay) overlay.querySelectorAll('[data-admin-renew]').forEach(function (btn) {
+            btn.addEventListener('click', _asyncToGenerator(function* () {
+                var factionId = cleanInputValue(btn.getAttribute('data-admin-renew') || '');
+                if (!factionId) return;
+                var amountText = prompt('Renew faction for how much?', String(PRICE_PER_MEMBER));
+                if (amountText == null) return;
+                var amount = Number(String(amountText).replace(/[^\d.-]/g, ''));
+                if (!Number.isFinite(amount) || amount <= 0) { setStatus('Invalid renewal amount.', true); return; }
+                var note = prompt('Optional note for renewal:', '') || '';
+                var res = yield adminReq('POST', "/api/admin/faction-licenses/".concat(encodeURIComponent(factionId), "/renew"), { amount: amount, note: note });
+                if (!res.ok) { setStatus(res.error || 'Renew failed.', true); return; }
+                setStatus('Faction renewed.');
+                yield loadAdminDashboard();
+            }));
+        });
+        if (overlay) overlay.querySelectorAll('[data-admin-expire]').forEach(function (btn) {
+            btn.addEventListener('click', _asyncToGenerator(function* () {
+                var factionId = cleanInputValue(btn.getAttribute('data-admin-expire') || '');
+                if (!factionId) return;
+                if (!confirm("Expire faction ".concat(factionId, "?"))) return;
+                var res = yield adminReq('POST', "/api/admin/faction-licenses/".concat(encodeURIComponent(factionId), "/expire"), {});
+                if (!res.ok) { setStatus(res.error || 'Expire failed.', true); return; }
+                setStatus('Faction expired.');
+                yield loadAdminDashboard();
+            }));
+        });
+        var saveKeys = overlay ? overlay.querySelector('#wh-save-keys') : null;
+        if (saveKeys) saveKeys.addEventListener('click', function () {
+            var apiKey = cleanInputValue(overlay.querySelector('#wh-api-key').value || '');
+            GM_setValue(K_API_KEY, apiKey);
+            setStatus('API key saved locally.');
+        });
+        var loginBtn = overlay ? overlay.querySelector('#wh-login-btn') : null;
+        if (loginBtn) loginBtn.addEventListener('click', _asyncToGenerator(function* () {
+            var apiKey = cleanInputValue(overlay.querySelector('#wh-api-key').value || '');
+            if (apiKey) GM_setValue(K_API_KEY, apiKey);
+            var okLogin = yield login(true);
+            if (!okLogin) return;
+            setStatus('Login successful.');
+            yield loadState(true);
+            renderBody();
+        }));
+        var logoutBtn = overlay ? overlay.querySelector('#wh-logout-btn') : null;
+        if (logoutBtn) logoutBtn.addEventListener('click', _asyncToGenerator(function* () {
+            yield req('POST', '/api/logout', {});
+            clearSavedKeys();
+            state = null;
+            analyticsCache = null;
+            factionMembersCache = null;
+            accessState = normalizeAccessCache({});
+            saveAccessCache();
+            renderBody();
+            updateBadge();
+            setStatus('Logged out.');
+        }));
+        var saveRefresh = overlay ? overlay.querySelector('#wh-save-refresh') : null;
+        if (saveRefresh) saveRefresh.addEventListener('click', function () {
+            var raw = cleanInputValue(overlay.querySelector('#wh-refresh-ms').value || '30000');
+            var ms = Math.max(10000, Number(raw) || 30000);
+            GM_setValue(K_REFRESH, ms);
+            startPolling();
+            setStatus("Refresh saved: ".concat(ms, "ms"));
+        });
+        var resetPositions = overlay ? overlay.querySelector('#wh-reset-positions') : null;
+        if (resetPositions) resetPositions.addEventListener('click', function () {
+            GM_deleteValue(K_SHIELD_POS);
+            GM_deleteValue(K_OVERLAY_POS);
+            resetShieldPosition();
+            positionOverlayNearShield();
+            saveShieldPos();
+            saveOverlayPos();
+            updateBadge();
+            setStatus('Positions reset.');
+        });
+    }
+    function mount() {
+        if (mounted) return;
+        mounted = true;
+        shield = document.createElement('div');
+        shield.id = 'warhub-shield';
+        shield.textContent = '⚔️';
+        badge = document.createElement('div');
+        badge.id = 'warhub-badge';
+        overlay = document.createElement('div');
+        overlay.id = 'warhub-overlay';
+        document.body.appendChild(shield);
+        document.body.appendChild(badge);
+        document.body.appendChild(overlay);
+        var savedShield = GM_getValue(K_SHIELD_POS, null);
+        if (savedShield && typeof savedShield === 'object') {
+            if (savedShield.left) shield.style.left = savedShield.left;
+            if (savedShield.top) shield.style.top = savedShield.top;
+            if (savedShield.right) shield.style.right = savedShield.right;
+            if (savedShield.bottom) shield.style.bottom = savedShield.bottom;
+        } else {
+            resetShieldPosition();
+        }
+        var savedOverlay = GM_getValue(K_OVERLAY_POS, null);
+        if (savedOverlay && typeof savedOverlay === 'object') {
+            if (savedOverlay.left) overlay.style.left = savedOverlay.left;
+            if (savedOverlay.top) overlay.style.top = savedOverlay.top;
+            if (savedOverlay.right) overlay.style.right = savedOverlay.right;
+            if (savedOverlay.bottom) overlay.style.bottom = savedOverlay.bottom;
+        } else {
+            positionOverlayNearShield();
+        }
+        makeDraggable(shield, shield, saveShieldPos, function () {
+            updateBadge();
+            if (!GM_getValue(K_OVERLAY_POS, null) && !isOpen) positionOverlayNearShield();
+        });
+        shield.addEventListener('click', function (e) {
+            if (dragMoved || (shield && shield.dataset.dragging === '1')) return;
+            e.preventDefault();
+            e.stopPropagation();
+            toggleOverlay();
+        });
+        window.addEventListener('resize', function () {
+            clampToViewport(shield);
+            clampToViewport(overlay);
+            updateBadge();
+        });
+        renderBody();
+        if (isOpen) overlay.classList.add('open'); else overlay.classList.remove('open');
+        updateBadge();
+    }
+    function keepMounted() {
+        if (!document.body) return;
+        if (!document.getElementById('warhub-shield') || !document.getElementById('warhub-overlay')) {
+            mounted = false;
+            shield = null;
+            overlay = null;
+            badge = null;
+            mount();
+        }
+    }
+    function startMountWatcher() {
+        if (remountTimer) clearInterval(remountTimer);
+        remountTimer = setInterval(keepMounted, 2000);
+    }
+    function startPolling() {
+        if (pollTimer) clearInterval(pollTimer);
+        var ms = Math.max(10000, Number(GM_getValue(K_REFRESH, 30000)) || 30000);
+        pollTimer = setInterval(function () {
+            return _asyncToGenerator(function* () {
+                if (!cleanInputValue(GM_getValue(K_SESSION, ''))) return;
+                yield loadState(true);
+                updateBadge();
+            })();
+        }, ms);
+    }
+    function boot() {
+        return _boot.apply(this, arguments);
+    }
+    function _boot() {
+        _boot = _asyncToGenerator(function* () {
+            mount();
+            startMountWatcher();
+            startPolling();
+            var health = yield healthCheck();
+            if (!health.ok) {
+                setStatus('Server offline or unreachable.', true);
+                return;
+            }
+            var hasApiKey = !!cleanInputValue(GM_getValue(K_API_KEY, ''));
+            var hasSession = !!cleanInputValue(GM_getValue(K_SESSION, ''));
+            if (hasApiKey && !hasSession) yield login(false);
+            if (cleanInputValue(GM_getValue(K_SESSION, '')) && canUseProtectedFeatures()) {
+                yield loadState(true);
+                yield loadAnalytics().catch(function () { return null; });
+                updateBadge();
+                if (isOpen) renderBody();
+            } else {
+                renderBody();
+            }
+        });
+        return _boot.apply(this, arguments);
+    }
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', boot, { once: true });
     } else {
-      resetShieldPosition();
+        boot();
     }
 
-    const savedOverlay = GM_getValue(K_OVERLAY_POS, null);
-    if (savedOverlay && typeof savedOverlay === "object") {
-      if (savedOverlay.left) overlay.style.left = savedOverlay.left;
-      if (savedOverlay.top) overlay.style.top = savedOverlay.top;
-      if (savedOverlay.right) overlay.style.right = savedOverlay.right;
-      if (savedOverlay.bottom) overlay.style.bottom = savedOverlay.bottom;
-    } else {
-      positionOverlayNearShield();
+    function _toConsumableArray(arr) {
+        if (Array.isArray(arr)) return arr.slice();
+        return Array.from(arr || []);
     }
-
-    makeDraggable(shield, shield, saveShieldPos, () => {
-      updateBadge();
-      if (!GM_getValue(K_OVERLAY_POS, null) && !isOpen) positionOverlayNearShield();
-    });
-
-    shield.addEventListener("click", (e) => {
-      if (dragMoved || shield?.dataset.dragging === "1") return;
-      e.preventDefault();
-      e.stopPropagation();
-      toggleOverlay();
-    });
-
-    window.addEventListener("resize", () => {
-      clampToViewport(shield);
-      clampToViewport(overlay);
-      updateBadge();
-    });
-
-    renderBody();
-    if (isOpen) overlay.classList.add("open");
-    else overlay.classList.remove("open");
-    updateBadge();
-  }
-
-  function keepMounted() {
-    if (!document.body) return;
-    if (!document.getElementById("warhub-shield") || !document.getElementById("warhub-overlay")) {
-      mounted = false;
-      shield = null;
-      overlay = null;
-      badge = null;
-      mount();
+    function _defineProperty(obj, key, value) {
+        if (key in obj) {
+            Object.defineProperty(obj, key, { value: value, enumerable: true, configurable: true, writable: true });
+        } else {
+            obj[key] = value;
+        }
+        return obj;
     }
-  }
-
-  function startMountWatcher() {
-    if (remountTimer) clearInterval(remountTimer);
-    remountTimer = setInterval(keepMounted, 2000);
-  }
-
-  function startPolling() {
-    if (pollTimer) clearInterval(pollTimer);
-    const ms = Math.max(10000, Number(GM_getValue(K_REFRESH, 30000)) || 30000);
-    pollTimer = setInterval(async () => {
-      if (!cleanInputValue(GM_getValue(K_SESSION, ""))) return;
-      await loadState(true);
-      updateBadge();
-    }, ms);
-  }
-
-  async function boot() {
-    mount();
-    startMountWatcher();
-    startPolling();
-
-    const health = await healthCheck();
-    if (!health.ok) {
-      setStatus("Server offline or unreachable.", true);
-      return;
+    function _objectSpread(target) {
+        for (var i = 1; i < arguments.length; i++) {
+            var source = arguments[i] != null ? arguments[i] : {};
+            var ownKeys = Object.keys(source);
+            if (typeof Object.getOwnPropertySymbols === 'function') {
+                ownKeys = ownKeys.concat(Object.getOwnPropertySymbols(source).filter(function (sym) {
+                    return Object.getOwnPropertyDescriptor(source, sym).enumerable;
+                }));
+            }
+            ownKeys.forEach(function (key) {
+                _defineProperty(target, key, source[key]);
+            });
+        }
+        return target;
     }
-
-    const hasApiKey = !!cleanInputValue(GM_getValue(K_API_KEY, ""));
-    const hasSession = !!cleanInputValue(GM_getValue(K_SESSION, ""));
-
-    if (hasApiKey && !hasSession) {
-      await login(false);
+    function _typeof(obj) {
+        return typeof obj;
     }
-
-    if (cleanInputValue(GM_getValue(K_SESSION, "")) && canUseProtectedFeatures()) {
-      await loadState(true);
-      await loadAnalytics().catch(() => null);
-      updateBadge();
-      if (isOpen) renderBody();
-    } else {
-      renderBody();
+    function _asyncToGenerator(fn) {
+        return function () {
+            var self = this, args = arguments;
+            return new Promise(function (resolve, reject) {
+                var gen = fn.apply(self, args);
+                function step(key, arg) {
+                    var info;
+                    try { info = gen[key](arg); } catch (error) { reject(error); return; }
+                    var value = info.value;
+                    if (info.done) {
+                        resolve(value);
+                    } else {
+                        Promise.resolve(value).then(function (val) { step('next', val); }, function (err) { step('throw', err); });
+                    }
+                }
+                step('next');
+            });
+        };
     }
-  }
-
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", boot, { once: true });
-  } else {
-    boot();
-  }
 })();
