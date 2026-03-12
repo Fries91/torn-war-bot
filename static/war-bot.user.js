@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         War Hub ⚔️
 // @namespace    fries91-war-hub
-// @version      2.9.5
+// @version      2.9.6
 // @description  War Hub by Fries91. Faction-license aware overlay with draggable icon, draggable overlay, PDA friendly, shared war tools, faction member management, and payment lock handling.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -552,7 +552,7 @@ function whDetectWarPairFromFactionPage() {
     function normalizeState(data) {
     var s = data || {};
     var me = s.me || s.user || {};
-    var war = _objectSpread({}, s.war || s.war_info || {});
+    var war = Object.assign({}, s.war || s.war_info || {});
     if (war.active == null) war.active = !!(s.has_war || war.war_id || war.id);
 
     var faction = s.faction || s.my_faction || s.ourFaction || {};
@@ -607,7 +607,7 @@ function whDetectWarPairFromFactionPage() {
         enemyFactionName = '';
     }
 
-    var enemyFaction = _objectSpread(_objectSpread({}, enemyFactionRaw), {}, {
+    var enemyFaction = Object.assign({}, enemyFactionRaw, {
         id: enemyFactionId || '',
         faction_id: enemyFactionId || '',
         name: enemyFactionName || 'Enemy Faction',
@@ -690,8 +690,8 @@ function whDetectWarPairFromFactionPage() {
                     if ((accessState === null || accessState === void 0 ? void 0 : accessState.blocked) || (accessState === null || accessState === void 0 ? void 0 : accessState.paymentRequired) || (accessState === null || accessState === void 0 ? void 0 : accessState.trialExpired)) renderBody();
                     return;
                 }
-                state = normalizeState(res.data || {});
                 whDetectWarPairFromFactionPage();
+state = normalizeState(res.data || {});
                 if ((accessState === null || accessState === void 0 ? void 0 : accessState.isFactionLeader) && !factionMembersCache) loadFactionMembers()["catch"](function () {
                     return null;
                 });
