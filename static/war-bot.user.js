@@ -368,6 +368,84 @@ var K_OVERVIEW_BOXES = 'warhub_overview_boxes_v3';
             });
         });
     }
+    
+function whGetOwnFactionId() {
+    try {
+        return String((state && state.faction && (state.faction.faction_id || state.faction.id)) || '').trim();
+    } catch (e) {
+        return '';
+    }
+}
+
+function whSaveWarPairFallback(data) {
+    try {
+        GM_setValue('war_pair_fallback_v1', JSON.stringify({
+            enemy_faction_id: String(data.enemy_faction_id || ''),
+            enemy_faction_name: String(data.enemy_faction_name || ''),
+            saved_at: Date.now()
+        }));
+    } catch (e) {}
+}
+
+function whLoadWarPairFallback() {
+    try {
+        var raw = GM_getValue('war_pair_fallback_v1', '');
+        if (!raw) return null;
+        var obj = JSON.parse(raw);
+        if (!obj || !obj.enemy_faction_id) return null;
+        return obj;
+    } catch (e) {
+        return null;
+    }
+}
+
+function whDetectWarPairFromFactionPage() {
+    try {
+        var href = String(location.href || '');
+        if (href.indexOf('factions.php?step=your&type=1') === -1) return null;
+
+        var ownFactionId = whGetOwnFactionId();
+        var links = Array.prototype.slice.call(document.querySelectorAll('a[href*="factions.php"]'));
+        var found = [];
+
+        links.forEach(function (a) {
+            var url = String(a.getAttribute('href') || '');
+            var text = String((a.textContent || '').trim());
+
+            var m = url.match(/(?:ID|id|XID|factionID)=([0-9]+)/);
+            if (!m) return;
+
+            var factionId = String(m[1] || '').trim();
+            if (!factionId) return;
+            if (ownFactionId && factionId === ownFactionId) return;
+
+            found.push({
+                faction_id: factionId,
+                faction_name: text || ('Faction ' + factionId)
+            });
+        });
+
+        var unique = [];
+        var seen = {};
+        found.forEach(function (x) {
+            if (!x.faction_id || seen[x.faction_id]) return;
+            seen[x.faction_id] = true;
+            unique.push(x);
+        });
+
+        if (!unique.length) return null;
+
+        var enemy = unique[0];
+        whSaveWarPairFallback({
+            enemy_faction_id: enemy.faction_id,
+            enemy_faction_name: enemy.faction_name
+        });
+
+        return enemy;
+    } catch (e) {
+        return null;
+    }
+}
     function healthCheck() {
         return _healthCheck.apply(this, arguments);
     }
@@ -478,8 +556,19 @@ var K_OVERVIEW_BOXES = 'warhub_overview_boxes_v3';
         if (war.active == null) war.active = !!(s.has_war || war.war_id || war.id);
         var faction = s.faction || s.my_faction || {};
         var enemyFactionRaw = s.enemy_faction || s.opponent || war.enemy_faction || {};
-        var enemyFactionId = enemyFactionRaw.id || enemyFactionRaw.faction_id || s.enemy_faction_id || war.enemy_faction_id || war.opponent_faction_id || '';
-        var enemyFactionName = enemyFactionRaw.name || s.enemy_faction_name || war.enemy_faction_name || war.opponent_faction_name || '';
+var warPairFallback = whLoadWarPairFallback() || {};
+var ownFactionId = String((s.faction && (s.faction.faction_id || s.faction.id)) || '').trim();
+var ownFactionName = String((s.faction && s.faction.name) || '').trim().toLowerCase();
+
+var enemyFactionId = enemyFactionRaw.id || enemyFactionRaw.faction_id || s.enemy_faction_id || war.enemy_faction_id || war.opponent_faction_id || warPairFallback.enemy_faction_id || '';
+var enemyFactionName = enemyFactionRaw.name || s.enemy_faction_name || war.enemy_faction_name || war.opponent_faction_name || warPairFallback.enemy_faction_name || '';
+
+if (enemyFactionId && ownFactionId && String(enemyFactionId).trim() === ownFactionId) {
+    enemyFactionId = String(warPairFallback.enemy_faction_id || '').trim();
+}
+if (enemyFactionName && ownFactionName && String(enemyFactionName).trim().toLowerCase() === ownFactionName) {
+    enemyFactionName = String(warPairFallback.enemy_faction_name || '').trim();
+}
         var enemyFaction = _objectSpread(_objectSpread({}, enemyFactionRaw), {}, {
             id: enemyFactionId,
             faction_id: enemyFactionRaw.faction_id || enemyFactionId,
@@ -557,6 +646,7 @@ var K_OVERVIEW_BOXES = 'warhub_overview_boxes_v3';
                     return;
                 }
                 state = normalizeState(res.data || {});
+                whDetectWarPairFromFactionPage();
                 if ((accessState === null || accessState === void 0 ? void 0 : accessState.isFactionLeader) && !factionMembersCache) loadFactionMembers()["catch"](function () {
                     return null;
                 });
