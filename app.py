@@ -886,7 +886,7 @@ if enemy_faction_id and bool(war_info.get("has_war")) and not raw_enemy_members:
     if not enemy_faction_name:
         enemy_faction_name = str(enemy_info.get("faction_name") or "").strip()
 
-if raw_enemy_members:
+    if raw_enemy_members:
     enemies = _merge_enemy_state(raw_enemy_members, war_id)
 
     if enemy_faction_id and bool(war_info.get("has_war")) and not raw_enemy_members:
