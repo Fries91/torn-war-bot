@@ -879,11 +879,11 @@ def api_state():
 
     raw_enemy_members = war_info.get("enemy_members") or []
 
-    if enemy_faction_id and bool(war_info.get("has_war")) and not raw_enemy_members:
-        enemy_info = _faction_basic_by_id(war_api_key or api_key, enemy_faction_id)
-        raw_enemy_members = enemy_info.get("members") or []
-        if not enemy_faction_name:
-            enemy_faction_name = str(enemy_info.get("faction_name") or "").strip()
+if enemy_faction_id and bool(war_info.get("has_war")) and not raw_enemy_members:
+    enemy_info = _faction_basic_by_id(war_api_key or api_key, enemy_faction_id)
+    raw_enemy_members = enemy_info.get("members") or []
+    if not enemy_faction_name:
+        enemy_faction_name = str(enemy_info.get("faction_name") or "").strip()
 
     enemies = _merge_enemy_state(raw_enemy_members, war_id)
 
