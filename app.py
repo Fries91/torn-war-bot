@@ -853,12 +853,15 @@ def api_state():
         "war_id": "",
         "enemy_faction_id": "",
         "enemy_faction_name": "",
+        "enemy_members": [],
         "score_us": 0,
         "score_them": 0,
         "target_score": 0,
         "chain_us": 0,
         "chain_them": 0,
         "status_text": "Currently not in war",
+        "source_ok": False,
+        "source_note": "No war API key available.",
     }
 
     members = []
@@ -874,8 +877,9 @@ def api_state():
     enemy_faction_id = str(war_info.get("enemy_faction_id") or "").strip()
     enemy_faction_name = str(war_info.get("enemy_faction_name") or "").strip()
 
-    raw_enemy_members = []
-    if enemy_faction_id and bool(war_info.get("has_war")):
+    raw_enemy_members = war_info.get("enemy_members") or []
+
+    if enemy_faction_id and bool(war_info.get("has_war")) and not raw_enemy_members:
         enemy_info = _faction_basic_by_id(war_api_key or api_key, enemy_faction_id)
         raw_enemy_members = enemy_info.get("members") or []
         if not enemy_faction_name:
@@ -896,6 +900,20 @@ def api_state():
     settings = {
         "refresh_seconds": _to_int(get_user_setting(user_id, "refresh_seconds"), DEFAULT_REFRESH_SECONDS),
         "compact_mode": _safe_bool(get_user_setting(user_id, "compact_mode")),
+    }
+
+    debug_war = {
+        "war_id": str(war_info.get("war_id") or ""),
+        "phase": str(war_info.get("phase") or ""),
+        "has_war": bool(war_info.get("has_war")),
+        "active": bool(war_info.get("active")),
+        "registered": bool(war_info.get("registered")),
+        "enemy_faction_id": enemy_faction_id,
+        "enemy_faction_name": enemy_faction_name,
+        "enemy_members_from_summary": len(war_info.get("enemy_members") or []),
+        "enemy_members_after_fetch": len(raw_enemy_members or []),
+        "source_ok": bool(war_info.get("source_ok")),
+        "source_note": str(war_info.get("source_note") or ""),
     }
 
     return ok(
@@ -956,6 +974,7 @@ def api_state():
         },
         has_war=bool(war_info.get("has_war")),
         is_ranked_war=bool(war_info.get("has_war")),
+        debug_war=debug_war,
     )
 
 
