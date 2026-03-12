@@ -687,29 +687,31 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
         out["source_note"] = str(wars_res.get("source_note", out["source_note"]))
         return out
 
-    factions = chosen_war.get("factions") or []
+    factions = [x for x in (chosen_war.get("factions") or []) if isinstance(x, dict)]
+
     my_side = None
     enemy_side = None
 
-    # First: exact faction-id match
+    my_name_lower = resolved_my_faction_name.lower().strip()
+
+    # 1. Exact match by faction id
     if resolved_my_faction_id:
         for faction in factions:
             fid = str(faction.get("faction_id") or "").strip()
-            if fid and fid == resolved_my_faction_id:
+            if fid == resolved_my_faction_id:
                 my_side = faction
                 break
 
-    # Second: exact faction-name match
-    if not my_side and resolved_my_faction_name:
-        my_name_lower = resolved_my_faction_name.strip().lower()
+    # 2. Exact match by faction name
+    if not my_side and my_name_lower:
         for faction in factions:
             fname = str(faction.get("faction_name") or "").strip().lower()
-            if fname and fname == my_name_lower:
+            if fname == my_name_lower:
                 my_side = faction
                 break
 
-    # Third: if exactly two sides and one is not us by id/name, use the other as enemy
-    if my_side and len(factions) >= 2:
+    # 3. Pick enemy as first side that is NOT ours
+    if my_side:
         my_id = str(my_side.get("faction_id") or "").strip()
         my_name = str(my_side.get("faction_name") or "").strip().lower()
 
@@ -717,46 +719,49 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
             fid = str(faction.get("faction_id") or "").strip()
             fname = str(faction.get("faction_name") or "").strip().lower()
 
-            same_id = my_id and fid == my_id
-            same_name = my_name and fname == my_name
+            if my_id and fid == my_id:
+                continue
+            if my_name and fname == my_name:
+                continue
 
-            if not same_id and not same_name:
-                enemy_side = faction
-                break
+            enemy_side = faction
+            break
 
-    # Only use fallback split if there are exactly two factions
+    # 4. Safe fallback only when there are exactly 2 different factions
     if not my_side and len(factions) == 2:
-        f0 = factions[0]
-        f1 = factions[1]
+        a = factions[0]
+        b = factions[1]
 
-        f0_id = str(f0.get("faction_id") or "").strip()
-        f1_id = str(f1.get("faction_id") or "").strip()
-        f0_name = str(f0.get("faction_name") or "").strip().lower()
-        f1_name = str(f1.get("faction_name") or "").strip().lower()
-        my_name_lower = resolved_my_faction_name.strip().lower()
+        a_id = str(a.get("faction_id") or "").strip()
+        b_id = str(b.get("faction_id") or "").strip()
+        a_name = str(a.get("faction_name") or "").strip().lower()
+        b_name = str(b.get("faction_name") or "").strip().lower()
 
-        if resolved_my_faction_id and f0_id == resolved_my_faction_id:
-            my_side, enemy_side = f0, f1
-        elif resolved_my_faction_id and f1_id == resolved_my_faction_id:
-            my_side, enemy_side = f1, f0
-        elif my_name_lower and f0_name == my_name_lower:
-            my_side, enemy_side = f0, f1
-        elif my_name_lower and f1_name == my_name_lower:
-            my_side, enemy_side = f1, f0
+        if resolved_my_faction_id and a_id == resolved_my_faction_id:
+            my_side, enemy_side = a, b
+        elif resolved_my_faction_id and b_id == resolved_my_faction_id:
+            my_side, enemy_side = b, a
+        elif my_name_lower and a_name == my_name_lower:
+            my_side, enemy_side = a, b
+        elif my_name_lower and b_name == my_name_lower:
+            my_side, enemy_side = b, a
 
-    my_id = str((my_side or {}).get("faction_id") or resolved_my_faction_id or "")
-    my_name = str((my_side or {}).get("faction_name") or resolved_my_faction_name or "")
+    my_id = str((my_side or {}).get("faction_id") or resolved_my_faction_id or "").strip()
+    my_name = str((my_side or {}).get("faction_name") or resolved_my_faction_name or "").strip()
+
     enemy_id = str((enemy_side or {}).get("faction_id") or "").strip()
     enemy_name = str((enemy_side or {}).get("faction_name") or "").strip()
 
-    # Never let enemy side equal our side
+    # Never let enemy equal us
     if enemy_id and my_id and enemy_id == my_id:
         enemy_id = ""
         enemy_name = ""
+        enemy_side = None
 
-    if enemy_name and my_name and enemy_name.strip().lower() == my_name.strip().lower():
+    if enemy_name and my_name and enemy_name.lower() == my_name.lower():
         enemy_id = ""
         enemy_name = ""
+        enemy_side = None
 
     phase = str(chosen_war.get("phase") or "none")
     is_active = phase == "active"
@@ -778,10 +783,10 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
             enemy_name = str(enemy_faction.get("faction_name") or enemy_name)
             enemy_members = enemy_faction.get("members", [])
 
-    if not enemy_name and enemy_id:
-        enemy_name = f"Faction {enemy_id}"
     if not my_name and my_id:
         my_name = f"Faction {my_id}"
+    if not enemy_name and enemy_id:
+        enemy_name = f"Faction {enemy_id}"
 
     status_text = str(chosen_war.get("status_text") or "")
     if not status_text:
