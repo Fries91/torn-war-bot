@@ -874,10 +874,20 @@ def api_state():
     members.sort(key=_bucket_sort_key)
 
     war_id = str(war_info.get("war_id") or "")
-    enemy_faction_id = str(war_info.get("enemy_faction_id") or "").strip()
-    enemy_faction_name = str(war_info.get("enemy_faction_name") or "").strip()
+enemy_faction_id = str(war_info.get("enemy_faction_id") or "").strip()
+enemy_faction_name = str(war_info.get("enemy_faction_name") or "").strip()
 
-    raw_enemy_members = war_info.get("enemy_members") or []
+raw_enemy_members = war_info.get("enemy_members") or []
+enemies = []
+
+if enemy_faction_id and bool(war_info.get("has_war")) and not raw_enemy_members:
+    enemy_info = _faction_basic_by_id(war_api_key or api_key, enemy_faction_id)
+    raw_enemy_members = enemy_info.get("members") or []
+    if not enemy_faction_name:
+        enemy_faction_name = str(enemy_info.get("faction_name") or "").strip()
+
+if raw_enemy_members:
+    enemies = _merge_enemy_state(raw_enemy_members, war_id)
 
     if enemy_faction_id and bool(war_info.get("has_war")) and not raw_enemy_members:
         enemy_info = _faction_basic_by_id(war_api_key or api_key, enemy_faction_id)
