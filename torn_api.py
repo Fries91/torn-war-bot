@@ -551,49 +551,75 @@ def faction_wars(api_key: str, faction_id: str = "") -> Dict[str, Any]:
         if not isinstance(war, dict):
             continue
 
-        parsed_factions = []
+        parsed_factions: List[Dict[str, Any]] = []
+
+        def add_side(fid: Any, fdata: Dict[str, Any], fallback_name: str = ""):
+            if not isinstance(fdata, dict):
+                return
+
+            side_id = str(
+                fid
+                or fdata.get("id")
+                or fdata.get("faction_id")
+                or fdata.get("ID")
+                or ""
+            ).strip()
+
+            side_name = str(
+                fdata.get("name")
+                or fdata.get("faction_name")
+                or fallback_name
+                or ""
+            ).strip()
+
+            score = _side_score(fdata)
+            chain = _side_chain(fdata)
+
+            if not side_id and not side_name:
+                return
+
+            for existing in parsed_factions:
+                ex_id = str(existing.get("faction_id") or "").strip()
+                ex_name = str(existing.get("faction_name") or "").strip().lower()
+                if side_id and ex_id and side_id == ex_id:
+                    return
+                if side_name and ex_name and side_name.lower() == ex_name:
+                    return
+
+            parsed_factions.append({
+                "faction_id": side_id,
+                "faction_name": side_name,
+                "score": score,
+                "chain": chain,
+                "raw": fdata,
+            })
+
         factions_raw = _extract_factions_from_war(war)
 
         if isinstance(factions_raw, dict):
             for fid, fdata in factions_raw.items():
                 if isinstance(fdata, dict):
-                    parsed_factions.append({
-                        "faction_id": str(fid),
-                        "faction_name": _side_name(fdata),
-                        "score": _side_score(fdata),
-                        "chain": _side_chain(fdata),
-                        "raw": fdata,
-                    })
+                    add_side(fid, fdata)
 
-        for key in ("faction_1", "faction1", "team_1", "team1"):
+        for key in ("faction_1", "faction1", "team_1", "team1", "attacker", "attackers", "red", "side_1", "side1"):
             side = war.get(key)
             if isinstance(side, dict):
-                sid = str(side.get("id") or side.get("faction_id") or "")
-                if sid and not any(x["faction_id"] == sid for x in parsed_factions):
-                    parsed_factions.append({
-                        "faction_id": sid,
-                        "faction_name": _side_name(side),
-                        "score": _side_score(side),
-                        "chain": _side_chain(side),
-                        "raw": side,
-                    })
+                add_side(None, side)
 
-        for key in ("faction_2", "faction2", "team_2", "team2"):
+        for key in ("faction_2", "faction2", "team_2", "team2", "defender", "defenders", "blue", "side_2", "side2"):
             side = war.get(key)
             if isinstance(side, dict):
-                sid = str(side.get("id") or side.get("faction_id") or "")
-                if sid and not any(x["faction_id"] == sid for x in parsed_factions):
-                    parsed_factions.append({
-                        "faction_id": sid,
-                        "faction_name": _side_name(side),
-                        "score": _side_score(side),
-                        "chain": _side_chain(side),
-                        "raw": side,
-                    })
+                add_side(None, side)
+
+        # extra loose scan for nested dicts that look like faction sides
+        for _, value in war.items():
+            if isinstance(value, dict):
+                possible_id = str(value.get("id") or value.get("faction_id") or value.get("ID") or "").strip()
+                possible_name = str(value.get("name") or value.get("faction_name") or "").strip()
+                if possible_id or possible_name:
+                    add_side(None, value)
 
         phase = _war_phase(war)
-
-        # be permissive: if a war object exists and isn't finished, treat unknown as registered
         if phase == "unknown":
             phase = "registered"
 
@@ -632,7 +658,6 @@ def faction_wars(api_key: str, faction_id: str = "") -> Dict[str, Any]:
         "source_ok": True,
         "source_note": f"Loaded from faction {chosen_container_name}.",
     }
-
 
 def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: str = "") -> Dict[str, Any]:
     me = me_basic(api_key)
