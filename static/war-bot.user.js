@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         War Hub ⚔️
 // @namespace    fries91-war-hub
-// @version      2.9.4
+// @version      2.9.5
 // @description  War Hub by Fries91. Faction-license aware overlay with draggable icon, draggable overlay, PDA friendly, shared war tools, faction member management, and payment lock handling.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -550,89 +550,126 @@ function whDetectWarPairFromFactionPage() {
         return _adminReq.apply(this, arguments);
     }
     function normalizeState(data) {
-        var s = data || {};
-        var me = s.me || s.user || {};
-        var war = _objectSpread({}, s.war || s.war_info || {});
-        if (war.active == null) war.active = !!(s.has_war || war.war_id || war.id);
-        var faction = s.faction || s.my_faction || {};
-        var enemyFactionRaw = s.enemy_faction || s.opponent || war.enemy_faction || {};
-var warPairFallback = whLoadWarPairFallback() || {};
-var ownFactionId = String((s.faction && (s.faction.faction_id || s.faction.id)) || '').trim();
-var ownFactionName = String((s.faction && s.faction.name) || '').trim().toLowerCase();
+    var s = data || {};
+    var me = s.me || s.user || {};
+    var war = _objectSpread({}, s.war || s.war_info || {});
+    if (war.active == null) war.active = !!(s.has_war || war.war_id || war.id);
 
-var enemyFactionId = enemyFactionRaw.id || enemyFactionRaw.faction_id || s.enemy_faction_id || war.enemy_faction_id || war.opponent_faction_id || warPairFallback.enemy_faction_id || '';
-var enemyFactionName = enemyFactionRaw.name || s.enemy_faction_name || war.enemy_faction_name || war.opponent_faction_name || warPairFallback.enemy_faction_name || '';
+    var faction = s.faction || s.my_faction || s.ourFaction || {};
+    var enemyFactionRaw = s.enemy_faction || s.enemyFaction || {};
+    var warPairFallback = whLoadWarPairFallback() || {};
 
-if (enemyFactionId && ownFactionId && String(enemyFactionId).trim() === ownFactionId) {
-    enemyFactionId = String(warPairFallback.enemy_faction_id || '').trim();
-}
-if (enemyFactionName && ownFactionName && String(enemyFactionName).trim().toLowerCase() === ownFactionName) {
-    enemyFactionName = String(warPairFallback.enemy_faction_name || '').trim();
-}
-                var enemyFaction = _objectSpread(_objectSpread({}, enemyFactionRaw), {}, {
-            id: enemyFactionId || '',
-            faction_id: enemyFactionId || '',
-            name: enemyFactionName || 'Enemy Faction'
-        });
+    var members = arr(s.members || s.member_list || []);
+    var enemies = arr(s.enemies || s.enemy_members || war.enemy_members || []);
+    var medDeals = arr(s.med_deals || s.medDeals || []);
+    var dibs = arr(s.dibs || []);
+    var assignments = arr(s.assignments || []);
+    var notes = arr(s.notes || []);
+    var notifications = arr(s.notifications || []);
+    var bounties = arr(s.bounties || []);
+    var targets = arr(s.targets || []);
+    var terms = s.war_terms || s.terms || {};
+    var medDealsMessage = String(s.med_deals_message || s.medDealsMessage || '');
 
-        var enemies = arr(s.enemies || s.enemy_members || war.enemy_members || []);
+    var ownFactionId = String((faction && (faction.faction_id || faction.id)) || '').trim();
+    var ownFactionName = String((faction && faction.name) || '').trim().toLowerCase();
 
-        return {
-            user: s.user || {},
-            me: s.me || {},
-            war: war,
-            faction: faction,
-            ourFaction: faction,
-            enemyFaction: enemyFaction,
-            enemy_faction: enemyFaction,
-            enemy_faction_id: enemyFactionId || '',
-            enemy_faction_name: enemyFactionName || '',
-            members: members,
-            enemies: enemies,
-            medDeals: medDeals,
-            med_deals: medDeals,
-            med_deals_message: medDealsMessage,
-            medDealsMessage: medDealsMessage,
-            dibs: dibs,
-            assignments: assignments,
-            notes: notes,
-            terms: terms,
-            war_terms: terms,
-            notifications: notifications,
-            bounties: bounties,
-            targets: targets,
-            settings: s.settings || {},
-            score: s.score || {
-                our: Number(war.score_us || faction.score || 0),
-                enemy: Number(war.score_them || enemyFaction.score || 0),
-                target: Number(war.target_score || 0)
-            },
-            has_war: hasWar,
-            is_ranked_war: !!(s.is_ranked_war || hasWar),
-            license: s.license || {}
-        };
-            enemyFaction: enemyFaction,
-            enemy_faction: s.enemy_faction || enemyFaction,
-            enemy_faction_id: s.enemy_faction_id || enemyFactionId,
-            enemy_faction_name: s.enemy_faction_name || enemyFactionName,
-            members: members,
-            enemies: enemies,
-            hospital: hospital,
-            medDeals: medDeals,
-            targets: targets,
-            assignments: assignments,
-            notifications: notifications,
-            chainSitters: chainSitters,
-            notes: notes,
-            warTerms: warTerms,
-            medDealBuyers: medDealBuyers,
-            medDealsMessage: medDealsMessage,
-            factionLicense: factionLicense,
-            factionAccess: factionAccess,
-            factionManagement: factionManagement,
-            payment: payment
-        });
+    var enemyFactionId = String(
+        enemyFactionRaw.faction_id ||
+        enemyFactionRaw.id ||
+        s.enemy_faction_id ||
+        war.enemy_faction_id ||
+        war.opponent_faction_id ||
+        warPairFallback.enemy_faction_id ||
+        ''
+    ).trim();
+
+    var enemyFactionName = String(
+        enemyFactionRaw.name ||
+        s.enemy_faction_name ||
+        war.enemy_faction_name ||
+        war.opponent_faction_name ||
+        warPairFallback.enemy_faction_name ||
+        ''
+    ).trim();
+
+    if (enemyFactionId && ownFactionId && enemyFactionId === ownFactionId) {
+        enemyFactionId = String(warPairFallback.enemy_faction_id || '').trim();
     }
+    if (enemyFactionName && ownFactionName && enemyFactionName.toLowerCase() === ownFactionName) {
+        enemyFactionName = String(warPairFallback.enemy_faction_name || '').trim();
+    }
+
+    if (enemyFactionId && ownFactionId && enemyFactionId === ownFactionId) {
+        enemyFactionId = '';
+    }
+    if (enemyFactionName && ownFactionName && enemyFactionName.toLowerCase() === ownFactionName) {
+        enemyFactionName = '';
+    }
+
+    var enemyFaction = _objectSpread(_objectSpread({}, enemyFactionRaw), {}, {
+        id: enemyFactionId || '',
+        faction_id: enemyFactionId || '',
+        name: enemyFactionName || 'Enemy Faction',
+        score: Number(
+            (enemyFactionRaw && enemyFactionRaw.score) ||
+            s.enemy_score ||
+            war.score_them ||
+            0
+        ) || 0,
+        chain: Number(
+            (enemyFactionRaw && enemyFactionRaw.chain) ||
+            war.chain_them ||
+            0
+        ) || 0
+    });
+
+    var hasWar = !!(
+        s.has_war ||
+        s.is_ranked_war ||
+        war.active ||
+        war.registered ||
+        war.war_id ||
+        war.id ||
+        enemyFactionId ||
+        enemies.length
+    );
+
+    return {
+        user: s.user || {},
+        me: me,
+        war: war,
+        faction: faction,
+        ourFaction: faction,
+        enemyFaction: enemyFaction,
+        enemy_faction: enemyFaction,
+        enemy_faction_id: enemyFactionId || '',
+        enemy_faction_name: enemyFactionName || '',
+        members: members,
+        enemies: enemies,
+        medDeals: medDeals,
+        med_deals: medDeals,
+        med_deals_message: medDealsMessage,
+        medDealsMessage: medDealsMessage,
+        dibs: dibs,
+        assignments: assignments,
+        notes: notes,
+        terms: terms,
+        war_terms: terms,
+        notifications: notifications,
+        bounties: bounties,
+        targets: targets,
+        settings: s.settings || {},
+        score: s.score || {
+            our: Number(war.score_us || faction.score || 0) || 0,
+            enemy: Number(war.score_them || enemyFaction.score || 0) || 0,
+            target: Number(war.target_score || war.target || 0) || 0
+        },
+        has_war: hasWar,
+        is_ranked_war: !!(s.is_ranked_war || hasWar),
+        license: s.license || {}
+    };
+}
     function loadState() {
         return _loadState.apply(this, arguments);
     }
@@ -1227,21 +1264,54 @@ function renderOverviewTab() {
         return "\n      ".concat(banner, "\n      <div class=\"warhub-card\">\n        <h3>Getting Started</h3>\n        <div class=\"warhub-list\">\n          <div class=\"warhub-list-item\">\n            <div class=\"warhub-name\">1. Save your Torn API key</div>\n            <div class=\"warhub-meta\">Open Settings and paste your personal API key, then press Save Keys.</div>\n          </div>\n          <div class=\"warhub-list-item\">\n            <div class=\"warhub-name\">2. Login to War Hub</div>\n            <div class=\"warhub-meta\">Press Login in Settings. Once connected, the overlay will load your faction and war state.</div>\n          </div>\n          <div class=\"warhub-list-item\">\n            <div class=\"warhub-name\">3. Leader-only faction access</div>\n            <div class=\"warhub-meta\">Faction leaders can manage member access from the Faction tab when licensing is enabled.</div>\n          </div>\n          <div class=\"warhub-list-item\">\n            <div class=\"warhub-name\">4. Use tabs for shared tools</div>\n            <div class=\"warhub-meta\">War, Terms, Targets, Assignments, Notes, and Med Deals are shared faction tools.</div>\n          </div>\n        </div>\n      </div>\n\n      <div class=\"warhub-card\">\n        <h3>Terms of Service</h3>\n        <div class=\"warhub-mini\" style=\"line-height:1.5;\">\n          This script is for faction coordination and convenience. You are responsible for your own Torn account, your own API key,\n          and anything you enter into this tool. Do not share full-access secrets with people you do not trust.\n        </div>\n      </div>\n\n      <div class=\"warhub-card\">\n        <h3>API Key Storage</h3>\n        <div class=\"warhub-mini\" style=\"line-height:1.5;\">\n          Your API key and session token are stored locally in your userscript storage on your device/browser.\n          The server receives your API key only when you log in or when actions require backend sync.\n          Faction-leader managed member access may store member API keys on the backend if the leader enters them in the Faction tab.\n        </div>\n      </div>\n    ");
     }
     function renderWarTab() {
-        var war = (state === null || state === void 0 ? void 0 : state.war) || {};
-        var our = (state === null || state === void 0 ? void 0 : state.faction) || (state === null || state === void 0 ? void 0 : state.our_faction) || {};
-        var enemy = (state === null || state === void 0 ? void 0 : state.enemyFaction) || (state === null || state === void 0 ? void 0 : state.enemy_faction) || {};
-        var enemyFactionId = (enemy === null || enemy === void 0 ? void 0 : enemy.faction_id) || (enemy === null || enemy === void 0 ? void 0 : enemy.id) || (state === null || state === void 0 ? void 0 : state.enemy_faction_id) || (state === null || state === void 0 ? void 0 : state.war) && state.war.enemy_faction_id || (state === null || state === void 0 ? void 0 : state.war) && state.war.opponent_faction_id || '';
-        var enemyFactionName = (enemy === null || enemy === void 0 ? void 0 : enemy.name) || (state === null || state === void 0 ? void 0 : state.enemy_faction_name) || (state === null || state === void 0 ? void 0 : state.war) && state.war.enemy_faction_name || (state === null || state === void 0 ? void 0 : state.war) && state.war.opponent_faction_name || '—';
-        var scoreUs = Number((state === null || state === void 0 ? void 0 : state.score) && state.score.our || (war === null || war === void 0 ? void 0 : war.our_score) || (our === null || our === void 0 ? void 0 : our.score) || 0) || 0;
-        var scoreThem = Number((state === null || state === void 0 ? void 0 : state.score) && state.score.enemy || (war === null || war === void 0 ? void 0 : war.enemy_score) || (enemy === null || enemy === void 0 ? void 0 : enemy.score) || 0) || 0;
-        var target = Number((state === null || state === void 0 ? void 0 : state.score) && state.score.target || (war === null || war === void 0 ? void 0 : war.target_score) || (war === null || war === void 0 ? void 0 : war.target) || 0) || 0;
-        var lead = scoreUs - scoreThem;
-        var hasWar = !!((state === null || state === void 0 ? void 0 : state.has_war) || (war === null || war === void 0 ? void 0 : war.active) || (war === null || war === void 0 ? void 0 : war.war_id) || (war === null || war === void 0 ? void 0 : war.id) || enemyFactionId || arr(state && state.enemies).length);
-        if (!hasWar) {
-            return "\n        <div class=\"warhub-card\">\n          <h3>War</h3>\n          <div class=\"warhub-empty\">Currently not in a war.</div>\n        </div>\n      ";
-        }
-        return "\n      <div class=\"warhub-card\">\n        <div class=\"warhub-section-title\">\n          <h3>War Overview</h3>\n          <span class=\"warhub-count\">".concat(esc(String((war === null || war === void 0 ? void 0 : war.war_id) || (war === null || war === void 0 ? void 0 : war.id) || 'Live')), "</span>\n        </div>\n\n        <div class=\"warhub-grid three\">\n          <div class=\"warhub-metric warhub-score-us\">\n            <div class=\"k\">Our Score</div>\n            <div class=\"v\">").concat(fmtNum(scoreUs), "</div>\n          </div>\n          <div class=\"warhub-metric warhub-score-them\">\n            <div class=\"k\">Enemy Score</div>\n            <div class=\"v\">").concat(fmtNum(scoreThem), "</div>\n          </div>\n          <div class=\"warhub-metric warhub-score-lead\">\n            <div class=\"k\">").concat(lead >= 0 ? 'Lead' : 'Behind', "</div>\n            <div class=\"v\">").concat(fmtNum(Math.abs(lead)), "</div>\n          </div>\n        </div>\n\n        <div class=\"warhub-divider\"></div>\n\n        <div class=\"warhub-grid two\">\n          <div class=\"warhub-metric\">\n            <div class=\"k\">Our Faction</div>\n            <div class=\"v\">").concat(esc((our === null || our === void 0 ? void 0 : our.name) || (state === null || state === void 0 ? void 0 : state.user) && state.user.faction_name || '—'), "</div>\n          </div>\n          <div class=\"warhub-metric\">\n            <div class=\"k\">Enemy Faction</div>\n            <div class=\"v\">").concat(esc(enemyFactionName), "</div>\n          </div>\n          <div class=\"warhub-metric\">\n            <div class=\"k\">Target Score</div>\n            <div class=\"v\">").concat(fmtNum(target), "</div>\n          </div>\n          <div class=\"warhub-metric\">\n            <div class=\"k\">Status</div>\n            <div class=\"v\">").concat(esc((war === null || war === void 0 ? void 0 : war.status) || 'Active'), "</div>\n          </div>\n        </div>\n\n        <div class=\"warhub-divider\"></div>\n\n        <div class=\"warhub-actions\">\n          <button class=\"warhub-btn primary\" id=\"warhub-save-snapshot\">Save Snapshot</button>\n          ").concat(enemyFactionId ? "<a class=\"warhub-btn\" href=\"https://www.torn.com/factions.php?step=profile&ID=".concat(encodeURIComponent(enemyFactionId), "\" target=\"_blank\" rel=\"noopener noreferrer\">Enemy Faction</a>") : '', "\n        </div>\n      </div>\n    ");
+    var war = (state === null || state === void 0 ? void 0 : state.war) || {};
+    var our = (state === null || state === void 0 ? void 0 : state.faction) || (state === null || state === void 0 ? void 0 : state.our_faction) || {};
+    var enemy = (state === null || state === void 0 ? void 0 : state.enemyFaction) || (state === null || state === void 0 ? void 0 : state.enemy_faction) || {};
+    var fallbackPair = (typeof whLoadWarPairFallback === 'function' && whLoadWarPairFallback()) || {};
+
+    var ownFactionId = String((our === null || our === void 0 ? void 0 : our.faction_id) || (our === null || our === void 0 ? void 0 : our.id) || '').trim();
+    var ownFactionName = String((our === null || our === void 0 ? void 0 : our.name) || '').trim().toLowerCase();
+
+    var enemyFactionId = String(
+        (enemy === null || enemy === void 0 ? void 0 : enemy.faction_id) ||
+        (enemy === null || enemy === void 0 ? void 0 : enemy.id) ||
+        (state === null || state === void 0 ? void 0 : state.enemy_faction_id) ||
+        (state === null || state === void 0 ? void 0 : state.war) && state.war.enemy_faction_id ||
+        (state === null || state === void 0 ? void 0 : state.war) && state.war.opponent_faction_id ||
+        fallbackPair.enemy_faction_id ||
+        ''
+    ).trim();
+
+    var enemyFactionName = String(
+        (enemy === null || enemy === void 0 ? void 0 : enemy.name) ||
+        (state === null || state === void 0 ? void 0 : state.enemy_faction_name) ||
+        (state === null || state === void 0 ? void 0 : state.war) && state.war.enemy_faction_name ||
+        (state === null || state === void 0 ? void 0 : state.war) && state.war.opponent_faction_name ||
+        fallbackPair.enemy_faction_name ||
+        '—'
+    ).trim();
+
+    if (enemyFactionId && ownFactionId && enemyFactionId === ownFactionId) {
+        enemyFactionId = '';
+        enemyFactionName = '—';
     }
+    if (enemyFactionName && ownFactionName && enemyFactionName.toLowerCase() === ownFactionName) {
+        enemyFactionId = '';
+        enemyFactionName = '—';
+    }
+
+    var scoreUs = Number((state === null || state === void 0 ? void 0 : state.score) && state.score.our || (war === null || war === void 0 ? void 0 : war.our_score) || (our === null || our === void 0 ? void 0 : our.score) || 0) || 0;
+    var scoreThem = Number((state === null || state === void 0 ? void 0 : state.score) && state.score.enemy || (war === null || war === void 0 ? void 0 : war.enemy_score) || (enemy === null || enemy === void 0 ? void 0 : enemy.score) || 0) || 0;
+    var target = Number((state === null || state === void 0 ? void 0 : state.score) && state.score.target || (war === null || war === void 0 ? void 0 : war.target_score) || (war === null || war === void 0 ? void 0 : war.target) || 0) || 0;
+    var lead = scoreUs - scoreThem;
+    var hasWar = !!((state === null || state === void 0 ? void 0 : state.has_war) || (war === null || war === void 0 ? void 0 : war.active) || (war === null || war === void 0 ? void 0 : war.war_id) || (war === null || war === void 0 ? void 0 : war.id) || enemyFactionId || arr(state && state.enemies).length);
+
+    if (!hasWar) {
+        return "\n        <div class=\"warhub-card\">\n          <h3>War</h3>\n          <div class=\"warhub-empty\">Currently not in a war.</div>\n        </div>\n      ";
+    }
+
+    return "\n      <div class=\"warhub-card\">\n        <div class=\"warhub-section-title\">\n          <h3>War Overview</h3>\n          <span class=\"warhub-count\">".concat(esc(String((war === null || war === void 0 ? void 0 : war.war_id) || (war === null || war === void 0 ? void 0 : war.id) || 'Live')), "</span>\n        </div>\n\n        <div class=\"warhub-grid three\">\n          <div class=\"warhub-metric warhub-score-us\">\n            <div class=\"k\">Our Score</div>\n            <div class=\"v\">").concat(fmtNum(scoreUs), "</div>\n          </div>\n          <div class=\"warhub-metric warhub-score-them\">\n            <div class=\"k\">Enemy Score</div>\n            <div class=\"v\">").concat(fmtNum(scoreThem), "</div>\n          </div>\n          <div class=\"warhub-metric warhub-score-lead\">\n            <div class=\"k\">").concat(lead >= 0 ? 'Lead' : 'Behind', "</div>\n            <div class=\"v\">").concat(fmtNum(Math.abs(lead)), "</div>\n          </div>\n        </div>\n\n        <div class=\"warhub-divider\"></div>\n\n        <div class=\"warhub-grid two\">\n          <div class=\"warhub-metric\">\n            <div class=\"k\">Our Faction</div>\n            <div class=\"v\">").concat(esc((our === null || our === void 0 ? void 0 : our.name) || (state === null || state === void 0 ? void 0 : state.user) && state.user.faction_name || '—'), "</div>\n          </div>\n          <div class=\"warhub-metric\">\n            <div class=\"k\">Enemy Faction</div>\n            <div class=\"v\">").concat(esc(enemyFactionName), "</div>\n          </div>\n          <div class=\"warhub-metric\">\n            <div class=\"k\">Target Score</div>\n            <div class=\"v\">").concat(fmtNum(target), "</div>\n          </div>\n          <div class=\"warhub-metric\">\n            <div class=\"k\">Status</div>\n            <div class=\"v\">").concat(esc((war === null || war === void 0 ? void 0 : war.status) || 'Active'), "</div>\n          </div>\n        </div>\n\n        <div class=\"warhub-divider\"></div>\n\n        <div class=\"warhub-actions\">\n          <button class=\"warhub-btn primary\" id=\"warhub-save-snapshot\">Save Snapshot</button>\n          ").concat(enemyFactionId ? "<a class=\"warhub-btn\" href=\"https://www.torn.com/factions.php?step=profile&ID=".concat(encodeURIComponent(enemyFactionId), "\" target=\"_blank\" rel=\"noopener noreferrer\">Enemy Faction</a>") : '', "\n        </div>\n      </div>\n    ");
+}
     function renderTermsTab() {
         var warId = (state === null || state === void 0 ? void 0 : state.war) && state.war.war_id || (state === null || state === void 0 ? void 0 : state.war) && state.war.id || '';
         var termsText = (state === null || state === void 0 ? void 0 : state.warTerms) && state.warTerms.terms_text || (state === null || state === void 0 ? void 0 : state.warTerms) && state.warTerms.terms || (state === null || state === void 0 ? void 0 : state.terms) && state.terms.terms_text || (state === null || state === void 0 ? void 0 : state.terms) && state.terms.terms || '';
