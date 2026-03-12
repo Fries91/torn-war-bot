@@ -569,40 +569,48 @@ if (enemyFactionId && ownFactionId && String(enemyFactionId).trim() === ownFacti
 if (enemyFactionName && ownFactionName && String(enemyFactionName).trim().toLowerCase() === ownFactionName) {
     enemyFactionName = String(warPairFallback.enemy_faction_name || '').trim();
 }
-        var enemyFaction = _objectSpread(_objectSpread({}, enemyFactionRaw), {}, {
-            id: enemyFactionId,
-            faction_id: enemyFactionRaw.faction_id || enemyFactionId,
+                var enemyFaction = _objectSpread(_objectSpread({}, enemyFactionRaw), {}, {
+            id: enemyFactionId || '',
+            faction_id: enemyFactionId || '',
             name: enemyFactionName || 'Enemy Faction'
         });
-        var members = arr(s.members || faction.members || s.member_list);
-        var enemies = arr(s.enemies || s.enemy_members || enemyFaction.members || war.enemy_members);
-        var hospital = s.hospital || {};
-        var medDeals = arr(s.med_deals || s.medDeals || s.deals).map(function (x) {
-            return _objectSpread(_objectSpread({}, x), {}, {
-                seller_name: (x === null || x === void 0 ? void 0 : x.seller_name) || (x === null || x === void 0 ? void 0 : x.seller) || (x === null || x === void 0 ? void 0 : x.created_by) || '',
-                buyer_name: (x === null || x === void 0 ? void 0 : x.buyer_name) || (x === null || x === void 0 ? void 0 : x.buyer) || (x === null || x === void 0 ? void 0 : x.item_name) || '',
-                note: (x === null || x === void 0 ? void 0 : x.note) || (x === null || x === void 0 ? void 0 : x.notes) || ''
-            });
-        });
-        var targets = arr(s.targets || s.smart_targets || s.assignable_targets);
-        var assignments = arr(s.assignments || s.target_assignments);
-        var notifications = arr(s.notifications || s.alerts);
-        var chainSitters = arr(s.chain_sitters || s.chainSitters || s.chain_helpers);
-        var notes = arr(s.war_notes || s.notes || []);
-        var warTerms = s.war_terms || s.terms || null;
-        var medDealBuyers = arr(s.med_deal_buyers || enemies);
-        var medDealsMessage = String(s.med_deals_message || war.message || enemyFaction.message || '').trim();
-        var factionLicense = s.faction_license || s.license || {};
-        var factionAccess = s.faction_access || {};
-        var factionManagement = s.faction_management || {};
-        var payment = s.payment || {};
-        var hasWar = !!(s.has_war || war.active || war.war_id || war.id || enemyFactionId || enemies.length);
-        updateAccessFromPayload(s, 200, !!cleanInputValue(GM_getValue(K_SESSION, '')));
-        return _objectSpread(_objectSpread({}, s), {}, {
-            has_war: hasWar,
-            me: me,
+
+        var enemies = arr(s.enemies || s.enemy_members || war.enemy_members || []);
+
+        return {
+            user: s.user || {},
+            me: s.me || {},
             war: war,
             faction: faction,
+            ourFaction: faction,
+            enemyFaction: enemyFaction,
+            enemy_faction: enemyFaction,
+            enemy_faction_id: enemyFactionId || '',
+            enemy_faction_name: enemyFactionName || '',
+            members: members,
+            enemies: enemies,
+            medDeals: medDeals,
+            med_deals: medDeals,
+            med_deals_message: medDealsMessage,
+            medDealsMessage: medDealsMessage,
+            dibs: dibs,
+            assignments: assignments,
+            notes: notes,
+            terms: terms,
+            war_terms: terms,
+            notifications: notifications,
+            bounties: bounties,
+            targets: targets,
+            settings: s.settings || {},
+            score: s.score || {
+                our: Number(war.score_us || faction.score || 0),
+                enemy: Number(war.score_them || enemyFaction.score || 0),
+                target: Number(war.target_score || 0)
+            },
+            has_war: hasWar,
+            is_ranked_war: !!(s.is_ranked_war || hasWar),
+            license: s.license || {}
+        };
             enemyFaction: enemyFaction,
             enemy_faction: s.enemy_faction || enemyFaction,
             enemy_faction_id: s.enemy_faction_id || enemyFactionId,
@@ -1061,30 +1069,53 @@ function renderOverviewTab() {
     var war = (state && state.war) || {};
     var our = (state && (state.faction || state.our_faction)) || {};
     var enemy = (state && (state.enemyFaction || state.enemy_faction)) || {};
+    var fallbackPair = (typeof whLoadWarPairFallback === 'function' && whLoadWarPairFallback()) || {};
 
-    var termsText =
-        (state && state.warTerms && (state.warTerms.terms_text || state.warTerms.terms)) ||
-        (state && state.terms && (state.terms.terms_text || state.terms.terms)) ||
-        '';
+    var ownFactionId = String((our && (our.faction_id || our.id)) || '').trim();
+    var ownFactionName = String((our && our.name) || '').trim().toLowerCase();
 
-    var enemyFactionName =
-        enemy.name ||
+    var enemyFactionId = String(
+        (enemy && (enemy.faction_id || enemy.id)) ||
+        state.enemy_faction_id ||
+        war.enemy_faction_id ||
+        fallbackPair.enemy_faction_id ||
+        ''
+    ).trim();
+
+    var enemyFactionName = String(
+        (enemy && enemy.name) ||
         state.enemy_faction_name ||
         war.enemy_faction_name ||
-        war.opponent_faction_name ||
-        '—';
+        fallbackPair.enemy_faction_name ||
+        ''
+    ).trim();
+
+    if (enemyFactionId && ownFactionId && enemyFactionId === ownFactionId) {
+        enemyFactionId = '';
+    }
+    if (enemyFactionName && ownFactionName && enemyFactionName.toLowerCase() === ownFactionName) {
+        enemyFactionName = '';
+    }
+
+    if (!enemyFactionName) {
+        enemyFactionName = '—';
+    }
 
     var scoreUs = Number((state && state.score && state.score.our) || war.our_score || our.score || 0) || 0;
-    var scoreThem = Number((state && state.score && state.score.enemy) || war.enemy_score || enemy.score || 0) || 0;
+    var scoreThem = Number((state && state.score && state.score.enemy) || war.enemy_score || (enemy && enemy.score) || 0) || 0;
     var target = Number((state && state.score && state.score.target) || war.target_score || war.target || 0) || 0;
     var lead = scoreUs - scoreThem;
-
-    var hasWar = !!(state && (state.has_war || war.active || war.war_id || war.id || enemyFactionName !== '—'));
+    var hasWar = !!(state && (state.has_war || war.active || war.registered || war.war_id || war.id || enemyFactionId || enemyFactionName !== '—'));
+    var termsText = String(
+        (state && state.war_terms && (state.war_terms.terms_text || state.war_terms.terms)) ||
+        (state && state.terms && (state.terms.terms_text || state.terms.terms)) ||
+        ''
+    );
 
     var medDealsHtml = deals.length ? deals.slice(0, 6).map(function (x) {
         return '<div class="warhub-list-item">\
             <div class="warhub-name">' + esc(x.seller_name || x.created_by_name || 'Unknown user') + '</div>\
-            <div class="warhub-meta">' + esc([x.item_name || x.buyer_name || '', x.note || ''].filter(Boolean).join(' • ')) + '</div>\
+            <div class="warhub-meta">' + esc([x.item_name || x.buyer_name || '', x.note || x.notes || ''].filter(Boolean).join(' • ')) + '</div>\
         </div>';
     }).join('') : '<div class="warhub-empty">No med deals yet.</div>';
 
@@ -1120,7 +1151,7 @@ function renderOverviewTab() {
         <div class="warhub-mini" style="line-height:1.6;">\
             <strong>Our Faction:</strong> ' + esc(our.name || '—') + '<br>\
             <strong>Enemy Faction:</strong> ' + esc(enemyFactionName) + '<br>\
-            <strong>Status:</strong> ' + esc(war.status || 'Active') + '\
+            <strong>Status:</strong> ' + esc(war.status || (war.active ? 'Active' : war.registered ? 'Registered' : 'Active')) + '\
         </div>' : '<div class="warhub-empty">Currently not in a war.</div>';
 
     var cards = [];
@@ -1140,18 +1171,18 @@ function renderOverviewTab() {
     }
 
     if (prefs.dibs) {
-    cards.push('\
-    <div class="warhub-card">\
-        <div class="warhub-section-title">\
-            <h3>Dibs</h3>\
-            <span class="warhub-count">' + fmtNum(allDibs.length) + '</span>\
-        </div>\
-        <div class="warhub-actions" style="margin-bottom:8px;">\
-            <button class="warhub-btn small" data-overview-go="hospital">Open Dibs</button>\
-        </div>\
-        <div class="warhub-list">' + dibsHtml + '</div>\
-    </div>');
-}
+        cards.push('\
+        <div class="warhub-card">\
+            <div class="warhub-section-title">\
+                <h3>Dibs</h3>\
+                <span class="warhub-count">' + fmtNum(allDibs.length) + '</span>\
+            </div>\
+            <div class="warhub-actions" style="margin-bottom:8px;">\
+                <button class="warhub-btn small" data-overview-go="hospital">Open Dibs</button>\
+            </div>\
+            <div class="warhub-list">' + dibsHtml + '</div>\
+        </div>');
+    }
 
     if (prefs.terms) {
         cards.push('\
