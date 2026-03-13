@@ -774,13 +774,47 @@ state = normalizeState(res.data || {});
         return Number((x === null || x === void 0 ? void 0 : x.hospital_seconds) || (x === null || x === void 0 ? void 0 : x.hosp_time) || (x === null || x === void 0 ? void 0 : x.hospital_time) || (x === null || x === void 0 ? void 0 : x.status) && x.status.until || 0) || 0;
     }
     function getPresenceState(x) {
-        var hosp = getHospSeconds(x);
-        if (hosp > 0) return 'hospital';
-        var raw = String((x === null || x === void 0 ? void 0 : x.online_state) || (x === null || x === void 0 ? void 0 : x.online_status) || (x === null || x === void 0 ? void 0 : x.status) || '').toLowerCase();
-        if (raw.includes('online')) return 'online';
-        if (raw.includes('idle')) return 'idle';
-        return 'offline';
-    }
+    var hosp = getHospSeconds(x);
+    if (hosp > 0) return 'hospital';
+
+    var raw = String(
+        (x === null || x === void 0 ? void 0 : x.online_state) ||
+        (x === null || x === void 0 ? void 0 : x.online_status) ||
+        (x === null || x === void 0 ? void 0 : x.status_class) ||
+        (x === null || x === void 0 ? void 0 : x.activity_bucket) ||
+        (x === null || x === void 0 ? void 0 : x.status) ||
+        (x === null || x === void 0 ? void 0 : x.display_status) ||
+        (x === null || x === void 0 ? void 0 : x.last_action) ||
+        ''
+    ).toLowerCase();
+
+    if (
+        raw.includes('hospital') ||
+        raw.includes('rehab')
+    ) return 'hospital';
+
+    if (
+        raw.includes('jail') ||
+        raw.includes('jailed')
+    ) return 'jail';
+
+    if (
+        raw.includes('travel') ||
+        raw.includes('travelling') ||
+        raw.includes('traveling') ||
+        raw.includes('abroad') ||
+        raw.includes('flying')
+    ) return 'travel';
+
+    if (
+        raw.includes('online') ||
+        raw === 'okay'
+    ) return 'online';
+
+    if (raw.includes('idle')) return 'idle';
+
+    return 'offline';
+}
     function sortHosp(list) {
         return [].concat(_toConsumableArray(arr(list))).sort(function (a, b) {
             return getHospSeconds(a) - getHospSeconds(b);
@@ -798,21 +832,40 @@ state = normalizeState(res.data || {});
         return sortAlphabetical(list);
     }
     function splitRosterGroups(list) {
-        var hospital = [];
-        var online = [];
-        var idle = [];
-        var offline = [];
-        arr(list).forEach(function (x) {
-            var stateName = getPresenceState(x);
-            if (stateName === 'hospital') hospital.push(x);else if (stateName === 'online') online.push(x);else if (stateName === 'idle') idle.push(x);else offline.push(x);
-        });
-        return {
-            hospital: sortRosterGroup(hospital, 'hospital'),
-            online: sortRosterGroup(online, 'online'),
-            idle: sortRosterGroup(idle, 'idle'),
-            offline: sortRosterGroup(offline, 'offline')
-        };
-    }
+    var hospital = [];
+    var online = [];
+    var idle = [];
+    var travel = [];
+    var jail = [];
+    var offline = [];
+
+    arr(list).forEach(function (x) {
+        var stateName = getPresenceState(x);
+
+        if (stateName === 'hospital') {
+            hospital.push(x);
+        } else if (stateName === 'online') {
+            online.push(x);
+        } else if (stateName === 'idle') {
+            idle.push(x);
+        } else if (stateName === 'travel') {
+            travel.push(x);
+        } else if (stateName === 'jail') {
+            jail.push(x);
+        } else {
+            offline.push(x);
+        }
+    });
+
+    return {
+        hospital: sortRosterGroup(hospital, 'hospital'),
+        online: sortRosterGroup(online, 'online'),
+        idle: sortRosterGroup(idle, 'idle'),
+        travel: sortRosterGroup(travel, 'travel'),
+        jail: sortRosterGroup(jail, 'jail'),
+        offline: sortRosterGroup(offline, 'offline')
+    };
+}
 
     function getActiveDibs() {
     return arr((state === null || state === void 0 ? void 0 : state.dibs) || []);
@@ -1115,7 +1168,7 @@ function renderOverviewTab() {
         (enemy && (enemy.faction_id || enemy.id)) ||
         state.enemy_faction_id ||
         war.enemy_faction_id ||
-        fallbackPair.enemy_faction_id ||
+        war.opponent_faction_id ||
         ''
     ).trim();
 
@@ -1123,9 +1176,16 @@ function renderOverviewTab() {
         (enemy && enemy.name) ||
         state.enemy_faction_name ||
         war.enemy_faction_name ||
-        fallbackPair.enemy_faction_name ||
+        war.opponent_faction_name ||
         ''
     ).trim();
+
+    if (!enemyFactionId) {
+        enemyFactionId = String(fallbackPair.enemy_faction_id || '').trim();
+    }
+    if (!enemyFactionName) {
+        enemyFactionName = String(fallbackPair.enemy_faction_name || '').trim();
+    }
 
     if (enemyFactionId && ownFactionId && enemyFactionId === ownFactionId) {
         enemyFactionId = '';
@@ -1138,11 +1198,54 @@ function renderOverviewTab() {
         enemyFactionName = '—';
     }
 
-    var scoreUs = Number((state && state.score && state.score.our) || war.our_score || our.score || 0) || 0;
-    var scoreThem = Number((state && state.score && state.score.enemy) || war.enemy_score || (enemy && enemy.score) || 0) || 0;
-    var target = Number((state && state.score && state.score.target) || war.target_score || war.target || 0) || 0;
+    var scoreUs = Number(
+        (state && state.score && state.score.our) ||
+        war.score_us ||
+        war.our_score ||
+        our.score ||
+        0
+    ) || 0;
+
+    var scoreThem = Number(
+        (state && state.score && state.score.enemy) ||
+        war.score_them ||
+        war.enemy_score ||
+        (enemy && enemy.score) ||
+        0
+    ) || 0;
+
+    var target = Number(
+        (state && state.score && state.score.target) ||
+        war.target_score ||
+        war.target ||
+        0
+    ) || 0;
+
+    var ourChain = Number(
+        (our && our.chain) ||
+        war.chain_us ||
+        0
+    ) || 0;
+
+    var enemyChain = Number(
+        (enemy && enemy.chain) ||
+        war.chain_them ||
+        0
+    ) || 0;
+
     var lead = scoreUs - scoreThem;
-    var hasWar = !!(state && (state.has_war || war.active || war.registered || war.war_id || war.id || enemyFactionId || enemyFactionName !== '—'));
+    var hasWar = !!(
+        state && (
+            state.has_war ||
+            war.active ||
+            war.registered ||
+            war.war_id ||
+            war.id ||
+            enemyFactionId ||
+            ((state.enemies || []).length)
+        )
+    );
+
     var termsText = String(
         (state && state.war_terms && (state.war_terms.terms_text || state.war_terms.terms)) ||
         (state && state.terms && (state.terms.terms_text || state.terms.terms)) ||
@@ -1182,6 +1285,14 @@ function renderOverviewTab() {
             <div class="warhub-metric">\
                 <div class="k">Target</div>\
                 <div class="v">' + fmtNum(target) + '</div>\
+            </div>\
+            <div class="warhub-metric">\
+                <div class="k">Our Chain</div>\
+                <div class="v">' + fmtNum(ourChain) + '</div>\
+            </div>\
+            <div class="warhub-metric">\
+                <div class="k">Enemy Chain</div>\
+                <div class="v">' + fmtNum(enemyChain) + '</div>\
             </div>\
         </div>\
         <div class="warhub-divider"></div>\
@@ -1362,26 +1473,93 @@ function renderOverviewTab() {
     ");
 }
     function renderEnemiesTab() {
-        var enemies = arr((state === null || state === void 0 ? void 0 : state.enemies) || []);
-        var hasWar = !!((state === null || state === void 0 ? void 0 : state.has_war) || (state === null || state === void 0 ? void 0 : state.war) && state.war.active || (state === null || state === void 0 ? void 0 : state.war) && state.war.war_id || (state === null || state === void 0 ? void 0 : state.enemy_faction_id) || (state === null || state === void 0 ? void 0 : state.enemyFaction) && state.enemyFaction.id || (state === null || state === void 0 ? void 0 : state.enemyFaction) && state.enemyFaction.faction_id);
-        if (!enemies.length && !hasWar) {
-            return "\n        <div class=\"warhub-card\">\n          <h3>Enemies</h3>\n          <div class=\"warhub-empty\">Currently not in a war.</div>\n        </div>\n      ";
-        }
-        var groups = splitRosterGroups(enemies);
-        return "\n      ".concat(rosterCard('Enemy Online', groups.online, {
-            extraClass: 'online-box',
-            enemy: true
-        }), "\n      ").concat(rosterCard('Enemy Idle', groups.idle, {
-            extraClass: 'idle-box',
-            enemy: true
-        }), "\n      ").concat(rosterCard('Enemy Hospital', groups.hospital, {
-            extraClass: 'hospital-box',
-            enemy: true
-        }), "\n      ").concat(rosterDropdown('Enemy Offline', groups.offline, {
-            extraClass: 'offline-box',
-            enemy: true
-        }), "\n    ");
+    var enemies = arr((state === null || state === void 0 ? void 0 : state.enemies) || []);
+    var hasWar = !!(
+        ((state === null || state === void 0 ? void 0 : state.has_war)) ||
+        (((state === null || state === void 0 ? void 0 : state.war) && state.war.active)) ||
+        (((state === null || state === void 0 ? void 0 : state.war) && state.war.war_id)) ||
+        ((state === null || state === void 0 ? void 0 : state.enemy_faction_id)) ||
+        (((state === null || state === void 0 ? void 0 : state.enemyFaction) && state.enemyFaction.id)) ||
+        (((state === null || state === void 0 ? void 0 : state.enemyFaction) && state.enemyFaction.faction_id))
+    );
+
+    if (!enemies.length && !hasWar) {
+        return "\n\
+        <div class=\"warhub-card\">\n\
+          <h3>Enemies</h3>\n\
+          <div class=\"warhub-empty\">Currently not in a war.</div>\n\
+        </div>\n\
+      ";
     }
+
+    var groups = splitRosterGroups(enemies);
+    var total =
+        groups.online.length +
+        groups.idle.length +
+        (groups.travel || []).length +
+        groups.hospital.length +
+        (groups.jail || []).length +
+        groups.offline.length;
+
+    return "\n\
+      <div class=\"warhub-card\">\n\
+        <div class=\"warhub-section-title\">\n\
+          <h3>Enemies Overview</h3>\n\
+          <span class=\"warhub-count\">".concat(fmtNum(total), "</span>\n\
+        </div>\n\
+        <div class=\"warhub-grid two\">\n\
+          <div class=\"warhub-metric\">\n\
+            <div class=\"k\">Online</div>\n\
+            <div class=\"v\">").concat(fmtNum(groups.online.length), "</div>\n\
+          </div>\n\
+          <div class=\"warhub-metric\">\n\
+            <div class=\"k\">Idle</div>\n\
+            <div class=\"v\">").concat(fmtNum(groups.idle.length), "</div>\n\
+          </div>\n\
+          <div class=\"warhub-metric\">\n\
+            <div class=\"k\">Travel</div>\n\
+            <div class=\"v\">").concat(fmtNum((groups.travel || []).length), "</div>\n\
+          </div>\n\
+          <div class=\"warhub-metric\">\n\
+            <div class=\"k\">Hospital</div>\n\
+            <div class=\"v\">").concat(fmtNum(groups.hospital.length), "</div>\n\
+          </div>\n\
+          <div class=\"warhub-metric\">\n\
+            <div class=\"k\">Jail</div>\n\
+            <div class=\"v\">").concat(fmtNum((groups.jail || []).length), "</div>\n\
+          </div>\n\
+          <div class=\"warhub-metric\">\n\
+            <div class=\"k\">Offline</div>\n\
+            <div class=\"v\">").concat(fmtNum(groups.offline.length), "</div>\n\
+          </div>\n\
+        </div>\n\
+      </div>\n\
+      ").concat(rosterCard('Enemy Online', groups.online, {
+        extraClass: 'online-box',
+        enemy: true
+    }), "\n\
+      ").concat(rosterCard('Enemy Idle', groups.idle, {
+        extraClass: 'idle-box',
+        enemy: true
+    }), "\n\
+      ").concat(rosterCard('Enemy Travel', groups.travel || [], {
+        extraClass: 'travel-box',
+        enemy: true
+    }), "\n\
+      ").concat(rosterCard('Enemy Hospital', groups.hospital, {
+        extraClass: 'hospital-box',
+        enemy: true
+    }), "\n\
+      ").concat(rosterCard('Enemy Jailed', groups.jail || [], {
+        extraClass: 'jail-box',
+        enemy: true
+    }), "\n\
+      ").concat(rosterDropdown('Enemy Offline', groups.offline, {
+        extraClass: 'offline-box',
+        enemy: true
+    }), "\n\
+    ");
+}
     function renderHospitalTab() {
     var ours = sortHosp(arr((state === null || state === void 0 ? void 0 : state.members) || []).filter(function (x) {
         return getHospSeconds(x) > 0;
