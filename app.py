@@ -502,7 +502,7 @@ def _member_activity_bucket(member: Dict[str, Any]) -> str:
         return "idle"
     if "offline" in s:
         return "offline"
-    return "other""
+    return "other"
 
 
 def _clean_member(member: Dict[str, Any], enemy_state: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
