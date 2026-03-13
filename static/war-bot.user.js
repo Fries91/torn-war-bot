@@ -1082,13 +1082,17 @@ function hospitalMemberRow(x, enemy) {
     var enabled = !!x.enabled_under_license || !!x.member_access_enabled || !!x.enabled;
     var leader = String(x.position || '').toLowerCase().includes('leader');
 
-    var pill = hosp > 0
+        var pill = hosp > 0
         ? '<span class="warhub-pill hosp">Hosp ' + esc(fmtHosp(hosp, hospText)) + '</span>'
         : presence === 'online'
             ? '<span class="warhub-pill online">Online</span>'
             : presence === 'idle'
                 ? '<span class="warhub-pill idle">Idle</span>'
-                : '<span class="warhub-pill offline">Offline</span>';
+                : presence === 'travel'
+                    ? '<span class="warhub-pill travel">Travel</span>'
+                    : presence === 'jail'
+                        ? '<span class="warhub-pill jail">Jail</span>'
+                        : '<span class="warhub-pill offline">Offline</span>';
 
     return '\
       <div class="warhub-list-item">\
