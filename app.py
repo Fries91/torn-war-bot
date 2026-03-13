@@ -481,7 +481,7 @@ def _member_activity_bucket(member: Dict[str, Any]) -> str:
     online_state = str(member.get("online_state", "") or "").strip().lower()
     hospital_seconds = int(member.get("hospital_seconds") or 0)
 
-    if online_state in {"online", "idle", "offline", "hospital"}:
+    if online_state in {"online", "idle", "offline", "hospital", "travel", "jail"}:
         return online_state
 
     s = " ".join([
@@ -492,13 +492,17 @@ def _member_activity_bucket(member: Dict[str, Any]) -> str:
 
     if "hospital" in s or hospital_seconds > 0:
         return "hospital"
-    if "online" in s:
+    if any(x in s for x in ["jail", "jailed"]):
+        return "jail"
+    if any(x in s for x in ["abroad", "traveling", "travelling", "travel", "flying"]):
+        return "travel"
+    if "online" in s or "okay" in s:
         return "online"
     if "idle" in s:
         return "idle"
     if "offline" in s:
         return "offline"
-    return "other"
+    return "other""
 
 
 def _clean_member(member: Dict[str, Any], enemy_state: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -519,6 +523,20 @@ def _clean_member(member: Dict[str, Any], enemy_state: Optional[Dict[str, Any]] 
             status_class = "hospital"
             hospital_seconds = hosp
 
+    display_status = str(m.get("status_detail") or m.get("status") or m.get("last_action") or "").strip()
+    if status_class == "hospital" and hospital_seconds > 0:
+        display_status = _seconds_to_text(hospital_seconds)
+    elif status_class == "travel" and not display_status:
+        display_status = "Traveling"
+    elif status_class == "jail" and not display_status:
+        display_status = "Jailed"
+    elif status_class == "online" and not display_status:
+        display_status = "Online"
+    elif status_class == "idle" and not display_status:
+        display_status = "Idle"
+    elif status_class == "offline" and not display_status:
+        display_status = "Offline"
+
     m["user_id"] = user_id
     m["id"] = user_id or m.get("id")
     m["name"] = name
@@ -530,13 +548,22 @@ def _clean_member(member: Dict[str, Any], enemy_state: Optional[Dict[str, Any]] 
     m["minutes_value"] = minutes_value
     m["hospital_seconds"] = hospital_seconds
     m["hospital_text"] = _seconds_to_text(hospital_seconds) if hospital_seconds > 0 else ""
+    m["display_status"] = display_status
     m["chain_sitter"] = _safe_bool(m.get("chain_sitter"))
     return m
 
 
 def _bucket_sort_key(member: Dict[str, Any]) -> Tuple[int, int, str]:
     bucket = str(member.get("activity_bucket") or "")
-    order = {"online": 0, "idle": 1, "hospital": 2, "offline": 3, "other": 4}
+    order = {
+        "online": 0,
+        "idle": 1,
+        "travel": 2,
+        "hospital": 3,
+        "jail": 4,
+        "offline": 5,
+        "other": 6,
+    }
     return (
         order.get(bucket, 9),
         _to_int(member.get("minutes_value"), 10**9),
