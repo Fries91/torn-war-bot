@@ -151,13 +151,29 @@ def _extract_hospital_until_ts(member: Dict[str, Any], fallback_seconds: int = 0
 
 
 def _member_state_from_last_action(last_action_text: str) -> str:
-    s = str(last_action_text or "").lower()
-    if any(x in s for x in ["online", "active", "abroad online"]):
-        return "online"
-    if any(x in s for x in ["idle", "inactive"]):
-        return "idle"
+    s = str(last_action_text or "").strip().lower()
+
+    if not s:
+        return "offline"
+
     if any(x in s for x in ["hospital", "rehab"]):
         return "hospital"
+
+    if any(x in s for x in ["jail", "jailed"]):
+        return "jail"
+
+    if any(x in s for x in ["abroad", "traveling", "travelling", "travel", "flying"]):
+        return "travel"
+
+    if any(x in s for x in ["online", "active", "abroad online"]):
+        return "online"
+
+    if any(x in s for x in ["idle", "inactive"]):
+        return "idle"
+
+    if any(x in s for x in ["offline", "away"]):
+        return "offline"
+
     return "offline"
 
 
@@ -188,7 +204,11 @@ def _normalize_member(uid: Any, member: Dict[str, Any]) -> Dict[str, Any]:
             or status_raw.get("color")
             or ""
         )
-        status_detail = str(status_raw.get("details") or status_raw.get("description") or "")
+        status_detail = str(
+            status_raw.get("details")
+            or status_raw.get("description")
+            or ""
+        )
     else:
         status_text = str(status_raw or "")
 
@@ -217,12 +237,22 @@ def _normalize_member(uid: Any, member: Dict[str, Any]) -> Dict[str, Any]:
     online_state = "hospital" if in_hospital else _member_state_from_last_action(last_action)
 
     status_text_lower = status_text.lower()
-    if not in_hospital and "online" in status_text_lower:
-        online_state = "online"
-    elif not in_hospital and "idle" in status_text_lower:
-        online_state = "idle"
-    elif not in_hospital and "offline" in status_text_lower:
-        online_state = "offline"
+    status_detail_lower = status_detail.lower()
+    combined_lower = combined
+
+    if not in_hospital:
+        if any(x in combined_lower for x in ["jail", "jailed"]):
+            online_state = "jail"
+        elif any(x in combined_lower for x in ["abroad", "traveling", "travelling", "travel", "flying"]):
+            online_state = "travel"
+        elif "online" in status_text_lower:
+            online_state = "online"
+        elif "idle" in status_text_lower:
+            online_state = "idle"
+        elif "offline" in status_text_lower:
+            online_state = "offline"
+        elif "okay" in status_text_lower and "offline" not in combined_lower:
+            online_state = "online"
 
     user_id = str(uid or "")
 
