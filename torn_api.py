@@ -237,7 +237,6 @@ def _normalize_member(uid: Any, member: Dict[str, Any]) -> Dict[str, Any]:
     online_state = "hospital" if in_hospital else _member_state_from_last_action(last_action)
 
     status_text_lower = status_text.lower()
-    status_detail_lower = status_detail.lower()
     combined_lower = combined
 
     if not in_hospital:
