@@ -694,45 +694,45 @@ def faction_wars(api_key: str, faction_id: str = "") -> Dict[str, Any]:
         parsed_factions: List[Dict[str, Any]] = []
 
         def add_side(fid: Any, fdata: Dict[str, Any], fallback_name: str = ""):
-            if not isinstance(fdata, dict):
-                return
+    if not isinstance(fdata, dict):
+        return
 
-            side_id = str(
-                fid
-                or fdata.get("id")
-                or fdata.get("faction_id")
-                or fdata.get("ID")
-                or ""
-            ).strip()
+    side_id = str(
+        fid
+        or fdata.get("id")
+        or fdata.get("faction_id")
+        or fdata.get("ID")
+        or ""
+    ).strip()
 
-            side_name = str(
-                fdata.get("name")
-                or fdata.get("faction_name")
-                or fallback_name
-                or ""
-            ).strip()
+    side_name = str(
+        fdata.get("name")
+        or fdata.get("faction_name")
+        or fallback_name
+        or ""
+    ).strip()
 
-            score = _side_score(fdata)
-            chain = _side_chain(fdata)
+    score = _side_score(fdata)
+    chain = _side_chain(fdata)
 
-            if not side_id and not side_name:
-                return
+    if not side_id and not side_name:
+        return
 
-            for existing in parsed_factions:
-                ex_id = str(existing.get("faction_id") or "").strip()
-                ex_name = str(existing.get("faction_name") or "").strip().lower()
-                if side_id and ex_id and side_id == ex_id:
-                    return
-                if side_name and ex_name and side_name.lower() == ex_name:
-                    return
+    for existing in parsed_factions:
+        ex_id = str(existing.get("faction_id") or "").strip()
+        ex_name = str(existing.get("faction_name") or "").strip().lower()
+        if side_id and ex_id and side_id == ex_id:
+            return
+        if side_name and ex_name and side_name.lower() == ex_name:
+            return
 
-            parsed_factions.append({
-                "faction_id": side_id,
-                "faction_name": side_name,
-                "score": score,
-                "chain": chain,
-                "raw": fdata,
-            })
+    parsed_factions.append({
+        "faction_id": side_id,
+        "faction_name": side_name,
+        "score": score,
+        "chain": chain,
+        "raw": fdata,
+    })
 
         factions_raw = _extract_factions_from_war(war)
 
