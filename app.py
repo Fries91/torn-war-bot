@@ -907,11 +907,36 @@ def api_state():
     raw_enemy_members = war_info.get("enemy_members") or []
     enemies = []
 
+    our_faction_id = str(war_info.get("my_faction_id") or live_faction_id or "").strip()
+    our_faction_name = str(war_info.get("my_faction_name") or live_faction_name or "").strip().lower()
+
+    if enemy_faction_id and our_faction_id and enemy_faction_id == our_faction_id:
+        enemy_faction_id = ""
+        enemy_faction_name = ""
+        raw_enemy_members = []
+
+    if enemy_faction_name and our_faction_name and enemy_faction_name.strip().lower() == our_faction_name:
+        enemy_faction_id = ""
+        enemy_faction_name = ""
+        raw_enemy_members = []
+
     if enemy_faction_id and bool(war_info.get("has_war")) and not raw_enemy_members:
         enemy_info = _faction_basic_by_id(war_api_key or api_key, enemy_faction_id)
         raw_enemy_members = enemy_info.get("members") or []
         if not enemy_faction_name:
             enemy_faction_name = str(enemy_info.get("faction_name") or "").strip()
+
+        fetched_enemy_id = str(enemy_info.get("faction_id") or enemy_faction_id).strip()
+        fetched_enemy_name = str(enemy_info.get("faction_name") or enemy_faction_name).strip().lower()
+
+        if fetched_enemy_id and our_faction_id and fetched_enemy_id == our_faction_id:
+            enemy_faction_id = ""
+            enemy_faction_name = ""
+            raw_enemy_members = []
+        elif fetched_enemy_name and our_faction_name and fetched_enemy_name == our_faction_name:
+            enemy_faction_id = ""
+            enemy_faction_name = ""
+            raw_enemy_members = []
 
     if raw_enemy_members:
         enemies = _merge_enemy_state(raw_enemy_members, war_id)
