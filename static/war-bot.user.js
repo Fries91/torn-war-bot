@@ -1158,6 +1158,7 @@ function renderOverviewTab() {
     }
 
     var prefs = getOverviewBoxPrefs();
+    prefs.war = true;
     var deals = arr((state && (state.medDeals || state.med_deals)) || []);
     var allDibs = arr((state && state.dibs) || []);
     var war = (state && state.war) || {};
@@ -1307,6 +1308,7 @@ function renderOverviewTab() {
         </div>' : '<div class="warhub-empty">Currently not in a war.</div>';
 
     var cards = [];
+    cards.push('<div class="warhub-card"><div class="warhub-mini">DEBUG PRESENT: ' + esc(String(!!(state && state.debug))) + '</div></div>');
 
     if (prefs.meddeals) {
         cards.push('\
