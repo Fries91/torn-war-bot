@@ -855,7 +855,6 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
     enemy_side = None
     my_name_lower = resolved_my_faction_name.lower().strip()
 
-    # exact match by faction id first
     if resolved_my_faction_id:
         for faction in factions:
             fid = str(faction.get("faction_id") or "").strip()
@@ -863,7 +862,6 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
                 my_side = faction
                 break
 
-    # then exact match by faction name
     if not my_side and my_name_lower:
         for faction in factions:
             fname = str(faction.get("faction_name") or "").strip().lower()
@@ -871,7 +869,6 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
                 my_side = faction
                 break
 
-    # choose enemy as first side that is definitely not ours
     if my_side:
         my_id = str(my_side.get("faction_id") or "").strip()
         my_name = str(my_side.get("faction_name") or "").strip().lower()
@@ -879,14 +876,15 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
         for faction in factions:
             fid = str(faction.get("faction_id") or "").strip()
             fname = str(faction.get("faction_name") or "").strip().lower()
+
             if my_id and fid == my_id:
                 continue
             if my_name and fname == my_name:
                 continue
+
             enemy_side = faction
             break
 
-    # safe two-side fallback
     if not my_side and len(factions) == 2:
         a = factions[0]
         b = factions[1]
@@ -911,7 +909,6 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
     enemy_id = str((enemy_side or {}).get("faction_id") or "").strip()
     enemy_name = str((enemy_side or {}).get("faction_name") or "").strip()
 
-    # never let enemy equal us
     if enemy_id and my_id and enemy_id == my_id:
         enemy_id = ""
         enemy_name = ""
@@ -937,7 +934,6 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
 
     enemy_members: List[Dict[str, Any]] = []
 
-    # first try to read members directly from the enemy side payload
     enemy_raw = (enemy_side or {}).get("raw") or {}
     raw_members = enemy_raw.get("members") or enemy_raw.get("member_list") or []
 
@@ -951,14 +947,12 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
                 uid = member.get("user_id") or member.get("id") or str(idx)
                 enemy_members.append(_normalize_member(uid, member))
 
-    # only fallback to faction fetch if war payload did not contain enemy members
     if enemy_id and is_registered and not enemy_members:
         enemy_faction = faction_basic(api_key, faction_id=enemy_id)
         if enemy_faction.get("ok"):
             fetched_enemy_id = str(enemy_faction.get("faction_id") or enemy_id).strip()
             fetched_enemy_name = str(enemy_faction.get("faction_name") or enemy_name).strip()
 
-            # refuse fallback if it resolves back to our own faction
             if fetched_enemy_id and my_id and fetched_enemy_id == my_id:
                 enemy_members = []
             elif fetched_enemy_name and my_name and fetched_enemy_name.lower() == my_name.lower():
