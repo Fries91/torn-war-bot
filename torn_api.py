@@ -748,7 +748,6 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
 
     my_name_lower = resolved_my_faction_name.lower().strip()
 
-    # 1. Exact match by faction id
     if resolved_my_faction_id:
         for faction in factions:
             fid = str(faction.get("faction_id") or "").strip()
@@ -756,7 +755,6 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
                 my_side = faction
                 break
 
-    # 2. Exact match by faction name
     if not my_side and my_name_lower:
         for faction in factions:
             fname = str(faction.get("faction_name") or "").strip().lower()
@@ -764,7 +762,6 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
                 my_side = faction
                 break
 
-    # 3. Pick enemy as first side that is NOT ours
     if my_side:
         my_id = str(my_side.get("faction_id") or "").strip()
         my_name = str(my_side.get("faction_name") or "").strip().lower()
@@ -781,7 +778,6 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
             enemy_side = faction
             break
 
-    # 4. Safe fallback only when there are exactly 2 different factions
     if not my_side and len(factions) == 2:
         a = factions[0]
         b = factions[1]
@@ -806,7 +802,6 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
     enemy_id = str((enemy_side or {}).get("faction_id") or "").strip()
     enemy_name = str((enemy_side or {}).get("faction_name") or "").strip()
 
-    # Never let enemy equal us
     if enemy_id and my_id and enemy_id == my_id:
         enemy_id = ""
         enemy_name = ""
@@ -831,7 +826,21 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
     remaining_to_target = max(0, target_score - score_us) if target_score else 0
 
     enemy_members: List[Dict[str, Any]] = []
-    if enemy_id and is_registered:
+
+    enemy_raw = (enemy_side or {}).get("raw") or {}
+    raw_members = enemy_raw.get("members") or enemy_raw.get("member_list") or []
+
+    if isinstance(raw_members, dict):
+        for uid, member in raw_members.items():
+            if isinstance(member, dict):
+                enemy_members.append(_normalize_member(uid, member))
+    elif isinstance(raw_members, list):
+        for idx, member in enumerate(raw_members):
+            if isinstance(member, dict):
+                uid = member.get("user_id") or member.get("id") or str(idx)
+                enemy_members.append(_normalize_member(uid, member))
+
+    if enemy_id and is_registered and not enemy_members:
         enemy_faction = faction_basic(api_key, faction_id=enemy_id)
         if enemy_faction.get("ok"):
             enemy_name = str(enemy_faction.get("faction_name") or enemy_name)
