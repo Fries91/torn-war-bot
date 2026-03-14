@@ -1082,7 +1082,7 @@ function hospitalMemberRow(x, enemy) {
     var enabled = !!x.enabled_under_license || !!x.member_access_enabled || !!x.enabled;
     var leader = String(x.position || '').toLowerCase().includes('leader');
 
-        var pill = hosp > 0
+    var pill = hosp > 0
         ? '<span class="warhub-pill hosp">Hosp ' + esc(fmtHosp(hosp, hospText)) + '</span>'
         : presence === 'online'
             ? '<span class="warhub-pill online">Online</span>'
@@ -1099,7 +1099,7 @@ function hospitalMemberRow(x, enemy) {
         <div class="warhub-row">\
           <div>\
             <div class="warhub-name">' + esc(name) + '</div>\
-            <div class="warhub-meta">' + esc([level, last].filter(Boolean).join(' • ')) + '</div>\
+            <div class="warhub-meta">' + esc([level, x.display_status || last].filter(Boolean).join(' • ')) + '</div>\
             <div class="warhub-meta">' + esc(['Life ' + lifeText, 'Energy ' + energyText].join(' • ')) + '</div>\
           </div>\
           <div class="warhub-actions">\
