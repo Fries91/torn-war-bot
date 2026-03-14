@@ -492,18 +492,64 @@ def _side_name(side_data: Dict[str, Any], fallback: str = "") -> str:
 
 
 def _side_score(side_data: Dict[str, Any]) -> int:
-    for key in ("score", "points", "war_score"):
+    if not isinstance(side_data, dict):
+        return 0
+
+    for key in (
+        "score",
+        "points",
+        "war_score",
+        "ranked_war_score",
+        "faction_score",
+        "current_score",
+        "total",
+    ):
         val = side_data.get(key)
         if isinstance(val, (int, float)):
             return int(val)
+        if isinstance(val, str) and val.strip().isdigit():
+            return int(val.strip())
+
+    score_obj = side_data.get("score_data") or side_data.get("scores") or {}
+    if isinstance(score_obj, dict):
+        for key in ("score", "current", "total", "points", "war_score"):
+            val = score_obj.get(key)
+            if isinstance(val, (int, float)):
+                return int(val)
+            if isinstance(val, str) and val.strip().isdigit():
+                return int(val.strip())
+
     return 0
 
 
 def _side_chain(side_data: Dict[str, Any]) -> int:
-    for key in ("chain", "chain_count", "hits"):
+    if not isinstance(side_data, dict):
+        return 0
+
+    for key in (
+        "chain",
+        "chain_count",
+        "hits",
+        "hit_count",
+        "attacks",
+        "attack_count",
+        "current_chain",
+    ):
         val = side_data.get(key)
         if isinstance(val, (int, float)):
             return int(val)
+        if isinstance(val, str) and val.strip().isdigit():
+            return int(val.strip())
+
+    chain_obj = side_data.get("chain_data") or {}
+    if isinstance(chain_obj, dict):
+        for key in ("chain", "count", "hits", "current"):
+            val = chain_obj.get(key)
+            if isinstance(val, (int, float)):
+                return int(val)
+            if isinstance(val, str) and val.strip().isdigit():
+                return int(val.strip())
+
     return 0
 
 
@@ -812,10 +858,10 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
     is_active = phase == "active"
     is_registered = phase in {"registered", "active"}
 
-    score_us = _to_int((my_side or {}).get("score"), 0)
-    score_them = _to_int((enemy_side or {}).get("score"), 0)
-    chain_us = _to_int((my_side or {}).get("chain"), 0)
-    chain_them = _to_int((enemy_side or {}).get("chain"), 0)
+    score_us = _side_score(my_side or {})
+    score_them = _side_score(enemy_side or {})
+    chain_us = _side_chain(my_side or {})
+    chain_them = _side_chain(enemy_side or {})
     lead = score_us - score_them
 
     target_score = _to_int(chosen_war.get("target_score"), 0)
@@ -824,7 +870,12 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
     enemy_members: List[Dict[str, Any]] = []
 
     enemy_raw = (enemy_side or {}).get("raw") or {}
-    raw_members = enemy_raw.get("members") or enemy_raw.get("member_list") or []
+    raw_members = (
+        enemy_raw.get("members")
+        or enemy_raw.get("member_list")
+        or enemy_raw.get("participants")
+        or []
+    )
 
     if isinstance(raw_members, dict):
         for uid, member in raw_members.items():
