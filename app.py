@@ -818,215 +818,239 @@ def api_logout():
 
 @app.route("/api/state", methods=["GET"])
 @require_session
-def api_state():
-    user = request.user or {}
-    api_key = str(user.get("api_key") or "").strip()
-    user_id = str(user.get("user_id") or "").strip()
-    faction_id = str(user.get("faction_id") or "").strip()
-    faction_name = str(user.get("faction_name") or "").strip()
-
-    license_status = _build_license_status_payload(faction_id, viewer_user_id=user_id) if faction_id else {}
-    faction_map = get_user_map_by_faction(faction_id) if faction_id else {}
-
-    me = me_basic(api_key) or {}
-    live_faction_id = str(me.get("faction_id") or faction_id or "").strip()
-    live_faction_name = str(me.get("faction_name") or faction_name or "").strip()
-
-    if live_faction_id and live_faction_id != faction_id:
-        faction_id = live_faction_id
-        faction_name = live_faction_name
-        license_status = _build_license_status_payload(faction_id, viewer_user_id=user_id) if faction_id else {}
-        faction_map = get_user_map_by_faction(faction_id) if faction_id else {}
-
-    faction_info = faction_basic(api_key, faction_id=faction_id) if api_key else {"ok": False, "members": []}
-
-    war_api_key = api_key
-    if faction_map:
-        leader_row = None
-
-        for _, row in faction_map.items():
-            if not isinstance(row, dict):
-                continue
-
-            row_user_id = str(row.get("member_user_id") or row.get("user_id") or "")
-            row_api_key = str(row.get("member_api_key") or row.get("api_key") or "").strip()
-            row_position = str(row.get("position") or "").lower()
-            row_enabled = bool(row.get("enabled", True))
-
-            if row_api_key and "leader" in row_position:
-                leader_row = row
-                break
-
-            if row_api_key and row_enabled and row_user_id == user_id:
-                war_api_key = row_api_key
-
-        if leader_row:
-            war_api_key = str(
-                leader_row.get("member_api_key")
-                or leader_row.get("api_key")
-                or war_api_key
-            ).strip()
-
-    war_info = ranked_war_summary(
-        war_api_key,
-        my_faction_id=live_faction_id,
-        my_faction_name=live_faction_name,
-    ) if war_api_key else {
-        "ok": True,
-        "active": False,
-        "registered": False,
-        "has_war": False,
-        "phase": "none",
-        "war_id": "",
-        "enemy_faction_id": "",
-        "enemy_faction_name": "",
-        "enemy_members": [],
-        "score_us": 0,
-        "score_them": 0,
-        "target_score": 0,
-        "chain_us": 0,
-        "chain_them": 0,
-        "status_text": "Currently not in war",
-        "source_ok": False,
-        "source_note": "No war API key available.",
+function renderOverviewTab() {
+    if (!state) {
+        return renderAccessBanner() + '<div class="warhub-card"><div class="warhub-empty">Loading overview...</div></div>';
     }
 
-    members = []
-    for m in (faction_info.get("members") or []):
-        member_id = str(m.get("user_id") or m.get("id") or "")
-        merged = dict(m)
-        if member_id and member_id in faction_map:
-            merged.update({k: v for k, v in faction_map[member_id].items() if v not in (None, "")})
-        members.append(_clean_member(merged))
-    members.sort(key=_bucket_sort_key)
+    var prefs = getOverviewBoxPrefs();
+    var deals = arr((state && (state.medDeals || state.med_deals)) || []);
+    var allDibs = arr((state && state.dibs) || []);
+    var war = (state && state.war) || {};
+    var our = (state && (state.faction || state.our_faction)) || {};
+    var enemy = (state && (state.enemyFaction || state.enemy_faction)) || {};
+    var fallbackPair = (typeof whLoadWarPairFallback === 'function' && whLoadWarPairFallback()) || {};
 
-    war_id = str(war_info.get("war_id") or "")
-    enemy_faction_id = str(war_info.get("enemy_faction_id") or "").strip()
-    enemy_faction_name = str(war_info.get("enemy_faction_name") or "").strip()
+    var ownFactionId = String((our && (our.faction_id || our.id)) || '').trim();
+    var ownFactionName = String((our && our.name) || '').trim().toLowerCase();
 
-    raw_enemy_members = war_info.get("enemy_members") or []
-    enemies = []
+    var enemyFactionId = String(
+        (enemy && (enemy.faction_id || enemy.id)) ||
+        state.enemy_faction_id ||
+        war.enemy_faction_id ||
+        war.opponent_faction_id ||
+        ''
+    ).trim();
 
-    our_faction_id = str(war_info.get("my_faction_id") or live_faction_id or "").strip()
-    our_faction_name = str(war_info.get("my_faction_name") or live_faction_name or "").strip().lower()
+    var enemyFactionName = String(
+        (enemy && enemy.name) ||
+        state.enemy_faction_name ||
+        war.enemy_faction_name ||
+        war.opponent_faction_name ||
+        ''
+    ).trim();
 
-    if enemy_faction_id and our_faction_id and enemy_faction_id == our_faction_id:
-        enemy_faction_id = ""
-        enemy_faction_name = ""
-        raw_enemy_members = []
-
-    if enemy_faction_name and our_faction_name and enemy_faction_name.strip().lower() == our_faction_name:
-        enemy_faction_id = ""
-        enemy_faction_name = ""
-        raw_enemy_members = []
-
-    if enemy_faction_id and bool(war_info.get("has_war")) and not raw_enemy_members:
-        enemy_info = _faction_basic_by_id(war_api_key or api_key, enemy_faction_id)
-        raw_enemy_members = enemy_info.get("members") or []
-        if not enemy_faction_name:
-            enemy_faction_name = str(enemy_info.get("faction_name") or "").strip()
-
-        fetched_enemy_id = str(enemy_info.get("faction_id") or enemy_faction_id).strip()
-        fetched_enemy_name = str(enemy_info.get("faction_name") or enemy_faction_name).strip().lower()
-
-        if fetched_enemy_id and our_faction_id and fetched_enemy_id == our_faction_id:
-            enemy_faction_id = ""
-            enemy_faction_name = ""
-            raw_enemy_members = []
-        elif fetched_enemy_name and our_faction_name and fetched_enemy_name == our_faction_name:
-            enemy_faction_id = ""
-            enemy_faction_name = ""
-            raw_enemy_members = []
-
-    if raw_enemy_members:
-        enemies = _merge_enemy_state(raw_enemy_members, war_id)
-
-    assignments = [_normalize_assignment(x) for x in (list_target_assignments_for_war(war_id) if war_id else [])]
-    notes = [_normalize_note(x) for x in (list_war_notes(war_id) if war_id else [])]
-    terms = get_war_terms(war_id) if war_id else {}
-
-    med_deals = list_med_deals_for_faction(faction_id) if faction_id else []
-    targets = list_targets(user_id) if user_id else []
-    bounties = list_bounties(user_id) if user_id else []
-    notifications = list_notifications(user_id)
-    mark_notifications_seen(user_id)
-
-    settings = {
-        "refresh_seconds": _to_int(get_user_setting(user_id, "refresh_seconds"), DEFAULT_REFRESH_SECONDS),
-        "compact_mode": _safe_bool(get_user_setting(user_id, "compact_mode")),
+    if (!enemyFactionId) {
+        enemyFactionId = String(fallbackPair.enemy_faction_id || '').trim();
+    }
+    if (!enemyFactionName) {
+        enemyFactionName = String(fallbackPair.enemy_faction_name || '').trim();
     }
 
-    return ok(
-        now=utc_now(),
-        me=me,
-        user={
-            "user_id": user_id,
-            "name": str(user.get("name") or ""),
-            "faction_id": faction_id,
-            "faction_name": faction_name,
-            "is_owner": _session_is_owner(user),
-            "is_leader": str(license_status.get("leader_user_id") or "") == user_id,
-        },
-        settings=settings,
-        license=license_status,
-        war={
-            "war_id": war_id,
-            "status": war_info.get("status_text") or (
-                "War active"
-                if war_info.get("active")
-                else "War registered"
-                if war_info.get("registered")
-                else "Currently not in war"
-            ),
-            "active": bool(war_info.get("active")),
-            "registered": bool(war_info.get("registered")),
-            "phase": str(war_info.get("phase") or "none"),
-            "war_type": str(war_info.get("war_type") or ""),
-            "start": _to_int(war_info.get("start")),
-            "end": _to_int(war_info.get("end")),
-            "target_score": _to_int(war_info.get("target_score")),
-        },
-        faction={
-            "faction_id": str(war_info.get("my_faction_id") or live_faction_id or ""),
-            "name": str(war_info.get("my_faction_name") or live_faction_name or ""),
-            "score": _to_int(war_info.get("score_us")),
-            "chain": _to_int(war_info.get("chain_us")),
-        },
-        enemy_faction={
-            "faction_id": enemy_faction_id,
-            "name": enemy_faction_name,
-            "score": _to_int(war_info.get("score_them")),
-            "chain": _to_int(war_info.get("chain_them")),
-        },
-        members=members,
-        enemies=enemies,
-        assignments=assignments,
-        notes=notes,
-        terms=terms,
-        med_deals=med_deals,
-        targets=targets,
-        bounties=bounties,
-        notifications=notifications,
-        score={
-            "our": _to_int(war_info.get("score_us")),
-            "enemy": _to_int(war_info.get("score_them")),
-            "target": _to_int(war_info.get("target_score")),
-        },
-        has_war=bool(war_info.get("has_war")),
-        is_ranked_war=bool(war_info.get("has_war")),
-        debug={
-    "source_note": str(war_info.get("source_note") or ""),
-    "my_faction_id": str(war_info.get("my_faction_id") or ""),
-    "my_faction_name": str(war_info.get("my_faction_name") or ""),
-    "enemy_faction_id": str(war_info.get("enemy_faction_id") or ""),
-    "enemy_faction_name": str(war_info.get("enemy_faction_name") or ""),
-    "enemy_members_count": len(raw_enemy_members or []),
-    "score_us": _to_int(war_info.get("score_us")),
-    "score_them": _to_int(war_info.get("score_them")),
-    "chain_us": _to_int(war_info.get("chain_us")),
-    "chain_them": _to_int(war_info.get("chain_them")),
-},
-    )
+    if (enemyFactionId && ownFactionId && enemyFactionId === ownFactionId) {
+        enemyFactionId = '';
+    }
+    if (enemyFactionName && ownFactionName && enemyFactionName.toLowerCase() === ownFactionName) {
+        enemyFactionName = '';
+    }
+
+    if (!enemyFactionName) {
+        enemyFactionName = '—';
+    }
+
+    var scoreUs = Number(
+        (state && state.score && state.score.our) ||
+        war.score_us ||
+        war.our_score ||
+        our.score ||
+        0
+    ) || 0;
+
+    var scoreThem = Number(
+        (state && state.score && state.score.enemy) ||
+        war.score_them ||
+        war.enemy_score ||
+        (enemy && enemy.score) ||
+        0
+    ) || 0;
+
+    var target = Number(
+        (state && state.score && state.score.target) ||
+        war.target_score ||
+        war.target ||
+        0
+    ) || 0;
+
+    var ourChain = Number(
+        (our && our.chain) ||
+        war.chain_us ||
+        0
+    ) || 0;
+
+    var enemyChain = Number(
+        (enemy && enemy.chain) ||
+        war.chain_them ||
+        0
+    ) || 0;
+
+    var lead = scoreUs - scoreThem;
+    var hasWar = !!(
+        state && (
+            state.has_war ||
+            war.active ||
+            war.registered ||
+            war.war_id ||
+            war.id ||
+            enemyFactionId ||
+            ((state.enemies || []).length)
+        )
+    );
+
+    var termsText = String(
+        (state && state.war_terms && (state.war_terms.terms_text || state.war_terms.terms)) ||
+        (state && state.terms && (state.terms.terms_text || state.terms.terms)) ||
+        ''
+    );
+
+    var medDealsHtml = deals.length ? deals.slice(0, 6).map(function (x) {
+        return '<div class="warhub-list-item">\
+            <div class="warhub-name">' + esc(x.seller_name || x.created_by_name || 'Unknown user') + '</div>\
+            <div class="warhub-meta">' + esc([x.item_name || x.buyer_name || '', x.note || x.notes || ''].filter(Boolean).join(' • ')) + '</div>\
+        </div>';
+    }).join('') : '<div class="warhub-empty">No med deals yet.</div>';
+
+    var dibsHtml = allDibs.length ? allDibs.slice(0, 6).map(function (d) {
+        var name = d.target_name || d.enemy_name || ('ID ' + (d.target_id || d.enemy_id || '—'));
+        var owner = d.assigned_to_name || d.user_name || d.claimed_by_name || 'Unknown';
+        return '<div class="warhub-list-item">\
+            <div class="warhub-name">' + esc(name) + '</div>\
+            <div class="warhub-meta">' + esc('Claimed by ' + owner) + '</div>\
+        </div>';
+    }).join('') : '<div class="warhub-empty">No dibs claimed.</div>';
+
+    var warHtml = hasWar ? '\
+        <div class="warhub-grid two">\
+            <div class="warhub-metric warhub-score-us">\
+                <div class="k">Our Score</div>\
+                <div class="v">' + fmtNum(scoreUs) + '</div>\
+            </div>\
+            <div class="warhub-metric warhub-score-them">\
+                <div class="k">Enemy Score</div>\
+                <div class="v">' + fmtNum(scoreThem) + '</div>\
+            </div>\
+            <div class="warhub-metric">\
+                <div class="k">' + (lead >= 0 ? 'Lead' : 'Behind') + '</div>\
+                <div class="v">' + fmtNum(Math.abs(lead)) + '</div>\
+            </div>\
+            <div class="warhub-metric">\
+                <div class="k">Target</div>\
+                <div class="v">' + fmtNum(target) + '</div>\
+            </div>\
+            <div class="warhub-metric">\
+                <div class="k">Our Chain</div>\
+                <div class="v">' + fmtNum(ourChain) + '</div>\
+            </div>\
+            <div class="warhub-metric">\
+                <div class="k">Enemy Chain</div>\
+                <div class="v">' + fmtNum(enemyChain) + '</div>\
+            </div>\
+        </div>\
+        <div class="warhub-divider"></div>\
+        <div class="warhub-mini" style="line-height:1.6;">\
+            <strong>Our Faction:</strong> ' + esc(our.name || '—') + '<br>\
+            <strong>Enemy Faction:</strong> ' + esc(enemyFactionName) + '<br>\
+            <strong>Status:</strong> ' + esc(war.status || (war.active ? 'Active' : war.registered ? 'Registered' : 'Active')) + '\
+        </div>' : '<div class="warhub-empty">Currently not in a war.</div>';
+
+    var cards = [];
+
+    if (prefs.meddeals) {
+        cards.push('\
+        <div class="warhub-card">\
+            <div class="warhub-section-title">\
+                <h3>Med Deals Made by Members</h3>\
+                <span class="warhub-count">' + fmtNum(deals.length) + '</span>\
+            </div>\
+            <div class="warhub-actions" style="margin-bottom:8px;">\
+                <button class="warhub-btn small" data-overview-go="meddeals">Open Med Deals</button>\
+            </div>\
+            <div class="warhub-list">' + medDealsHtml + '</div>\
+        </div>');
+    }
+
+    if (prefs.dibs) {
+        cards.push('\
+        <div class="warhub-card">\
+            <div class="warhub-section-title">\
+                <h3>Dibs</h3>\
+                <span class="warhub-count">' + fmtNum(allDibs.length) + '</span>\
+            </div>\
+            <div class="warhub-actions" style="margin-bottom:8px;">\
+                <button class="warhub-btn small" data-overview-go="hospital">Open Dibs</button>\
+            </div>\
+            <div class="warhub-list">' + dibsHtml + '</div>\
+        </div>');
+    }
+
+    if (prefs.terms) {
+        cards.push('\
+        <div class="warhub-card">\
+            <div class="warhub-section-title">\
+                <h3>Terms</h3>\
+                <span class="warhub-count">Live</span>\
+            </div>\
+            <div class="warhub-actions" style="margin-bottom:8px;">\
+                <button class="warhub-btn small" data-overview-go="terms">Open Terms</button>\
+            </div>\
+            <div class="warhub-mini" style="white-space:pre-wrap; line-height:1.5;">' + esc(termsText || 'No terms posted yet.') + '</div>\
+        </div>');
+    }
+
+    if (prefs.war) {
+        cards.push('\
+        <div class="warhub-card">\
+            <div class="warhub-section-title">\
+                <h3>War Overview</h3>\
+                <span class="warhub-count">' + (hasWar ? 'Live' : 'Idle') + '</span>\
+            </div>\
+            <div class="warhub-actions" style="margin-bottom:8px;">\
+                <button class="warhub-btn small" data-overview-go="war">Open War</button>\
+            </div>\
+            ' + warHtml + '\
+        </div>');
+    }
+
+    if (!cards.length) {
+        cards.push('\
+        <div class="warhub-card">\
+            <h3>Overview</h3>\
+            <div class="warhub-empty">No quick boxes selected. Turn them on in Settings.</div>\
+        </div>');
+    }
+
+    if (state && state.debug) {
+        cards.push('\
+        <div class="warhub-card">\
+            <div class="warhub-section-title">\
+                <h3>War Debug</h3>\
+                <span class="warhub-count">Live</span>\
+            </div>\
+            <div class="warhub-mini" style="white-space:pre-wrap; line-height:1.5;">' + esc(JSON.stringify(state.debug, null, 2)) + '</div>\
+        </div>');
+    }
+
+    return renderAccessBanner() + '<div class="warhub-grid two">' + cards.join('') + '</div>';
+}
 
 @app.route("/api/availability", methods=["POST"])
 @require_session
