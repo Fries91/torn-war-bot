@@ -1014,6 +1014,18 @@ def api_state():
         },
         has_war=bool(war_info.get("has_war")),
         is_ranked_war=bool(war_info.get("has_war")),
+        debug={
+    "source_note": str(war_info.get("source_note") or ""),
+    "my_faction_id": str(war_info.get("my_faction_id") or ""),
+    "my_faction_name": str(war_info.get("my_faction_name") or ""),
+    "enemy_faction_id": str(war_info.get("enemy_faction_id") or ""),
+    "enemy_faction_name": str(war_info.get("enemy_faction_name") or ""),
+    "enemy_members_count": len(raw_enemy_members or []),
+    "score_us": _to_int(war_info.get("score_us")),
+    "score_them": _to_int(war_info.get("score_them")),
+    "chain_us": _to_int(war_info.get("chain_us")),
+    "chain_them": _to_int(war_info.get("chain_them")),
+},
     )
 
 @app.route("/api/availability", methods=["POST"])
