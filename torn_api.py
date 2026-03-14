@@ -844,8 +844,12 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
 
             if fetched_enemy_id and my_id and fetched_enemy_id == my_id:
                 enemy_members = []
+                enemy_id = ""
+                enemy_name = ""
             elif fetched_enemy_name and my_name and fetched_enemy_name.lower() == my_name.lower():
                 enemy_members = []
+                enemy_id = ""
+                enemy_name = ""
             else:
                 enemy_id = fetched_enemy_id or enemy_id
                 enemy_name = fetched_enemy_name or enemy_name
