@@ -1364,26 +1364,24 @@ function renderOverviewTab() {
         </div>');
     }
 
-    if (!cards.length) {
-    cards.push('\
-    <div class="warhub-card">\
-        <h3>Overview</h3>\
-        <div class="warhub-empty">No quick boxes selected. Turn them on in Settings.</div>\
-    </div>');
-}
+        if (!cards.length) {
+        cards.push('\
+        <div class="warhub-card">\
+            <h3>Overview</h3>\
+            <div class="warhub-empty">No quick boxes selected. Turn them on in Settings.</div>\
+        </div>');
+    }
 
-if (state && state.debug) {
-    cards.push('\
-    <div class="warhub-card">\
-        <div class="warhub-section-title">\
-            <h3>War Debug</h3>\
-            <span class="warhub-count">Live</span>\
-        </div>\
-        <div class="warhub-mini" style="white-space:pre-wrap; line-height:1.5;">' + esc(JSON.stringify(state.debug, null, 2)) + '</div>\
-    </div>');
-}
-
-return renderAccessBanner() + '<div class="warhub-grid two">' + cards.join('') + '</div>';
+    if (state && state.debug) {
+        cards.push('\
+        <div class="warhub-card">\
+            <div class="warhub-section-title">\
+                <h3>War Debug</h3>\
+                <span class="warhub-count">Live</span>\
+            </div>\
+            <div class="warhub-mini" style="white-space:pre-wrap; line-height:1.5;">' + esc(JSON.stringify(state.debug, null, 2)) + '</div>\
+        </div>');
+    }
 
     return renderAccessBanner() + '<div class="warhub-grid two">' + cards.join('') + '</div>';
 }
