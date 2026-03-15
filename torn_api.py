@@ -220,8 +220,51 @@ def _normalize_member(uid: Any, member: Dict[str, Any]) -> Dict[str, Any]:
         current_life = _to_int(life.get("current"), 0)
         max_life = _to_int(life.get("maximum"), 0)
     else:
-        current_life = _to_int(member.get("current_life"), 0)
-        max_life = _to_int(member.get("max_life"), 0)
+        current_life = _to_int(
+            member.get("current_life")
+            or member.get("life_current")
+            or member.get("life"),
+            0,
+        )
+        max_life = _to_int(
+            member.get("max_life")
+            or member.get("life_max")
+            or member.get("maximum_life"),
+            0,
+        )
+
+    energy = member.get("energy")
+    current_energy = 0
+    max_energy = 0
+    if isinstance(energy, dict):
+        current_energy = _to_int(energy.get("current"), 0)
+        max_energy = _to_int(
+            energy.get("maximum")
+            or energy.get("max"),
+            0,
+        )
+    else:
+        current_energy = _to_int(
+            member.get("energy_current")
+            or member.get("current_energy")
+            or member.get("energy_now")
+            or member.get("energy"),
+            0,
+        )
+        max_energy = _to_int(
+            member.get("energy_max")
+            or member.get("max_energy"),
+            0,
+        )
+
+    medical_cooldown = _to_int(
+        member.get("medical_cooldown")
+        or member.get("med_cooldown")
+        or member.get("medicalcooldown")
+        or member.get("cooldown")
+        or 0,
+        0,
+    )
 
     combined = " ".join([status_text, status_detail, last_action]).strip().lower()
 
@@ -270,6 +313,9 @@ def _normalize_member(uid: Any, member: Dict[str, Any]) -> Dict[str, Any]:
         "hospital_until_ts": hospital_until_ts,
         "life_current": current_life,
         "life_max": max_life,
+        "energy_current": current_energy,
+        "energy_max": max_energy,
+        "medical_cooldown": medical_cooldown,
         "profile_url": profile_url(user_id),
         "attack_url": attack_url(user_id),
         "bounty_url": bounty_url(user_id),
