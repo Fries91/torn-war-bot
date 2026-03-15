@@ -817,8 +817,6 @@ def api_logout():
     return ok(message="Logged out.")
 
 
-@app.route("/api/state", methods=["GET"])
-@require_session
 def _enrich_members_with_saved_keys(
     members: List[Dict[str, Any]],
     faction_map: Dict[str, Any],
@@ -868,6 +866,10 @@ def _enrich_members_with_saved_keys(
         out.append(merged)
 
     return out
+
+
+@app.route("/api/state", methods=["GET"])
+@require_session
 def api_state():
     user = request.user or {}
     api_key = str(user.get("api_key") or "").strip()
@@ -941,18 +943,18 @@ def api_state():
         "source_note": "No war API key available.",
     }
 
-    raw_members = []
-for m in (faction_info.get("members") or []):
-    member_id = str(m.get("user_id") or m.get("id") or "")
-    merged = dict(m)
-    if member_id and member_id in faction_map:
-        merged.update({k: v for k, v in faction_map[member_id].items() if v not in (None, "")})
-    raw_members.append(merged)
+        raw_members = []
+    for m in (faction_info.get("members") or []):
+        member_id = str(m.get("user_id") or m.get("id") or "")
+        merged = dict(m)
+        if member_id and member_id in faction_map:
+            merged.update({k: v for k, v in faction_map[member_id].items() if v not in (None, "")})
+        raw_members.append(merged)
 
-enriched_members = _enrich_members_with_saved_keys(raw_members, faction_map or {})
+    enriched_members = _enrich_members_with_saved_keys(raw_members, faction_map or {})
 
-members = [_clean_member(x) for x in enriched_members]
-members.sort(key=_bucket_sort_key)
+    members = [_clean_member(x) for x in enriched_members]
+    members.sort(key=_bucket_sort_key)
 
     war_id = str(war_info.get("war_id") or "")
     enemy_faction_id = str(war_info.get("enemy_faction_id") or "").strip()
