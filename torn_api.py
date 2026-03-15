@@ -1222,13 +1222,6 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
             str(war.get("war_id") or ""),
         )
 
-    chosen_war = sorted(wars, key=_war_priority)[0]
-    factions = [x for x in (chosen_war.get("factions") or []) if isinstance(x, dict)]
-    raw = chosen_war.get("raw") or {}
-    raw_war = raw.get("war") if isinstance(raw.get("war"), dict) else {}
-
-        attacker_side, defender_side, raw_map_sides = _find_pairing_side(raw, factions)
-
         chosen_war = sorted(wars, key=_war_priority)[0]
     factions = [x for x in (chosen_war.get("factions") or []) if isinstance(x, dict)]
     raw = chosen_war.get("raw") or {}
