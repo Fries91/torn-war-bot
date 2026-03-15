@@ -1229,6 +1229,13 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
 
         attacker_side, defender_side, raw_map_sides = _find_pairing_side(raw, factions)
 
+        chosen_war = sorted(wars, key=_war_priority)[0]
+    factions = [x for x in (chosen_war.get("factions") or []) if isinstance(x, dict)]
+    raw = chosen_war.get("raw") or {}
+    raw_war = raw.get("war") if isinstance(raw.get("war"), dict) else {}
+
+    attacker_side, defender_side, raw_map_sides = _find_pairing_side(raw, factions)
+
     def _pick_best_side(candidates: List[Dict[str, Any]], want_enemy: bool = False) -> Optional[Dict[str, Any]]:
         best = None
 
