@@ -1079,6 +1079,17 @@ function hospitalMemberRow(x, enemy) {
         ? (energyCur.toLocaleString() + "/" + energyMax.toLocaleString())
         : (energyCur > 0 ? energyCur.toLocaleString() : '—');
 
+    var medCd = Number(
+        x.medical_cooldown ||
+        x.med_cooldown ||
+        x.med_cd ||
+        x.medicalcooldown ||
+        x.cooldown ||
+        0
+    );
+
+    var medText = medCd > 0 ? fmtHosp(medCd) : 'Ready';
+
     var attackUrl = x.attack_url || (id ? ("https://www.torn.com/loader.php?sid=attack&user2ID=" + id) : '#');
     var enabled = !!x.enabled_under_license || !!x.member_access_enabled || !!x.enabled;
     var leader = String(x.position || '').toLowerCase().includes('leader');
@@ -1101,7 +1112,7 @@ function hospitalMemberRow(x, enemy) {
           <div>\
             <div class="warhub-name">' + esc(name) + '</div>\
             <div class="warhub-meta">' + esc([level, x.display_status || last].filter(Boolean).join(' • ')) + '</div>\
-            <div class="warhub-meta">' + esc(['Life ' + lifeText, 'Energy ' + energyText].join(' • ')) + '</div>\
+            <div class="warhub-meta">' + esc(['Life ' + lifeText, 'Energy ' + energyText, 'Med CD ' + medText].join(' • ')) + '</div>\
           </div>\
           <div class="warhub-actions">\
             ' + pill + '\
@@ -1448,48 +1459,78 @@ function renderOverviewTab() {
         return "\n      <div class=\"warhub-card\">\n        <div class=\"warhub-section-title\">\n          <h3>War Terms</h3>\n          ".concat(locked ? '<span class="warhub-pill disabled">Leader Only</span>' : '', "\n        </div>\n        <label class=\"warhub-label\">War ID</label>\n        <input class=\"warhub-input\" id=\"warhub-terms-warid\" value=\"").concat(esc(warId), "\" readonly />\n        <div style=\"height:8px;\"></div>\n        <label class=\"warhub-label\">Terms</label>\n        <textarea class=\"warhub-textarea\" id=\"warhub-terms-text\" ").concat(locked ? 'readonly' : '', ">").concat(esc(termsText), "</textarea>\n        <div class=\"warhub-actions\" style=\"margin-top:8px;\">\n          <button class=\"warhub-btn primary\" id=\"warhub-terms-save\" ").concat(locked ? 'disabled' : '', ">Save Terms</button>\n          <button class=\"warhub-btn warn\" id=\"warhub-terms-delete\" ").concat(locked ? 'disabled' : '', ">Delete Terms</button>\n        </div>\n      </div>\n    ");
     }
     function renderMembersTab() {
-    var groups = splitRosterGroups((state === null || state === void 0 ? void 0 : state.members) || []);
-    var total = groups.online.length + groups.idle.length + groups.hospital.length + groups.offline.length;
+    var allMembers = arr((state && state.members) || []);
+    var rawQ = String((state && state.membersSearch) || '').trim();
+    var q = rawQ.toLowerCase();
 
-    return "\n\
-      <div class=\"warhub-card\">\n\
-        <div class=\"warhub-section-title\">\n\
-          <h3>Members Overview</h3>\n\
-          <span class=\"warhub-count\">".concat(fmtNum(total), "</span>\n\
-        </div>\n\
-        <div class=\"warhub-grid two\">\n\
-          <div class=\"warhub-metric\">\n\
-            <div class=\"k\">Online</div>\n\
-            <div class=\"v\">").concat(fmtNum(groups.online.length), "</div>\n\
-          </div>\n\
-          <div class=\"warhub-metric\">\n\
-            <div class=\"k\">Idle</div>\n\
-            <div class=\"v\">").concat(fmtNum(groups.idle.length), "</div>\n\
-          </div>\n\
-          <div class=\"warhub-metric\">\n\
-            <div class=\"k\">Hospital</div>\n\
-            <div class=\"v\">").concat(fmtNum(groups.hospital.length), "</div>\n\
-          </div>\n\
-          <div class=\"warhub-metric\">\n\
-            <div class=\"k\">Offline</div>\n\
-            <div class=\"v\">").concat(fmtNum(groups.offline.length), "</div>\n\
-          </div>\n\
-        </div>\n\
-      </div>\n\
-      ").concat(rosterCard('Online Members', groups.online, {
-        extraClass: 'online-box'
-    }), "\n\
-      ").concat(rosterCard('Idle Members', groups.idle, {
-        extraClass: 'idle-box'
-    }), "\n\
-      ").concat(rosterCard('Hospital Members', groups.hospital, {
-        extraClass: 'hospital-box'
-    }), "\n\
-      ").concat(rosterDropdown('Offline Members', groups.offline, {
-        extraClass: 'offline-box'
-    }), "\n\
-    ");
+    var filtered = !q ? allMembers : allMembers.filter(function (x) {
+        var id = String(x.user_id || x.id || x.player_id || x.member_user_id || '').toLowerCase();
+        var name = String(x.name || x.player_name || x.member_name || '').toLowerCase();
+        var status = String(x.display_status || x.status || x.status_detail || x.last_action || '').toLowerCase();
+        var position = String(x.position || '').toLowerCase();
+        return (
+            name.indexOf(q) >= 0 ||
+            id.indexOf(q) >= 0 ||
+            status.indexOf(q) >= 0 ||
+            position.indexOf(q) >= 0
+        );
+    });
+
+    var groups = splitRosterGroups(filtered);
+    var total =
+        groups.online.length +
+        groups.idle.length +
+        groups.travel.length +
+        groups.hospital.length +
+        groups.jail.length +
+        groups.offline.length;
+
+    return "\
+      <div class=\"warhub-card\">\
+        <div class=\"warhub-section-title\">\
+          <h3>Members Overview</h3>\
+          <span class=\"warhub-count\">" + fmtNum(total) + "</span>\
+        </div>\
+        <div class=\"warhub-row\" style=\"margin-top:8px; gap:8px; align-items:center;\">\
+          <input class=\"warhub-input\" id=\"warhub-members-search\" placeholder=\"Search member, ID, status, position...\" value=\"" + esc(rawQ) + "\" />\
+          " + (q ? "<button class=\"warhub-btn small\" id=\"warhub-members-search-clear\">Clear</button>" : "") + "\
+        </div>\
+        <div class=\"warhub-grid three\" style=\"margin-top:10px;\">\
+          <div class=\"warhub-metric\">\
+            <div class=\"k\">Online</div>\
+            <div class=\"v\">" + fmtNum(groups.online.length) + "</div>\
+          </div>\
+          <div class=\"warhub-metric\">\
+            <div class=\"k\">Idle</div>\
+            <div class=\"v\">" + fmtNum(groups.idle.length) + "</div>\
+          </div>\
+          <div class=\"warhub-metric\">\
+            <div class=\"k\">Hospital</div>\
+            <div class=\"v\">" + fmtNum(groups.hospital.length) + "</div>\
+          </div>\
+          <div class=\"warhub-metric\">\
+            <div class=\"k\">Travel</div>\
+            <div class=\"v\">" + fmtNum(groups.travel.length) + "</div>\
+          </div>\
+          <div class=\"warhub-metric\">\
+            <div class=\"k\">Jail</div>\
+            <div class=\"v\">" + fmtNum(groups.jail.length) + "</div>\
+          </div>\
+          <div class=\"warhub-metric\">\
+            <div class=\"k\">Offline</div>\
+            <div class=\"v\">" + fmtNum(groups.offline.length) + "</div>\
+          </div>\
+        </div>\
+      </div>\
+      " + rosterCard('Online Members', groups.online, { extraClass: 'online-box' }) + "\
+      " + rosterCard('Idle Members', groups.idle, { extraClass: 'idle-box' }) + "\
+      " + rosterCard('Hospital Members', groups.hospital, { extraClass: 'hospital-box' }) + "\
+      " + rosterCard('Travel Members', groups.travel, { extraClass: 'travel-box' }) + "\
+      " + rosterCard('Jailed Members', groups.jail, { extraClass: 'jail-box' }) + "\
+      " + rosterDropdown('Offline Members', groups.offline, { extraClass: 'offline-box' }) + "\
+    ";
 }
+    
     function renderEnemiesTab() {
     var enemies = arr((state === null || state === void 0 ? void 0 : state.enemies) || []);
     var hasWar = !!(
@@ -2399,7 +2440,7 @@ if (medAdd) medAdd.addEventListener('click', _asyncToGenerator(function* () {
             yield loadState(true);
             renderBody();
         }));
-        var logoutBtn = overlay ? overlay.querySelector('#wh-logout-btn') : null;
+                var logoutBtn = overlay ? overlay.querySelector('#wh-logout-btn') : null;
         if (logoutBtn) logoutBtn.addEventListener('click', _asyncToGenerator(function* () {
             yield req('POST', '/api/logout', {});
             clearSavedKeys();
@@ -2412,6 +2453,21 @@ if (medAdd) medAdd.addEventListener('click', _asyncToGenerator(function* () {
             updateBadge();
             setStatus('Logged out.');
         }));
+
+        var membersSearch = overlay ? overlay.querySelector('#warhub-members-search') : null;
+        if (membersSearch) membersSearch.addEventListener('input', function () {
+            state = state || {};
+            state.membersSearch = String(membersSearch.value || '');
+            renderBody();
+        });
+
+        var membersSearchClear = overlay ? overlay.querySelector('#warhub-members-search-clear') : null;
+        if (membersSearchClear) membersSearchClear.addEventListener('click', function () {
+            state = state || {};
+            state.membersSearch = '';
+            renderBody();
+        });
+
         var saveRefresh = overlay ? overlay.querySelector('#wh-save-refresh') : null;
         if (saveRefresh) saveRefresh.addEventListener('click', function () {
     var raw = cleanInputValue(overlay.querySelector('#wh-refresh-ms').value || '30000');
