@@ -757,9 +757,21 @@ def faction_wars(api_key: str, faction_id: str = "") -> Dict[str, Any]:
                 "chain": war.get("defender_chain"),
             }, defender_name)
 
-        phase = _war_phase(war)
-        if phase == "unknown":
-            phase = "registered"
+        phase = _war_phase(raw_war = war.get("war") if isinstance(war.get("war"), dict) else {}
+winner = raw_war.get("winner") or war.get("winner")
+end_ts = _to_int(war.get("end") or war.get("end_time") or war.get("ends") or (raw_war.get("end") if isinstance(raw_war, dict) else 0), 0)
+start_ts = _to_int(war.get("start") or war.get("start_time") or war.get("started") or (raw_war.get("start") if isinstance(raw_war, dict) else 0), 0)
+now_ts = int(time.time())
+
+if winner or (end_ts and end_ts < now_ts):
+    phase = "finished"
+elif phase == "unknown":
+    if start_ts and start_ts > now_ts:
+        phase = "registered"
+    elif start_ts and end_ts and start_ts <= now_ts <= end_ts:
+        phase = "active"
+    else:
+        phase = "finished"
 
         wars.append({
             "war_id": str(war.get("id") or war_id),
@@ -982,47 +994,216 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
             elif fetched_enemy_name and my_name and fetched_enemy_name.lower() == my_name.lower():
                 enemy_members = []
                 enemy_id = ""
-                enemy_name = ""
-            else:
-                enemy_id = fetched_enemy_id or enemy_id
-                enemy_name = fetched_enemy_name or enemy_name
-                enemy_members = enemy_faction.get("members", [])
+                enemy_name =def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: str = "") -> Dict[str, Any]:
+    me = me_basic(api_key)
+    resolved_my_faction_id = str(my_faction_id or me.get("faction_id") or "").strip()
+    resolved_my_faction_name = str(my_faction_name or me.get("faction_name") or "").strip()
 
-    if not my_name and my_id:
-        my_name = f"Faction {my_id}"
-    if not enemy_name and enemy_id:
-        enemy_name = f"Faction {enemy_id}"
+    default = {
+        "ok": True,
+        "active": False,
+        "registered": False,
+        "has_war": False,
+        "phase": "none",
+        "war_id": "",
+        "war_type": "",
+        "my_faction_id": resolved_my_faction_id,
+        "my_faction_name": resolved_my_faction_name,
+        "enemy_faction_id": "",
+        "enemy_faction_name": "",
+        "enemy_members": [],
+        "score_us": 0,
+        "score_them": 0,
+        "lead": 0,
+        "target_score": 0,
+        "remaining_to_target": 0,
+        "chain_us": 0,
+        "chain_them": 0,
+        "start": 0,
+        "end": 0,
+        "status_text": "Currently not in war",
+        "source_ok": False,
+        "source_note": "No registered or active ranked war found.",
+        "debug_factions": [],
+        "debug_raw_keys": [],
+        "debug_raw": {},
+    }
+
+    wars_res = faction_wars(api_key, faction_id=resolved_my_faction_id)
+    if not wars_res.get("ok"):
+        out = dict(default)
+        out["source_note"] = str(wars_res.get("error", out["source_note"]))
+        return out
+
+    wars = wars_res.get("wars") or []
+    now_ts = int(time.time())
+
+    def is_current_war(war: Dict[str, Any]) -> bool:
+        raw = war.get("raw") or {}
+        if not isinstance(raw, dict):
+            raw = {}
+
+        phase = str(war.get("phase") or "").strip().lower()
+        end_ts = _to_int(war.get("end"), 0)
+        start_ts = _to_int(war.get("start"), 0)
+
+        raw_war = raw.get("war") if isinstance(raw.get("war"), dict) else {}
+        winner = raw_war.get("winner") or raw.get("winner")
+
+        if winner:
+            return False
+        if end_ts and end_ts < now_ts:
+            return False
+
+        if phase in {"active", "registered"}:
+            return True
+
+        if start_ts and end_ts and start_ts <= now_ts <= end_ts:
+            return True
+        if start_ts and start_ts > now_ts:
+            return True
+
+        return False
+
+    chosen_war = None
+    for war in wars:
+        if is_current_war(war):
+            chosen_war = war
+            break
+
+    if not chosen_war:
+        out = dict(default)
+        out["source_ok"] = bool(wars_res.get("source_ok"))
+        out["source_note"] = str(wars_res.get("source_note", out["source_note"]))
+        return out
+
+    factions = [x for x in (chosen_war.get("factions") or []) if isinstance(x, dict)]
+
+    my_side = None
+    enemy_side = None
+    my_name_lower = resolved_my_faction_name.lower().strip()
+
+    def _fid(side: Dict[str, Any]) -> str:
+        return str((side or {}).get("faction_id") or "").strip()
+
+    def _fname(side: Dict[str, Any]) -> str:
+        return str((side or {}).get("faction_name") or "").strip()
+
+    def _fname_lower(side: Dict[str, Any]) -> str:
+        return _fname(side).lower()
+
+    if resolved_my_faction_id:
+        for faction in factions:
+            if _fid(faction) == resolved_my_faction_id:
+                my_side = faction
+                break
+
+    if not my_side and my_name_lower:
+        for faction in factions:
+            if _fname_lower(faction) == my_name_lower:
+                my_side = faction
+                break
+
+    if my_side:
+        my_id_match = _fid(my_side)
+        my_name_match = _fname_lower(my_side)
+
+        for faction in factions:
+            fid = _fid(faction)
+            fname = _fname_lower(faction)
+
+            if my_id_match and fid and fid == my_id_match:
+                continue
+            if my_name_match and fname and fname == my_name_match:
+                continue
+
+            enemy_side = faction
+            break
+
+    if not enemy_side and len(factions) >= 2:
+        for faction in factions:
+            fid = _fid(faction)
+            fname = _fname_lower(faction)
+
+            if resolved_my_faction_id and fid == resolved_my_faction_id:
+                continue
+            if my_name_lower and fname == my_name_lower:
+                continue
+
+            enemy_side = faction
+            break
+
+    my_id = str((my_side or {}).get("faction_id") or resolved_my_faction_id or "").strip()
+    my_name = str((my_side or {}).get("faction_name") or resolved_my_faction_name or "").strip()
+
+    enemy_id = str((enemy_side or {}).get("faction_id") or "").strip()
+    enemy_name = str((enemy_side or {}).get("faction_name") or "").strip()
+
+    phase = str(chosen_war.get("phase") or "none").strip().lower()
+    raw = chosen_war.get("raw") or {}
+    raw_war = raw.get("war") if isinstance(raw, dict) and isinstance(raw.get("war"), dict) else {}
+
+    winner = raw_war.get("winner") or raw.get("winner")
+    end_ts = _to_int(chosen_war.get("end"), 0)
+    start_ts = _to_int(chosen_war.get("start"), 0)
+
+    if winner or (end_ts and end_ts < now_ts):
+        phase = "finished"
+    elif start_ts and start_ts > now_ts:
+        phase = "registered"
+    else:
+        phase = "active"
+
+    is_active = phase == "active"
+    is_registered = phase in {"registered", "active"}
+
+    score_us = _side_score(my_side or {})
+    score_them = _side_score(enemy_side or {})
+    chain_us = _side_chain(my_side or {})
+    chain_them = _side_chain(enemy_side or {})
+    lead = score_us - score_them
+
+    target_score = _to_int(chosen_war.get("target_score"), 0)
+    remaining_to_target = max(0, target_score - score_us) if target_score else 0
+
+    enemy_members: List[Dict[str, Any]] = []
+
+    if enemy_id and is_registered:
+        enemy_faction = faction_basic(api_key, faction_id=enemy_id)
+        if enemy_faction.get("ok"):
+            enemy_name = str(enemy_faction.get("faction_name") or enemy_name).strip()
+            enemy_members = enemy_faction.get("members", [])
 
     status_text = str(chosen_war.get("status_text") or "")
     if not status_text:
         status_text = "War active" if is_active else "War registered"
 
     return {
-    "ok": True,
-    "active": is_active,
-    "registered": is_registered,
-    "has_war": is_registered,
-    "phase": phase,
-    "war_id": str(chosen_war.get("war_id") or ""),
-    "war_type": str(chosen_war.get("war_type") or ""),
-    "my_faction_id": my_id,
-    "my_faction_name": my_name,
-    "enemy_faction_id": enemy_id,
-    "enemy_faction_name": enemy_name,
-    "enemy_members": enemy_members,
-    "score_us": score_us,
-    "score_them": score_them,
-    "lead": lead,
-    "target_score": target_score,
-    "remaining_to_target": remaining_to_target,
-    "chain_us": chain_us,
-    "chain_them": chain_them,
-    "start": _to_int(chosen_war.get("start"), 0),
-    "end": _to_int(chosen_war.get("end"), 0),
-    "status_text": status_text,
-    "source_ok": bool(wars_res.get("source_ok")),
-    "source_note": str(wars_res.get("source_note") or "Loaded ranked war summary."),
-    "debug_factions": factions,
-    "debug_raw_keys": list((chosen_war.get("raw") or {}).keys()) if isinstance(chosen_war.get("raw"), dict) else [],
-    "debug_raw": chosen_war.get("raw") or {},
-}
+        "ok": True,
+        "active": is_active,
+        "registered": is_registered,
+        "has_war": is_registered,
+        "phase": phase,
+        "war_id": str(chosen_war.get("war_id") or ""),
+        "war_type": str(chosen_war.get("war_type") or ""),
+        "my_faction_id": my_id,
+        "my_faction_name": my_name,
+        "enemy_faction_id": enemy_id,
+        "enemy_faction_name": enemy_name,
+        "enemy_members": enemy_members,
+        "score_us": score_us,
+        "score_them": score_them,
+        "lead": lead,
+        "target_score": target_score,
+        "remaining_to_target": remaining_to_target,
+        "chain_us": chain_us,
+        "chain_them": chain_them,
+        "start": _to_int(chosen_war.get("start"), 0),
+        "end": _to_int(chosen_war.get("end"), 0),
+        "status_text": status_text,
+        "source_ok": bool(wars_res.get("source_ok")),
+        "source_note": str(wars_res.get("source_note") or ""),
+        "debug_factions": factions,
+        "debug_raw_keys": list(raw.keys()) if isinstance(raw, dict) else [],
+        "debug_raw": raw,
+    }
