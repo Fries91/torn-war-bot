@@ -653,10 +653,10 @@ def faction_wars(api_key: str, faction_id: str = "") -> Dict[str, Any]:
                 return
 
             side_id = str(
-                fid
-                or fdata.get("id")
+                fdata.get("id")
                 or fdata.get("faction_id")
                 or fdata.get("ID")
+                or fid
                 or ""
             ).strip()
 
@@ -676,9 +676,31 @@ def faction_wars(api_key: str, faction_id: str = "") -> Dict[str, Any]:
             for existing in parsed_factions:
                 ex_id = str(existing.get("faction_id") or "").strip()
                 ex_name = str(existing.get("faction_name") or "").strip().lower()
+
                 if side_id and ex_id and side_id == ex_id:
+                    existing["score"] = score if score else existing.get("score", 0)
+                    existing["chain"] = chain if chain else existing.get("chain", 0)
+
+                    existing_raw = existing.get("raw") or {}
+                    merged_raw = dict(existing_raw) if isinstance(existing_raw, dict) else {}
+                    merged_raw.update(fdata)
+                    existing["raw"] = merged_raw
+
+                    if side_name and not existing.get("faction_name"):
+                        existing["faction_name"] = side_name
                     return
+
                 if side_name and ex_name and side_name.lower() == ex_name:
+                    existing["score"] = score if score else existing.get("score", 0)
+                    existing["chain"] = chain if chain else existing.get("chain", 0)
+
+                    existing_raw = existing.get("raw") or {}
+                    merged_raw = dict(existing_raw) if isinstance(existing_raw, dict) else {}
+                    merged_raw.update(fdata)
+                    existing["raw"] = merged_raw
+
+                    if side_id and not existing.get("faction_id"):
+                        existing["faction_id"] = side_id
                     return
 
             parsed_factions.append({
@@ -710,6 +732,30 @@ def faction_wars(api_key: str, faction_id: str = "") -> Dict[str, Any]:
             side = war.get(key)
             if isinstance(side, dict):
                 add_side(None, side)
+
+        for key in ("attacker_id", "attacker_name", "defender_id", "defender_name"):
+            pass
+
+        attacker_id = str(war.get("attacker_id") or war.get("attacking_faction") or "").strip()
+        attacker_name = str(war.get("attacker_name") or war.get("attacking_faction_name") or "").strip()
+        defender_id = str(war.get("defender_id") or war.get("defending_faction") or "").strip()
+        defender_name = str(war.get("defender_name") or war.get("defending_faction_name") or "").strip()
+
+        if attacker_id or attacker_name:
+            add_side(attacker_id, {
+                "faction_id": attacker_id,
+                "name": attacker_name,
+                "score": war.get("attacker_score"),
+                "chain": war.get("attacker_chain"),
+            }, attacker_name)
+
+        if defender_id or defender_name:
+            add_side(defender_id, {
+                "faction_id": defender_id,
+                "name": defender_name,
+                "score": war.get("defender_score"),
+                "chain": war.get("defender_chain"),
+            }, defender_name)
 
         phase = _war_phase(war)
         if phase == "unknown":
@@ -750,6 +796,7 @@ def faction_wars(api_key: str, faction_id: str = "") -> Dict[str, Any]:
         "source_ok": True,
         "source_note": f"Loaded from faction {chosen_container_name}.",
     }
+
 
 def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: str = "") -> Dict[str, Any]:
     me = me_basic(api_key)
@@ -810,31 +857,38 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
     enemy_side = None
     my_name_lower = resolved_my_faction_name.lower().strip()
 
+    def _fid(side: Dict[str, Any]) -> str:
+        return str((side or {}).get("faction_id") or "").strip()
+
+    def _fname(side: Dict[str, Any]) -> str:
+        return str((side or {}).get("faction_name") or "").strip()
+
+    def _fname_lower(side: Dict[str, Any]) -> str:
+        return _fname(side).lower()
+
     if resolved_my_faction_id:
         for faction in factions:
-            fid = str(faction.get("faction_id") or "").strip()
-            if fid == resolved_my_faction_id:
+            if _fid(faction) == resolved_my_faction_id:
                 my_side = faction
                 break
 
     if not my_side and my_name_lower:
         for faction in factions:
-            fname = str(faction.get("faction_name") or "").strip().lower()
-            if fname == my_name_lower:
+            if _fname_lower(faction) == my_name_lower:
                 my_side = faction
                 break
 
     if my_side:
-        my_id = str(my_side.get("faction_id") or "").strip()
-        my_name = str(my_side.get("faction_name") or "").strip().lower()
+        my_id_match = _fid(my_side)
+        my_name_match = _fname_lower(my_side)
 
         for faction in factions:
-            fid = str(faction.get("faction_id") or "").strip()
-            fname = str(faction.get("faction_name") or "").strip().lower()
+            fid = _fid(faction)
+            fname = _fname_lower(faction)
 
-            if my_id and fid == my_id:
+            if my_id_match and fid and fid == my_id_match:
                 continue
-            if my_name and fname == my_name:
+            if my_name_match and fname and fname == my_name_match:
                 continue
 
             enemy_side = faction
@@ -844,19 +898,27 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
         a = factions[0]
         b = factions[1]
 
-        a_id = str(a.get("faction_id") or "").strip()
-        b_id = str(b.get("faction_id") or "").strip()
-        a_name = str(a.get("faction_name") or "").strip().lower()
-        b_name = str(b.get("faction_name") or "").strip().lower()
+        if resolved_my_faction_id and _fid(a) == resolved_my_faction_id:
+            my_side, enemy_side = a, b
+        elif resolved_my_faction_id and _fid(b) == resolved_my_faction_id:
+            my_side, enemy_side = b, a
+        elif my_name_lower and _fname_lower(a) == my_name_lower:
+            my_side, enemy_side = a, b
+        elif my_name_lower and _fname_lower(b) == my_name_lower:
+            my_side, enemy_side = b, a
 
-        if resolved_my_faction_id and a_id == resolved_my_faction_id:
-            my_side, enemy_side = a, b
-        elif resolved_my_faction_id and b_id == resolved_my_faction_id:
-            my_side, enemy_side = b, a
-        elif my_name_lower and a_name == my_name_lower:
-            my_side, enemy_side = a, b
-        elif my_name_lower and b_name == my_name_lower:
-            my_side, enemy_side = b, a
+    if not enemy_side and len(factions) >= 2:
+        for faction in factions:
+            fid = _fid(faction)
+            fname = _fname_lower(faction)
+
+            if resolved_my_faction_id and fid == resolved_my_faction_id:
+                continue
+            if my_name_lower and fname == my_name_lower:
+                continue
+
+            enemy_side = faction
+            break
 
     my_id = str((my_side or {}).get("faction_id") or resolved_my_faction_id or "").strip()
     my_name = str((my_side or {}).get("faction_name") or resolved_my_faction_name or "").strip()
@@ -959,5 +1021,5 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
         "end": _to_int(chosen_war.get("end"), 0),
         "status_text": status_text,
         "source_ok": bool(wars_res.get("source_ok")),
-        "source_note": str(wars_res.get("source_note", "")),
+        "source_note": str(wars_res.get("source_note") or "Loaded ranked war summary."),
     }
