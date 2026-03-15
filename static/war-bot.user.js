@@ -1968,16 +1968,18 @@ function renderChainTab() {
         badge.style.bottom = 'auto';
     }
     function resetShieldPosition() {
-        if (!shield) return;
-        shield.style.left = 'auto';
-        shield.style.top = '120px';
+    if (!shield) return;
+    shield.style.left = 'auto';
+    shield.style.bottom = 'auto';
+
+    if (window.innerWidth <= 700) {
+        shield.style.right = '8px';
+        shield.style.top = '82px';
+    } else {
         shield.style.right = '14px';
-        shield.style.bottom = 'auto';
-        if (window.innerWidth <= 700) {
-            shield.style.right = '8px';
-            shield.style.top = '82px';
-        }
+        shield.style.top = '120px';
     }
+}
     function positionOverlayNearShield() {
         if (!shield || !overlay) return;
         var sr = shield.getBoundingClientRect();
@@ -2455,59 +2457,87 @@ if (overlay) overlay.querySelectorAll('[data-overview-go]').forEach(function (bt
 });
 }
     function mount() {
-        if (mounted) return;
-        mounted = true;
-        shield = document.createElement('div');
-        shield.id = 'warhub-shield';
-        shield.textContent = '⚔️';
-        badge = document.createElement('div');
-        badge.id = 'warhub-badge';
-        overlay = document.createElement('div');
-        overlay.id = 'warhub-overlay';
-        document.body.appendChild(shield);
-        document.body.appendChild(badge);
-        document.body.appendChild(overlay);
-        var savedShield = GM_getValue(K_SHIELD_POS, null);
-if (savedShield && typeof savedShield === 'object') {
-    if (savedShield.left) shield.style.left = savedShield.left;
-    if (savedShield.top) shield.style.top = savedShield.top;
-    if (savedShield.right) shield.style.right = savedShield.right;
-    if (savedShield.bottom) shield.style.bottom = savedShield.bottom;
-} else {
+    if (mounted) return;
+    mounted = true;
+
+    shield = document.createElement('div');
+    shield.id = 'warhub-shield';
+    shield.textContent = '⚔️';
+
+    badge = document.createElement('div');
+    badge.id = 'warhub-badge';
+
+    overlay = document.createElement('div');
+    overlay.id = 'warhub-overlay';
+
+    document.body.appendChild(shield);
+    document.body.appendChild(badge);
+    document.body.appendChild(overlay);
+
     resetShieldPosition();
-}
-clampToViewport(shield);
-saveShieldPos();
-        var savedOverlay = GM_getValue(K_OVERLAY_POS, null);
-if (savedOverlay && typeof savedOverlay === 'object') {
-    if (savedOverlay.left) overlay.style.left = savedOverlay.left;
-    if (savedOverlay.top) overlay.style.top = savedOverlay.top;
-    if (savedOverlay.right) overlay.style.right = savedOverlay.right;
-    if (savedOverlay.bottom) overlay.style.bottom = savedOverlay.bottom;
-} else {
-    positionOverlayNearShield();
-}
-clampToViewport(overlay);
-saveOverlayPos();
-        makeDraggable(shield, shield, saveShieldPos, function () {
-            updateBadge();
-            if (!GM_getValue(K_OVERLAY_POS, null) && !isOpen) positionOverlayNearShield();
-        });
-        shield.addEventListener('click', function (e) {
-            if (dragMoved || (shield && shield.dataset.dragging === '1')) return;
-            e.preventDefault();
-            e.stopPropagation();
-            toggleOverlay();
-        });
-        window.addEventListener('resize', function () {
-            clampToViewport(shield);
-            clampToViewport(overlay);
-            updateBadge();
-        });
-        renderBody();
-        if (isOpen) overlay.classList.add('open'); else overlay.classList.remove('open');
-        updateBadge();
+
+    var savedShield = GM_deleteValue(K_SHIELD_POS);
+    if (savedShield && typeof savedShield === 'object') {
+        if (savedShield.left) shield.style.left = savedShield.left;
+        if (savedShield.top) shield.style.top = savedShield.top;
+        if (savedShield.right) shield.style.right = savedShield.right;
+        if (savedShield.bottom) shield.style.bottom = savedShield.bottom;
     }
+
+    clampToViewport(shield);
+
+    var rect = shield.getBoundingClientRect();
+    if (
+        rect.width < 20 ||
+        rect.height < 20 ||
+        rect.right < 0 ||
+        rect.bottom < 0 ||
+        rect.left > window.innerWidth ||
+        rect.top > window.innerHeight
+    ) {
+        resetShieldPosition();
+        clampToViewport(shield);
+    }
+
+    saveShieldPos();
+
+    var savedOverlay = GM_getValue(K_OVERLAY_POS, null);
+    if (savedOverlay && typeof savedOverlay === 'object') {
+        if (savedOverlay.left) overlay.style.left = savedOverlay.left;
+        if (savedOverlay.top) overlay.style.top = savedOverlay.top;
+        if (savedOverlay.right) overlay.style.right = savedOverlay.right;
+        if (savedOverlay.bottom) overlay.style.bottom = savedOverlay.bottom;
+    } else {
+        positionOverlayNearShield();
+    }
+
+    clampToViewport(overlay);
+    saveOverlayPos();
+
+    makeDraggable(shield, shield, saveShieldPos, function () {
+        updateBadge();
+        if (!GM_getValue(K_OVERLAY_POS, null) && !isOpen) positionOverlayNearShield();
+    });
+
+    shield.addEventListener('click', function (e) {
+        if (dragMoved || (shield && shield.dataset.dragging === '1')) return;
+        e.preventDefault();
+        e.stopPropagation();
+        toggleOverlay();
+    });
+
+    window.addEventListener('resize', function () {
+        clampToViewport(shield);
+        clampToViewport(overlay);
+        updateBadge();
+    });
+
+    renderBody();
+    if (isOpen) overlay.classList.add('open');
+    else overlay.classList.remove('open');
+
+    updateBadge();
+}
     function keepMounted() {
         if (!document.body) return;
         if (!document.getElementById('warhub-shield') || !document.getElementById('warhub-overlay')) {
