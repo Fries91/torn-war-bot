@@ -519,14 +519,15 @@ def faction_basic(api_key: str, faction_id: str = "") -> Dict[str, Any]:
             }
 
         data = res_obj.get("data") or {}
+
         members_raw = (
             data.get("members")
             or data.get("member_list")
             or data.get("participants")
             or {}
         )
-        members: List[Dict[str, Any]] = []
 
+        members: List[Dict[str, Any]] = []
         if isinstance(members_raw, dict):
             for uid, member in members_raw.items():
                 if isinstance(member, dict):
@@ -556,6 +557,22 @@ def faction_basic(api_key: str, faction_id: str = "") -> Dict[str, Any]:
 
     if faction_id:
         attempts = [
+            (
+                f"{API_BASE}/faction/{faction_id}",
+                {"selections": "members", "key": api_key, "striptags": "true"},
+                "faction_members_direct",
+            ),
+            (
+                f"{API_BASE}/faction/",
+                {"selections": "members", "ID": faction_id, "key": api_key, "striptags": "true"},
+                "faction_members_id_upper",
+            ),
+            (
+                f"{API_BASE}/faction/",
+                {"selections": "members", "id": faction_id, "key": api_key, "striptags": "true"},
+                "faction_members_id_lower",
+            ),
+            # fallback in case some responses still expose usable faction name/basic fields
             (
                 f"{API_BASE}/faction/{faction_id}",
                 {"selections": "basic", "key": api_key},
