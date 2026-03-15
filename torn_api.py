@@ -214,12 +214,16 @@ def _normalize_member(uid: Any, member: Dict[str, Any]) -> Dict[str, Any]:
         status_text = str(status_raw or "")
 
     life = member.get("life")
-    current_life = 0
-    max_life = 0
+    current_life = None
+    max_life = None
     if isinstance(life, dict):
         current_life = _to_int(life.get("current"), 0)
         max_life = _to_int(life.get("maximum"), 0)
-    else:
+    elif (
+        member.get("current_life") is not None
+        or member.get("life_current") is not None
+        or member.get("life") is not None
+    ):
         current_life = _to_int(
             member.get("current_life")
             or member.get("life_current")
@@ -234,8 +238,8 @@ def _normalize_member(uid: Any, member: Dict[str, Any]) -> Dict[str, Any]:
         )
 
     energy = member.get("energy")
-    current_energy = 0
-    max_energy = 0
+    current_energy = None
+    max_energy = None
     if isinstance(energy, dict):
         current_energy = _to_int(energy.get("current"), 0)
         max_energy = _to_int(
@@ -243,7 +247,12 @@ def _normalize_member(uid: Any, member: Dict[str, Any]) -> Dict[str, Any]:
             or energy.get("max"),
             0,
         )
-    else:
+    elif (
+        member.get("energy_current") is not None
+        or member.get("current_energy") is not None
+        or member.get("energy_now") is not None
+        or member.get("energy") is not None
+    ):
         current_energy = _to_int(
             member.get("energy_current")
             or member.get("current_energy")
@@ -257,14 +266,20 @@ def _normalize_member(uid: Any, member: Dict[str, Any]) -> Dict[str, Any]:
             0,
         )
 
-    medical_cooldown = _to_int(
-        member.get("medical_cooldown")
-        or member.get("med_cooldown")
-        or member.get("medicalcooldown")
-        or member.get("cooldown")
-        or 0,
-        0,
-    )
+    medical_cooldown = None
+    if (
+        member.get("medical_cooldown") is not None
+        or member.get("med_cooldown") is not None
+        or member.get("med_cd") is not None
+        or member.get("medicalcooldown") is not None
+    ):
+        medical_cooldown = _to_int(
+            member.get("medical_cooldown")
+            or member.get("med_cooldown")
+            or member.get("med_cd")
+            or member.get("medicalcooldown"),
+            0,
+        )
 
     combined = " ".join([status_text, status_detail, last_action]).strip().lower()
 
