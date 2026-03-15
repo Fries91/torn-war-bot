@@ -66,6 +66,7 @@ from torn_api import (
     me_basic,
     faction_basic,
     ranked_war_summary,
+    member_live_bars,
     profile_url,
     attack_url,
     bounty_url,
@@ -818,6 +819,55 @@ def api_logout():
 
 @app.route("/api/state", methods=["GET"])
 @require_session
+def _enrich_members_with_saved_keys(
+    members: List[Dict[str, Any]],
+    faction_map: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+
+    for member in members or []:
+        merged = dict(member or {})
+        member_id = str(merged.get("user_id") or merged.get("id") or "").strip()
+
+        row = faction_map.get(member_id) if member_id and isinstance(faction_map, dict) else None
+        row = row if isinstance(row, dict) else {}
+
+        member_api_key = str(
+            row.get("member_api_key")
+            or row.get("api_key")
+            or ""
+        ).strip()
+
+        enabled = _safe_bool(row.get("enabled", True))
+
+        if member_api_key and enabled:
+            try:
+                live = member_live_bars(member_api_key) or {}
+            except Exception:
+                live = {}
+
+            live_user_id = str(live.get("user_id") or "").strip()
+
+            if live.get("ok") and (not live_user_id or live_user_id == member_id):
+                for k in (
+                    "life_current",
+                    "life_max",
+                    "energy_current",
+                    "energy_max",
+                    "medical_cooldown",
+                ):
+                    if live.get(k) is not None:
+                        merged[k] = live.get(k)
+
+                merged["live_stats_enabled"] = True
+            else:
+                merged["live_stats_enabled"] = False
+        else:
+            merged["live_stats_enabled"] = False
+
+        out.append(merged)
+
+    return out
 def api_state():
     user = request.user or {}
     api_key = str(user.get("api_key") or "").strip()
@@ -891,14 +941,18 @@ def api_state():
         "source_note": "No war API key available.",
     }
 
-    members = []
-    for m in (faction_info.get("members") or []):
-        member_id = str(m.get("user_id") or m.get("id") or "")
-        merged = dict(m)
-        if member_id and member_id in faction_map:
-            merged.update({k: v for k, v in faction_map[member_id].items() if v not in (None, "")})
-        members.append(_clean_member(merged))
-    members.sort(key=_bucket_sort_key)
+    raw_members = []
+for m in (faction_info.get("members") or []):
+    member_id = str(m.get("user_id") or m.get("id") or "")
+    merged = dict(m)
+    if member_id and member_id in faction_map:
+        merged.update({k: v for k, v in faction_map[member_id].items() if v not in (None, "")})
+    raw_members.append(merged)
+
+enriched_members = _enrich_members_with_saved_keys(raw_members, faction_map or {})
+
+members = [_clean_member(x) for x in enriched_members]
+members.sort(key=_bucket_sort_key)
 
     war_id = str(war_info.get("war_id") or "")
     enemy_faction_id = str(war_info.get("enemy_faction_id") or "").strip()
