@@ -866,51 +866,12 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
         return out
 
     wars = wars_res.get("wars") or []
-    now_ts = int(time.time())
-
-    def is_current_war(war: Dict[str, Any]) -> bool:
-        raw = war.get("raw") or {}
-        if not isinstance(raw, dict):
-            raw = {}
-
-        phase = str(war.get("phase") or "").strip().lower()
-        end_ts = _to_int(war.get("end"), 0)
-        start_ts = _to_int(war.get("start"), 0)
-
-        raw_war = raw.get("war") if isinstance(raw.get("war"), dict) else {}
-        winner = raw_war.get("winner") or raw.get("winner")
-
-        if winner:
-            return False
-        if end_ts and end_ts < now_ts:
-            return False
-
-        if phase in {"active", "registered"}:
-            return True
-
-        if start_ts and end_ts and start_ts <= now_ts <= end_ts:
-            return True
-        if start_ts and start_ts > now_ts:
-            return True
-
-        return False
-
-    chosen_war = None
-    for war in wars:
-        if is_current_war(war):
-            chosen_war = war
-            break
-
-    if not chosen_war:
+    if not wars:
         out = dict(default)
         out["source_ok"] = bool(wars_res.get("source_ok"))
         out["source_note"] = str(wars_res.get("source_note", out["source_note"]))
         return out
 
-    factions = [x for x in (chosen_war.get("factions") or []) if isinstance(x, dict)]
-
-    my_side = None
-    enemy_side = None
     my_name_lower = resolved_my_faction_name.lower().strip()
 
     def _fid(side: Dict[str, Any]) -> str:
@@ -921,6 +882,47 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
 
     def _fname_lower(side: Dict[str, Any]) -> str:
         return _fname(side).lower()
+
+    def _war_has_my_faction(war: Dict[str, Any]) -> bool:
+        factions = [x for x in (war.get("factions") or []) if isinstance(x, dict)]
+        for faction in factions:
+            if resolved_my_faction_id and _fid(faction) == resolved_my_faction_id:
+                return True
+            if my_name_lower and _fname_lower(faction) == my_name_lower:
+                return True
+        return False
+
+    def _war_priority(war: Dict[str, Any]) -> tuple:
+        phase = str(war.get("phase") or "").lower()
+        raw = war.get("raw") or {}
+        raw_war = raw.get("war") if isinstance(raw, dict) and isinstance(raw.get("war"), dict) else {}
+        winner = raw_war.get("winner") or raw.get("winner")
+        start_ts = _to_int(war.get("start"), 0)
+        end_ts = _to_int(war.get("end"), 0)
+
+        if winner:
+            phase_rank = 3
+        elif phase == "active":
+            phase_rank = 0
+        elif phase == "registered":
+            phase_rank = 1
+        else:
+            phase_rank = 2
+
+        return (
+            phase_rank,
+            0 if _war_has_my_faction(war) else 1,
+            -start_ts,
+            -end_ts,
+            str(war.get("war_id") or ""),
+        )
+
+    chosen_war = sorted(wars, key=_war_priority)[0]
+
+    factions = [x for x in (chosen_war.get("factions") or []) if isinstance(x, dict)]
+
+    my_side = None
+    enemy_side = None
 
     if resolved_my_faction_id:
         for faction in factions:
@@ -937,16 +939,13 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
     if my_side:
         my_id_match = _fid(my_side)
         my_name_match = _fname_lower(my_side)
-
         for faction in factions:
             fid = _fid(faction)
             fname = _fname_lower(faction)
-
-            if my_id_match and fid and fid == my_id_match:
+            if my_id_match and fid == my_id_match:
                 continue
-            if my_name_match and fname and fname == my_name_match:
+            if my_name_match and fname == my_name_match:
                 continue
-
             enemy_side = faction
             break
 
@@ -954,35 +953,27 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
         for faction in factions:
             fid = _fid(faction)
             fname = _fname_lower(faction)
-
             if resolved_my_faction_id and fid == resolved_my_faction_id:
                 continue
             if my_name_lower and fname == my_name_lower:
                 continue
-
             enemy_side = faction
             break
 
     my_id = str((my_side or {}).get("faction_id") or resolved_my_faction_id or "").strip()
     my_name = str((my_side or {}).get("faction_name") or resolved_my_faction_name or "").strip()
-
     enemy_id = str((enemy_side or {}).get("faction_id") or "").strip()
     enemy_name = str((enemy_side or {}).get("faction_name") or "").strip()
 
-    phase = str(chosen_war.get("phase") or "none").strip().lower()
     raw = chosen_war.get("raw") or {}
     raw_war = raw.get("war") if isinstance(raw, dict) and isinstance(raw.get("war"), dict) else {}
-
     winner = raw_war.get("winner") or raw.get("winner")
-    end_ts = _to_int(chosen_war.get("end"), 0)
-    start_ts = _to_int(chosen_war.get("start"), 0)
 
-    if winner or (end_ts and end_ts < now_ts):
+    phase = str(chosen_war.get("phase") or "").lower()
+    if winner:
         phase = "finished"
-    elif start_ts and start_ts > now_ts:
-        phase = "registered"
-    else:
-        phase = "active"
+    elif phase not in {"active", "registered"}:
+        phase = "registered" if enemy_id or enemy_name else "none"
 
     is_active = phase == "active"
     is_registered = phase in {"registered", "active"}
@@ -997,7 +988,6 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
     remaining_to_target = max(0, target_score - score_us) if target_score else 0
 
     enemy_members: List[Dict[str, Any]] = []
-
     if enemy_id and is_registered:
         enemy_faction = faction_basic(api_key, faction_id=enemy_id)
         if enemy_faction.get("ok"):
@@ -1006,7 +996,7 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
 
     status_text = str(chosen_war.get("status_text") or "")
     if not status_text:
-        status_text = "War active" if is_active else "War registered"
+        status_text = "War active" if is_active else "War registered" if is_registered else "Currently not in war"
 
     return {
         "ok": True,
