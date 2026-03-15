@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         War Hub ⚔️
 // @namespace    fries91-war-hub
-// @version      3.0.0
+// @version      3.0.1
 // @description  War Hub by Fries91. Faction-license aware overlay with draggable icon, draggable overlay, PDA friendly, shared war tools, faction member management, and payment lock handling.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -56,6 +56,8 @@ var K_OVERVIEW_BOXES = 'warhub_overview_boxes_v3';
 ];
     var state = null;
     var analyticsCache = null;
+    var enemyRosterScrapeCache = {};
+    var enemyRosterScrapeInFlight = null;
     var overlay = null;
     var shield = null;
     var badge = null;
@@ -446,6 +448,255 @@ function whDetectWarPairFromFactionPage() {
         return null;
     }
 }
+    function getEnemyFactionMeta() {
+    var s = state || {};
+    var enemyFaction = s.enemy_faction || s.enemyFaction || {};
+    var war = s.war || {};
+    var ownFaction = s.faction || s.our_faction || {};
+    var fallbackPair = whLoadWarPairFallback() || {};
+
+    var ownFactionId = String(
+        (ownFaction && (ownFaction.faction_id || ownFaction.id)) ||
+        (s.user && s.user.faction_id) ||
+        ''
+    ).trim();
+
+    var ownFactionName = String(
+        (ownFaction && ownFaction.name) ||
+        (s.user && s.user.faction_name) ||
+        ''
+    ).trim().toLowerCase();
+
+    var enemyFactionId = String(
+        (enemyFaction && (enemyFaction.faction_id || enemyFaction.id)) ||
+        s.enemy_faction_id ||
+        (war && war.enemy_faction_id) ||
+        fallbackPair.enemy_faction_id ||
+        ''
+    ).trim();
+
+    var enemyFactionName = String(
+        (enemyFaction && enemyFaction.name) ||
+        s.enemy_faction_name ||
+        (war && war.enemy_faction_name) ||
+        fallbackPair.enemy_faction_name ||
+        ''
+    ).trim();
+
+    if (enemyFactionId && ownFactionId && enemyFactionId === ownFactionId) {
+        enemyFactionId = '';
+        enemyFactionName = '';
+    }
+
+    if (enemyFactionName && ownFactionName && enemyFactionName.toLowerCase() === ownFactionName) {
+        enemyFactionId = '';
+        enemyFactionName = '';
+    }
+
+    return {
+        id: enemyFactionId,
+        name: enemyFactionName
+    };
+}
+
+function fetchSameOriginHtml(url) {
+    return fetch(url, {
+        credentials: 'include'
+    }).then(function (res) {
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        return res.text();
+    });
+}
+
+function parseEnemyRosterFromHtml(html, enemyFactionName) {
+    try {
+        var parser = new DOMParser();
+        var doc = parser.parseFromString(String(html || ''), 'text/html');
+        return scrapeEnemyRosterFromDocument(doc, enemyFactionName);
+    } catch (e) {
+        return [];
+    }
+}
+
+function scrapeEnemyRosterFromDocument(doc, enemyFactionName) {
+    try {
+        var out = [];
+        var seen = {};
+        var links = Array.prototype.slice.call(
+            doc.querySelectorAll('a[href*="profiles.php?XID="], a[href*="profiles.php?xid="], a[href*="XID="], a[href*="xid="]')
+        );
+
+        links.forEach(function (a) {
+            var href = String(a.getAttribute('href') || '');
+            var m = href.match(/[?&]XID=(\d+)/i);
+            if (!m) return;
+
+            var userId = String(m[1] || '').trim();
+            if (!userId || seen[userId]) return;
+
+            var name = String(a.textContent || '').replace(/\[[^\]]+\]/g, '').trim();
+            if (!name || /^profile$/i.test(name) || /^attack$/i.test(name) || /^bounty$/i.test(name)) return;
+
+            var row = a;
+            for (var i = 0; i < 5; i += 1) {
+                if (!row || !row.parentElement) break;
+                row = row.parentElement;
+            }
+            row = row || a;
+
+            var rowText = String((row && row.textContent) || (a && a.textContent) || '').replace(/\s+/g, ' ').trim();
+            var rowClass = String((row && row.className) || '').toLowerCase();
+            var hay = (rowText + ' ' + rowClass).toLowerCase();
+
+            var onlineState = 'offline';
+            if (hay.indexOf('hospital') !== -1 || hay.indexOf('rehab') !== -1) {
+                onlineState = 'hospital';
+            } else if (hay.indexOf('travel') !== -1 || hay.indexOf('travelling') !== -1 || hay.indexOf('traveling') !== -1 || hay.indexOf('abroad') !== -1 || hay.indexOf('flying') !== -1) {
+                onlineState = 'travel';
+            } else if (hay.indexOf('jail') !== -1 || hay.indexOf('jailed') !== -1) {
+                onlineState = 'jail';
+            } else if (hay.indexOf('idle') !== -1) {
+                onlineState = 'idle';
+            } else if (hay.indexOf('online') !== -1 || hay.indexOf('okay') !== -1) {
+                onlineState = 'online';
+            }
+
+            var levelMatch = rowText.match(/\b(?:lvl|level)\s*\.?\s*(\d+)\b/i);
+            var level = levelMatch ? Number(levelMatch[1] || 0) || 0 : 0;
+
+            var hospSeconds = 0;
+            var hospMatch =
+                rowText.match(/(\d+)\s*h(?:ours?)?\s*(\d+)?\s*m?/i) ||
+                rowText.match(/(\d+)\s*m(?:in(?:ute)?s?)?\s*(\d+)?\s*s?/i) ||
+                rowText.match(/(\d+)\s*s(?:ec(?:ond)?s?)?/i);
+
+            if (onlineState === 'hospital' && hospMatch) {
+                if (/h/i.test(hospMatch[0])) {
+                    var h = Number(hospMatch[1] || 0) || 0;
+                    var m2 = Number(hospMatch[2] || 0) || 0;
+                    hospSeconds = h * 3600 + m2 * 60;
+                } else if (/m/i.test(hospMatch[0]) && /s/i.test(hospMatch[0])) {
+                    var mm = Number(hospMatch[1] || 0) || 0;
+                    var ss = Number(hospMatch[2] || 0) || 0;
+                    hospSeconds = mm * 60 + ss;
+                } else if (/m/i.test(hospMatch[0])) {
+                    hospSeconds = (Number(hospMatch[1] || 0) || 0) * 60;
+                } else {
+                    hospSeconds = Number(hospMatch[1] || 0) || 0;
+                }
+            }
+
+            seen[userId] = true;
+            out.push({
+                user_id: userId,
+                id: userId,
+                player_id: userId,
+                name: name,
+                player_name: name,
+                member_name: name,
+                level: level,
+                faction_name: enemyFactionName || '',
+                online_state: onlineState,
+                display_status: onlineState.charAt(0).toUpperCase() + onlineState.slice(1),
+                last_action: rowText || onlineState,
+                hospital_seconds: hospSeconds,
+                attack_url: 'https://www.torn.com/loader.php?sid=attack&user2ID=' + encodeURIComponent(userId)
+            });
+        });
+
+        return sortAlphabetical(out);
+    } catch (e) {
+        return [];
+    }
+}
+
+function applyScrapedEnemyRoster(items, sourceLabel) {
+    var list = sortAlphabetical(arr(items || []));
+    if (!list.length) return false;
+
+    state = state || {};
+    state.enemies = list;
+
+    if (!state.debug || typeof state.debug !== 'object') state.debug = {};
+    state.debug.enemy_members_count = list.length;
+    state.debug.enemy_members_source = sourceLabel || 'page_scrape';
+
+    state.enemy_members_source = sourceLabel || 'page_scrape';
+    return true;
+}
+
+function scrapeEnemyRosterNow() {
+    return _scrapeEnemyRosterNow.apply(this, arguments);
+}
+
+function _scrapeEnemyRosterNow() {
+    _scrapeEnemyRosterNow = _asyncToGenerator(function* () {
+        var meta = getEnemyFactionMeta();
+        var enemyFactionId = String(meta.id || '').trim();
+        var enemyFactionName = String(meta.name || '').trim();
+
+        if (!enemyFactionId) return false;
+        if (arr(state && state.enemies).length) return true;
+
+        var cached = enemyRosterScrapeCache[enemyFactionId];
+        if (cached && cached.ts && (Date.now() - cached.ts) < 120000 && arr(cached.items).length) {
+            return applyScrapedEnemyRoster(cached.items, 'page_cache');
+        }
+
+        if (enemyRosterScrapeInFlight && enemyRosterScrapeInFlight.factionId === enemyFactionId) {
+            return yield enemyRosterScrapeInFlight.promise;
+        }
+
+        var promise = _asyncToGenerator(function* () {
+            var roster = [];
+
+            roster = scrapeEnemyRosterFromDocument(document, enemyFactionName);
+
+            if (!roster.length) {
+                var urls = [
+                    'https://www.torn.com/factions.php?step=profile&ID=' + encodeURIComponent(enemyFactionId),
+                    'https://torn.com/factions.php?step=profile&ID=' + encodeURIComponent(enemyFactionId)
+                ];
+
+                for (var i = 0; i < urls.length; i += 1) {
+                    try {
+                        var html = yield fetchSameOriginHtml(urls[i]);
+                        roster = parseEnemyRosterFromHtml(html, enemyFactionName);
+                        if (roster.length) break;
+                    } catch (e) {}
+                }
+            }
+
+            if (roster.length) {
+                enemyRosterScrapeCache[enemyFactionId] = {
+                    ts: Date.now(),
+                    items: roster
+                };
+                whSaveWarPairFallback({
+                    enemy_faction_id: enemyFactionId,
+                    enemy_faction_name: enemyFactionName
+                });
+                return applyScrapedEnemyRoster(roster, 'page_scrape');
+            }
+
+            return false;
+        })();
+
+        enemyRosterScrapeInFlight = {
+            factionId: enemyFactionId,
+            promise: promise
+        };
+
+        try {
+            return yield promise;
+        } finally {
+            if (enemyRosterScrapeInFlight && enemyRosterScrapeInFlight.factionId === enemyFactionId) {
+                enemyRosterScrapeInFlight = null;
+            }
+        }
+    });
+    return _scrapeEnemyRosterNow.apply(this, arguments);
+}
     function healthCheck() {
         return _healthCheck.apply(this, arguments);
     }
@@ -686,22 +937,33 @@ function whDetectWarPairFromFactionPage() {
             loadInFlight = true;
             try {
                 var res = yield req('GET', '/api/state');
-                if (!res.ok) {
-                    if (!silent) setStatus(res.error || 'Could not load state.', true);
-                    if ((accessState === null || accessState === void 0 ? void 0 : accessState.blocked) || (accessState === null || accessState === void 0 ? void 0 : accessState.paymentRequired) || (accessState === null || accessState === void 0 ? void 0 : accessState.trialExpired)) renderBody();
-                    return;
-                }
-                whDetectWarPairFromFactionPage();
+if (!res.ok) {
+    if (!silent) setStatus(res.error || 'Could not load state.', true);
+    if ((accessState === null || accessState === void 0 ? void 0 : accessState.blocked) || (accessState === null || accessState === void 0 ? void 0 : accessState.paymentRequired) || (accessState === null || accessState === void 0 ? void 0 : accessState.trialExpired)) renderBody();
+    return;
+}
+
+whDetectWarPairFromFactionPage();
 state = normalizeState(res.data || {});
-                if ((accessState === null || accessState === void 0 ? void 0 : accessState.isFactionLeader) && !factionMembersCache) loadFactionMembers()["catch"](function () {
-                    return null;
-                });
-                if (!silent) setStatus('');
-                if (overlay && isOpen) renderBody();
-                updateBadge();
-                if (overlay && isOpen && currentTab === 'admin' && isOwnerSession()) loadAdminDashboard()["catch"](function () {
-                    return null;
-                });
+
+if (!arr(state && state.enemies).length) {
+    try {
+        yield scrapeEnemyRosterNow();
+    } catch (e) {}
+}
+
+if ((accessState === null || accessState === void 0 ? void 0 : accessState.isFactionLeader) && !factionMembersCache) {
+    loadFactionMembers()["catch"](function () {
+        return null;
+    });
+}
+
+if (!silent) setStatus('');
+if (overlay && isOpen) renderBody();
+updateBadge();
+if (overlay && isOpen && currentTab === 'admin' && isOwnerSession()) loadAdminDashboard()["catch"](function () {
+    return null;
+});
             } finally {
                 loadInFlight = false;
             }
