@@ -1368,7 +1368,7 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
                 or {}
             )
 
-            def _participant_matches_enemy(pdata: Dict[str, Any]) -> bool:
+         def _participant_matches_enemy(pdata: Dict[str, Any]) -> bool:
                 pfid = str(
                     pdata.get("faction_id")
                     or pdata.get("faction")
