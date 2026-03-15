@@ -957,6 +957,27 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
 
         return out
 
+    def _raw_factions_map_sides(raw: Dict[str, Any]) -> List[Dict[str, Any]]:
+        out: List[Dict[str, Any]] = []
+        fmap = raw.get("factions")
+
+        if not isinstance(fmap, dict):
+            return out
+
+        for fid, obj in fmap.items():
+            if not isinstance(obj, dict):
+                continue
+
+            out.append({
+                "faction_id": str(obj.get("id") or obj.get("faction_id") or fid or "").strip(),
+                "faction_name": str(obj.get("name") or obj.get("faction_name") or "").strip(),
+                "score": _side_score(obj),
+                "chain": _side_chain(obj),
+                "raw": obj,
+            })
+
+        return out
+
     def _find_pairing_side(raw: Dict[str, Any], parsed_factions: List[Dict[str, Any]]):
         attacker = _raw_side(
             raw,
@@ -975,13 +996,21 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
             ["defender_chain"],
         )
 
+        raw_map_sides = _raw_factions_map_sides(raw)
+
+        if (not attacker.get("faction_id") and not attacker.get("faction_name")) and raw_map_sides:
+            attacker = dict(raw_map_sides[0])
+
+        if (not defender.get("faction_id") and not defender.get("faction_name")) and len(raw_map_sides) > 1:
+            defender = dict(raw_map_sides[1])
+
         if not attacker.get("faction_id") and not attacker.get("faction_name") and len(parsed_factions) > 0:
             attacker = dict(parsed_factions[0])
 
         if not defender.get("faction_id") and not defender.get("faction_name") and len(parsed_factions) > 1:
             defender = dict(parsed_factions[1])
 
-        return attacker, defender
+        return attacker, defender, raw_map_sides
 
     def _war_has_my_faction(war: Dict[str, Any]) -> bool:
         factions = [x for x in (war.get("factions") or []) if isinstance(x, dict)]
@@ -993,8 +1022,9 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
             if my_name_lower and _fname_lower(faction) == my_name_lower:
                 return True
 
-        attacker, defender = _find_pairing_side(raw, factions)
-        for side in (attacker, defender):
+        attacker, defender, raw_map_sides = _find_pairing_side(raw, factions)
+
+        for side in [attacker, defender] + raw_map_sides:
             if resolved_my_faction_id and _fid(side) == resolved_my_faction_id:
                 return True
             if my_name_lower and _fname_lower(side) == my_name_lower:
@@ -1032,12 +1062,12 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
     raw = chosen_war.get("raw") or {}
     raw_war = raw.get("war") if isinstance(raw.get("war"), dict) else {}
 
-    attacker_side, defender_side = _find_pairing_side(raw, factions)
+    attacker_side, defender_side, raw_map_sides = _find_pairing_side(raw, factions)
 
     my_side = None
     enemy_side = None
 
-    for side in [attacker_side, defender_side] + factions:
+    for side in [attacker_side, defender_side] + raw_map_sides + factions:
         if not isinstance(side, dict):
             continue
         if resolved_my_faction_id and _fid(side) == resolved_my_faction_id:
@@ -1048,7 +1078,7 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
             break
 
     if my_side:
-        for side in [attacker_side, defender_side] + factions:
+        for side in [attacker_side, defender_side] + raw_map_sides + factions:
             if not isinstance(side, dict):
                 continue
             if _same_side(side, my_side):
@@ -1076,17 +1106,6 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
     score_them = _side_score(enemy_side or {})
     chain_us = _side_chain(my_side or {})
     chain_them = _side_chain(enemy_side or {})
-
-    if _same_side(my_side or {}, attacker_side):
-        score_us = score_us or _to_int(raw.get("attacker_score"), 0)
-        chain_us = chain_us or _to_int(raw.get("attacker_chain"), 0)
-        score_them = score_them or _to_int(raw.get("defender_score"), 0)
-        chain_them = chain_them or _to_int(raw.get("defender_chain"), 0)
-    elif _same_side(my_side or {}, defender_side):
-        score_us = score_us or _to_int(raw.get("defender_score"), 0)
-        chain_us = chain_us or _to_int(raw.get("defender_chain"), 0)
-        score_them = score_them or _to_int(raw.get("attacker_score"), 0)
-        chain_them = chain_them or _to_int(raw.get("attacker_chain"), 0)
 
     lead = score_us - score_them
     target_score = _to_int(chosen_war.get("target_score"), 0)
