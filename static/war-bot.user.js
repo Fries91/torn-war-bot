@@ -1061,34 +1061,50 @@ function hospitalMemberRow(x, enemy) {
         ? (lifeCur.toLocaleString() + "/" + lifeMax.toLocaleString())
         : (lifeCur > 0 ? lifeCur.toLocaleString() : '—');
 
-    var energyCur = Number(
-        x.energy_current ||
-        x.energy ||
-        x.energy_now ||
-        x.energy_used_current ||
-        0
-    );
+    var hasEnergy =
+    x.energy_current != null ||
+    x.energy != null ||
+    x.energy_now != null ||
+    x.current_energy != null;
 
-    var energyMax = Number(
-        x.energy_max ||
-        x.max_energy ||
-        150
-    );
+var energyCur = Number(
+    x.energy_current ??
+    x.current_energy ??
+    x.energy_now ??
+    x.energy ??
+    0
+);
 
-    var energyText = energyMax > 0
+var energyMax = Number(
+    x.energy_max ??
+    x.max_energy ??
+    150
+);
+
+var energyText = hasEnergy
+    ? (energyMax > 0
         ? (energyCur.toLocaleString() + "/" + energyMax.toLocaleString())
-        : (energyCur > 0 ? energyCur.toLocaleString() : '—');
+        : energyCur.toLocaleString())
+    : '—';
 
-    var medCd = Number(
-        x.medical_cooldown ||
-        x.med_cooldown ||
-        x.med_cd ||
-        x.medicalcooldown ||
-        x.cooldown ||
-        0
-    );
+var hasMedCd =
+    x.medical_cooldown != null ||
+    x.med_cooldown != null ||
+    x.med_cd != null ||
+    x.medicalcooldown != null;
 
-    var medText = medCd > 0 ? fmtHosp(medCd) : 'Ready';
+var medCd = Number(
+    x.medical_cooldown ??
+    x.med_cooldown ??
+    x.med_cd ??
+    x.medicalcooldown ??
+    0
+);
+
+var medText = hasMedCd
+    ? (medCd > 0 ? fmtHosp(medCd) : 'Ready')
+    : '—';
+
 
     var attackUrl = x.attack_url || (id ? ("https://www.torn.com/loader.php?sid=attack&user2ID=" + id) : '#');
     var enabled = !!x.enabled_under_license || !!x.member_access_enabled || !!x.enabled;
