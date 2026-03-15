@@ -1227,32 +1227,80 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
     raw = chosen_war.get("raw") or {}
     raw_war = raw.get("war") if isinstance(raw.get("war"), dict) else {}
 
-    attacker_side, defender_side, raw_map_sides = _find_pairing_side(raw, factions)
+        attacker_side, defender_side, raw_map_sides = _find_pairing_side(raw, factions)
 
-    my_side = None
-    enemy_side = None
+    def _pick_best_side(candidates: List[Dict[str, Any]], want_enemy: bool = False) -> Optional[Dict[str, Any]]:
+        best = None
 
+        for side in candidates:
+            if not isinstance(side, dict):
+                continue
+
+            sid = _fid(side)
+            sname = _fname_lower(side)
+
+            is_me = False
+            if resolved_my_faction_id and sid == resolved_my_faction_id:
+                is_me = True
+            elif my_name_lower and sname == my_name_lower:
+                is_me = True
+
+            if want_enemy and is_me:
+                continue
+            if not want_enemy and not is_me:
+                continue
+
+            if not best:
+                best = side
+                continue
+
+            best_score = _side_score(best)
+            side_score = _side_score(side)
+            best_chain = _side_chain(best)
+            side_chain = _side_chain(side)
+
+            if side_score > best_score:
+                best = side
+                continue
+            if side_score == best_score and side_chain > best_chain:
+                best = side
+                continue
+            if (not _fid(best) and sid) or (not _fname_lower(best) and sname):
+                best = side
+                continue
+
+        return best
+
+    candidate_sides: List[Dict[str, Any]] = []
     for side in [attacker_side, defender_side] + raw_map_sides + factions:
         if not isinstance(side, dict):
             continue
-        if resolved_my_faction_id and _fid(side) == resolved_my_faction_id:
-            my_side = side
-            break
-        if my_name_lower and _fname_lower(side) == my_name_lower:
-            my_side = side
-            break
 
-    if my_side:
-        for side in [attacker_side, defender_side] + raw_map_sides + factions:
-            if not isinstance(side, dict):
-                continue
-            if _same_side(side, my_side):
-                continue
-            sid = _fid(side)
-            sname = _fname_lower(side)
-            if sid or sname:
-                enemy_side = side
+        sid = _fid(side)
+        sname = _fname_lower(side)
+
+        duplicate = False
+        for existing in candidate_sides:
+            if _same_side(existing, side):
+                duplicate = True
+                if _side_score(side) > _side_score(existing) or _side_chain(side) > _side_chain(existing):
+                    existing.update(side)
                 break
+
+        if not duplicate and (sid or sname):
+            candidate_sides.append(dict(side))
+
+    my_side = _pick_best_side(candidate_sides, want_enemy=False)
+    enemy_side = _pick_best_side(candidate_sides, want_enemy=True)
+
+    if not my_side and resolved_my_faction_id:
+        my_side = {
+            "faction_id": resolved_my_faction_id,
+            "faction_name": resolved_my_faction_name,
+            "score": 0,
+            "chain": 0,
+            "raw": {},
+        }
 
     my_id = str((my_side or {}).get("faction_id") or resolved_my_faction_id or "").strip()
     my_name = str((my_side or {}).get("faction_name") or resolved_my_faction_name or "").strip()
