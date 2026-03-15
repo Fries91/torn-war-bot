@@ -1351,7 +1351,7 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
     is_active = phase == "active"
     is_registered = phase in {"registered", "active"}
 
-        enemy_members: List[Dict[str, Any]] = []
+    enemy_members: List[Dict[str, Any]] = []
     if enemy_id and is_registered:
         enemy_faction = faction_basic(api_key, faction_id=enemy_id)
         if enemy_faction.get("ok"):
@@ -1368,7 +1368,7 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
                 or {}
             )
 
-         def _participant_matches_enemy(pdata: Dict[str, Any]) -> bool:
+            def _participant_matches_enemy(pdata: Dict[str, Any]) -> bool:
                 pfid = str(
                     pdata.get("faction_id")
                     or pdata.get("faction")
