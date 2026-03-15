@@ -823,7 +823,8 @@ def faction_wars(api_key: str, faction_id: str = "") -> Dict[str, Any]:
         "source_ok": True,
         "source_note": f"Loaded from faction {chosen_container_name}.",
     }
-    def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: str = "") -> Dict[str, Any]:
+    
+def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: str = "") -> Dict[str, Any]:
     me = me_basic(api_key)
     resolved_my_faction_id = str(my_faction_id or me.get("faction_id") or "").strip()
     resolved_my_faction_name = str(my_faction_name or me.get("faction_name") or "").strip()
