@@ -1548,92 +1548,155 @@ function renderOverviewTab() {
 }
     
     function renderEnemiesTab() {
-    var enemies = arr((state === null || state === void 0 ? void 0 : state.enemies) || []);
+    var enemies = arr((state && state.enemies) || []);
+    var enemyFaction =
+        (state && state.enemy_faction) ||
+        (state && state.enemyFaction) ||
+        {};
+    var war = (state && state.war) || {};
+
+    var enemyFactionId =
+        String(
+            (enemyFaction && (enemyFaction.faction_id || enemyFaction.id)) ||
+            state.enemy_faction_id ||
+            ''
+        ).trim();
+
+    var enemyFactionName =
+        String(
+            (enemyFaction && enemyFaction.name) ||
+            state.enemy_faction_name ||
+            'Unknown Enemy'
+        ).trim();
+
+    var rawQ = String((state && state.enemiesSearch) || '').trim();
+    var q = rawQ.toLowerCase();
+
     var hasWar = !!(
-        ((state === null || state === void 0 ? void 0 : state.has_war)) ||
-        (((state === null || state === void 0 ? void 0 : state.war) && state.war.active)) ||
-        (((state === null || state === void 0 ? void 0 : state.war) && state.war.war_id)) ||
-        ((state === null || state === void 0 ? void 0 : state.enemy_faction_id)) ||
-        (((state === null || state === void 0 ? void 0 : state.enemyFaction) && state.enemyFaction.id)) ||
-        (((state === null || state === void 0 ? void 0 : state.enemyFaction) && state.enemyFaction.faction_id))
+        (state && state.has_war) ||
+        (war && war.active) ||
+        (war && war.war_id) ||
+        enemyFactionId ||
+        enemyFactionName ||
+        enemies.length
     );
 
     if (!enemies.length && !hasWar) {
-        return "\n\
-        <div class=\"warhub-card\">\n\
-          <h3>Enemies</h3>\n\
-          <div class=\"warhub-empty\">Currently not in a war.</div>\n\
-        </div>\n\
-      ";
+        return '\
+          <div class="warhub-card">\
+            <h3>Enemies</h3>\
+            <div class="warhub-empty">Currently not in a war.</div>\
+          </div>\
+        ';
     }
 
-    var groups = splitRosterGroups(enemies);
+    var filtered = !q ? enemies : enemies.filter(function (x) {
+        var id = String(x.user_id || x.id || '').toLowerCase();
+        var name = String(x.name || '').toLowerCase();
+        var status = String(x.display_status || x.status || x.status_detail || x.last_action || '').toLowerCase();
+        var level = String(x.level || '').toLowerCase();
+        var position = String(x.position || '').toLowerCase();
+        return (
+            name.indexOf(q) >= 0 ||
+            id.indexOf(q) >= 0 ||
+            status.indexOf(q) >= 0 ||
+            level.indexOf(q) >= 0 ||
+            position.indexOf(q) >= 0
+        );
+    });
+
+    var groups = splitRosterGroups(filtered);
     var total =
         groups.online.length +
         groups.idle.length +
-        (groups.travel || []).length +
+        groups.travel.length +
         groups.hospital.length +
-        (groups.jail || []).length +
+        groups.jail.length +
         groups.offline.length;
 
-    return "\n\
-      <div class=\"warhub-card\">\n\
-        <div class=\"warhub-section-title\">\n\
-          <h3>Enemies Overview</h3>\n\
-          <span class=\"warhub-count\">".concat(fmtNum(total), "</span>\n\
-        </div>\n\
-        <div class=\"warhub-grid two\">\n\
-          <div class=\"warhub-metric\">\n\
-            <div class=\"k\">Online</div>\n\
-            <div class=\"v\">").concat(fmtNum(groups.online.length), "</div>\n\
-          </div>\n\
-          <div class=\"warhub-metric\">\n\
-            <div class=\"k\">Idle</div>\n\
-            <div class=\"v\">").concat(fmtNum(groups.idle.length), "</div>\n\
-          </div>\n\
-          <div class=\"warhub-metric\">\n\
-            <div class=\"k\">Travel</div>\n\
-            <div class=\"v\">").concat(fmtNum((groups.travel || []).length), "</div>\n\
-          </div>\n\
-          <div class=\"warhub-metric\">\n\
-            <div class=\"k\">Hospital</div>\n\
-            <div class=\"v\">").concat(fmtNum(groups.hospital.length), "</div>\n\
-          </div>\n\
-          <div class=\"warhub-metric\">\n\
-            <div class=\"k\">Jail</div>\n\
-            <div class=\"v\">").concat(fmtNum((groups.jail || []).length), "</div>\n\
-          </div>\n\
-          <div class=\"warhub-metric\">\n\
-            <div class=\"k\">Offline</div>\n\
-            <div class=\"v\">").concat(fmtNum(groups.offline.length), "</div>\n\
-          </div>\n\
-        </div>\n\
-      </div>\n\
-      ").concat(rosterCard('Enemy Online', groups.online, {
-        extraClass: 'online-box',
-        enemy: true
-    }), "\n\
-      ").concat(rosterCard('Enemy Idle', groups.idle, {
-        extraClass: 'idle-box',
-        enemy: true
-    }), "\n\
-      ").concat(rosterCard('Enemy Travel', groups.travel || [], {
-        extraClass: 'travel-box',
-        enemy: true
-    }), "\n\
-      ").concat(rosterCard('Enemy Hospital', groups.hospital, {
-        extraClass: 'hospital-box',
-        enemy: true
-    }), "\n\
-      ").concat(rosterCard('Enemy Jailed', groups.jail || [], {
-        extraClass: 'jail-box',
-        enemy: true
-    }), "\n\
-      ").concat(rosterDropdown('Enemy Offline', groups.offline, {
-        extraClass: 'offline-box',
-        enemy: true
-    }), "\n\
-    ");
+    var scoreThem = Number(
+        ((state && state.score) && state.score.enemy) ||
+        (enemyFaction && enemyFaction.score) ||
+        0
+    ) || 0;
+
+    var chainThem = Number(
+        (enemyFaction && enemyFaction.chain) ||
+        0
+    ) || 0;
+
+    return '\
+      <div class="warhub-card">\
+        <div class="warhub-section-title">\
+          <h3>Enemies Overview</h3>\
+          <span class="warhub-count">' + fmtNum(total) + '</span>\
+        </div>\
+\
+        <div class="warhub-grid two">\
+          <div class="warhub-metric">\
+            <div class="k">Enemy Faction</div>\
+            <div class="v">' + esc(enemyFactionName || '—') + '</div>\
+          </div>\
+          <div class="warhub-metric">\
+            <div class="k">War Status</div>\
+            <div class="v">' + esc(String(war.status || war.phase || 'Active')) + '</div>\
+          </div>\
+          <div class="warhub-metric warhub-score-them">\
+            <div class="k">Enemy Score</div>\
+            <div class="v">' + fmtNum(scoreThem) + '</div>\
+          </div>\
+          <div class="warhub-metric">\
+            <div class="k">Enemy Chain</div>\
+            <div class="v">' + fmtNum(chainThem) + '</div>\
+          </div>\
+        </div>\
+\
+        <div class="warhub-row" style="margin-top:10px; gap:8px; align-items:center;">\
+          <input class="warhub-input" id="warhub-enemies-search" placeholder="Search enemy, ID, status, level..." value="' + esc(rawQ) + '" />\
+          ' + (q ? '<button class="warhub-btn small" id="warhub-enemies-search-clear">Clear</button>' : '') + '\
+        </div>\
+\
+        <div class="warhub-grid three" style="margin-top:10px;">\
+          <div class="warhub-metric">\
+            <div class="k">Online</div>\
+            <div class="v">' + fmtNum(groups.online.length) + '</div>\
+          </div>\
+          <div class="warhub-metric">\
+            <div class="k">Idle</div>\
+            <div class="v">' + fmtNum(groups.idle.length) + '</div>\
+          </div>\
+          <div class="warhub-metric">\
+            <div class="k">Hospital</div>\
+            <div class="v">' + fmtNum(groups.hospital.length) + '</div>\
+          </div>\
+          <div class="warhub-metric">\
+            <div class="k">Travel</div>\
+            <div class="v">' + fmtNum(groups.travel.length) + '</div>\
+          </div>\
+          <div class="warhub-metric">\
+            <div class="k">Jail</div>\
+            <div class="v">' + fmtNum(groups.jail.length) + '</div>\
+          </div>\
+          <div class="warhub-metric">\
+            <div class="k">Offline</div>\
+            <div class="v">' + fmtNum(groups.offline.length) + '</div>\
+          </div>\
+        </div>\
+\
+        <div class="warhub-actions" style="margin-top:10px;">\
+          ' + (enemyFactionId
+                ? '<a class="warhub-btn" href="https://www.torn.com/factions.php?step=profile&ID=' + encodeURIComponent(enemyFactionId) + '" target="_blank" rel="noopener noreferrer">Enemy Faction</a>'
+                : '') + '\
+        </div>\
+      </div>\
+\
+      ' + rosterCard('Enemy Online', groups.online, { extraClass: 'online-box', enemy: true }) + '\
+      ' + rosterCard('Enemy Idle', groups.idle, { extraClass: 'idle-box', enemy: true }) + '\
+      ' + rosterCard('Enemy Hospital', groups.hospital, { extraClass: 'hospital-box', enemy: true }) + '\
+      ' + rosterCard('Enemy Travel', groups.travel, { extraClass: 'travel-box', enemy: true }) + '\
+      ' + rosterCard('Enemy Jailed', groups.jail, { extraClass: 'jail-box', enemy: true }) + '\
+      ' + rosterDropdown('Enemy Offline', groups.offline, { extraClass: 'offline-box', enemy: true }) + '\
+    ';
 }
     function renderHospitalTab() {
     var ours = sortHosp(arr((state === null || state === void 0 ? void 0 : state.members) || []).filter(function (x) {
@@ -2483,7 +2546,17 @@ if (medAdd) medAdd.addEventListener('click', _asyncToGenerator(function* () {
             state.membersSearch = '';
             renderBody();
         });
+        var enemySearch = document.getElementById('warhub-enemies-search');
+        if (enemySearch) enemySearch.addEventListener('input', function () {
+            state.enemiesSearch = enemySearch.value || '';
+            renderBody();
+        });
 
+        var enemySearchClear = document.getElementById('warhub-enemies-search-clear');
+        if (enemySearchClear) enemySearchClear.addEventListener('click', function () {
+            state.enemiesSearch = '';
+            renderBody();
+        });
         var saveRefresh = overlay ? overlay.querySelector('#wh-save-refresh') : null;
         if (saveRefresh) saveRefresh.addEventListener('click', function () {
     var raw = cleanInputValue(overlay.querySelector('#wh-refresh-ms').value || '30000');
