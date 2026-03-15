@@ -885,11 +885,45 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
 
     def _war_has_my_faction(war: Dict[str, Any]) -> bool:
         factions = [x for x in (war.get("factions") or []) if isinstance(x, dict)]
+        raw = war.get("raw") or {}
+
         for faction in factions:
             if resolved_my_faction_id and _fid(faction) == resolved_my_faction_id:
                 return True
             if my_name_lower and _fname_lower(faction) == my_name_lower:
                 return True
+
+        raw_ids = [
+            raw.get("attacker_id"),
+            raw.get("attacking_faction"),
+            raw.get("defender_id"),
+            raw.get("defending_faction"),
+            raw.get("faction1", {}).get("id") if isinstance(raw.get("faction1"), dict) else None,
+            raw.get("faction2", {}).get("id") if isinstance(raw.get("faction2"), dict) else None,
+            raw.get("faction_1", {}).get("id") if isinstance(raw.get("faction_1"), dict) else None,
+            raw.get("faction_2", {}).get("id") if isinstance(raw.get("faction_2"), dict) else None,
+        ]
+        raw_names = [
+            raw.get("attacker_name"),
+            raw.get("attacking_faction_name"),
+            raw.get("defender_name"),
+            raw.get("defending_faction_name"),
+            raw.get("faction1", {}).get("name") if isinstance(raw.get("faction1"), dict) else None,
+            raw.get("faction2", {}).get("name") if isinstance(raw.get("faction2"), dict) else None,
+            raw.get("faction_1", {}).get("name") if isinstance(raw.get("faction_1"), dict) else None,
+            raw.get("faction_2", {}).get("name") if isinstance(raw.get("faction_2"), dict) else None,
+        ]
+
+        if resolved_my_faction_id:
+            for v in raw_ids:
+                if str(v or "").strip() == resolved_my_faction_id:
+                    return True
+
+        if my_name_lower:
+            for v in raw_names:
+                if str(v or "").strip().lower() == my_name_lower:
+                    return True
+
         return False
 
     def _war_priority(war: Dict[str, Any]) -> tuple:
@@ -918,7 +952,6 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
         )
 
     chosen_war = sorted(wars, key=_war_priority)[0]
-
     factions = [x for x in (chosen_war.get("factions") or []) if isinstance(x, dict)]
 
     my_side = None
@@ -960,15 +993,101 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
             enemy_side = faction
             break
 
+    raw = chosen_war.get("raw") or {}
+    raw_war = raw.get("war") if isinstance(raw, dict) and isinstance(raw.get("war"), dict) else {}
+
+    def _raw_side(side_keys: List[str], fallback_id_keys: List[str], fallback_name_keys: List[str]) -> Dict[str, Any]:
+        for key in side_keys:
+            obj = raw.get(key)
+            if isinstance(obj, dict) and obj:
+                return {
+                    "faction_id": str(obj.get("id") or obj.get("faction_id") or obj.get("ID") or "").strip(),
+                    "faction_name": str(obj.get("name") or obj.get("faction_name") or "").strip(),
+                    "score": _side_score(obj),
+                    "chain": _side_chain(obj),
+                    "raw": obj,
+                }
+
+        out = {
+            "faction_id": "",
+            "faction_name": "",
+            "score": 0,
+            "chain": 0,
+            "raw": {},
+        }
+
+        for key in fallback_id_keys:
+            val = raw.get(key)
+            if val not in (None, ""):
+                out["faction_id"] = str(val).strip()
+                break
+
+        for key in fallback_name_keys:
+            val = raw.get(key)
+            if val not in (None, ""):
+                out["faction_name"] = str(val).strip()
+                break
+
+        score_key_map = {
+            "attacker": ["attacker_score"],
+            "defender": ["defender_score"],
+        }
+        chain_key_map = {
+            "attacker": ["attacker_chain"],
+            "defender": ["defender_chain"],
+        }
+
+        tag = "attacker" if "attacker" in " ".join(side_keys) else "defender"
+        for key in score_key_map.get(tag, []):
+            out["score"] = _to_int(raw.get(key), out["score"])
+        for key in chain_key_map.get(tag, []):
+            out["chain"] = _to_int(raw.get(key), out["chain"])
+
+        return out
+
+    attacker_side = _raw_side(
+        ["attacker", "attackers", "faction_1", "faction1", "team_1", "team1", "side_1", "side1", "red"],
+        ["attacker_id", "attacking_faction"],
+        ["attacker_name", "attacking_faction_name"],
+    )
+    defender_side = _raw_side(
+        ["defender", "defenders", "faction_2", "faction2", "team_2", "team2", "side_2", "side2", "blue"],
+        ["defender_id", "defending_faction"],
+        ["defender_name", "defending_faction_name"],
+    )
+
+    if not my_side:
+        if resolved_my_faction_id and attacker_side.get("faction_id") == resolved_my_faction_id:
+            my_side = attacker_side
+        elif resolved_my_faction_id and defender_side.get("faction_id") == resolved_my_faction_id:
+            my_side = defender_side
+        elif my_name_lower and str(attacker_side.get("faction_name") or "").lower() == my_name_lower:
+            my_side = attacker_side
+        elif my_name_lower and str(defender_side.get("faction_name") or "").lower() == my_name_lower:
+            my_side = defender_side
+
+    if not enemy_side and my_side:
+        my_id_match = str(my_side.get("faction_id") or "").strip()
+        my_name_match = str(my_side.get("faction_name") or "").strip().lower()
+
+        for candidate in (attacker_side, defender_side):
+            fid = str(candidate.get("faction_id") or "").strip()
+            fname = str(candidate.get("faction_name") or "").strip().lower()
+            if not fid and not fname:
+                continue
+            if my_id_match and fid == my_id_match:
+                continue
+            if my_name_match and fname == my_name_match:
+                continue
+            enemy_side = candidate
+            break
+
     my_id = str((my_side or {}).get("faction_id") or resolved_my_faction_id or "").strip()
     my_name = str((my_side or {}).get("faction_name") or resolved_my_faction_name or "").strip()
     enemy_id = str((enemy_side or {}).get("faction_id") or "").strip()
     enemy_name = str((enemy_side or {}).get("faction_name") or "").strip()
 
-    raw = chosen_war.get("raw") or {}
-    raw_war = raw.get("war") if isinstance(raw, dict) and isinstance(raw.get("war"), dict) else {}
     winner = raw_war.get("winner") or raw.get("winner")
-
     phase = str(chosen_war.get("phase") or "").lower()
     if winner:
         phase = "finished"
