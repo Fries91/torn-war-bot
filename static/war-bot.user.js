@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         War Hub ⚔️
 // @namespace    fries91-war-hub
-// @version      2.9.8
+// @version      2.9.9
 // @description  War Hub by Fries91. Faction-license aware overlay with draggable icon, draggable overlay, PDA friendly, shared war tools, faction member management, and payment lock handling.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -2474,17 +2474,10 @@ if (overlay) overlay.querySelectorAll('[data-overview-go]').forEach(function (bt
     document.body.appendChild(badge);
     document.body.appendChild(overlay);
 
+    GM_deleteValue(K_SHIELD_POS);
     resetShieldPosition();
-
-    var savedShield = GM_deleteValue(K_SHIELD_POS);
-    if (savedShield && typeof savedShield === 'object') {
-        if (savedShield.left) shield.style.left = savedShield.left;
-        if (savedShield.top) shield.style.top = savedShield.top;
-        if (savedShield.right) shield.style.right = savedShield.right;
-        if (savedShield.bottom) shield.style.bottom = savedShield.bottom;
-    }
-
     clampToViewport(shield);
+    saveShieldPos();
 
     var rect = shield.getBoundingClientRect();
     if (
@@ -2497,9 +2490,8 @@ if (overlay) overlay.querySelectorAll('[data-overview-go]').forEach(function (bt
     ) {
         resetShieldPosition();
         clampToViewport(shield);
+        saveShieldPos();
     }
-
-    saveShieldPos();
 
     var savedOverlay = GM_getValue(K_OVERLAY_POS, null);
     if (savedOverlay && typeof savedOverlay === 'object') {
@@ -2516,7 +2508,9 @@ if (overlay) overlay.querySelectorAll('[data-overview-go]').forEach(function (bt
 
     makeDraggable(shield, shield, saveShieldPos, function () {
         updateBadge();
-        if (!GM_getValue(K_OVERLAY_POS, null) && !isOpen) positionOverlayNearShield();
+        if (!GM_getValue(K_OVERLAY_POS, null) && !isOpen) {
+            positionOverlayNearShield();
+        }
     });
 
     shield.addEventListener('click', function (e) {
