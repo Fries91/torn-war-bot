@@ -733,9 +733,6 @@ def faction_wars(api_key: str, faction_id: str = "") -> Dict[str, Any]:
             if isinstance(side, dict):
                 add_side(None, side)
 
-        for key in ("attacker_id", "attacker_name", "defender_id", "defender_name"):
-            pass
-
         attacker_id = str(war.get("attacker_id") or war.get("attacking_faction") or "").strip()
         attacker_name = str(war.get("attacker_name") or war.get("attacking_faction_name") or "").strip()
         defender_id = str(war.get("defender_id") or war.get("defending_faction") or "").strip()
@@ -757,21 +754,37 @@ def faction_wars(api_key: str, faction_id: str = "") -> Dict[str, Any]:
                 "chain": war.get("defender_chain"),
             }, defender_name)
 
-        phase = _war_phase(raw_war = war.get("war") if isinstance(war.get("war"), dict) else {}
-winner = raw_war.get("winner") or war.get("winner")
-end_ts = _to_int(war.get("end") or war.get("end_time") or war.get("ends") or (raw_war.get("end") if isinstance(raw_war, dict) else 0), 0)
-start_ts = _to_int(war.get("start") or war.get("start_time") or war.get("started") or (raw_war.get("start") if isinstance(raw_war, dict) else 0), 0)
-now_ts = int(time.time())
+        raw_war = war.get("war") if isinstance(war.get("war"), dict) else {}
+        phase = _war_phase(war)
 
-if winner or (end_ts and end_ts < now_ts):
-    phase = "finished"
-elif phase == "unknown":
-    if start_ts and start_ts > now_ts:
-        phase = "registered"
-    elif start_ts and end_ts and start_ts <= now_ts <= end_ts:
-        phase = "active"
-    else:
-        phase = "finished"
+        winner = raw_war.get("winner") or war.get("winner")
+        end_ts = _to_int(
+            war.get("end")
+            or war.get("end_time")
+            or war.get("ends")
+            or raw_war.get("end")
+            or 0,
+            0,
+        )
+        start_ts = _to_int(
+            war.get("start")
+            or war.get("start_time")
+            or war.get("started")
+            or raw_war.get("start")
+            or 0,
+            0,
+        )
+        now_ts = int(time.time())
+
+        if winner or (end_ts and end_ts < now_ts):
+            phase = "finished"
+        elif phase == "unknown":
+            if start_ts and start_ts > now_ts:
+                phase = "registered"
+            elif start_ts and end_ts and start_ts <= now_ts <= end_ts:
+                phase = "active"
+            else:
+                phase = "finished"
 
         wars.append({
             "war_id": str(war.get("id") or war_id),
@@ -781,13 +794,15 @@ elif phase == "unknown":
             "active": phase == "active",
             "registered": phase in {"registered", "active"},
             "finished": phase == "finished",
-            "start": _to_int(war.get("start") or war.get("start_time") or war.get("started"), 0),
-            "end": _to_int(war.get("end") or war.get("end_time") or war.get("ends"), 0),
+            "start": start_ts,
+            "end": end_ts,
             "target_score": _to_int(
                 war.get("target")
                 or war.get("target_score")
                 or war.get("goal")
-                or war.get("score_target"),
+                or war.get("score_target")
+                or raw_war.get("target")
+                or 0,
                 0,
             ),
             "factions": parsed_factions,
