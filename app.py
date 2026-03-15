@@ -943,7 +943,7 @@ def api_state():
         "source_note": "No war API key available.",
     }
 
-        raw_members = []
+    raw_members = []
     for m in (faction_info.get("members") or []):
         member_id = str(m.get("user_id") or m.get("id") or "")
         merged = dict(m)
@@ -1071,20 +1071,20 @@ def api_state():
         has_war=bool(war_info.get("has_war")),
         is_ranked_war=bool(war_info.get("has_war")),
         debug={
-    "source_note": str(war_info.get("source_note") or ""),
-    "my_faction_id": str(war_info.get("my_faction_id") or ""),
-    "my_faction_name": str(war_info.get("my_faction_name") or ""),
-    "enemy_faction_id": enemy_faction_id,
-    "enemy_faction_name": enemy_faction_name,
-    "enemy_members_count": len(raw_enemy_members or []),
-    "score_us": _to_int(war_info.get("score_us")),
-    "score_them": _to_int(war_info.get("score_them")),
-    "chain_us": _to_int(war_info.get("chain_us")),
-    "chain_them": _to_int(war_info.get("chain_them")),
-    "debug_factions": war_info.get("debug_factions") or [],
-    "debug_raw_keys": war_info.get("debug_raw_keys") or [],
-    "debug_raw": war_info.get("debug_raw") or {},
-},
+            "source_note": str(war_info.get("source_note") or ""),
+            "my_faction_id": str(war_info.get("my_faction_id") or ""),
+            "my_faction_name": str(war_info.get("my_faction_name") or ""),
+            "enemy_faction_id": enemy_faction_id,
+            "enemy_faction_name": enemy_faction_name,
+            "enemy_members_count": len(raw_enemy_members or []),
+            "score_us": _to_int(war_info.get("score_us")),
+            "score_them": _to_int(war_info.get("score_them")),
+            "chain_us": _to_int(war_info.get("chain_us")),
+            "chain_them": _to_int(war_info.get("chain_them")),
+            "debug_factions": war_info.get("debug_factions") or [],
+            "debug_raw_keys": war_info.get("debug_raw_keys") or [],
+            "debug_raw": war_info.get("debug_raw") or {},
+        },
     )
 
 
