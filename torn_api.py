@@ -1352,11 +1352,58 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
     is_registered = phase in {"registered", "active"}
 
     enemy_members: List[Dict[str, Any]] = []
-    if enemy_id and is_registered:
-        enemy_faction = faction_basic(api_key, faction_id=enemy_id)
-        if enemy_faction.get("ok"):
-            enemy_name = str(enemy_faction.get("faction_name") or enemy_name).strip()
-            enemy_members = enemy_faction.get("members") or []
+if enemy_id and is_registered:
+    enemy_faction = faction_basic(api_key, faction_id=enemy_id)
+    if enemy_faction.get("ok"):
+        enemy_name = str(enemy_faction.get("faction_name") or enemy_name).strip()
+        enemy_members = enemy_faction.get("members") or []
+
+    # fallback: build enemy roster from ranked-war participant payload
+    if not enemy_members:
+        participants = (
+            raw.get("participants")
+            or raw.get("members")
+            or raw.get("roster")
+            or raw.get("players")
+            or {}
+        )
+
+        def _participant_matches_enemy(pdata: Dict[str, Any]) -> bool:
+            pfid = str(
+                pdata.get("faction_id")
+                or pdata.get("faction")
+                or pdata.get("team_id")
+                or pdata.get("side_id")
+                or ""
+            ).strip()
+
+            pname = str(
+                pdata.get("faction_name")
+                or pdata.get("team_name")
+                or pdata.get("side_name")
+                or ""
+            ).strip().lower()
+
+            if enemy_id and pfid and pfid == enemy_id:
+                return True
+            if enemy_name and pname and pname == enemy_name.strip().lower():
+                return True
+            return False
+
+        if isinstance(participants, dict):
+            for uid, pdata in participants.items():
+                if not isinstance(pdata, dict):
+                    continue
+                if _participant_matches_enemy(pdata):
+                    enemy_members.append(_normalize_member(uid, pdata))
+
+        elif isinstance(participants, list):
+            for idx, pdata in enumerate(participants):
+                if not isinstance(pdata, dict):
+                    continue
+                if _participant_matches_enemy(pdata):
+                    uid = pdata.get("user_id") or pdata.get("id") or str(idx)
+                    enemy_members.append(_normalize_member(uid, pdata))
 
     status_text = str(chosen_war.get("status_text") or "")
     if not status_text:
