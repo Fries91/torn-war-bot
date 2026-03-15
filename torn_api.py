@@ -400,6 +400,110 @@ def me_basic(api_key: str) -> Dict[str, Any]:
         "faction_name": str(faction.get("faction_name") or faction.get("name") or ""),
     }
 
+def member_live_bars(api_key: str) -> Dict[str, Any]:
+    api_key = str(api_key or "").strip()
+    if not api_key:
+        return {
+            "ok": False,
+            "error": "Missing API key.",
+            "user_id": "",
+        }
+
+    selections = "profile,bars,cooldowns"
+
+    res = _safe_get(
+        f"{API_BASE}/user",
+        {"selections": selections, "key": api_key},
+        cache_seconds=0,
+        cache_prefix="",
+    )
+
+    if not res.get("ok"):
+        res = _safe_get(
+            f"{API_BASE}/user/",
+            {"selections": selections, "key": api_key},
+            cache_seconds=0,
+            cache_prefix="",
+        )
+
+    if not res.get("ok"):
+        return {
+            "ok": False,
+            "error": res.get("error", "Could not load live member bars."),
+            "user_id": "",
+        }
+
+    data = res.get("data") or {}
+
+    player_id = str(
+        data.get("player_id")
+        or data.get("playerID")
+        or data.get("user_id")
+        or ""
+    ).strip()
+
+    bars = data.get("bars") or {}
+    cooldowns = data.get("cooldowns") or {}
+
+    life_obj = data.get("life") if isinstance(data.get("life"), dict) else {}
+    energy_obj = data.get("energy") if isinstance(data.get("energy"), dict) else {}
+
+    bars_life = bars.get("life") if isinstance(bars.get("life"), dict) else {}
+    bars_energy = bars.get("energy") if isinstance(bars.get("energy"), dict) else {}
+
+    life_current = None
+    life_max = None
+    if life_obj:
+        life_current = _to_int(life_obj.get("current"), 0)
+        life_max = _to_int(life_obj.get("maximum"), 0)
+    elif bars_life:
+        life_current = _to_int(
+            bars_life.get("current") or bars_life.get("amount"),
+            0,
+        )
+        life_max = _to_int(
+            bars_life.get("maximum") or bars_life.get("max"),
+            0,
+        )
+
+    energy_current = None
+    energy_max = None
+    if energy_obj:
+        energy_current = _to_int(energy_obj.get("current"), 0)
+        energy_max = _to_int(
+            energy_obj.get("maximum") or energy_obj.get("max"),
+            0,
+        )
+    elif bars_energy:
+        energy_current = _to_int(
+            bars_energy.get("current") or bars_energy.get("amount"),
+            0,
+        )
+        energy_max = _to_int(
+            bars_energy.get("maximum") or bars_energy.get("max"),
+            0,
+        )
+
+    medical_cooldown = None
+    if isinstance(cooldowns, dict) and cooldowns:
+        medical_cooldown = _to_int(
+            cooldowns.get("medical")
+            or cooldowns.get("medical_cooldown")
+            or cooldowns.get("med")
+            or 0,
+            0,
+        )
+
+    return {
+        "ok": True,
+        "user_id": player_id,
+        "name": str(data.get("name") or ""),
+        "life_current": life_current,
+        "life_max": life_max,
+        "energy_current": energy_current,
+        "energy_max": energy_max,
+        "medical_cooldown": medical_cooldown,
+    }
 
 def faction_basic(api_key: str, faction_id: str = "") -> Dict[str, Any]:
     faction_id = str(faction_id or "").strip()
