@@ -667,7 +667,7 @@ function whDetectWarPairFromFactionPage() {
         },
         has_war: hasWar,
         is_ranked_war: !!(s.is_ranked_war || hasWar),
-        license: s.license || {}
+        license: s.license || {},
         debug: s.debug || {}
     };
 }
