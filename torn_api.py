@@ -2,7 +2,8 @@ import json
 import os
 import re
 import time
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
+
 
 import requests
 
@@ -353,7 +354,12 @@ def faction_basic(api_key: str, faction_id: str = "") -> Dict[str, Any]:
             }
 
         data = res_obj.get("data") or {}
-        members_raw = data.get("members") or {}
+        members_raw = (
+            data.get("members")
+            or data.get("member_list")
+            or data.get("participants")
+            or {}
+        )
         members: List[Dict[str, Any]] = []
 
         if isinstance(members_raw, dict):
@@ -368,8 +374,18 @@ def faction_basic(api_key: str, faction_id: str = "") -> Dict[str, Any]:
 
         return {
             "ok": True,
-            "faction_id": str(data.get("ID") or fallback_faction_id or ""),
-            "faction_name": str(data.get("name") or ""),
+            "faction_id": str(
+                data.get("ID")
+                or data.get("id")
+                or data.get("faction_id")
+                or fallback_faction_id
+                or ""
+            ),
+            "faction_name": str(
+                data.get("name")
+                or data.get("faction_name")
+                or ""
+            ),
             "members": members,
         }
 
@@ -442,6 +458,7 @@ def faction_basic(api_key: str, faction_id: str = "") -> Dict[str, Any]:
     return faction_basic(api_key, faction_id=my_faction_id)
 
 
+
 def _find_war_container(data: Dict[str, Any]) -> Tuple[str, Any]:
     for key in ("rankedwars", "wars"):
         value = data.get(key)
@@ -452,12 +469,15 @@ def _find_war_container(data: Dict[str, Any]) -> Tuple[str, Any]:
     return "", {}
 
 
-def _extract_factions_from_war(war: Dict[str, Any]) -> Dict[str, Any]:
+def _extract_factions_from_war(war: Dict[str, Any]) -> Any:
     for key in ("factions", "participants", "sides", "teams"):
         factions = war.get(key)
         if isinstance(factions, dict) and factions:
             return factions
+        if isinstance(factions, list) and factions:
+            return factions
     return {}
+
 
 
 def _war_phase(war: Dict[str, Any]) -> str:
