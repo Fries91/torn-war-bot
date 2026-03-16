@@ -4,7 +4,6 @@ import re
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
-
 import requests
 
 API_BASE = str(os.getenv("TORN_API_BASE", "https://api.torn.com")).rstrip("/")
@@ -182,7 +181,12 @@ def _normalize_member(uid: Any, member: Dict[str, Any]) -> Dict[str, Any]:
     last_action = ""
     status_text = ""
     status_detail = ""
-    name = str(member.get("name") or "Unknown")
+    name = str(
+        member.get("name")
+        or member.get("player_name")
+        or member.get("member_name")
+        or "Unknown"
+    )
     level = member.get("level", "")
     position = member.get("position", "")
 
@@ -312,7 +316,13 @@ def _normalize_member(uid: Any, member: Dict[str, Any]) -> Dict[str, Any]:
         elif "okay" in status_text_lower and "offline" not in combined_lower:
             online_state = "online"
 
-    user_id = str(uid or "")
+    user_id = str(
+        uid
+        or member.get("user_id")
+        or member.get("player_id")
+        or member.get("id")
+        or ""
+    )
 
     return {
         "user_id": user_id,
@@ -399,6 +409,7 @@ def me_basic(api_key: str) -> Dict[str, Any]:
         "faction_id": str(faction.get("faction_id") or faction.get("ID") or ""),
         "faction_name": str(faction.get("faction_name") or faction.get("name") or ""),
     }
+
 
 def member_live_bars(api_key: str) -> Dict[str, Any]:
     api_key = str(api_key or "").strip()
@@ -505,6 +516,7 @@ def member_live_bars(api_key: str) -> Dict[str, Any]:
         "medical_cooldown": medical_cooldown,
     }
 
+
 def faction_basic(api_key: str, faction_id: str = "") -> Dict[str, Any]:
     faction_id = str(faction_id or "").strip()
 
@@ -572,7 +584,6 @@ def faction_basic(api_key: str, faction_id: str = "") -> Dict[str, Any]:
                 {"selections": "members", "id": faction_id, "key": api_key, "striptags": "true"},
                 "faction_members_id_lower",
             ),
-            # fallback in case some responses still expose usable faction name/basic fields
             (
                 f"{API_BASE}/faction/{faction_id}",
                 {"selections": "basic", "key": api_key},
@@ -640,7 +651,6 @@ def faction_basic(api_key: str, faction_id: str = "") -> Dict[str, Any]:
     return faction_basic(api_key, faction_id=my_faction_id)
 
 
-
 def _find_war_container(data: Dict[str, Any]) -> Tuple[str, Any]:
     for key in ("rankedwars", "wars"):
         value = data.get(key)
@@ -659,7 +669,6 @@ def _extract_factions_from_war(war: Dict[str, Any]) -> Any:
         if isinstance(factions, list) and factions:
             return factions
     return {}
-
 
 
 def _war_phase(war: Dict[str, Any]) -> str:
@@ -1005,7 +1014,8 @@ def faction_wars(api_key: str, faction_id: str = "") -> Dict[str, Any]:
         "source_ok": True,
         "source_note": f"Loaded from faction {chosen_container_name}.",
     }
-    
+
+
 def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: str = "") -> Dict[str, Any]:
     me = me_basic(api_key)
     resolved_my_faction_id = str(my_faction_id or me.get("faction_id") or "").strip()
@@ -1200,7 +1210,7 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
 
     def _war_has_my_faction(war: Dict[str, Any]) -> bool:
         factions = [x for x in (war.get("factions") or []) if isinstance(x, dict)]
-        raw = war.get("raw") or {}
+        raw_local = war.get("raw") or {}
 
         for faction in factions:
             if resolved_my_faction_id and _fid(faction) == resolved_my_faction_id:
@@ -1208,9 +1218,9 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
             if my_name_lower and _fname_lower(faction) == my_name_lower:
                 return True
 
-        attacker, defender, raw_map_sides = _find_pairing_side(raw, factions)
+        attacker, defender, raw_map = _find_pairing_side(raw_local, factions)
 
-        for side in [attacker, defender] + raw_map_sides:
+        for side in [attacker, defender] + raw_map:
             if resolved_my_faction_id and _fid(side) == resolved_my_faction_id:
                 return True
             if my_name_lower and _fname_lower(side) == my_name_lower:
@@ -1220,9 +1230,9 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
 
     def _war_priority(war: Dict[str, Any]) -> tuple:
         phase = str(war.get("phase") or "").lower()
-        raw = war.get("raw") or {}
-        raw_war = raw.get("war") if isinstance(raw.get("war"), dict) else {}
-        winner = raw_war.get("winner") or raw.get("winner")
+        raw_local = war.get("raw") or {}
+        raw_war_local = raw_local.get("war") if isinstance(raw_local.get("war"), dict) else {}
+        winner = raw_war_local.get("winner") or raw_local.get("winner")
         start_ts = _to_int(war.get("start"), 0)
         end_ts = _to_int(war.get("end"), 0)
 
