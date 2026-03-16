@@ -36,7 +36,7 @@ var K_ACCESS_CACHE = 'warhub_access_cache_v3';
 var K_OVERVIEW_BOXES = 'warhub_overview_boxes_v3';
     var factionMembersCache = null;
     var PAYMENT_PLAYER = 'Fries91';
-    var PRICE_PER_MEMBER = 2500000;
+    var PRICE_PER_MEMBER = 3;
     var TAB_ORDER = [
     ['overview', 'Overview'],
     ['faction', 'Faction'],
@@ -1219,10 +1219,11 @@ function renderOverviewTab() {
 
     var prefs = getOverviewBoxPrefs();
     prefs.war = true;
+
     var deals = arr((state && (state.medDeals || state.med_deals)) || []);
     var allDibs = arr((state && state.dibs) || []);
     var war = (state && state.war) || {};
-    var our = (state && (state.faction || state.our_faction)) || {};
+    var our = (state && (state.faction || state.our_faction || state.ourFaction)) || {};
     var enemy = (state && (state.enemyFaction || state.enemy_faction)) || {};
     var fallbackPair = (typeof whLoadWarPairFallback === 'function' && whLoadWarPairFallback()) || {};
 
@@ -1234,6 +1235,7 @@ function renderOverviewTab() {
         state.enemy_faction_id ||
         war.enemy_faction_id ||
         war.opponent_faction_id ||
+        fallbackPair.enemy_faction_id ||
         ''
     ).trim();
 
@@ -1242,15 +1244,9 @@ function renderOverviewTab() {
         state.enemy_faction_name ||
         war.enemy_faction_name ||
         war.opponent_faction_name ||
+        fallbackPair.enemy_faction_name ||
         ''
     ).trim();
-
-    if (!enemyFactionId) {
-        enemyFactionId = String(fallbackPair.enemy_faction_id || '').trim();
-    }
-    if (!enemyFactionName) {
-        enemyFactionName = String(fallbackPair.enemy_faction_name || '').trim();
-    }
 
     if (enemyFactionId && ownFactionId && enemyFactionId === ownFactionId) {
         enemyFactionId = '';
@@ -1258,10 +1254,7 @@ function renderOverviewTab() {
     if (enemyFactionName && ownFactionName && enemyFactionName.toLowerCase() === ownFactionName) {
         enemyFactionName = '';
     }
-
-    if (!enemyFactionName) {
-        enemyFactionName = '—';
-    }
+    if (!enemyFactionName) enemyFactionName = '—';
 
     var scoreUs = Number(
         (state && state.score && state.score.our) ||
@@ -1299,6 +1292,7 @@ function renderOverviewTab() {
     ) || 0;
 
     var lead = scoreUs - scoreThem;
+
     var hasWar = !!(
         state && (
             state.has_war ||
@@ -1318,9 +1312,21 @@ function renderOverviewTab() {
     );
 
     var medDealsHtml = deals.length ? deals.slice(0, 6).map(function (x) {
+        var maker =
+            x.seller_name ||
+            x.created_by_name ||
+            x.user_name ||
+            x.member_name ||
+            'Unknown user';
+
+        var details = [
+            x.item_name || x.buyer_name || '',
+            x.note || x.notes || ''
+        ].filter(Boolean).join(' • ');
+
         return '<div class="warhub-list-item">\
-            <div class="warhub-name">' + esc(x.seller_name || x.created_by_name || 'Unknown user') + '</div>\
-            <div class="warhub-meta">' + esc([x.item_name || x.buyer_name || '', x.note || x.notes || ''].filter(Boolean).join(' • ')) + '</div>\
+            <div class="warhub-name">' + esc(maker) + '</div>\
+            <div class="warhub-meta">' + esc(details || 'Live shared med deal') + '</div>\
         </div>';
     }).join('') : '<div class="warhub-empty">No med deals yet.</div>';
 
@@ -1368,7 +1374,6 @@ function renderOverviewTab() {
         </div>' : '<div class="warhub-empty">Currently not in a war.</div>';
 
     var cards = [];
-    cards.push('<div class="warhub-card"><div class="warhub-mini">DEBUG PRESENT: ' + esc(String(!!(state && state.debug))) + '</div></div>');
 
     if (prefs.meddeals) {
         cards.push('\
@@ -1431,17 +1436,6 @@ function renderOverviewTab() {
         <div class="warhub-card">\
             <h3>Overview</h3>\
             <div class="warhub-empty">No quick boxes selected. Turn them on in Settings.</div>\
-        </div>');
-    }
-
-    if (state && state.debug) {
-        cards.push('\
-        <div class="warhub-card">\
-            <div class="warhub-section-title">\
-                <h3>War Debug</h3>\
-                <span class="warhub-count">Live</span>\
-            </div>\
-            <div class="warhub-mini" style="white-space:pre-wrap; line-height:1.5;">' + esc(JSON.stringify(state.debug, null, 2)) + '</div>\
         </div>');
     }
 
@@ -2003,17 +1997,28 @@ function renderChainTab() {
         }).join('') : '<div class="warhub-empty">No notifications.</div>', "\n        </div>\n        <div class=\"warhub-actions\" style=\"margin-top:8px;\">\n          <button class=\"warhub-btn\" id=\"wh-mark-alerts-seen\">Refresh / Mark Seen</button>\n          <button class=\"warhub-btn warn\" id=\"wh-clear-alerts\">Clear Local</button>\n        </div>\n      </div>\n    ");
     }
     function renderFactionTab() {
-        var license = (state === null || state === void 0 ? void 0 : state.factionLicense) || (state === null || state === void 0 ? void 0 : state.license) || {};
-        var members = arr((factionMembersCache === null || factionMembersCache === void 0 ? void 0 : factionMembersCache.members) || []);
-        var status = license.status || ((accessState === null || accessState === void 0 ? void 0 : accessState.paymentRequired) ? 'payment_required' : (accessState === null || accessState === void 0 ? void 0 : accessState.trialActive) ? 'trial' : 'active');
-        var canManage = !!((accessState === null || accessState === void 0 ? void 0 : accessState.isFactionLeader) || isOwnerSession());
-        return "\n      <div class=\"warhub-card\">\n        <h3>Faction License</h3>\n        <div class=\"warhub-grid two\">\n          <div class=\"warhub-metric\"><div class=\"k\">Status</div><div class=\"v\">".concat(esc(status), "</div></div>\n          <div class=\"warhub-metric\"><div class=\"k\">Faction</div><div class=\"v\">").concat(esc((state === null || state === void 0 ? void 0 : state.user) && state.user.faction_name || (accessState === null || accessState === void 0 ? void 0 : accessState.factionName) || '—'), "</div></div>\n          <div class=\"warhub-metric\"><div class=\"k\">Payment Player</div><div class=\"v\">").concat(esc(license.payment_player || (accessState === null || accessState === void 0 ? void 0 : accessState.paymentPlayer) || PAYMENT_PLAYER), "</div></div>\n          <div class=\"warhub-metric\"><div class=\"k\">Price / Enabled Member</div><div class=\"v\">").concat(fmtMoney(license.faction_member_price || (accessState === null || accessState === void 0 ? void 0 : accessState.pricePerMember) || PRICE_PER_MEMBER), "</div></div>\n        </div>\n      </div>\n\n      <div class=\"warhub-card\">\n        <h3>Manage Member Access</h3>\n        ").concat(canManage ? "\n          <div class=\"warhub-grid two\">\n            <div>\n              <label class=\"warhub-label\">Member User ID</label>\n              <input class=\"warhub-input\" id=\"wh-fm-userid\" placeholder=\"User ID\">\n            </div>\n            <div>\n              <label class=\"warhub-label\">Member Name</label>\n              <input class=\"warhub-input\" id=\"wh-fm-name\" placeholder=\"Member name\">\n            </div>\n            <div>\n              <label class=\"warhub-label\">Member API Key</label>\n              <input class=\"warhub-input\" id=\"wh-fm-key\" placeholder=\"Member API key\">\n            </div>\n            <div>\n              <label class=\"warhub-label\">Position</label>\n              <input class=\"warhub-input\" id=\"wh-fm-position\" placeholder=\"Position\">\n            </div>\n          </div>\n          <div class=\"warhub-actions\" style=\"margin-top:8px;\">\n            <button class=\"warhub-btn primary\" id=\"wh-fm-save\">Save Member Access</button>\n          </div>\n        " : '<div class=\"warhub-empty\">Leader access required.</div>', "\n      </div>\n\n      <div class=\"warhub-card\">\n        <div class=\"warhub-section-title\">\n          <h3>Faction Members</h3>\n          <span class=\"warhub-count\">").concat(fmtNum(members.length), "</span>\n        </div>\n        <div class=\"warhub-list\">\n          ").concat(members.length ? members.map(function (x) {
-            var memberId = x.member_user_id || x.user_id || '';
-            var memberName = x.member_name || x.name || "ID ".concat(memberId);
-            var enabled = !!x.enabled;
-            return "\n              <div class=\"warhub-list-item\">\n                <div class=\"warhub-row\">\n                  <div>\n                    <div class=\"warhub-name\">".concat(esc(memberName), "</div>\n                    <div class=\"warhub-meta\">").concat(esc(["ID ".concat(memberId), x.position || '', x.member_api_key_masked || ''].filter(Boolean).join(' • ')), "</div>\n                  </div>\n                  <div class=\"warhub-actions\">\n                    <span class=\"warhub-pill ").concat(enabled ? 'enabled' : 'disabled', "\">").concat(enabled ? 'Enabled' : 'Disabled', "</span>\n                    ").concat(canManage ? "<button class=\"warhub-btn small ".concat(enabled ? '' : 'good', "\" data-toggle-member=\"").concat(esc(String(memberId)), "\" data-enabled=\"").concat(enabled ? '0' : '1', "\">").concat(enabled ? 'Disable' : 'Enable', "</button>") : '', "\n                    ").concat(canManage ? "<button class=\"warhub-btn small warn\" data-del-member=\"".concat(esc(String(memberId)), "\">Delete</button>") : '', "\n                  </div>\n                </div>\n              </div>\n            ");
-        }).join('') : '<div class="warhub-empty">No member access rows yet.</div>', "\n        </div>\n      </div>\n    ");
-    }
+    var license = (state === null || state === void 0 ? void 0 : state.factionLicense) || (state === null || state === void 0 ? void 0 : state.license) || {};
+    var members = arr((factionMembersCache === null || factionMembersCache === void 0 ? void 0 : factionMembersCache.members) || []);
+    var factionRoster = arr((state && state.members) || []);
+    var status = license.status || ((accessState === null || accessState === void 0 ? void 0 : accessState.paymentRequired) ? 'payment_required' : (accessState === null || accessState === void 0 ? void 0 : accessState.trialActive) ? 'trial' : 'active');
+    var canManage = !!((accessState === null || accessState === void 0 ? void 0 : accessState.isFactionLeader) || isOwnerSession());
+
+    var rosterOptions = factionRoster.length
+        ? sortAlphabetical(factionRoster).map(function (m) {
+            var uid = String(m.user_id || m.id || '').trim();
+            var name = String(m.name || m.member_name || ('ID ' + uid)).trim();
+            if (!uid) return '';
+            return '<option value="' + esc(uid) + '">' + esc(name + ' [' + uid + ']') + '</option>';
+        }).join('')
+        : '<option value="">No faction members loaded</option>';
+
+    return "\n      <div class=\"warhub-card\">\n        <h3>Faction License</h3>\n        <div class=\"warhub-grid two\">\n          <div class=\"warhub-metric\"><div class=\"k\">Status</div><div class=\"v\">".concat(esc(status), "</div></div>\n          <div class=\"warhub-metric\"><div class=\"k\">Faction</div><div class=\"v\">").concat(esc((state === null || state === void 0 ? void 0 : state.user) && state.user.faction_name || (accessState === null || accessState === void 0 ? void 0 : accessState.factionName) || '—'), "</div></div>\n          <div class=\"warhub-metric\"><div class=\"k\">Payment Player</div><div class=\"v\">").concat(esc(license.payment_player || (accessState === null || accessState === void 0 ? void 0 : accessState.paymentPlayer) || PAYMENT_PLAYER), "</div></div>\n          <div class=\"warhub-metric\"><div class=\"k\">Price / Enabled Member</div><div class=\"v\">").concat(esc(String(license.faction_member_price || (accessState === null || accessState === void 0 ? void 0 : accessState.pricePerMember) || PRICE_PER_MEMBER) + ' Xanax'), "</div></div>\n        </div>\n      </div>\n\n      <div class=\"warhub-card\">\n        <h3>Manage Member Access</h3>\n        ").concat(canManage ? "\n          <div>\n            <label class=\"warhub-label\">Faction Member</label>\n            <select class=\"warhub-input\" id=\"wh-fm-userid\">\n              <option value=\"\">Select a faction member</option>\n              ".concat(rosterOptions, "\n            </select>\n          </div>\n          <div class=\"warhub-actions\" style=\"margin-top:8px;\">\n            <button class=\"warhub-btn primary\" id=\"wh-fm-save\">Save Member Access</button>\n          </div>\n        ") : '<div class=\"warhub-empty\">Leader access required.</div>', "\n      </div>\n\n      <div class=\"warhub-card\">\n        <div class=\"warhub-section-title\">\n          <h3>Faction Members</h3>\n          <span class=\"warhub-count\">").concat(fmtNum(members.length), "</span>\n        </div>\n        <div class=\"warhub-list\">\n          ").concat(members.length ? members.map(function (x) {
+        var memberId = x.member_user_id || x.user_id || '';
+        var memberName = x.member_name || x.name || "ID ".concat(memberId);
+        var enabled = !!x.enabled;
+        return "\n              <div class=\"warhub-list-item\">\n                <div class=\"warhub-row\">\n                  <div>\n                    <div class=\"warhub-name\">".concat(esc(memberName), "</div>\n                    <div class=\"warhub-meta\">").concat(esc(["ID ".concat(memberId)].filter(Boolean).join(' • ')), "</div>\n                  </div>\n                  <div class=\"warhub-actions\">\n                    <span class=\"warhub-pill ").concat(enabled ? 'enabled' : 'disabled', "\">").concat(enabled ? 'Enabled' : 'Disabled', "</span>\n                    ").concat(canManage ? "<button class=\"warhub-btn small ".concat(enabled ? '' : 'good', "\" data-toggle-member=\"").concat(esc(String(memberId)), "\" data-enabled=\"").concat(enabled ? '0' : '1', "\">").concat(enabled ? 'Disable' : 'Enable', "</button>") : '', "\n                    ").concat(canManage ? "<button class=\"warhub-btn small warn\" data-del-member=\"".concat(esc(String(memberId)), "\">Delete</button>") : '', "\n                  </div>\n                </div>\n              </div>\n            ");
+    }).join('') : '<div class="warhub-empty">No member access rows yet.</div>', "\n        </div>\n      </div>\n    ");
+}
     function renderAdminTab() {
         if (!isOwnerSession()) {
             return "\n        <div class=\"warhub-card\">\n          <h3>Admin</h3>\n          <div class=\"warhub-empty\">Owner access required.</div>\n        </div>\n      ";
