@@ -79,6 +79,222 @@ def _faction_payment_text(enabled_member_count: int) -> str:
     total_amount = int(enabled_member_count or 0) * int(PAYMENT_XANAX_PER_MEMBER)
     return f"Send {total_amount} {PAYMENT_KIND} to {PAYMENT_PLAYER} [{PAYMENT_NOTIFY_USER_ID}]."
 
+
+def _clean_text(value: Any) -> str:
+    return str(value or "").strip()
+
+
+def get_faction_exemption(faction_id: str) -> Optional[Dict[str, Any]]:
+    faction_id = _clean_text(faction_id)
+    if not faction_id:
+        return None
+
+    con = _con()
+    cur = con.cursor()
+    cur.execute("SELECT * FROM faction_exemptions WHERE faction_id = ? LIMIT 1", (faction_id,))
+    row = cur.fetchone()
+    con.close()
+    return _row_to_dict(row)
+
+
+def get_user_exemption(user_id: str) -> Optional[Dict[str, Any]]:
+    user_id = _clean_text(user_id)
+    if not user_id:
+        return None
+
+    con = _con()
+    cur = con.cursor()
+    cur.execute("SELECT * FROM user_exemptions WHERE user_id = ? LIMIT 1", (user_id,))
+    row = cur.fetchone()
+    con.close()
+    return _row_to_dict(row)
+
+
+def is_faction_exempt(faction_id: str) -> bool:
+    return bool(get_faction_exemption(faction_id))
+
+
+def is_user_exempt(user_id: str) -> bool:
+    return bool(get_user_exemption(user_id))
+
+
+def upsert_faction_exemption(
+    faction_id: str,
+    faction_name: str = "",
+    note: str = "",
+    added_by_user_id: str = "",
+    added_by_name: str = "",
+) -> Dict[str, Any]:
+    faction_id = _clean_text(faction_id)
+    if not faction_id:
+        return {}
+
+    existing_license = ensure_faction_license(faction_id=faction_id, faction_name=faction_name)
+    now = _utc_now()
+    con = _con()
+    cur = con.cursor()
+    cur.execute(
+        """
+        INSERT INTO faction_exemptions (
+            faction_id,
+            faction_name,
+            note,
+            added_by_user_id,
+            added_by_name,
+            created_at,
+            updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(faction_id) DO UPDATE SET
+            faction_name = CASE WHEN excluded.faction_name != '' THEN excluded.faction_name ELSE faction_exemptions.faction_name END,
+            note = excluded.note,
+            added_by_user_id = excluded.added_by_user_id,
+            added_by_name = excluded.added_by_name,
+            updated_at = excluded.updated_at
+        """,
+        (
+            faction_id,
+            _clean_text(faction_name) or _clean_text(existing_license.get("faction_name") if existing_license else ""),
+            _clean_text(note),
+            _clean_text(added_by_user_id),
+            _clean_text(added_by_name),
+            now,
+            now,
+        ),
+    )
+    con.commit()
+    con.close()
+    recalc_faction_license(faction_id)
+    add_audit_log(
+        actor_user_id=_clean_text(added_by_user_id),
+        actor_name=_clean_text(added_by_name),
+        action="faction_exemption_upserted",
+        meta_json=f"faction_id={faction_id}",
+    )
+    return get_faction_exemption(faction_id) or {}
+
+
+def delete_faction_exemption(faction_id: str) -> None:
+    faction_id = _clean_text(faction_id)
+    if not faction_id:
+        return
+
+    con = _con()
+    cur = con.cursor()
+    cur.execute("DELETE FROM faction_exemptions WHERE faction_id = ?", (faction_id,))
+    con.commit()
+    con.close()
+    recalc_faction_license(faction_id)
+
+
+def list_faction_exemptions(limit: int = 250) -> List[Dict[str, Any]]:
+    con = _con()
+    cur = con.cursor()
+    cur.execute(
+        """
+        SELECT *
+        FROM faction_exemptions
+        ORDER BY LOWER(COALESCE(NULLIF(faction_name, ''), faction_id)) ASC
+        LIMIT ?
+        """,
+        (int(limit),),
+    )
+    rows = [dict(r) for r in cur.fetchall()]
+    con.close()
+    return rows
+
+
+def upsert_user_exemption(
+    user_id: str,
+    user_name: str = "",
+    faction_id: str = "",
+    faction_name: str = "",
+    note: str = "",
+    added_by_user_id: str = "",
+    added_by_name: str = "",
+) -> Dict[str, Any]:
+    user_id = _clean_text(user_id)
+    if not user_id:
+        return {}
+
+    user_row = get_user(user_id) or {}
+    now = _utc_now()
+    con = _con()
+    cur = con.cursor()
+    cur.execute(
+        """
+        INSERT INTO user_exemptions (
+            user_id,
+            user_name,
+            faction_id,
+            faction_name,
+            note,
+            added_by_user_id,
+            added_by_name,
+            created_at,
+            updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(user_id) DO UPDATE SET
+            user_name = CASE WHEN excluded.user_name != '' THEN excluded.user_name ELSE user_exemptions.user_name END,
+            faction_id = CASE WHEN excluded.faction_id != '' THEN excluded.faction_id ELSE user_exemptions.faction_id END,
+            faction_name = CASE WHEN excluded.faction_name != '' THEN excluded.faction_name ELSE user_exemptions.faction_name END,
+            note = excluded.note,
+            added_by_user_id = excluded.added_by_user_id,
+            added_by_name = excluded.added_by_name,
+            updated_at = excluded.updated_at
+        """,
+        (
+            user_id,
+            _clean_text(user_name) or _clean_text(user_row.get("name") or ""),
+            _clean_text(faction_id) or _clean_text(user_row.get("faction_id") or ""),
+            _clean_text(faction_name) or _clean_text(user_row.get("faction_name") or ""),
+            _clean_text(note),
+            _clean_text(added_by_user_id),
+            _clean_text(added_by_name),
+            now,
+            now,
+        ),
+    )
+    con.commit()
+    con.close()
+    add_audit_log(
+        actor_user_id=_clean_text(added_by_user_id),
+        actor_name=_clean_text(added_by_name),
+        action="user_exemption_upserted",
+        meta_json=f"user_id={user_id}",
+    )
+    return get_user_exemption(user_id) or {}
+
+
+def delete_user_exemption(user_id: str) -> None:
+    user_id = _clean_text(user_id)
+    if not user_id:
+        return
+
+    con = _con()
+    cur = con.cursor()
+    cur.execute("DELETE FROM user_exemptions WHERE user_id = ?", (user_id,))
+    con.commit()
+    con.close()
+
+
+def list_user_exemptions(limit: int = 250) -> List[Dict[str, Any]]:
+    con = _con()
+    cur = con.cursor()
+    cur.execute(
+        """
+        SELECT *
+        FROM user_exemptions
+        ORDER BY LOWER(COALESCE(NULLIF(user_name, ''), user_id)) ASC
+        LIMIT ?
+        """,
+        (int(limit),),
+    )
+    rows = [dict(r) for r in cur.fetchall()]
+    con.close()
+    return rows
+
 def init_db():
     con = _con()
     cur = con.cursor()
@@ -370,6 +586,32 @@ def init_db():
         )
     """)
 
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS faction_exemptions (
+            faction_id TEXT PRIMARY KEY,
+            faction_name TEXT DEFAULT '',
+            note TEXT DEFAULT '',
+            added_by_user_id TEXT DEFAULT '',
+            added_by_name TEXT DEFAULT '',
+            created_at TEXT DEFAULT '',
+            updated_at TEXT DEFAULT ''
+        )
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS user_exemptions (
+            user_id TEXT PRIMARY KEY,
+            user_name TEXT DEFAULT '',
+            faction_id TEXT DEFAULT '',
+            faction_name TEXT DEFAULT '',
+            note TEXT DEFAULT '',
+            added_by_user_id TEXT DEFAULT '',
+            added_by_name TEXT DEFAULT '',
+            created_at TEXT DEFAULT '',
+            updated_at TEXT DEFAULT ''
+        )
+    """)
+
     _ensure_column(cur, "med_deals", "creator_user_id", "creator_user_id TEXT DEFAULT ''")
     _ensure_column(cur, "med_deals", "creator_name", "creator_name TEXT DEFAULT ''")
     _ensure_column(cur, "med_deals", "faction_id", "faction_id TEXT DEFAULT ''")
@@ -428,6 +670,9 @@ def init_db():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_members_member_user_id ON faction_members(member_user_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_members_enabled ON faction_members(faction_id, enabled)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_payment_history_faction_id ON faction_payment_history(faction_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_exemptions_name ON faction_exemptions(faction_name)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_user_exemptions_name ON user_exemptions(user_name)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_user_exemptions_faction_id ON user_exemptions(faction_id)")
 
     con.commit()
     con.close()
@@ -2295,7 +2540,8 @@ def recalc_faction_license(faction_id: str) -> Dict[str, Any]:
     row = ensure_faction_license(faction_id)
     member_count = get_total_faction_member_count(faction_id)
     enabled_member_count = get_enabled_faction_member_count(faction_id)
-    renewal_cost = enabled_member_count * PAYMENT_XANAX_PER_MEMBER
+    faction_is_exempt = is_faction_exempt(faction_id)
+    renewal_cost = 0 if faction_is_exempt else enabled_member_count * PAYMENT_XANAX_PER_MEMBER
 
     con = _con()
     cur = con.cursor()
@@ -2306,6 +2552,8 @@ def recalc_faction_license(faction_id: str) -> Dict[str, Any]:
             enabled_member_count = ?,
             renewal_cost = ?,
             payment_per_member = ?,
+            payment_required = CASE WHEN ? = 1 THEN 0 ELSE payment_required END,
+            status = CASE WHEN ? = 1 THEN 'exempt' ELSE status END,
             updated_at = ?
         WHERE faction_id = ?
     """, (
@@ -2313,6 +2561,8 @@ def recalc_faction_license(faction_id: str) -> Dict[str, Any]:
         int(enabled_member_count),
         int(renewal_cost),
         int(PAYMENT_XANAX_PER_MEMBER),
+        1 if faction_is_exempt else 0,
+        1 if faction_is_exempt else 0,
         _utc_now(),
         str(faction_id),
     ))
@@ -2387,6 +2637,8 @@ def compute_faction_license_status(faction_id: str, viewer_user_id: str = "") ->
     row = recalc_faction_license(faction_id)
 
     now_dt = _utc_now_dt()
+    faction_exemption = get_faction_exemption(faction_id) if faction_id else None
+    user_exemption = get_user_exemption(viewer_user_id) if viewer_user_id else None
 
     trial_started_at = str(row.get("trial_started_at") or "")
     trial_expires_at = str(row.get("trial_expires_at") or "")
@@ -2411,7 +2663,16 @@ def compute_faction_license_status(faction_id: str, viewer_user_id: str = "") ->
     days_left: Optional[int] = None
     message = ""
 
-    if paid_until_dt and paid_until_dt > now_dt:
+    if faction_exemption:
+        active = True
+        status = "exempt"
+        expires_at = paid_until_at or trial_expires_at or ""
+        if paid_until_dt and paid_until_dt > now_dt:
+            days_left = _days_left_until(paid_until_dt)
+        elif trial_expires_dt and trial_expires_dt > now_dt:
+            days_left = _days_left_until(trial_expires_dt)
+        message = "Faction is exempt from payment and renewal."
+    elif paid_until_dt and paid_until_dt > now_dt:
         paid_active = True
         active = True
         status = "paid"
@@ -2440,7 +2701,7 @@ def compute_faction_license_status(faction_id: str, viewer_user_id: str = "") ->
         payment_required = False
         message = "Faction trial not started yet."
 
-    if raw_payment_required:
+    if raw_payment_required and not faction_exemption:
         active = False
         payment_required = True
         if status != "paid":
@@ -2460,6 +2721,9 @@ def compute_faction_license_status(faction_id: str, viewer_user_id: str = "") ->
         and str(row.get("leader_user_id") or "").strip() == str(viewer_user_id).strip()
     )
 
+    viewer_member_enabled = bool(int((member_row or {}).get("enabled") or 0)) if member_row else False
+    viewer_is_exempt_user = bool(user_exemption)
+
     return {
         "faction_id": str(faction_id),
         "faction_name": str(row.get("faction_name") or ""),
@@ -2468,7 +2732,11 @@ def compute_faction_license_status(faction_id: str, viewer_user_id: str = "") ->
         "leader_api_key_present": bool(str(row.get("leader_api_key") or "").strip()),
         "viewer_user_id": str(viewer_user_id or ""),
         "viewer_is_leader": viewer_is_leader,
-        "viewer_member_enabled": bool(int((member_row or {}).get("enabled") or 0)) if member_row else False,
+        "viewer_member_enabled": viewer_member_enabled,
+        "viewer_is_exempt_user": viewer_is_exempt_user,
+        "faction_exempt": bool(faction_exemption),
+        "faction_exemption": faction_exemption or {},
+        "user_exemption": user_exemption or {},
         "active": active,
         "status": status,
         "trial_started_at": trial_started_at,
@@ -2478,16 +2746,16 @@ def compute_faction_license_status(faction_id: str, viewer_user_id: str = "") ->
         "trial_active": trial_active,
         "trial_expired": trial_expired,
         "paid_active": paid_active,
-        "payment_required": payment_required,
-        "blocked": (not active) or payment_required or trial_expired,
+        "payment_required": False if faction_exemption else payment_required,
+        "blocked": False if faction_exemption else ((not active) or payment_required or trial_expired),
         "days_left": days_left,
-        "block_reason": block_reason,
+        "block_reason": "" if faction_exemption else block_reason,
         "message": message,
         "member_count": member_count,
         "enabled_member_count": enabled_member_count,
         "payment_per_member": payment_per_member,
-        "renewal_cost": renewal_cost,
-        "next_payment_amount": renewal_cost,
+        "renewal_cost": 0 if faction_exemption else renewal_cost,
+        "next_payment_amount": 0 if faction_exemption else renewal_cost,
         "last_payment_at": str(row.get("last_payment_at") or ""),
         "last_payment_amount": int(row.get("last_payment_amount") or 0),
         "last_payment_kind": str(row.get("last_payment_kind") or ""),
@@ -2782,6 +3050,12 @@ def get_faction_admin_dashboard_summary() -> Dict[str, Any]:
     cur.execute("SELECT COUNT(*) AS c FROM faction_members")
     stored_members_total = int((cur.fetchone() or {"c": 0})["c"])
 
+    cur.execute("SELECT COUNT(*) AS c FROM faction_exemptions")
+    faction_exemptions_total = int((cur.fetchone() or {"c": 0})["c"])
+
+    cur.execute("SELECT COUNT(*) AS c FROM user_exemptions")
+    user_exemptions_total = int((cur.fetchone() or {"c": 0})["c"])
+
     con.close()
 
     return {
@@ -2795,4 +3069,6 @@ def get_faction_admin_dashboard_summary() -> Dict[str, Any]:
     "enabled_members_total": enabled_members_total,
     "stored_members_total": stored_members_total,
     "projected_renewal_total": projected_renewal_total,
+    "faction_exemptions_total": faction_exemptions_total,
+    "user_exemptions_total": user_exemptions_total,
 }
