@@ -8,7 +8,9 @@ DB_PATH = os.getenv("DB_PATH", "war_hub.db")
 TRIAL_DAYS = int(os.getenv("TRIAL_DAYS", "45"))
 DEFAULT_PAID_DAYS = int(os.getenv("DEFAULT_PAID_DAYS", "45"))
 PAYMENT_PLAYER = str(os.getenv("PAYMENT_PLAYER", "Fries91")).strip() or "Fries91"
-PAYMENT_PER_MEMBER = int(os.getenv("PAYMENT_PER_MEMBER", "2500000"))
+PAYMENT_KIND = str(os.getenv("PAYMENT_KIND", "xanax")).strip() or "xanax"
+PAYMENT_XANAX_PER_MEMBER = int(os.getenv("PAYMENT_XANAX_PER_MEMBER", "3"))
+PAYMENT_NOTIFY_USER_ID = str(os.getenv("PAYMENT_NOTIFY_USER_ID", "3679030")).strip() or "3679030"
 
 
 def _utc_now_dt() -> datetime:
@@ -373,7 +375,11 @@ def init_db():
     _ensure_column(cur, "user_licenses", "last_payment_kind", "last_payment_kind TEXT DEFAULT ''")
     _ensure_column(cur, "user_licenses", "last_payment_note", "last_payment_note TEXT DEFAULT ''")
     _ensure_column(cur, "user_licenses", "last_payment_amount", "last_payment_amount INTEGER DEFAULT 0")
-
+    _ensure_column(cur, "faction_licenses", "warned_5_day_at", "warned_5_day_at TEXT DEFAULT ''")
+    _ensure_column(cur, "faction_licenses", "warned_due_day_at", "warned_due_day_at TEXT DEFAULT ''")
+    _ensure_column(cur, "faction_licenses", "last_due_notice_at", "last_due_notice_at TEXT DEFAULT ''")
+    _ensure_column(cur, "faction_licenses", "last_due_notice_user_id", "last_due_notice_user_id TEXT DEFAULT ''")
+    
     _ensure_column(cur, "faction_licenses", "leader_api_key", "leader_api_key TEXT DEFAULT ''")
 
     _ensure_column(cur, "faction_members", "faction_name", "faction_name TEXT DEFAULT ''")
@@ -676,7 +682,6 @@ def list_med_deals_for_faction(faction_id: str) -> List[Dict[str, Any]]:
     rows = [dict(r) for r in cur.fetchall()]
     con.close()
     return rows
-
 
 def delete_med_deal(faction_id: str, deal_id: int):
     con = _con()
@@ -2486,6 +2491,67 @@ def compute_faction_license_status(faction_id: str, viewer_user_id: str = "") ->
         "last_payment_note": str(row.get("last_payment_note") or ""),
     }
 
+def process_faction_payment_warnings(faction_id: str) -> Dict[str, Any]:
+    row = recalc_faction_license(faction_id)
+    status = compute_faction_license_status(faction_id)
+    if not row:
+        return status
+
+    leader_user_id = str(row.get("leader_user_id") or "").strip()
+    enabled_member_count = int(row.get("enabled_member_count") or 0)
+    days_left = status.get("days_left")
+    payment_required = bool(status.get("payment_required"))
+    warned_5_day_at = str(row.get("warned_5_day_at") or "")
+    warned_due_day_at = str(row.get("warned_due_day_at") or "")
+    last_due_notice_at = str(row.get("last_due_notice_at") or "")
+
+    payment_text = _faction_payment_text(enabled_member_count)
+
+    con = _con()
+    cur = con.cursor()
+    now = _utc_now()
+
+    if isinstance(days_left, int) and days_left <= 5 and days_left >= 1 and not warned_5_day_at:
+        if leader_user_id:
+            add_notification(
+                leader_user_id,
+                "payment_warning",
+                f"Renewal due in {days_left} day(s). {payment_text}"
+            )
+        cur.execute("""
+            UPDATE faction_licenses
+            SET warned_5_day_at = ?, updated_at = ?
+            WHERE faction_id = ?
+        """, (now, now, str(faction_id)))
+
+    if isinstance(days_left, int) and days_left <= 0 and payment_required and not warned_due_day_at:
+        if leader_user_id:
+            add_notification(
+                leader_user_id,
+                "payment_due",
+                f"Renewal is due now. {payment_text}"
+            )
+        cur.execute("""
+            UPDATE faction_licenses
+            SET warned_due_day_at = ?, updated_at = ?
+            WHERE faction_id = ?
+        """, (now, now, str(faction_id)))
+
+    if payment_required and not last_due_notice_at:
+        add_notification(
+            PAYMENT_NOTIFY_USER_ID,
+            "faction_payment_due",
+            f"Faction {row.get('faction_name') or faction_id} requires payment. {payment_text}"
+        )
+        cur.execute("""
+            UPDATE faction_licenses
+            SET last_due_notice_at = ?, last_due_notice_user_id = ?, updated_at = ?
+            WHERE faction_id = ?
+        """, (now, PAYMENT_NOTIFY_USER_ID, now, str(faction_id)))
+
+    con.commit()
+    con.close()
+    return compute_faction_license_status(faction_id)
 
 def renew_faction_after_payment(
     faction_id: str,
@@ -2548,6 +2614,10 @@ def renew_faction_after_payment(
             last_payment_kind = ?,
             last_payment_note = ?,
             last_payment_at = ?,
+            warned_5_day_at = '',
+            warned_due_day_at = '',
+            last_due_notice_at = '',
+            last_due_notice_user_id = '',
             updated_at = ?
         WHERE faction_id = ?
     """, (
