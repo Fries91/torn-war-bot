@@ -226,6 +226,21 @@ def init_db():
         )
     """)
 
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS dibs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            faction_id TEXT NOT NULL,
+            faction_name TEXT DEFAULT '',
+            war_id TEXT DEFAULT '',
+            target_id TEXT NOT NULL,
+            target_name TEXT DEFAULT '',
+            claimer_user_id TEXT DEFAULT '',
+            claimer_name TEXT DEFAULT '',
+            note TEXT DEFAULT '',
+            created_at TEXT DEFAULT ''
+        )
+    """)
+
     cur.execute("""
         CREATE TABLE IF NOT EXISTS user_settings (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -384,6 +399,9 @@ def init_db():
         WHERE COALESCE(NULLIF(creator_name, ''), '') = ''
     """)
 
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_dibs_faction_id ON dibs(faction_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_dibs_war_id ON dibs(war_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_dibs_target_id ON dibs(target_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_users_faction_id ON users(faction_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON notifications(user_id)")
@@ -628,6 +646,101 @@ def add_med_deal(
     con.close()
     return _row_to_dict(row) or {}
 
+def add_dib(
+    faction_id: str,
+    faction_name: str,
+    war_id: str,
+    target_id: str,
+    target_name: str,
+    claimer_user_id: str,
+    claimer_name: str,
+    note: str = "",
+) -> Dict[str, Any]:
+    if not faction_id or not target_id:
+        return {}
+
+    now = _utc_now()
+    con = _con()
+    cur = con.cursor()
+
+    cur.execute("""
+        DELETE FROM dibs
+        WHERE faction_id = ? AND war_id = ? AND target_id = ?
+    """, (
+        str(faction_id or ""),
+        str(war_id or ""),
+        str(target_id or ""),
+    ))
+
+    cur.execute("""
+        INSERT INTO dibs (
+            faction_id,
+            faction_name,
+            war_id,
+            target_id,
+            target_name,
+            claimer_user_id,
+            claimer_name,
+            note,
+            created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        str(faction_id or ""),
+        str(faction_name or ""),
+        str(war_id or ""),
+        str(target_id or ""),
+        str(target_name or ""),
+        str(claimer_user_id or ""),
+        str(claimer_name or ""),
+        str(note or ""),
+        now,
+    ))
+    row_id = cur.lastrowid
+    con.commit()
+
+    cur.execute("SELECT * FROM dibs WHERE id = ?", (int(row_id),))
+    row = cur.fetchone()
+    con.close()
+    return _row_to_dict(row) or {}
+
+
+def list_dibs_for_faction(faction_id: str, war_id: str = "") -> List[Dict[str, Any]]:
+    if not faction_id:
+        return []
+
+    con = _con()
+    cur = con.cursor()
+
+    if str(war_id or "").strip():
+        cur.execute("""
+            SELECT *
+            FROM dibs
+            WHERE faction_id = ? AND war_id = ?
+            ORDER BY id DESC
+        """, (str(faction_id), str(war_id)))
+    else:
+        cur.execute("""
+            SELECT *
+            FROM dibs
+            WHERE faction_id = ?
+            ORDER BY id DESC
+        """, (str(faction_id),))
+
+    rows = [dict(r) for r in cur.fetchall()]
+    con.close()
+    return rows
+
+
+def delete_dib(faction_id: str, dib_id: int):
+    con = _con()
+    cur = con.cursor()
+    cur.execute("""
+        DELETE FROM dibs
+        WHERE faction_id = ? AND id = ?
+    """, (str(faction_id), int(dib_id)))
+    con.commit()
+    con.close()    
 
 def list_med_deals(user_id: str) -> List[Dict[str, Any]]:
     con = _con()
