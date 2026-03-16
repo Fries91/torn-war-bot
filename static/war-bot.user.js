@@ -720,7 +720,6 @@ if (!res.ok) {
     return;
 }
 
-whDetectWarPairFromFactionPage();
 state = normalizeState(res.data || {});
 
 if ((accessState === null || accessState === void 0 ? void 0 : accessState.isFactionLeader) && !factionMembersCache) {
