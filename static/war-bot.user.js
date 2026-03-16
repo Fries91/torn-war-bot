@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         War Hub ⚔️
 // @namespace    fries91-war-hub
-// @version      3.0.2
+// @version      3.0.3
 // @description  War Hub by Fries91. Faction-license aware overlay with draggable icon, draggable overlay, PDA friendly, shared war tools, faction member management, and payment lock handling.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -36,7 +36,7 @@ var K_ACCESS_CACHE = 'warhub_access_cache_v3';
 var K_OVERVIEW_BOXES = 'warhub_overview_boxes_v3';
     var factionMembersCache = null;
     var PAYMENT_PLAYER = 'Fries91';
-    var PRICE_PER_MEMBER = '3';
+    var PRICE_PER_MEMBER = 3;
     var TAB_ORDER = [
     ['overview', 'Overview'],
     ['faction', 'Faction'],
@@ -167,7 +167,7 @@ var K_OVERVIEW_BOXES = 'warhub_overview_boxes_v3';
             factionName: a.factionName || '',
             isFactionLeader: !!a.isFactionLeader,
             memberEnabled: !!a.memberEnabled,
-            pricePerMember: Number.isFinite(Number(a.pricePerMember)) ? Number(a.pricePerMember) : PRICE_PER_MEMBER,
+            pricePerMember: 3,
             paymentPlayer: a.paymentPlayer || PAYMENT_PLAYER,
             isOwner: !!a.isOwner
         };
@@ -186,13 +186,13 @@ var K_OVERVIEW_BOXES = 'warhub_overview_boxes_v3';
     function accessSummaryMessage() {
         if (!accessState) return '';
         var paymentPlayer = accessState.paymentPlayer || PAYMENT_PLAYER;
-        var ppm = accessState.pricePerMember || PRICE_PER_MEMBER;
+        var ppm = 3;
         if (accessState.paymentRequired || accessState.blocked || accessState.trialExpired) {
             return accessState.message || accessState.reason || "Faction access locked. Payment goes to ".concat(paymentPlayer, ".");
         }
         if (accessState.trialActive) {
             if (accessState.daysLeft != null) {
-                if (accessState.daysLeft <= 0) return "Faction trial ends today. Billing is ".concat(fmtMoney(ppm), " per enabled member.");
+                if (accessState.daysLeft <= 0) return "Faction trial ends today. Billing is ".concat(String(ppm), " Xanax per enabled member.");
                 return "Faction trial active. ".concat(accessState.daysLeft, " day").concat(accessState.daysLeft === 1 ? '' : 's', " left.");
             }
             if (accessState.expiresAt) return "Faction trial active until ".concat(fmtTs(accessState.expiresAt), ".");
@@ -256,7 +256,7 @@ var K_OVERVIEW_BOXES = 'warhub_overview_boxes_v3';
             factionName: d.faction_name || (d.faction && d.faction.name) || (d.me && d.me.faction_name) || '',
             isFactionLeader: !!d.is_faction_leader || !!factionAccess.is_faction_leader || !!(d.me && d.me.is_faction_leader),
             memberEnabled: !!memberAccess.enabled || !!factionAccess.member_enabled || !!memberAccess.allowed,
-            pricePerMember: Number(payment.price_per_enabled_member || payment.price_per_member || PRICE_PER_MEMBER) || PRICE_PER_MEMBER,
+            pricePerMember: 3,
             paymentPlayer: String(payment.required_player || PAYMENT_PLAYER),
             isOwner: !!d.is_owner || !!(d.user && d.user.is_owner) || !!(d.me && d.me.is_owner) || !!(d.owner && d.owner.is_owner) || !!factionAccess.is_owner
         };
@@ -2092,8 +2092,58 @@ function renderChainTab() {
     var apiKey = cleanInputValue(GM_getValue(K_API_KEY, ''));
     var refreshMs = Number(GM_getValue(K_REFRESH, 30000)) || 30000;
     var overviewPrefs = getOverviewBoxPrefs();
+    var enabledCount = arr((factionMembersCache === null || factionMembersCache === void 0 ? void 0 : factionMembersCache.members) || []).filter(function (x) {
+        return !!x.enabled;
+    }).length;
+    var totalPayment = enabledCount * 3;
 
-    return "\n      <div class=\"warhub-card\">\n        <h3>Keys</h3>\n        <label class=\"warhub-label\">Your Torn API Key</label>\n        <input class=\"warhub-input\" id=\"wh-api-key\" value=\"".concat(esc(apiKey), "\" placeholder=\"Paste your API key\">\n        <div class=\"warhub-actions\" style=\"margin-top:8px;\">\n          <button class=\"warhub-btn primary\" id=\"wh-save-keys\">Save Keys</button>\n          <button class=\"warhub-btn\" id=\"wh-login-btn\">Login</button>\n          <button class=\"warhub-btn warn\" id=\"wh-logout-btn\">Logout</button>\n        </div>\n      </div>\n\n      <div class=\"warhub-card\">\n        <h3>Overview Quick Boxes</h3>\n        <div class=\"warhub-mini\" style=\"margin-bottom:10px; line-height:1.5;\">\n          Each player can choose which boxes appear on their Overview tab.\n        </div>\n        <label class=\"warhub-check\"><input type=\"checkbox\" id=\"wh-overview-meddeals\" ").concat(overviewPrefs.meddeals ? 'checked' : '', "> Med Deals</label><br>\n        <label class=\"warhub-check\"><input type=\"checkbox\" id=\"wh-overview-dibs\" ").concat(overviewPrefs.dibs ? 'checked' : '', "> Dibs</label><br>\n        <label class=\"warhub-check\"><input type=\"checkbox\" id=\"wh-overview-terms\" ").concat(overviewPrefs.terms ? 'checked' : '', "> Terms</label><br>\n        <label class=\"warhub-check\"><input type=\"checkbox\" id=\"wh-overview-war\" ").concat(overviewPrefs.war ? 'checked' : '', "> War Overview</label>\n        <div class=\"warhub-actions\" style=\"margin-top:10px;\">\n          <button class=\"warhub-btn\" id=\"wh-save-overview-boxes\">Save Overview Boxes</button>\n        </div>\n      </div>\n\n      <div class=\"warhub-card\">\n        <h3>Polling</h3>\n        <label class=\"warhub-label\">Refresh every (ms)</label>\n        <input class=\"warhub-input\" id=\"wh-refresh-ms\" value=\"").concat(esc(String(refreshMs)), "\">\n        <div class=\"warhub-actions\" style=\"margin-top:8px;\">\n          <button class=\"warhub-btn\" id=\"wh-save-refresh\">Save Refresh</button>\n          <button class=\"warhub-btn\" id=\"wh-reset-positions\">Reset Positions</button>\n        </div>\n      </div>\n\n      <div class=\"warhub-card\">\n        <h3>Access Info</h3>\n        <div class=\"warhub-mini\" style=\"line-height:1.6;\">\n          Payment player: <strong>").concat(esc((accessState === null || accessState === void 0 ? void 0 : accessState.paymentPlayer) || PAYMENT_PLAYER), "</strong><br>\n          Price per enabled member: <strong>").concat(esc('3 Xanax'), "</strong><br>\    Total payment: <strong>").concat(esc(String(arr((factionMembersCache === null || factionMembersCache === void 0 ? void 0 : factionMembersCache.members) || []).filter(function (x) { return !!x.enabled; }).length * 3) + ' Xanax'), "</strong><br>\      ").concat(accessSummaryMessage() ? "Status: <strong>".concat(esc(accessSummaryMessage()), "</strong>") : 'Status: <strong>Ready</strong>', "\n        </div>\n      </div>\n    ");
+    return "\
+      <div class=\"warhub-card\">\
+        <h3>Keys</h3>\
+        <label class=\"warhub-label\">Your Torn API Key</label>\
+        <input class=\"warhub-input\" id=\"wh-api-key\" value=\"".concat(esc(apiKey), "\" placeholder=\"Paste your API key\">\
+        <div class=\"warhub-actions\" style=\"margin-top:8px;\">\
+          <button class=\"warhub-btn primary\" id=\"wh-save-keys\">Save Keys</button>\
+          <button class=\"warhub-btn\" id=\"wh-login-btn\">Login</button>\
+          <button class=\"warhub-btn warn\" id=\"wh-logout-btn\">Logout</button>\
+        </div>\
+      </div>\
+
+      <div class=\"warhub-card\">\
+        <h3>Overview Quick Boxes</h3>\
+        <div class=\"warhub-mini\" style=\"margin-bottom:10px; line-height:1.5;\">\
+          Each player can choose which boxes appear on their Overview tab.\
+        </div>\
+        <label class=\"warhub-check\"><input type=\"checkbox\" id=\"wh-overview-meddeals\" ".concat(overviewPrefs.meddeals ? 'checked' : '', "> Med Deals</label><br>\
+        <label class=\"warhub-check\"><input type=\"checkbox\" id=\"wh-overview-dibs\" ").concat(overviewPrefs.dibs ? 'checked' : '', "> Dibs</label><br>\
+        <label class=\"warhub-check\"><input type=\"checkbox\" id=\"wh-overview-terms\" ").concat(overviewPrefs.terms ? 'checked' : '', "> Terms</label><br>\
+        <label class=\"warhub-check\"><input type=\"checkbox\" id=\"wh-overview-war\" ").concat(overviewPrefs.war ? 'checked' : '', "> War Overview</label>\
+        <div class=\"warhub-actions\" style=\"margin-top:10px;\">\
+          <button class=\"warhub-btn\" id=\"wh-save-overview-boxes\">Save Overview Boxes</button>\
+        </div>\
+      </div>\
+
+      <div class=\"warhub-card\">\
+        <h3>Polling</h3>\
+        <label class=\"warhub-label\">Refresh every (ms)</label>\
+        <input class=\"warhub-input\" id=\"wh-refresh-ms\" value=\"").concat(esc(String(refreshMs)), "\">\
+        <div class=\"warhub-actions\" style=\"margin-top:8px;\">\
+          <button class=\"warhub-btn\" id=\"wh-save-refresh\">Save Refresh</button>\
+          <button class=\"warhub-btn\" id=\"wh-reset-positions\">Reset Positions</button>\
+        </div>\
+      </div>\
+
+      <div class=\"warhub-card\">\
+        <h3>Access Info</h3>\
+        <div class=\"warhub-mini\" style=\"line-height:1.6;\">\
+          Payment player: <strong>").concat(esc((accessState === null || accessState === void 0 ? void 0 : accessState.paymentPlayer) || PAYMENT_PLAYER), "</strong><br>\
+          Price per enabled member: <strong>3 Xanax</strong><br>\
+          Enabled members: <strong>").concat(esc(String(enabledCount)), "</strong><br>\
+          Total payment: <strong>").concat(esc(String(totalPayment) + ' Xanax'), "</strong><br>\
+          ").concat(accessSummaryMessage() ? "Status: <strong>".concat(esc(accessSummaryMessage()), "</strong>") : 'Status: <strong>Ready</strong>', "\
+        </div>\
+      </div>\
+    ");
 }
     function renderAccessBanner() {
         var msg = accessSummaryMessage();
@@ -2590,7 +2640,7 @@ if (saveFactionMember) saveFactionMember.addEventListener('click', _asyncToGener
             btn.addEventListener('click', _asyncToGenerator(function* () {
                 var factionId = cleanInputValue(btn.getAttribute('data-admin-renew') || '');
                 if (!factionId) return;
-                var amountText = prompt('Renew faction for how much?', String(PRICE_PER_MEMBER));
+                var amountText = prompt('Renew faction for how much?', '3');
                 if (amountText == null) return;
                 var amount = Number(String(amountText).replace(/[^\d.-]/g, ''));
                 if (!Number.isFinite(amount) || amount <= 0) { setStatus('Invalid renewal amount.', true); return; }
