@@ -176,7 +176,9 @@ var K_OVERVIEW_BOXES = 'warhub_overview_boxes_v3';
             canUseFeatures: !!canUseFeatures,
             pricePerMember: Number.isFinite(Number(a.pricePerMember)) ? Number(a.pricePerMember) : PRICE_PER_MEMBER,
             paymentPlayer: a.paymentPlayer || PAYMENT_PLAYER,
-            isOwner: !!a.isOwner
+            isOwner: !!a.isOwner,
+            isUserExempt: !!a.isUserExempt,
+            isFactionExempt: !!a.isFactionExempt
         };
     }
         function saveAccessCache() {
@@ -194,6 +196,14 @@ var K_OVERVIEW_BOXES = 'warhub_overview_boxes_v3';
         if (!accessState) return '';
         var paymentPlayer = accessState.paymentPlayer || PAYMENT_PLAYER;
         var ppm = Number(accessState.pricePerMember || PRICE_PER_MEMBER) || PRICE_PER_MEMBER;
+
+        if (accessState.isFactionExempt) {
+            return accessState.message || 'Faction exemption active. No payment or renewal is required.';
+        }
+
+        if (accessState.isUserExempt) {
+            return accessState.message || 'Player exemption active. Full script access is unlocked except Admin and leader-only tabs.';
+        }
 
         if (accessState.paymentRequired || accessState.blocked || accessState.trialExpired) {
             if (accessState.isFactionLeader || isOwnerSession()) {
@@ -268,17 +278,23 @@ var K_OVERVIEW_BOXES = 'warhub_overview_boxes_v3';
         var message = d.message || d.notice || d.details || access.message || access.notice || payment.message || license.message || '';
         var isOwner = !!d.is_owner || !!(d.user && d.user.is_owner) || !!(d.me && d.me.is_owner) || !!(d.owner && d.owner.is_owner) || !!factionAccess.is_owner;
         var isFactionLeader = !!d.is_faction_leader || !!access.is_faction_leader || !!factionAccess.is_faction_leader || !!(d.me && d.me.is_faction_leader);
+        var isUserExempt = !!access.is_user_exempt || !!factionAccess.is_user_exempt || !!license.viewer_is_exempt_user;
+        var isFactionExempt = !!access.is_faction_exempt || !!factionAccess.is_faction_exempt || !!license.faction_exempt;
         var memberEnabled = !!memberAccess.enabled || !!factionAccess.member_enabled || !!access.member_enabled || !!memberAccess.allowed;
         if (isFactionLeader || isOwner) memberEnabled = true;
         var canUseFeatures = access.can_use_features;
         if (canUseFeatures == null) canUseFeatures = access.canUseFeatures;
         if (canUseFeatures == null) canUseFeatures = factionAccess.can_use_features;
-        if (canUseFeatures == null) canUseFeatures = isOwner || isFactionLeader || memberEnabled;
+        if (canUseFeatures == null) canUseFeatures = isOwner || isFactionLeader || isUserExempt || isFactionExempt || memberEnabled;
         var finalBlocked = blocked;
         var finalPaymentRequired = paymentRequired;
         var finalTrialExpired = trialExpired;
 
-        if (accessStatus.includes('payment')) {
+        if (isFactionExempt || isUserExempt) {
+            finalBlocked = false;
+            finalPaymentRequired = false;
+            finalTrialExpired = false;
+        } else if (accessStatus.includes('payment')) {
             finalBlocked = true;
             finalPaymentRequired = true;
             finalTrialExpired = true;
@@ -322,10 +338,12 @@ var K_OVERVIEW_BOXES = 'warhub_overview_boxes_v3';
             userName: String((d.user && (d.user.name || d.user.player_name)) || (d.me && (d.me.name || d.me.player_name)) || ''),
             isFactionLeader: isFactionLeader,
             memberEnabled: memberEnabled,
-            canUseFeatures: !!canUseFeatures && !finalBlocked && !finalPaymentRequired && !finalTrialExpired,
+            canUseFeatures: (!!canUseFeatures && !finalBlocked && !finalPaymentRequired && !finalTrialExpired) || isUserExempt || isFactionExempt,
             pricePerMember: Number(payment.payment_per_member || license.payment_per_member || PRICE_PER_MEMBER) || PRICE_PER_MEMBER,
             paymentPlayer: String(payment.required_player || payment.payment_player || license.payment_player || PAYMENT_PLAYER),
-            isOwner: isOwner
+            isOwner: isOwner,
+            isUserExempt: isUserExempt,
+            isFactionExempt: isFactionExempt
         };
     }
         function updateAccessFromPayload(payload, httpStatus, loggedInHint) {
@@ -2638,16 +2656,140 @@ function renderChainTab() {
 }
         function renderAdminTab() {
         if (!isOwnerSession()) {
-            return "\n        <div class=\"warhub-card\">\n          <h3>Admin</h3>\n          <div class=\"warhub-empty\">Owner access required.</div>\n        </div>\n      ";
+            return '\
+        <div class="warhub-card">\
+          <h3>Fries91 [3679030]</h3>\
+          <div class="warhub-empty">Fries91 [3679030] access required.</div>\
+        </div>\
+      ';
         }
-        var dash = (state === null || state === void 0 ? void 0 : state.adminDashboard) || {};
+
+        var dash = (state && state.adminDashboard) || {};
         var items = arr(dash.items || dash.factions || []);
         var summary = dash.summary || {};
-        return "\n      <div class=\"warhub-card\">\n        <h3>Owner Dashboard</h3>\n        <div class=\"warhub-grid two\">\n          <div class=\"warhub-metric\"><div class=\"k\">Factions</div><div class=\"v\">".concat(fmtNum(summary.faction_licenses_total || items.length || 0), "</div></div>\n          <div class=\"warhub-metric\"><div class=\"k\">Trials</div><div class=\"v\">").concat(fmtNum(summary.trials_total || 0), "</div></div>\n          <div class=\"warhub-metric\"><div class=\"k\">Paid</div><div class=\"v\">").concat(fmtNum(summary.paid_total || 0), "</div></div>\n          <div class=\"warhub-metric\"><div class=\"k\">Payment Required</div><div class=\"v\">").concat(fmtNum(summary.payment_required_total || 0), "</div></div>\n        </div>\n      </div>\n\n      <div class=\"warhub-card\">\n        <h3>Faction Licenses</h3>\n        <div class=\"warhub-list\">\n          ").concat(items.length ? items.map(function (x) {
+        var factionExemptions = arr(dash.faction_exemptions || dash.factionExemptions || []);
+        var userExemptions = arr(dash.user_exemptions || dash.userExemptions || []);
+
+        var factionExemptHtml = factionExemptions.length ? factionExemptions.map(function (x) {
+            var factionId = x.faction_id || '';
+            var factionName = x.faction_name || ('Faction ' + factionId);
+            return '\
+              <div class="warhub-list-item">\
+                <div class="warhub-row">\
+                  <div>\
+                    <div class="warhub-name">' + esc(factionName) + '</div>\
+                    <div class="warhub-meta">' + esc(['ID ' + factionId, x.note || '', x.added_by_name || ''].filter(Boolean).join(' • ')) + '</div>\
+                  </div>\
+                  <div class="warhub-actions">\
+                    <button class="warhub-btn small warn" data-admin-delete-faction-exempt="' + esc(String(factionId)) + '">Remove</button>\
+                  </div>\
+                </div>\
+              </div>\
+            ';
+        }).join('') : '<div class="warhub-empty">No faction exemptions saved.</div>';
+
+        var userExemptHtml = userExemptions.length ? userExemptions.map(function (x) {
+            var userId = x.user_id || '';
+            var userName = x.user_name || ('Player ' + userId);
+            return '\
+              <div class="warhub-list-item">\
+                <div class="warhub-row">\
+                  <div>\
+                    <div class="warhub-name">' + esc(userName) + '</div>\
+                    <div class="warhub-meta">' + esc(['ID ' + userId, x.faction_id ? 'Faction ' + x.faction_id : '', x.note || ''].filter(Boolean).join(' • ')) + '</div>\
+                  </div>\
+                  <div class="warhub-actions">\
+                    <button class="warhub-btn small warn" data-admin-delete-user-exempt="' + esc(String(userId)) + '">Remove</button>\
+                  </div>\
+                </div>\
+              </div>\
+            ';
+        }).join('') : '<div class="warhub-empty">No player exemptions saved.</div>';
+
+        var licenseHtml = items.length ? items.map(function (x) {
             var factionId = x.faction_id || x.id || '';
-            var factionName = x.faction_name || x.name || "Faction ".concat(factionId);
-            return "\n              <div class=\"warhub-list-item\">\n                <div class=\"warhub-row\">\n                  <div>\n                    <div class=\"warhub-name\">".concat(esc(factionName), "</div>\n                    <div class=\"warhub-meta\">").concat(esc(["ID ".concat(factionId), x.status || '', x.leader_name || '', x.expires_at ? fmtTs(x.expires_at) : ''].filter(Boolean).join(' • ')), "</div>\n                  </div>\n                  <div class=\"warhub-actions\">\n                    <button class=\"warhub-btn small\" data-admin-history=\"").concat(esc(String(factionId)), "\">History</button>\n                    <button class=\"warhub-btn small good\" data-admin-renew=\"").concat(esc(String(factionId)), "\">Renew</button>\n                    <button class=\"warhub-btn small warn\" data-admin-expire=\"").concat(esc(String(factionId)), "\">Expire</button>\n                  </div>\n                </div>\n              </div>\n            ");
-        }).join('') : '<div class="warhub-empty">No faction licenses found.</div>', "\n        </div>\n      </div>\n    ");
+            var factionName = x.faction_name || x.name || ('Faction ' + factionId);
+            var isExempt = !!(x.license && x.license.faction_exempt);
+            var metaBits = ['ID ' + factionId, x.status || ''];
+            if (isExempt) metaBits.push('Exempt');
+            if (x.leader_name) metaBits.push(x.leader_name);
+            if (x.expires_at) metaBits.push(fmtTs(x.expires_at));
+            return '\
+              <div class="warhub-list-item">\
+                <div class="warhub-row">\
+                  <div>\
+                    <div class="warhub-name">' + esc(factionName) + '</div>\
+                    <div class="warhub-meta">' + esc(metaBits.filter(Boolean).join(' • ')) + '</div>\
+                  </div>\
+                  <div class="warhub-actions">\
+                    <button class="warhub-btn small" data-admin-history="' + esc(String(factionId)) + '">History</button>\
+                    <button class="warhub-btn small good" data-admin-renew="' + esc(String(factionId)) + '">Renew</button>\
+                    <button class="warhub-btn small warn" data-admin-expire="' + esc(String(factionId)) + '">Expire</button>\
+                  </div>\
+                </div>\
+              </div>\
+            ';
+        }).join('') : '<div class="warhub-empty">No faction licenses found.</div>';
+
+        return '\
+      <div class="warhub-card">\
+        <h3>Fries91 [3679030] Dashboard</h3>\
+        <div class="warhub-grid two">\
+          <div class="warhub-metric"><div class="k">Factions</div><div class="v">' + fmtNum(summary.faction_licenses_total || items.length || 0) + '</div></div>\
+          <div class="warhub-metric"><div class="k">Trials</div><div class="v">' + fmtNum(summary.trials_total || 0) + '</div></div>\
+          <div class="warhub-metric"><div class="k">Paid</div><div class="v">' + fmtNum(summary.paid_total || 0) + '</div></div>\
+          <div class="warhub-metric"><div class="k">Payment Required</div><div class="v">' + fmtNum(summary.payment_required_total || 0) + '</div></div>\
+          <div class="warhub-metric"><div class="k">Faction Exemptions</div><div class="v">' + fmtNum(summary.faction_exemptions_total || factionExemptions.length || 0) + '</div></div>\
+          <div class="warhub-metric"><div class="k">Player Exemptions</div><div class="v">' + fmtNum(summary.user_exemptions_total || userExemptions.length || 0) + '</div></div>\
+        </div>\
+      </div>\
+\
+      <div class="warhub-card">\
+        <h3>Faction Exemption</h3>\
+        <label class="warhub-label">Faction ID</label>\
+        <input class="warhub-input" id="wh-admin-faction-exempt-id" placeholder="Enter faction ID">\
+        <label class="warhub-label" style="margin-top:8px;">Faction Name (optional)</label>\
+        <input class="warhub-input" id="wh-admin-faction-exempt-name" placeholder="Faction name">\
+        <label class="warhub-label" style="margin-top:8px;">Note (optional)</label>\
+        <input class="warhub-input" id="wh-admin-faction-exempt-note" placeholder="Why exempt?">\
+        <div class="warhub-actions" style="margin-top:10px;">\
+          <button class="warhub-btn primary" id="wh-admin-save-faction-exempt">Save Faction Exemption</button>\
+        </div>\
+      </div>\
+\
+      <div class="warhub-card">\
+        <h3>Player Exemption</h3>\
+        <label class="warhub-label">Player ID</label>\
+        <input class="warhub-input" id="wh-admin-user-exempt-id" placeholder="Enter player ID">\
+        <label class="warhub-label" style="margin-top:8px;">Player Name (optional)</label>\
+        <input class="warhub-input" id="wh-admin-user-exempt-name" placeholder="Player name">\
+        <label class="warhub-label" style="margin-top:8px;">Faction ID (optional)</label>\
+        <input class="warhub-input" id="wh-admin-user-exempt-faction-id" placeholder="Faction ID">\
+        <label class="warhub-label" style="margin-top:8px;">Faction Name (optional)</label>\
+        <input class="warhub-input" id="wh-admin-user-exempt-faction-name" placeholder="Faction name">\
+        <label class="warhub-label" style="margin-top:8px;">Note (optional)</label>\
+        <input class="warhub-input" id="wh-admin-user-exempt-note" placeholder="Why exempt?">\
+        <div class="warhub-actions" style="margin-top:10px;">\
+          <button class="warhub-btn primary" id="wh-admin-save-user-exempt">Save Player Exemption</button>\
+        </div>\
+        <div class="warhub-mini" style="margin-top:8px;">Player exemptions unlock full script use except Admin and leader-only tabs.</div>\
+      </div>\
+\
+      <div class="warhub-card">\
+        <h3>Faction Exemption List</h3>\
+        <div class="warhub-list">' + factionExemptHtml + '</div>\
+      </div>\
+\
+      <div class="warhub-card">\
+        <h3>Player Exemption List</h3>\
+        <div class="warhub-list">' + userExemptHtml + '</div>\
+      </div>\
+\
+      <div class="warhub-card">\
+        <h3>Faction Licenses</h3>\
+        <div class="warhub-list">' + licenseHtml + '</div>\
+      </div>\
+    ';
     }
     function renderSettingsTab() {
     var apiKey = cleanInputValue(GM_getValue(K_API_KEY, ''));
@@ -2711,7 +2853,11 @@ function renderChainTab() {
         var cls = (accessState && (accessState.paymentRequired || accessState.blocked || accessState.trialExpired)) ? 'payment' : (accessState && accessState.trialActive) ? 'trial' : 'good';
         var extra = '';
 
-        if (accessState && accessState.trialActive && (accessState.isFactionLeader || isOwnerSession())) {
+        if (accessState && accessState.isFactionExempt) {
+            extra = 'This faction is exempt from payment and renewal, so members can use War Hub without billing.';
+        } else if (accessState && accessState.isUserExempt) {
+            extra = 'This player ID is exempt. Shared tabs are unlocked, but Admin and leader-only tabs still stay locked.';
+        } else if (accessState && accessState.trialActive && (accessState.isFactionLeader || isOwnerSession())) {
             extra = 'Trial starts automatically when the faction leader logs in. Members can see the script right away, but only enabled members can use shared tools.';
         } else if (accessState && accessState.loggedIn && !accessState.isFactionLeader && !isOwnerSession() && !accessState.memberEnabled) {
             extra = 'You can view the overlay, but your leader must enable you before you can use the faction tools.';
@@ -2983,13 +3129,15 @@ default: return renderOverviewTab();
             if (!isOwnerSession()) return null;
             var res = yield adminReq('GET', '/api/admin/faction-licenses');
             if (!res.ok) {
-                setStatus(res.error || 'Could not load owner dashboard.', true);
+                setStatus(res.error || 'Could not load Fries91 dashboard.', true);
                 return null;
             }
             state = state || {};
             state.adminDashboard = _objectSpread(_objectSpread({}, res.data || {}), {}, {
                 items: arr((res.data === null || res.data === void 0 ? void 0 : res.data.items) || (res.data === null || res.data === void 0 ? void 0 : res.data.factions) || []),
-                summary: (res.data === null || res.data === void 0 ? void 0 : res.data.summary) || {}
+                summary: (res.data === null || res.data === void 0 ? void 0 : res.data.summary) || {},
+                faction_exemptions: arr((res.data === null || res.data === void 0 ? void 0 : res.data.faction_exemptions) || []),
+                user_exemptions: arr((res.data === null || res.data === void 0 ? void 0 : res.data.user_exemptions) || [])
             });
             if (overlay && isOpen && currentTab === 'admin') renderBody();
             return state.adminDashboard;
@@ -3366,6 +3514,85 @@ default: return renderOverviewTab();
                 return;
             }
             setStatus('Faction expired.');
+            yield loadAdminDashboard();
+        }));
+    });
+
+
+    var saveFactionExempt = overlay ? overlay.querySelector('#wh-admin-save-faction-exempt') : null;
+    if (saveFactionExempt) saveFactionExempt.addEventListener('click', _asyncToGenerator(function* () {
+        var factionId = cleanInputValue((overlay.querySelector('#wh-admin-faction-exempt-id') || {}).value || '');
+        var factionName = cleanInputValue((overlay.querySelector('#wh-admin-faction-exempt-name') || {}).value || '');
+        var note = cleanInputValue((overlay.querySelector('#wh-admin-faction-exempt-note') || {}).value || '');
+        if (!factionId) {
+            setStatus('Faction ID is required.', true);
+            return;
+        }
+        var res = yield adminReq('POST', '/api/admin/exemptions/factions', {
+            faction_id: factionId,
+            faction_name: factionName,
+            note: note
+        });
+        if (!res.ok) {
+            setStatus(res.error || 'Could not save faction exemption.', true);
+            return;
+        }
+        setStatus('Faction exemption saved.');
+        yield loadAdminDashboard();
+    }));
+
+    var saveUserExempt = overlay ? overlay.querySelector('#wh-admin-save-user-exempt') : null;
+    if (saveUserExempt) saveUserExempt.addEventListener('click', _asyncToGenerator(function* () {
+        var userId = cleanInputValue((overlay.querySelector('#wh-admin-user-exempt-id') || {}).value || '');
+        var userName = cleanInputValue((overlay.querySelector('#wh-admin-user-exempt-name') || {}).value || '');
+        var factionId = cleanInputValue((overlay.querySelector('#wh-admin-user-exempt-faction-id') || {}).value || '');
+        var factionName = cleanInputValue((overlay.querySelector('#wh-admin-user-exempt-faction-name') || {}).value || '');
+        var note = cleanInputValue((overlay.querySelector('#wh-admin-user-exempt-note') || {}).value || '');
+        if (!userId) {
+            setStatus('Player ID is required.', true);
+            return;
+        }
+        var res = yield adminReq('POST', '/api/admin/exemptions/users', {
+            user_id: userId,
+            user_name: userName,
+            faction_id: factionId,
+            faction_name: factionName,
+            note: note
+        });
+        if (!res.ok) {
+            setStatus(res.error || 'Could not save player exemption.', true);
+            return;
+        }
+        setStatus('Player exemption saved.');
+        yield loadAdminDashboard();
+    }));
+
+    if (overlay) overlay.querySelectorAll('[data-admin-delete-faction-exempt]').forEach(function (btn) {
+        btn.addEventListener('click', _asyncToGenerator(function* () {
+            var factionId = cleanInputValue(btn.getAttribute('data-admin-delete-faction-exempt') || '');
+            if (!factionId) return;
+            if (!confirm('Remove faction exemption ' + factionId + '?')) return;
+            var res = yield adminReq('DELETE', '/api/admin/exemptions/factions/' + encodeURIComponent(factionId));
+            if (!res.ok) {
+                setStatus(res.error || 'Could not remove faction exemption.', true);
+                return;
+            }
+            setStatus('Faction exemption removed.');
+            yield loadAdminDashboard();
+        }));
+    });
+
+    if (overlay) overlay.querySelectorAll('[data-admin-delete-user-exempt]').forEach(function (btn) {
+        btn.addEventListener('click', _asyncToGenerator(function* () {
+            var userId = cleanInputValue(btn.getAttribute('data-admin-delete-user-exempt') || '');
+            if (!userId) return;
+            if (!confirm('Remove player exemption ' + userId + '?')) return;
+            var res = yield adminReq('DELETE', '/api/admin/exemptions/users/' + encodeURIComponent(userId));
+            if (!res.ok) {
+                setStatus(res.error || 'Could not remove player exemption.', true);
+                return;
+            }
+            setStatus('Player exemption removed.');
             yield loadAdminDashboard();
         }));
     });
