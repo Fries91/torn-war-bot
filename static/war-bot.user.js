@@ -30,7 +30,6 @@ var K_TAB = 'warhub_tab_v3';
 var K_SHIELD_POS = 'warhub_shield_pos_v3';
 var K_OVERLAY_POS = 'warhub_overlay_pos_v3';
 var K_REFRESH = 'warhub_refresh_ms_v3';
-var K_NOTES = 'warhub_notes_v3';
 var K_LOCAL_NOTIFICATIONS = 'warhub_local_notifications_v3';
 var K_ACCESS_CACHE = 'warhub_access_cache_v3';
 var K_OVERVIEW_BOXES = 'warhub_overview_boxes_v3';
@@ -112,12 +111,6 @@ var K_OVERVIEW_BOXES = 'warhub_overview_boxes_v3';
     }
     function cleanInputValue(v) {
         return String(v || '').replace(/[\u200B-\u200D\uFEFF]/g, '').trim().replace(/^['"]+|['"]+$/g, '').trim();
-    }
-    function getNotes() {
-        return String(GM_getValue(K_NOTES, '') || '');
-    }
-    function setNotes(v) {
-        GM_setValue(K_NOTES, String(v || ''));
     }
     function getLocalNotifications() {
         return arr(GM_getValue(K_LOCAL_NOTIFICATIONS, []));
@@ -577,8 +570,6 @@ function parseEnemyRosterFromHtml(html, enemyFactionName) {
     var enemies = arr(s.enemies || s.enemy_members || war.enemy_members || []);
     var medDeals = arr(s.med_deals || s.medDeals || []);
     var dibs = arr(s.dibs || []);
-    var assignments = arr(s.assignments || []);
-    var notes = arr(s.notes || []);
     var notifications = arr(s.notifications || []);
     var bounties = arr(s.bounties || []);
     var targets = arr(s.targets || []);
@@ -679,8 +670,6 @@ function parseEnemyRosterFromHtml(html, enemyFactionName) {
         med_deals_message: medDealsMessage,
         medDealsMessage: medDealsMessage,
         dibs: dibs,
-        assignments: assignments,
-        notes: notes,
         terms: terms,
         war_terms: terms,
         notifications: notifications,
@@ -2621,8 +2610,19 @@ default: return renderOverviewTab();
             var tab = btn.getAttribute('data-tab') || 'war';
             currentTab = tab;
             GM_setValue(K_TAB, currentTab);
-            if (tab === 'faction' && ((accessState === null || accessState === void 0 ? void 0 : accessState.isFactionLeader) || isOwnerSession())) yield loadFactionMembers(true);
-            if (tab === 'admin' && isOwnerSession()) yield loadAdminDashboard();
+
+            if (tab === 'faction' && ((accessState === null || accessState === void 0 ? void 0 : accessState.isFactionLeader) || isOwnerSession())) {
+                yield loadFactionMembers(true);
+            }
+
+            if (tab === 'summary' && ((accessState === null || accessState === void 0 ? void 0 : accessState.isFactionLeader) || isOwnerSession())) {
+                yield loadAnalytics().catch(function () { return null; });
+            }
+
+            if (tab === 'admin' && isOwnerSession()) {
+                yield loadAdminDashboard();
+            }
+
             renderBody();
         }));
     });
@@ -2819,6 +2819,14 @@ default: return renderOverviewTab();
 
         var res = yield doAction('DELETE', "/api/war-terms?war_id=".concat(encodeURIComponent(war_id)), null, 'War terms deleted.');
         if (res) renderBody();
+    }));
+
+    var refreshSummary = overlay ? overlay.querySelector('#wh-refresh-summary') : null;
+    if (refreshSummary) refreshSummary.addEventListener('click', _asyncToGenerator(function* () {
+        analyticsCache = null;
+        yield loadAnalytics().catch(function () { return null; });
+        renderBody();
+        setStatus('War summary refreshed.');
     }));
 
     var refreshAlerts = overlay ? overlay.querySelector('#wh-mark-alerts-seen') : null;
@@ -3036,13 +3044,27 @@ default: return renderOverviewTab();
     });
 
     if (overlay) overlay.querySelectorAll('[data-overview-go]').forEach(function (btn) {
-        btn.addEventListener('click', function () {
+        btn.addEventListener('click', _asyncToGenerator(function* () {
             var nextTab = cleanInputValue(btn.getAttribute('data-overview-go') || '');
             if (!nextTab) return;
+
             currentTab = nextTab;
             GM_setValue(K_TAB, currentTab);
+
+            if (nextTab === 'faction' && ((accessState === null || accessState === void 0 ? void 0 : accessState.isFactionLeader) || isOwnerSession())) {
+                yield loadFactionMembers(true);
+            }
+
+            if (nextTab === 'summary' && ((accessState === null || accessState === void 0 ? void 0 : accessState.isFactionLeader) || isOwnerSession())) {
+                yield loadAnalytics().catch(function () { return null; });
+            }
+
+            if (nextTab === 'admin' && isOwnerSession()) {
+                yield loadAdminDashboard();
+            }
+
             renderBody();
-        });
+        }));
     });
 }
     function mount() {
