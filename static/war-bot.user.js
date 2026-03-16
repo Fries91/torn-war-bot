@@ -460,13 +460,7 @@ function fetchSameOriginHtml(url) {
 }
 
 function parseEnemyRosterFromHtml(html, enemyFactionName) {
-    try {
-        var parser = new DOMParser();
-        var doc = parser.parseFromString(String(html || ''), 'text/html');
-        return scrapeEnemyRosterFromDocument(doc, enemyFactionName);
-    } catch (e) {
-        return [];
-    }
+    return [];
 }
     function healthCheck() {
         return _healthCheck.apply(this, arguments);
