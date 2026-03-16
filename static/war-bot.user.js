@@ -56,8 +56,6 @@ var K_OVERVIEW_BOXES = 'warhub_overview_boxes_v3';
 ];
     var state = null;
     var analyticsCache = null;
-    var enemyRosterScrapeCache = {};
-    var enemyRosterScrapeInFlight = null;
     var overlay = null;
     var shield = null;
     var badge = null;
@@ -401,53 +399,6 @@ function whLoadWarPairFallback() {
     }
 }
 
-function whDetectWarPairFromFactionPage() {
-    try {
-        var href = String(location.href || '');
-        if (href.indexOf('factions.php?step=your&type=1') === -1) return null;
-
-        var ownFactionId = whGetOwnFactionId();
-        var links = Array.prototype.slice.call(document.querySelectorAll('a[href*="factions.php"]'));
-        var found = [];
-
-        links.forEach(function (a) {
-            var url = String(a.getAttribute('href') || '');
-            var text = String((a.textContent || '').trim());
-
-            var m = url.match(/(?:ID|id|XID|factionID)=([0-9]+)/);
-            if (!m) return;
-
-            var factionId = String(m[1] || '').trim();
-            if (!factionId) return;
-            if (ownFactionId && factionId === ownFactionId) return;
-
-            found.push({
-                faction_id: factionId,
-                faction_name: text || ('Faction ' + factionId)
-            });
-        });
-
-        var unique = [];
-        var seen = {};
-        found.forEach(function (x) {
-            if (!x.faction_id || seen[x.faction_id]) return;
-            seen[x.faction_id] = true;
-            unique.push(x);
-        });
-
-        if (!unique.length) return null;
-
-        var enemy = unique[0];
-        whSaveWarPairFallback({
-            enemy_faction_id: enemy.faction_id,
-            enemy_faction_name: enemy.faction_name
-        });
-
-        return enemy;
-    } catch (e) {
-        return null;
-    }
-}
     function getEnemyFactionMeta() {
     var s = state || {};
     var enemyFaction = s.enemy_faction || s.enemyFaction || {};
@@ -516,186 +467,6 @@ function parseEnemyRosterFromHtml(html, enemyFactionName) {
     } catch (e) {
         return [];
     }
-}
-
-function scrapeEnemyRosterFromDocument(doc, enemyFactionName) {
-    try {
-        var out = [];
-        var seen = {};
-        var links = Array.prototype.slice.call(
-            doc.querySelectorAll('a[href*="profiles.php?XID="], a[href*="profiles.php?xid="], a[href*="XID="], a[href*="xid="]')
-        );
-
-        links.forEach(function (a) {
-            var href = String(a.getAttribute('href') || '');
-            var m = href.match(/[?&]XID=(\d+)/i);
-            if (!m) return;
-
-            var userId = String(m[1] || '').trim();
-            if (!userId || seen[userId]) return;
-
-            var name = String(a.textContent || '').replace(/\[[^\]]+\]/g, '').trim();
-            if (!name || /^profile$/i.test(name) || /^attack$/i.test(name) || /^bounty$/i.test(name)) return;
-
-            var row = a;
-            for (var i = 0; i < 5; i += 1) {
-                if (!row || !row.parentElement) break;
-                row = row.parentElement;
-            }
-            row = row || a;
-
-            var rowText = String((row && row.textContent) || (a && a.textContent) || '').replace(/\s+/g, ' ').trim();
-            var rowClass = String((row && row.className) || '').toLowerCase();
-            var hay = (rowText + ' ' + rowClass).toLowerCase();
-
-            var onlineState = 'offline';
-            if (hay.indexOf('hospital') !== -1 || hay.indexOf('rehab') !== -1) {
-                onlineState = 'hospital';
-            } else if (hay.indexOf('travel') !== -1 || hay.indexOf('travelling') !== -1 || hay.indexOf('traveling') !== -1 || hay.indexOf('abroad') !== -1 || hay.indexOf('flying') !== -1) {
-                onlineState = 'travel';
-            } else if (hay.indexOf('jail') !== -1 || hay.indexOf('jailed') !== -1) {
-                onlineState = 'jail';
-            } else if (hay.indexOf('idle') !== -1) {
-                onlineState = 'idle';
-            } else if (hay.indexOf('online') !== -1 || hay.indexOf('okay') !== -1) {
-                onlineState = 'online';
-            }
-
-            var levelMatch = rowText.match(/\b(?:lvl|level)\s*\.?\s*(\d+)\b/i);
-            var level = levelMatch ? Number(levelMatch[1] || 0) || 0 : 0;
-
-            var hospSeconds = 0;
-            var hospMatch =
-                rowText.match(/(\d+)\s*h(?:ours?)?\s*(\d+)?\s*m?/i) ||
-                rowText.match(/(\d+)\s*m(?:in(?:ute)?s?)?\s*(\d+)?\s*s?/i) ||
-                rowText.match(/(\d+)\s*s(?:ec(?:ond)?s?)?/i);
-
-            if (onlineState === 'hospital' && hospMatch) {
-                if (/h/i.test(hospMatch[0])) {
-                    var h = Number(hospMatch[1] || 0) || 0;
-                    var m2 = Number(hospMatch[2] || 0) || 0;
-                    hospSeconds = h * 3600 + m2 * 60;
-                } else if (/m/i.test(hospMatch[0]) && /s/i.test(hospMatch[0])) {
-                    var mm = Number(hospMatch[1] || 0) || 0;
-                    var ss = Number(hospMatch[2] || 0) || 0;
-                    hospSeconds = mm * 60 + ss;
-                } else if (/m/i.test(hospMatch[0])) {
-                    hospSeconds = (Number(hospMatch[1] || 0) || 0) * 60;
-                } else {
-                    hospSeconds = Number(hospMatch[1] || 0) || 0;
-                }
-            }
-
-            seen[userId] = true;
-            out.push({
-                user_id: userId,
-                id: userId,
-                player_id: userId,
-                name: name,
-                player_name: name,
-                member_name: name,
-                level: level,
-                faction_name: enemyFactionName || '',
-                online_state: onlineState,
-                display_status: onlineState.charAt(0).toUpperCase() + onlineState.slice(1),
-                last_action: rowText || onlineState,
-                hospital_seconds: hospSeconds,
-                attack_url: 'https://www.torn.com/loader.php?sid=attack&user2ID=' + encodeURIComponent(userId)
-            });
-        });
-
-        return sortAlphabetical(out);
-    } catch (e) {
-        return [];
-    }
-}
-
-function applyScrapedEnemyRoster(items, sourceLabel) {
-    var list = sortAlphabetical(arr(items || []));
-    if (!list.length) return false;
-
-    state = state || {};
-    state.enemies = list;
-
-    if (!state.debug || typeof state.debug !== 'object') state.debug = {};
-    state.debug.enemy_members_count = list.length;
-    state.debug.enemy_members_source = sourceLabel || 'page_scrape';
-
-    state.enemy_members_source = sourceLabel || 'page_scrape';
-    return true;
-}
-
-function scrapeEnemyRosterNow() {
-    return _scrapeEnemyRosterNow.apply(this, arguments);
-}
-
-function _scrapeEnemyRosterNow() {
-    _scrapeEnemyRosterNow = _asyncToGenerator(function* () {
-        var meta = getEnemyFactionMeta();
-        var enemyFactionId = String(meta.id || '').trim();
-        var enemyFactionName = String(meta.name || '').trim();
-
-        if (!enemyFactionId) return false;
-        if (arr(state && state.enemies).length) return true;
-
-        var cached = enemyRosterScrapeCache[enemyFactionId];
-        if (cached && cached.ts && (Date.now() - cached.ts) < 120000 && arr(cached.items).length) {
-            return applyScrapedEnemyRoster(cached.items, 'page_cache');
-        }
-
-        if (enemyRosterScrapeInFlight && enemyRosterScrapeInFlight.factionId === enemyFactionId) {
-            return yield enemyRosterScrapeInFlight.promise;
-        }
-
-        var promise = _asyncToGenerator(function* () {
-            var roster = [];
-
-            roster = scrapeEnemyRosterFromDocument(document, enemyFactionName);
-
-            if (!roster.length) {
-                var urls = [
-                    'https://www.torn.com/factions.php?step=profile&ID=' + encodeURIComponent(enemyFactionId),
-                    'https://torn.com/factions.php?step=profile&ID=' + encodeURIComponent(enemyFactionId)
-                ];
-
-                for (var i = 0; i < urls.length; i += 1) {
-                    try {
-                        var html = yield fetchSameOriginHtml(urls[i]);
-                        roster = parseEnemyRosterFromHtml(html, enemyFactionName);
-                        if (roster.length) break;
-                    } catch (e) {}
-                }
-            }
-
-            if (roster.length) {
-                enemyRosterScrapeCache[enemyFactionId] = {
-                    ts: Date.now(),
-                    items: roster
-                };
-                whSaveWarPairFallback({
-                    enemy_faction_id: enemyFactionId,
-                    enemy_faction_name: enemyFactionName
-                });
-                return applyScrapedEnemyRoster(roster, 'page_scrape');
-            }
-
-            return false;
-        })();
-
-        enemyRosterScrapeInFlight = {
-            factionId: enemyFactionId,
-            promise: promise
-        };
-
-        try {
-            return yield promise;
-        } finally {
-            if (enemyRosterScrapeInFlight && enemyRosterScrapeInFlight.factionId === enemyFactionId) {
-                enemyRosterScrapeInFlight = null;
-            }
-        }
-    });
-    return _scrapeEnemyRosterNow.apply(this, arguments);
 }
     function healthCheck() {
         return _healthCheck.apply(this, arguments);
@@ -808,7 +579,6 @@ function _scrapeEnemyRosterNow() {
 
     var faction = s.faction || s.my_faction || s.ourFaction || {};
     var enemyFactionRaw = s.enemy_faction || s.enemyFaction || {};
-    var warPairFallback = whLoadWarPairFallback() || {};
 
     var members = arr(s.members || s.member_list || []);
     var enemies = arr(s.enemies || s.enemy_members || war.enemy_members || []);
@@ -840,7 +610,6 @@ function _scrapeEnemyRosterNow() {
         s.enemy_faction_id ||
         war.enemy_faction_id ||
         war.opponent_faction_id ||
-        warPairFallback.enemy_faction_id ||
         ''
     ).trim();
 
@@ -849,21 +618,15 @@ function _scrapeEnemyRosterNow() {
         s.enemy_faction_name ||
         war.enemy_faction_name ||
         war.opponent_faction_name ||
-        warPairFallback.enemy_faction_name ||
         ''
     ).trim();
 
     if (enemyFactionId && ownFactionId && enemyFactionId === ownFactionId) {
-        enemyFactionId = String(warPairFallback.enemy_faction_id || '').trim();
-    }
-    if (enemyFactionName && ownFactionName && enemyFactionName.toLowerCase() === ownFactionName) {
-        enemyFactionName = String(warPairFallback.enemy_faction_name || '').trim();
-    }
-
-    if (enemyFactionId && ownFactionId && enemyFactionId === ownFactionId) {
         enemyFactionId = '';
+        enemyFactionName = '';
     }
     if (enemyFactionName && ownFactionName && enemyFactionName.toLowerCase() === ownFactionName) {
+        enemyFactionId = '';
         enemyFactionName = '';
     }
 
@@ -965,20 +728,6 @@ if (!res.ok) {
 
 whDetectWarPairFromFactionPage();
 state = normalizeState(res.data || {});
-
-var needEnemyScrape =
-    !arr(state && state.enemies).length &&
-    !!(
-        (state && state.has_war) ||
-        (state && state.enemy_faction_id) ||
-        (state && state.enemyFaction && state.enemyFaction.id)
-    );
-
-if (needEnemyScrape) {
-    try {
-        yield scrapeEnemyRosterNow();
-    } catch (e) {}
-}
 
 if ((accessState === null || accessState === void 0 ? void 0 : accessState.isFactionLeader) && !factionMembersCache) {
     loadFactionMembers()["catch"](function () {
@@ -1838,14 +1587,13 @@ function renderOverviewTab() {
 }
     
     function renderEnemiesTab() {
-        try {
+    try {
         var enemies = arr((state && state.enemies) || []);
         var enemyFaction =
             (state && state.enemy_faction) ||
             (state && state.enemyFaction) ||
             {};
         var war = (state && state.war) || {};
-        var fallbackPair = whLoadWarPairFallback() || {};
 
         var ownFaction =
             (state && state.faction) ||
@@ -1868,7 +1616,6 @@ function renderOverviewTab() {
             (enemyFaction && (enemyFaction.faction_id || enemyFaction.id)) ||
             (state && state.enemy_faction_id) ||
             (war && war.enemy_faction_id) ||
-            fallbackPair.enemy_faction_id ||
             ''
         ).trim();
 
@@ -1876,7 +1623,6 @@ function renderOverviewTab() {
             (enemyFaction && enemyFaction.name) ||
             (state && state.enemy_faction_name) ||
             (war && war.enemy_faction_name) ||
-            fallbackPair.enemy_faction_name ||
             'Unknown Enemy'
         ).trim();
 
@@ -1985,6 +1731,7 @@ function renderOverviewTab() {
         ';
     }
 }
+
     function renderHospitalTab() {
     var ours = sortHosp(arr((state === null || state === void 0 ? void 0 : state.members) || []).filter(function (x) {
         return getHospSeconds(x) > 0;
