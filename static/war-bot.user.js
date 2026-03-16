@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         War Hub ⚔️
 // @namespace    fries91-war-hub
-// @version      3.0.4
+// @version      3.0.5
 // @description  War Hub by Fries91. Faction-license aware overlay with draggable icon, draggable overlay, PDA friendly, shared war tools, faction member management, and payment lock handling.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -2302,12 +2302,13 @@ function renderChainTab() {
     }
     function resetShieldPosition() {
     if (!shield) return;
+
     shield.style.left = 'auto';
     shield.style.bottom = 'auto';
 
     if (window.innerWidth <= 700) {
         shield.style.right = '8px';
-        shield.style.top = '82px';
+        shield.style.top = '92px';
     } else {
         shield.style.right = '14px';
         shield.style.top = '120px';
@@ -3022,6 +3023,19 @@ function renderChainTab() {
     document.body.appendChild(badge);
     document.body.appendChild(overlay);
 
+    var savedShield = GM_getValue(K_SHIELD_POS, null);
+    if (
+        savedShield &&
+        typeof savedShield === 'object'
+    ) {
+        shield.style.left = savedShield.left || 'auto';
+        shield.style.top = savedShield.top || '';
+        shield.style.right = savedShield.right || '14px';
+        shield.style.bottom = savedShield.bottom || 'auto';
+    } else {
+        resetShieldPosition();
+    }
+
     clampToViewport(shield);
     saveShieldPos();
 
@@ -3062,9 +3076,12 @@ function renderChainTab() {
     renderBody();
 
     var savedOverlay = GM_getValue(K_OVERLAY_POS, null);
-    if (savedOverlay && typeof savedOverlay === 'object' &&
+    if (
+        savedOverlay &&
+        typeof savedOverlay === 'object' &&
         typeof savedOverlay.left === 'number' &&
-        typeof savedOverlay.top === 'number') {
+        typeof savedOverlay.top === 'number'
+    ) {
         overlay.style.left = savedOverlay.left + 'px';
         overlay.style.top = savedOverlay.top + 'px';
         overlay.style.right = 'auto';
