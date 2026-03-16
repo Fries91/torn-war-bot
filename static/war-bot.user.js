@@ -2004,7 +2004,9 @@ function renderChainTab() {
     var canManage = !!((accessState === null || accessState === void 0 ? void 0 : accessState.isFactionLeader) || isOwnerSession());
 
     var PRICE_PER_ENABLED_MEMBER_XANAX = 3;
-    var enabledCount = members.filter(function (x) { return !!x.enabled; }).length;
+    var enabledCount = members.filter(function (x) {
+        return !!x.enabled;
+    }).length;
     var totalXanax = enabledCount * PRICE_PER_ENABLED_MEMBER_XANAX;
 
     var rosterOptions = factionRoster.length
