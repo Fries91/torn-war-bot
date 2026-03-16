@@ -850,23 +850,31 @@ def _enrich_members_with_saved_keys(
 
         if member_api_key and enabled:
             try:
-                live = member_live_bars(member_api_key) or {}
+                live = member_live_bars(member_api_key, member_id) or {}
             except Exception:
                 live = {}
 
             live_user_id = str(live.get("user_id") or "").strip()
+            bars = live.get("bars") or {}
+            life = bars.get("life") or {}
+            energy = bars.get("energy") or {}
+            nerve = bars.get("nerve") or {}
+            happy = bars.get("happy") or {}
 
             if live.get("ok") and (not live_user_id or live_user_id == member_id):
-                for k in (
-                    "life_current",
-                    "life_max",
-                    "energy_current",
-                    "energy_max",
-                    "medical_cooldown",
-                ):
-                    if live.get(k) is not None:
-                        merged[k] = live.get(k)
-
+                merged["life_current"] = _to_int(life.get("current"))
+                merged["life_max"] = _to_int(life.get("maximum"))
+                merged["energy_current"] = _to_int(energy.get("current"))
+                merged["energy_max"] = _to_int(energy.get("maximum"))
+                merged["nerve_current"] = _to_int(nerve.get("current"))
+                merged["nerve_max"] = _to_int(nerve.get("maximum"))
+                merged["happy_current"] = _to_int(happy.get("current"))
+                merged["happy_max"] = _to_int(happy.get("maximum"))
+                merged["life_ticktime"] = _to_int(life.get("ticktime"))
+                merged["energy_ticktime"] = _to_int(energy.get("ticktime"))
+                merged["nerve_ticktime"] = _to_int(nerve.get("ticktime"))
+                merged["happy_ticktime"] = _to_int(happy.get("ticktime"))
+                merged["medical_cooldown"] = 0
                 merged["live_stats_enabled"] = True
             else:
                 merged["live_stats_enabled"] = False
