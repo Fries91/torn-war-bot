@@ -2020,17 +2020,19 @@ function renderChainTab() {
         var name = x.name || x.player_name || "ID ".concat(id);
         return "<option value=\"".concat(esc(String(id)), "\" data-name=\"").concat(esc(name), "\">").concat(esc(name), " [").concat(esc(String(id)), "]</option>");
     }).join(''), "\n            </select>\n          </div>\n          <div>\n            <label class=\"warhub-label\">Target ID</label>\n            <input class=\"warhub-input\" id=\"warhub-target-id\" placeholder=\"Target ID\"".concat(hasWar ? '' : ' disabled', " />\n          </div>\n        </div>\n        <div style=\"height:8px;\"></div>\n        <label class=\"warhub-label\">Notes / Reason</label>\n        <input class=\"warhub-input\" id=\"warhub-target-notes\" placeholder=\"Optional notes\"".concat(hasWar ? '' : ' disabled', " />\n        <div class=\"warhub-actions\" style=\"margin-top:8px;\">\n          <button class=\"warhub-btn primary\" id=\"warhub-target-add\"").concat(hasWar ? '' : ' disabled', ">Add Target</button>\n        </div>\n      </div>\n\n      <div class=\"warhub-card\">\n        <div class=\"warhub-section-title\">\n          <h3>Targets</h3>\n          <span class=\"warhub-count\">").concat(targets.length, "</span>\n        </div>\n        <div class=\"warhub-list\">\n          ").concat(
-        targets.length ? targets.map(function (x) {
-            var id = x.target_id || x.user_id || x.id || '';
-            var name = x.target_name || x.name || "ID ".concat(id);
-            var rowId = x.id || x.target_row_id || x.target_id || '';
-            var meta = ["ID ".concat(id), x.notes || x.reason || ''].filter(Boolean).join(' • ');
+        targets.length
+            ? targets.map(function (x) {
+                var id = x.target_id || x.user_id || x.id || '';
+                var name = x.target_name || x.name || "ID ".concat(id);
+                var rowId = x.id || x.target_row_id || x.target_id || '';
+                var meta = ["ID ".concat(id), x.notes || x.reason || ''].filter(Boolean).join(' • ');
 
-            return "\n              <div class=\"warhub-list-item\">\n                <div class=\"warhub-row\">\n                  <div>\n                    <div class=\"warhub-name\">".concat(esc(name), "</div>\n                    <div class=\"warhub-meta\">").concat(esc(meta), "</div>\n                  </div>\n                  <div class=\"warhub-actions\">\n                    ").concat(
-                id ? "<a class=\"warhub-btn small primary\" href=\"https://www.torn.com/loader.php?sid=attack&user2ID=".concat(encodeURIComponent(id), "\" target=\"_blank\" rel=\"noopener noreferrer\">Attack</a>") : '',
-                "\n                    <button class=\"warhub-btn small warn warhub-del-target\" data-id=\""
-            ).concat(esc(String(rowId)), "\">Delete</button>\n                  </div>\n                </div>\n              </div>\n            ");
-        }).join('') : '<div class="warhub-empty">No targets saved.</div>',
+                return "\n              <div class=\"warhub-list-item\">\n                <div class=\"warhub-row\">\n                  <div>\n                    <div class=\"warhub-name\">".concat(esc(name), "</div>\n                    <div class=\"warhub-meta\">").concat(esc(meta), "</div>\n                  </div>\n                  <div class=\"warhub-actions\">\n                    ").concat(
+                    id ? "<a class=\"warhub-btn small primary\" href=\"https://www.torn.com/loader.php?sid=attack&user2ID=".concat(encodeURIComponent(id), "\" target=\"_blank\" rel=\"noopener noreferrer\">Attack</a>") : '',
+                    "\n                    <button class=\"warhub-btn small warn warhub-del-target\" data-id=\""
+                ).concat(esc(String(rowId)), "\">Delete</button>\n                  </div>\n                </div>\n              </div>\n            ");
+            }).join('')
+            : '<div class="warhub-empty">No targets saved.</div>',
         "\n        </div>\n      </div>\n    ");
 }
     function renderAssignmentsTab() {
