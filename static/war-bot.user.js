@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         War Hub ⚔️
 // @namespace    fries91-war-hub
-// @version      3.0.1
+// @version      3.0.2
 // @description  War Hub by Fries91. Faction-license aware overlay with draggable icon, draggable overlay, PDA friendly, shared war tools, faction member management, and payment lock handling.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -2003,6 +2003,10 @@ function renderChainTab() {
     var status = license.status || ((accessState === null || accessState === void 0 ? void 0 : accessState.paymentRequired) ? 'payment_required' : (accessState === null || accessState === void 0 ? void 0 : accessState.trialActive) ? 'trial' : 'active');
     var canManage = !!((accessState === null || accessState === void 0 ? void 0 : accessState.isFactionLeader) || isOwnerSession());
 
+    var PRICE_PER_ENABLED_MEMBER_XANAX = 3;
+    var enabledCount = members.filter(function (x) { return !!x.enabled; }).length;
+    var totalXanax = enabledCount * PRICE_PER_ENABLED_MEMBER_XANAX;
+
     var rosterOptions = factionRoster.length
         ? sortAlphabetical(factionRoster).map(function (m) {
             var uid = String(m.user_id || m.id || '').trim();
@@ -2012,12 +2016,64 @@ function renderChainTab() {
         }).join('')
         : '<option value="">No faction members loaded</option>';
 
-    return "\n      <div class=\"warhub-card\">\n        <h3>Faction License</h3>\n        <div class=\"warhub-grid two\">\n          <div class=\"warhub-metric\"><div class=\"k\">Status</div><div class=\"v\">".concat(esc(status), "</div></div>\n          <div class=\"warhub-metric\"><div class=\"k\">Faction</div><div class=\"v\">").concat(esc((state === null || state === void 0 ? void 0 : state.user) && state.user.faction_name || (accessState === null || accessState === void 0 ? void 0 : accessState.factionName) || '—'), "</div></div>\n          <div class=\"warhub-metric\"><div class=\"k\">Payment Player</div><div class=\"v\">").concat(esc(license.payment_player || (accessState === null || accessState === void 0 ? void 0 : accessState.paymentPlayer) || PAYMENT_PLAYER), "</div></div>\n          <div class=\"warhub-metric\"><div class=\"k\">Price / Enabled Member</div><div class=\"v\">").concat(esc(String(license.faction_member_price || (accessState === null || accessState === void 0 ? void 0 : accessState.pricePerMember) || PRICE_PER_MEMBER) + ' Xanax'), "</div></div>\n        </div>\n      </div>\n\n      <div class=\"warhub-card\">\n        <h3>Manage Member Access</h3>\n        ").concat(canManage ? "\n          <div>\n            <label class=\"warhub-label\">Faction Member</label>\n            <select class=\"warhub-input\" id=\"wh-fm-userid\">\n              <option value=\"\">Select a faction member</option>\n              ".concat(rosterOptions, "\n            </select>\n          </div>\n          <div class=\"warhub-actions\" style=\"margin-top:8px;\">\n            <button class=\"warhub-btn primary\" id=\"wh-fm-save\">Save Member Access</button>\n          </div>\n        ") : '<div class=\"warhub-empty\">Leader access required.</div>', "\n      </div>\n\n      <div class=\"warhub-card\">\n        <div class=\"warhub-section-title\">\n          <h3>Faction Members</h3>\n          <span class=\"warhub-count\">").concat(fmtNum(members.length), "</span>\n        </div>\n        <div class=\"warhub-list\">\n          ").concat(members.length ? members.map(function (x) {
+    return "\
+      <div class=\"warhub-card\">\
+        <h3>Faction License</h3>\
+        <div class=\"warhub-grid two\">\
+          <div class=\"warhub-metric\"><div class=\"k\">Status</div><div class=\"v\">".concat(esc(status), "</div></div>\
+          <div class=\"warhub-metric\"><div class=\"k\">Faction</div><div class=\"v\">").concat(esc((state === null || state === void 0 ? void 0 : state.user) && state.user.faction_name || (accessState === null || accessState === void 0 ? void 0 : accessState.factionName) || '—'), "</div></div>\
+          <div class=\"warhub-metric\"><div class=\"k\">Payment Player</div><div class=\"v\">").concat(esc(license.payment_player || (accessState === null || accessState === void 0 ? void 0 : accessState.paymentPlayer) || PAYMENT_PLAYER), "</div></div>\
+          <div class=\"warhub-metric\"><div class=\"k\">Price / Enabled Member</div><div class=\"v\">").concat(esc(String(PRICE_PER_ENABLED_MEMBER_XANAX) + ' Xanax'), "</div></div>\
+          <div class=\"warhub-metric\"><div class=\"k\">Enabled Members</div><div class=\"v\">").concat(fmtNum(enabledCount), "</div></div>\
+          <div class=\"warhub-metric\"><div class=\"k\">Total Payment</div><div class=\"v\">").concat(esc(String(totalXanax) + ' Xanax'), "</div></div>\
+        </div>\
+      </div>\
+
+      <div class=\"warhub-card\">\
+        <h3>Manage Member Access</h3>\
+        ").concat(canManage ? "\
+          <div>\
+            <label class=\"warhub-label\">Faction Member</label>\
+            <select class=\"warhub-input\" id=\"wh-fm-userid\">\
+              <option value=\"\">Select a faction member</option>\
+              ".concat(rosterOptions, "\
+            </select>\
+          </div>\
+          <div class=\"warhub-actions\" style=\"margin-top:8px;\">\
+            <button class=\"warhub-btn primary\" id=\"wh-fm-save\">Save Member Access</button>\
+          </div>\
+        ") : '<div class=\"warhub-empty\">Leader access required.</div>', "\
+      </div>\
+
+      <div class=\"warhub-card\">\
+        <div class=\"warhub-section-title\">\
+          <h3>Faction Members</h3>\
+          <span class=\"warhub-count\">").concat(fmtNum(members.length), "</span>\
+        </div>\
+        <div class=\"warhub-list\">\
+          ").concat(members.length ? members.map(function (x) {
         var memberId = x.member_user_id || x.user_id || '';
         var memberName = x.member_name || x.name || "ID ".concat(memberId);
         var enabled = !!x.enabled;
-        return "\n              <div class=\"warhub-list-item\">\n                <div class=\"warhub-row\">\n                  <div>\n                    <div class=\"warhub-name\">".concat(esc(memberName), "</div>\n                    <div class=\"warhub-meta\">").concat(esc(["ID ".concat(memberId)].filter(Boolean).join(' • ')), "</div>\                  </div>\n                  <div class=\"warhub-actions\">\n                    <span class=\"warhub-pill ").concat(enabled ? 'enabled' : 'disabled', "\">").concat(enabled ? 'Enabled' : 'Disabled', "</span>\n                    ").concat(canManage ? "<button class=\"warhub-btn small ".concat(enabled ? '' : 'good', "\" data-toggle-member=\"").concat(esc(String(memberId)), "\" data-enabled=\"").concat(enabled ? '0' : '1', "\">").concat(enabled ? 'Disable' : 'Enable', "</button>") : '', "\n                    ").concat(canManage ? "<button class=\"warhub-btn small warn\" data-del-member=\"".concat(esc(String(memberId)), "\">Delete</button>") : '', "\n                  </div>\n                </div>\n              </div>\n            ");
-    }).join('') : '<div class="warhub-empty">No member access rows yet.</div>', "\n        </div>\n      </div>\n    ");
+        return "\
+              <div class=\"warhub-list-item\">\
+                <div class=\"warhub-row\">\
+                  <div>\
+                    <div class=\"warhub-name\">".concat(esc(memberName), "</div>\
+                    <div class=\"warhub-meta\">").concat(esc(["ID ".concat(memberId)].filter(Boolean).join(' • ')), "</div>\
+                  </div>\
+                  <div class=\"warhub-actions\">\
+                    <span class=\"warhub-pill ").concat(enabled ? 'enabled' : 'disabled', "\">").concat(enabled ? 'Enabled' : 'Disabled', "</span>\
+                    ").concat(canManage ? "<button class=\"warhub-btn small ".concat(enabled ? '' : 'good', "\" data-toggle-member=\"").concat(esc(String(memberId)), "\" data-enabled=\"").concat(enabled ? '0' : '1', "\">").concat(enabled ? 'Disable' : 'Enable', "</button>") : '', "\
+                    ").concat(canManage ? "<button class=\"warhub-btn small warn\" data-del-member=\"".concat(esc(String(memberId)), "\">Delete</button>") : '', "\
+                  </div>\
+                </div>\
+              </div>\
+            ");
+    }).join('') : '<div class="warhub-empty">No member access rows yet.</div>', "\
+        </div>\
+      </div>\
+    ");
 }
     function renderAdminTab() {
         if (!isOwnerSession()) {
@@ -2037,7 +2093,7 @@ function renderChainTab() {
     var refreshMs = Number(GM_getValue(K_REFRESH, 30000)) || 30000;
     var overviewPrefs = getOverviewBoxPrefs();
 
-    return "\n      <div class=\"warhub-card\">\n        <h3>Keys</h3>\n        <label class=\"warhub-label\">Your Torn API Key</label>\n        <input class=\"warhub-input\" id=\"wh-api-key\" value=\"".concat(esc(apiKey), "\" placeholder=\"Paste your API key\">\n        <div class=\"warhub-actions\" style=\"margin-top:8px;\">\n          <button class=\"warhub-btn primary\" id=\"wh-save-keys\">Save Keys</button>\n          <button class=\"warhub-btn\" id=\"wh-login-btn\">Login</button>\n          <button class=\"warhub-btn warn\" id=\"wh-logout-btn\">Logout</button>\n        </div>\n      </div>\n\n      <div class=\"warhub-card\">\n        <h3>Overview Quick Boxes</h3>\n        <div class=\"warhub-mini\" style=\"margin-bottom:10px; line-height:1.5;\">\n          Each player can choose which boxes appear on their Overview tab.\n        </div>\n        <label class=\"warhub-check\"><input type=\"checkbox\" id=\"wh-overview-meddeals\" ").concat(overviewPrefs.meddeals ? 'checked' : '', "> Med Deals</label><br>\n        <label class=\"warhub-check\"><input type=\"checkbox\" id=\"wh-overview-dibs\" ").concat(overviewPrefs.dibs ? 'checked' : '', "> Dibs</label><br>\n        <label class=\"warhub-check\"><input type=\"checkbox\" id=\"wh-overview-terms\" ").concat(overviewPrefs.terms ? 'checked' : '', "> Terms</label><br>\n        <label class=\"warhub-check\"><input type=\"checkbox\" id=\"wh-overview-war\" ").concat(overviewPrefs.war ? 'checked' : '', "> War Overview</label>\n        <div class=\"warhub-actions\" style=\"margin-top:10px;\">\n          <button class=\"warhub-btn\" id=\"wh-save-overview-boxes\">Save Overview Boxes</button>\n        </div>\n      </div>\n\n      <div class=\"warhub-card\">\n        <h3>Polling</h3>\n        <label class=\"warhub-label\">Refresh every (ms)</label>\n        <input class=\"warhub-input\" id=\"wh-refresh-ms\" value=\"").concat(esc(String(refreshMs)), "\">\n        <div class=\"warhub-actions\" style=\"margin-top:8px;\">\n          <button class=\"warhub-btn\" id=\"wh-save-refresh\">Save Refresh</button>\n          <button class=\"warhub-btn\" id=\"wh-reset-positions\">Reset Positions</button>\n        </div>\n      </div>\n\n      <div class=\"warhub-card\">\n        <h3>Access Info</h3>\n        <div class=\"warhub-mini\" style=\"line-height:1.6;\">\n          Payment player: <strong>").concat(esc((accessState === null || accessState === void 0 ? void 0 : accessState.paymentPlayer) || PAYMENT_PLAYER), "</strong><br>\n          Price per enabled member: <strong>").concat(esc(String((accessState === null || accessState === void 0 ? void 0 : accessState.pricePerMember) || PRICE_PER_MEMBER) + ' Xanax'), "</strong><br>\          ").concat(accessSummaryMessage() ? "Status: <strong>".concat(esc(accessSummaryMessage()), "</strong>") : 'Status: <strong>Ready</strong>', "\n        </div>\n      </div>\n    ");
+    return "\n      <div class=\"warhub-card\">\n        <h3>Keys</h3>\n        <label class=\"warhub-label\">Your Torn API Key</label>\n        <input class=\"warhub-input\" id=\"wh-api-key\" value=\"".concat(esc(apiKey), "\" placeholder=\"Paste your API key\">\n        <div class=\"warhub-actions\" style=\"margin-top:8px;\">\n          <button class=\"warhub-btn primary\" id=\"wh-save-keys\">Save Keys</button>\n          <button class=\"warhub-btn\" id=\"wh-login-btn\">Login</button>\n          <button class=\"warhub-btn warn\" id=\"wh-logout-btn\">Logout</button>\n        </div>\n      </div>\n\n      <div class=\"warhub-card\">\n        <h3>Overview Quick Boxes</h3>\n        <div class=\"warhub-mini\" style=\"margin-bottom:10px; line-height:1.5;\">\n          Each player can choose which boxes appear on their Overview tab.\n        </div>\n        <label class=\"warhub-check\"><input type=\"checkbox\" id=\"wh-overview-meddeals\" ").concat(overviewPrefs.meddeals ? 'checked' : '', "> Med Deals</label><br>\n        <label class=\"warhub-check\"><input type=\"checkbox\" id=\"wh-overview-dibs\" ").concat(overviewPrefs.dibs ? 'checked' : '', "> Dibs</label><br>\n        <label class=\"warhub-check\"><input type=\"checkbox\" id=\"wh-overview-terms\" ").concat(overviewPrefs.terms ? 'checked' : '', "> Terms</label><br>\n        <label class=\"warhub-check\"><input type=\"checkbox\" id=\"wh-overview-war\" ").concat(overviewPrefs.war ? 'checked' : '', "> War Overview</label>\n        <div class=\"warhub-actions\" style=\"margin-top:10px;\">\n          <button class=\"warhub-btn\" id=\"wh-save-overview-boxes\">Save Overview Boxes</button>\n        </div>\n      </div>\n\n      <div class=\"warhub-card\">\n        <h3>Polling</h3>\n        <label class=\"warhub-label\">Refresh every (ms)</label>\n        <input class=\"warhub-input\" id=\"wh-refresh-ms\" value=\"").concat(esc(String(refreshMs)), "\">\n        <div class=\"warhub-actions\" style=\"margin-top:8px;\">\n          <button class=\"warhub-btn\" id=\"wh-save-refresh\">Save Refresh</button>\n          <button class=\"warhub-btn\" id=\"wh-reset-positions\">Reset Positions</button>\n        </div>\n      </div>\n\n      <div class=\"warhub-card\">\n        <h3>Access Info</h3>\n        <div class=\"warhub-mini\" style=\"line-height:1.6;\">\n          Payment player: <strong>").concat(esc((accessState === null || accessState === void 0 ? void 0 : accessState.paymentPlayer) || PAYMENT_PLAYER), "</strong><br>\n          Price per enabled member: <strong>").concat(esc('3 Xanax'), "</strong><br>\    Total payment: <strong>").concat(esc(String(arr((factionMembersCache === null || factionMembersCache === void 0 ? void 0 : factionMembersCache.members) || []).filter(function (x) { return !!x.enabled; }).length * 3) + ' Xanax'), "</strong><br>\      ").concat(accessSummaryMessage() ? "Status: <strong>".concat(esc(accessSummaryMessage()), "</strong>") : 'Status: <strong>Ready</strong>', "\n        </div>\n      </div>\n    ");
 }
     function renderAccessBanner() {
         var msg = accessSummaryMessage();
