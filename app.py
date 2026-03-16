@@ -60,6 +60,9 @@ from db import (
     upsert_faction_member_access,
     set_faction_member_enabled,
     delete_faction_member_access,
+    list_dibs_for_faction,
+    add_dib,
+    delete_dib,
 )
 
 from torn_api import (
@@ -606,6 +609,31 @@ def _normalize_note(row: Dict[str, Any]) -> Dict[str, Any]:
     return r
 
 
+def _normalize_dib(row: Dict[str, Any]) -> Dict[str, Any]:
+    r = dict(row or {})
+    r["id"] = _to_int(r.get("id"))
+    r["faction_id"] = str(r.get("faction_id") or "")
+    r["faction_name"] = str(r.get("faction_name") or "")
+    r["war_id"] = str(r.get("war_id") or "")
+    r["target_id"] = str(r.get("target_id") or r.get("enemy_id") or "")
+    r["target_name"] = str(r.get("target_name") or r.get("enemy_name") or "")
+    r["claimer_user_id"] = str(
+        r.get("claimer_user_id")
+        or r.get("created_by_user_id")
+        or r.get("user_id")
+        or ""
+    )
+    r["claimer_name"] = str(
+        r.get("claimer_name")
+        or r.get("created_by_name")
+        or r.get("name")
+        or ""
+    )
+    r["note"] = str(r.get("note") or r.get("reason") or "")
+    r["created_at"] = str(r.get("created_at") or "")
+    return r
+
+
 def _merge_enemy_state(enemies: List[Dict[str, Any]], war_id: str) -> List[Dict[str, Any]]:
     state_map = get_enemy_state_map(war_id) if war_id else {}
     merged = []
@@ -685,6 +713,41 @@ def _delete_med_deal_compat(faction_id: str, deal_id: int):
         return delete_med_deal(int(deal_id))
     except TypeError:
         return delete_med_deal(faction_id, int(deal_id))
+
+
+def _add_dib_compat(
+    *,
+    user: Dict[str, Any],
+    war_id: str,
+    target_id: str,
+    target_name: str,
+    note: str,
+):
+    faction_id = str(user.get("faction_id") or "").strip()
+    faction_name = str(user.get("faction_name") or "").strip()
+    user_id = str(user.get("user_id") or "").strip()
+    user_name = str(user.get("name") or "").strip()
+
+    try:
+        return add_dib(
+            faction_id=faction_id,
+            faction_name=faction_name,
+            war_id=war_id,
+            target_id=target_id,
+            target_name=target_name,
+            claimer_user_id=user_id,
+            claimer_name=user_name,
+            note=note,
+        )
+    except TypeError:
+        return add_dib(faction_id, war_id, target_id, target_name, user_id, user_name, note)
+
+
+def _delete_dib_compat(faction_id: str, dib_id: int):
+    try:
+        return delete_dib(faction_id=faction_id, dib_id=int(dib_id))
+    except TypeError:
+        return delete_dib(faction_id, int(dib_id))
 
 
 @app.route("/health", methods=["GET"])
@@ -1042,6 +1105,7 @@ def api_state():
     assignments = [_normalize_assignment(x) for x in (list_target_assignments_for_war(war_id) if war_id else [])]
     notes = [_normalize_note(x) for x in (list_war_notes(war_id) if war_id else [])]
     terms = get_war_terms(war_id) if war_id else {}
+    dibs = [_normalize_dib(x) for x in (list_dibs_for_faction(faction_id, war_id=war_id) if faction_id else [])]
 
     med_deals = list_med_deals_for_faction(faction_id) if faction_id else []
     targets = list_targets(user_id) if user_id else []
@@ -1101,6 +1165,7 @@ def api_state():
         assignments=assignments,
         notes=notes,
         terms=terms,
+        dibs=dibs,
         med_deals=med_deals,
         targets=targets,
         bounties=bounties,
@@ -1137,6 +1202,22 @@ def api_state():
             ),
         },
     )
+
+
+@app.route("/api/war/summary", methods=["GET"])
+@require_session
+def api_war_summary():
+    user = request.user or {}
+    api_key = str(user.get("api_key") or "").strip()
+    if not api_key:
+        return err("Missing API key.", 400)
+
+    payload = _ranked_war_payload_for_user(
+        api_key,
+        my_faction_id=str(user.get("faction_id") or ""),
+        my_faction_name=str(user.get("faction_name") or ""),
+    )
+    return ok(**payload)
 
 
 @app.route("/api/availability", methods=["POST"])
@@ -1232,6 +1313,93 @@ def api_delete_med_deal(deal_id: int):
 
     _delete_med_deal_compat(faction_id, int(deal_id))
     return ok(message="Med deal deleted.", id=deal_id)
+
+
+@app.route("/api/dibs", methods=["GET"])
+@require_session
+def api_list_dibs():
+    user = request.user or {}
+    faction_id = str(user.get("faction_id") or "").strip()
+    war_id = str(request.args.get("war_id") or "").strip()
+
+    if not faction_id:
+        return ok(items=[])
+
+    items = list_dibs_for_faction(faction_id, war_id=war_id) if war_id else list_dibs_for_faction(faction_id)
+    return ok(items=[_normalize_dib(x) for x in (items or [])])
+
+
+@app.route("/api/dibs", methods=["POST"])
+@require_session
+def api_add_dib():
+    user = request.user or {}
+    faction_id = str(user.get("faction_id") or "").strip()
+    if not faction_id:
+        return err("No faction found.", 400)
+
+    data = _require_json()
+    war_id = str(data.get("war_id") or "").strip()
+    target_id = str(
+        data.get("target_id")
+        or data.get("enemy_id")
+        or data.get("user_id")
+        or ""
+    ).strip()
+    target_name = str(
+        data.get("target_name")
+        or data.get("enemy_name")
+        or data.get("name")
+        or ""
+    ).strip()
+    note = str(data.get("note") or data.get("reason") or "").strip()
+
+    if not target_id:
+        return err("Missing target_id.", 400)
+
+    item = _add_dib_compat(
+        user=user,
+        war_id=war_id,
+        target_id=target_id,
+        target_name=target_name,
+        note=note,
+    )
+
+    add_audit_log(
+        actor_user_id=str(user.get("user_id") or ""),
+        actor_name=str(user.get("name") or ""),
+        action="add_dib",
+        meta_json={
+            "faction_id": faction_id,
+            "war_id": war_id,
+            "target_id": target_id,
+            "target_name": target_name,
+        },
+    )
+
+    return ok(message="Dib added.", item=_normalize_dib(item or {}))
+
+
+@app.route("/api/dibs/<int:dib_id>", methods=["DELETE"])
+@require_session
+def api_delete_dib(dib_id: int):
+    user = request.user or {}
+    faction_id = str(user.get("faction_id") or "").strip()
+    if not faction_id:
+        return err("No faction found.", 400)
+
+    _delete_dib_compat(faction_id, int(dib_id))
+
+    add_audit_log(
+        actor_user_id=str(user.get("user_id") or ""),
+        actor_name=str(user.get("name") or ""),
+        action="delete_dib",
+        meta_json={
+            "faction_id": faction_id,
+            "dib_id": int(dib_id),
+        },
+    )
+
+    return ok(message="Dib deleted.", id=dib_id)
 
 
 @app.route("/api/targets", methods=["GET"])
@@ -1347,19 +1515,19 @@ def api_save_war_snapshot():
     score = payload.get("score") or {}
 
     item = save_war_snapshot(
-    war_id=str(payload.get("war_id") or ""),
-    faction_id=str(user.get("faction_id") or ""),
-    faction_name=str(our.get("name") or user.get("faction_name") or ""),
-    enemy_faction_id=str(enemy.get("faction_id") or enemy.get("id") or ""),
-    enemy_faction_name=str(enemy.get("name") or ""),
-    score_us=_to_int(score.get("our")),
-    score_them=_to_int(score.get("enemy")),
-    target_score=_to_int(score.get("target")),
-    lead=_to_int(score.get("our")) - _to_int(score.get("enemy")),
-    start_ts=_to_int(war.get("start") or war.get("start_ts")),
-    end_ts=_to_int(war.get("end") or war.get("end_ts")),
-    status_text=str(war.get("status") or ""),
-)
+        war_id=str(payload.get("war_id") or ""),
+        faction_id=str(user.get("faction_id") or ""),
+        faction_name=str(our.get("name") or user.get("faction_name") or ""),
+        enemy_faction_id=str(enemy.get("faction_id") or enemy.get("id") or ""),
+        enemy_faction_name=str(enemy.get("name") or ""),
+        score_us=_to_int(score.get("our")),
+        score_them=_to_int(score.get("enemy")),
+        target_score=_to_int(score.get("target")),
+        lead=_to_int(score.get("our")) - _to_int(score.get("enemy")),
+        start_ts=_to_int(war.get("start") or war.get("start_ts")),
+        end_ts=_to_int(war.get("end") or war.get("end_ts")),
+        status_text=str(war.get("status") or ""),
+    )
     return ok(message="War snapshot saved.", item=item)
 
 
