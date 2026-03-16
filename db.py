@@ -213,7 +213,7 @@ def init_db():
         )
     """)
 
-        cur.execute("""
+    cur.execute("""
         CREATE TABLE IF NOT EXISTS war_terms (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             war_id TEXT DEFAULT '',
@@ -399,12 +399,6 @@ def init_db():
         WHERE COALESCE(NULLIF(creator_name, ''), '') = ''
     """)
 
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_dibs_faction_id ON dibs(faction_id)")
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_dibs_war_id ON dibs(war_id)")
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_dibs_target_id ON dibs(target_id)")
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_dibs_faction_id ON dibs(faction_id)")
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_dibs_war_id ON dibs(war_id)")
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_dibs_target_id ON dibs(target_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_users_faction_id ON users(faction_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON notifications(user_id)")
@@ -413,6 +407,9 @@ def init_db():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_target_assignments_war_id ON target_assignments(war_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_war_notes_war_id ON war_notes(war_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_war_terms_war_id ON war_terms(war_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_dibs_faction_id ON dibs(faction_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_dibs_war_id ON dibs(war_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_dibs_target_id ON dibs(target_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_settings_user_id ON user_settings(user_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_payment_history_user_id ON payment_history(user_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_payment_history_received_at ON payment_history(received_at)")
@@ -649,101 +646,6 @@ def add_med_deal(
     con.close()
     return _row_to_dict(row) or {}
 
-def add_dib(
-    faction_id: str,
-    faction_name: str,
-    war_id: str,
-    target_id: str,
-    target_name: str,
-    claimer_user_id: str,
-    claimer_name: str,
-    note: str = "",
-) -> Dict[str, Any]:
-    if not faction_id or not target_id:
-        return {}
-
-    now = _utc_now()
-    con = _con()
-    cur = con.cursor()
-
-    cur.execute("""
-        DELETE FROM dibs
-        WHERE faction_id = ? AND war_id = ? AND target_id = ?
-    """, (
-        str(faction_id or ""),
-        str(war_id or ""),
-        str(target_id or ""),
-    ))
-
-    cur.execute("""
-        INSERT INTO dibs (
-            faction_id,
-            faction_name,
-            war_id,
-            target_id,
-            target_name,
-            claimer_user_id,
-            claimer_name,
-            note,
-            created_at
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, (
-        str(faction_id or ""),
-        str(faction_name or ""),
-        str(war_id or ""),
-        str(target_id or ""),
-        str(target_name or ""),
-        str(claimer_user_id or ""),
-        str(claimer_name or ""),
-        str(note or ""),
-        now,
-    ))
-    row_id = cur.lastrowid
-    con.commit()
-
-    cur.execute("SELECT * FROM dibs WHERE id = ?", (int(row_id),))
-    row = cur.fetchone()
-    con.close()
-    return _row_to_dict(row) or {}
-
-
-def list_dibs_for_faction(faction_id: str, war_id: str = "") -> List[Dict[str, Any]]:
-    if not faction_id:
-        return []
-
-    con = _con()
-    cur = con.cursor()
-
-    if str(war_id or "").strip():
-        cur.execute("""
-            SELECT *
-            FROM dibs
-            WHERE faction_id = ? AND war_id = ?
-            ORDER BY id DESC
-        """, (str(faction_id), str(war_id)))
-    else:
-        cur.execute("""
-            SELECT *
-            FROM dibs
-            WHERE faction_id = ?
-            ORDER BY id DESC
-        """, (str(faction_id),))
-
-    rows = [dict(r) for r in cur.fetchall()]
-    con.close()
-    return rows
-
-
-def delete_dib(faction_id: str, dib_id: int):
-    con = _con()
-    cur = con.cursor()
-    cur.execute("""
-        DELETE FROM dibs
-        WHERE faction_id = ? AND id = ?
-    """, (str(faction_id), int(dib_id)))
-    con.commit()
-    con.close()    
 
 def list_med_deals(user_id: str) -> List[Dict[str, Any]]:
     con = _con()
@@ -783,6 +685,132 @@ def delete_med_deal(faction_id: str, deal_id: int):
         DELETE FROM med_deals
         WHERE faction_id = ? AND id = ?
     """, (str(faction_id), int(deal_id)))
+    con.commit()
+    con.close()
+
+
+def add_dib(
+    faction_id: str,
+    faction_name: str,
+    war_id: str,
+    target_id: str,
+    target_name: str,
+    claimer_user_id: str,
+    claimer_name: str,
+    note: str = "",
+) -> Dict[str, Any]:
+    faction_id = str(faction_id or "").strip()
+    faction_name = str(faction_name or "").strip()
+    war_id = str(war_id or "").strip()
+    target_id = str(target_id or "").strip()
+    target_name = str(target_name or "").strip()
+    claimer_user_id = str(claimer_user_id or "").strip()
+    claimer_name = str(claimer_name or "").strip()
+    note = str(note or "").strip()
+
+    if not faction_id or not target_id:
+        return {}
+
+    now = _utc_now()
+    con = _con()
+    cur = con.cursor()
+
+    cur.execute(
+        """
+        DELETE FROM dibs
+        WHERE faction_id = ? AND war_id = ? AND target_id = ?
+        """,
+        (faction_id, war_id, target_id),
+    )
+
+    cur.execute(
+        """
+        INSERT INTO dibs (
+            faction_id,
+            faction_name,
+            war_id,
+            target_id,
+            target_name,
+            claimer_user_id,
+            claimer_name,
+            note,
+            created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            faction_id,
+            faction_name,
+            war_id,
+            target_id,
+            target_name,
+            claimer_user_id,
+            claimer_name,
+            note,
+            now,
+        ),
+    )
+    row_id = cur.lastrowid
+    con.commit()
+
+    cur.execute("SELECT * FROM dibs WHERE id = ?", (int(row_id),))
+    row = cur.fetchone()
+    con.close()
+    return _row_to_dict(row) if row else {}
+
+
+def list_dibs_for_faction(faction_id: str, war_id: str = "") -> List[Dict[str, Any]]:
+    faction_id = str(faction_id or "").strip()
+    war_id = str(war_id or "").strip()
+
+    if not faction_id:
+        return []
+
+    con = _con()
+    cur = con.cursor()
+
+    if war_id:
+        cur.execute(
+            """
+            SELECT *
+            FROM dibs
+            WHERE faction_id = ? AND war_id = ?
+            ORDER BY id DESC
+            """,
+            (faction_id, war_id),
+        )
+    else:
+        cur.execute(
+            """
+            SELECT *
+            FROM dibs
+            WHERE faction_id = ?
+            ORDER BY id DESC
+            """,
+            (faction_id,),
+        )
+
+    rows = [_row_to_dict(r) for r in cur.fetchall()]
+    con.close()
+    return [r for r in rows if r]
+
+
+def delete_dib(faction_id: str, dib_id: int) -> None:
+    faction_id = str(faction_id or "").strip()
+    dib_id = int(dib_id or 0)
+
+    if not faction_id or dib_id <= 0:
+        return
+
+    con = _con()
+    cur = con.cursor()
+    cur.execute(
+        """
+        DELETE FROM dibs
+        WHERE faction_id = ? AND id = ?
+        """,
+        (faction_id, dib_id),
+    )
     con.commit()
     con.close()
 
