@@ -294,6 +294,28 @@ def _build_license_status_payload(faction_id: str, viewer_user_id: str = "") -> 
     return status
 
 
+def _is_faction_leader(api_key: str, user_id: str, faction_id: str) -> bool:
+    api_key = str(api_key or "").strip()
+    user_id = str(user_id or "").strip()
+    faction_id = str(faction_id or "").strip()
+
+    if not api_key or not user_id or not faction_id:
+        return False
+
+    try:
+        faction = faction_basic(api_key, faction_id=faction_id) or {}
+        members = faction.get("members") or []
+        for m in members:
+            mid = str(m.get("user_id") or m.get("id") or "").strip()
+            pos = str(m.get("position") or "").strip().lower()
+            if mid == user_id:
+                return pos == "leader"
+    except Exception:
+        return False
+
+    return False
+
+
 def _can_manage_faction(user: Dict[str, Any], faction_id: str) -> bool:
     if _session_is_owner(user):
         return True
@@ -305,7 +327,59 @@ def _can_manage_faction(user: Dict[str, Any], faction_id: str) -> bool:
 
     license_status = _build_license_status_payload(faction_id, viewer_user_id=user_id)
     leader_user_id = str(license_status.get("leader_user_id") or "").strip()
-    return leader_user_id == user_id
+    if leader_user_id == user_id:
+        return True
+
+    return _is_faction_leader(str((user or {}).get("api_key") or ""), user_id, faction_id)
+
+
+def _feature_access_for_user(user: Dict[str, Any]) -> Dict[str, Any]:
+    user = user or {}
+    user_id = str(user.get("user_id") or "").strip()
+    faction_id = str(user.get("faction_id") or "").strip()
+
+    is_owner = _session_is_owner(user)
+    license_status = _build_license_status_payload(faction_id, viewer_user_id=user_id) if faction_id else {}
+    leader_user_id = str(license_status.get("leader_user_id") or "").strip()
+
+    is_leader = (
+        is_owner
+        or (leader_user_id == user_id)
+        or _is_faction_leader(str(user.get("api_key") or ""), user_id, faction_id)
+    )
+
+    member_row = get_faction_member_access(faction_id, user_id) if faction_id and user_id else {}
+    member_enabled = True if is_leader else _safe_bool((member_row or {}).get("enabled"))
+
+    payment_required = bool(license_status.get("payment_required"))
+    expired = str(license_status.get("status") or "").lower() == "expired"
+
+    can_use_features = is_owner or is_leader or (member_enabled and not payment_required and not expired)
+
+    return {
+        "is_owner": is_owner,
+        "is_faction_leader": is_leader,
+        "member_enabled": member_enabled,
+        "payment_required": payment_required,
+        "expired": expired,
+        "trial_active": bool(license_status.get("trial_active")),
+        "status": str(license_status.get("status") or ""),
+        "can_use_features": can_use_features,
+        "license": license_status,
+    }
+
+
+def _require_feature_access():
+    access = _feature_access_for_user(request.user or {})
+    if not access.get("can_use_features"):
+        return err(
+            "Read-only access. Your leader must enable you, or faction payment is required.",
+            403,
+            code="read_only_access",
+            access=access,
+            license=access.get("license") or {},
+        )
+    return None
 
 
 def require_owner(fn):
@@ -825,52 +899,48 @@ def api_auth():
             faction_name=faction_name,
         )
 
+        is_owner = _session_is_owner({"name": name, "user_id": user_id})
+        leader_login = False
+
         if faction_id:
-            ensure_faction_license_row(
-                faction_id=faction_id,
-                faction_name=faction_name,
-                leader_user_id=user_id,
-                leader_name=name,
-                leader_api_key=api_key,
-            )
-            start_faction_trial_if_needed(
-                faction_id=faction_id,
-                faction_name=faction_name,
-                leader_user_id=user_id,
-                leader_name=name,
-                leader_api_key=api_key,
-            )
+            leader_login = _is_faction_leader(api_key, user_id, faction_id)
+
+            if leader_login:
+                ensure_faction_license_row(
+                    faction_id=faction_id,
+                    faction_name=faction_name,
+                    leader_user_id=user_id,
+                    leader_name=name,
+                    leader_api_key=api_key,
+                )
+                start_faction_trial_if_needed(
+                    faction_id=faction_id,
+                    faction_name=faction_name,
+                    leader_user_id=user_id,
+                    leader_name=name,
+                    leader_api_key=api_key,
+                )
 
         license_status = _build_license_status_payload(faction_id, viewer_user_id=user_id) if faction_id else {}
-        is_owner = _session_is_owner({"name": name, "user_id": user_id})
-
-        if faction_id and not is_owner:
-            if bool(license_status.get("payment_required")) and str(license_status.get("leader_user_id") or "") != user_id:
-                member_row = get_faction_member_access(faction_id, user_id) or {}
-                if not _safe_bool(member_row.get("enabled")):
-                    return err(
-                        "Your faction leader has not enabled your access yet.",
-                        403,
-                        code="member_not_enabled",
-                        faction_id=faction_id,
-                        faction_name=faction_name,
-                        license=license_status,
-                    )
-
-            if str(license_status.get("status") or "").lower() == "expired":
-                leader_id = str(license_status.get("leader_user_id") or "")
-                if leader_id != user_id:
-                    return err(
-                        "Faction license expired. Leader payment required.",
-                        403,
-                        code="license_expired",
-                        faction_id=faction_id,
-                        faction_name=faction_name,
-                        license=license_status,
-                    )
+        member_row = get_faction_member_access(faction_id, user_id) if faction_id else {}
+        member_enabled = True if (is_owner or leader_login) else _safe_bool((member_row or {}).get("enabled"))
 
         delete_sessions_for_user(user_id)
         token = create_session(user_id)
+
+        access = {
+            "member_enabled": member_enabled,
+            "is_faction_leader": bool(is_owner or leader_login or (str(license_status.get("leader_user_id") or "") == user_id)),
+            "trial_active": bool(license_status.get("trial_active")),
+            "payment_required": bool(license_status.get("payment_required")),
+            "expired": str(license_status.get("status") or "").lower() == "expired",
+            "status": str(license_status.get("status") or ""),
+            "can_use_features": bool(
+                is_owner
+                or leader_login
+                or (member_enabled and not bool(license_status.get("payment_required")) and str(license_status.get("status") or "").lower() != "expired")
+            ),
+        }
 
         return ok(
             message="Authenticated.",
@@ -881,8 +951,9 @@ def api_auth():
                 "faction_id": faction_id,
                 "faction_name": faction_name,
                 "is_owner": is_owner,
-                "is_leader": str(license_status.get("leader_user_id") or "") == user_id,
+                "is_leader": access["is_faction_leader"],
             },
+            access=access,
             license=license_status,
         )
     except Exception as e:
@@ -967,6 +1038,7 @@ def api_state():
     faction_name = str(user.get("faction_name") or "").strip()
 
     license_status = _build_license_status_payload(faction_id, viewer_user_id=user_id) if faction_id else {}
+    access = _feature_access_for_user(user)
     faction_map = get_user_map_by_faction(faction_id) if faction_id else {}
 
     me = me_basic(api_key) or {}
@@ -977,6 +1049,7 @@ def api_state():
         faction_id = live_faction_id
         faction_name = live_faction_name
         license_status = _build_license_status_payload(faction_id, viewer_user_id=user_id) if faction_id else {}
+        access = _feature_access_for_user({**user, "faction_id": faction_id, "faction_name": faction_name})
         faction_map = get_user_map_by_faction(faction_id) if faction_id else {}
 
     faction_info = faction_basic(api_key, faction_id=faction_id) if api_key else {"ok": False, "members": []}
@@ -1127,7 +1200,16 @@ def api_state():
             "faction_id": faction_id,
             "faction_name": faction_name,
             "is_owner": _session_is_owner(user),
-            "is_leader": str(license_status.get("leader_user_id") or "") == user_id,
+            "is_leader": bool(access.get("is_faction_leader")),
+        },
+        access={
+            "member_enabled": bool(access.get("member_enabled")),
+            "is_faction_leader": bool(access.get("is_faction_leader")),
+            "payment_required": bool(access.get("payment_required")),
+            "expired": bool(access.get("expired")),
+            "trial_active": bool(access.get("trial_active")),
+            "status": str(access.get("status") or ""),
+            "can_use_features": bool(access.get("can_use_features")),
         },
         settings=settings,
         license=license_status,
@@ -1202,8 +1284,6 @@ def api_state():
             ),
         },
     )
-
-
 @app.route("/api/war/summary", methods=["GET"])
 @require_session
 def api_war_summary():
@@ -1223,6 +1303,10 @@ def api_war_summary():
 @app.route("/api/availability", methods=["POST"])
 @require_session
 def api_set_availability():
+    blocked = _require_feature_access()
+    if blocked:
+        return blocked
+
     user = request.user or {}
     data = _require_json()
     available = 1 if _safe_bool(data.get("available")) else 0
@@ -1240,6 +1324,10 @@ def api_set_availability():
 @app.route("/api/chain-sitter", methods=["POST"])
 @require_session
 def api_chain_sitter():
+    blocked = _require_feature_access()
+    if blocked:
+        return blocked
+
     user = request.user or {}
     data = _require_json()
     enabled = 1 if _safe_bool(data.get("enabled")) else 0
@@ -1282,6 +1370,10 @@ def api_list_med_deals():
 @app.route("/api/med-deals", methods=["POST"])
 @require_session
 def api_add_med_deal():
+    blocked = _require_feature_access()
+    if blocked:
+        return blocked
+
     user = request.user or {}
     data = _require_json()
 
@@ -1306,6 +1398,10 @@ def api_add_med_deal():
 @app.route("/api/med-deals/<int:deal_id>", methods=["DELETE"])
 @require_session
 def api_delete_med_deal(deal_id: int):
+    blocked = _require_feature_access()
+    if blocked:
+        return blocked
+
     user = request.user or {}
     faction_id = str(user.get("faction_id") or "")
     if not faction_id:
@@ -1332,6 +1428,10 @@ def api_list_dibs():
 @app.route("/api/dibs", methods=["POST"])
 @require_session
 def api_add_dib():
+    blocked = _require_feature_access()
+    if blocked:
+        return blocked
+
     user = request.user or {}
     faction_id = str(user.get("faction_id") or "").strip()
     if not faction_id:
@@ -1382,6 +1482,10 @@ def api_add_dib():
 @app.route("/api/dibs/<int:dib_id>", methods=["DELETE"])
 @require_session
 def api_delete_dib(dib_id: int):
+    blocked = _require_feature_access()
+    if blocked:
+        return blocked
+
     user = request.user or {}
     faction_id = str(user.get("faction_id") or "").strip()
     if not faction_id:
@@ -1413,6 +1517,10 @@ def api_list_targets():
 @app.route("/api/targets", methods=["POST"])
 @require_session
 def api_add_target():
+    blocked = _require_feature_access()
+    if blocked:
+        return blocked
+
     user = request.user or {}
     data = _require_json()
     user_id = str(user.get("user_id") or "")
@@ -1433,6 +1541,10 @@ def api_add_target():
 @app.route("/api/targets/<int:target_row_id>", methods=["DELETE"])
 @require_session
 def api_delete_target(target_row_id: int):
+    blocked = _require_feature_access()
+    if blocked:
+        return blocked
+
     user = request.user or {}
     user_id = str(user.get("user_id") or "")
     if not user_id:
@@ -1453,6 +1565,10 @@ def api_list_bounties():
 @app.route("/api/bounties", methods=["POST"])
 @require_session
 def api_add_bounty():
+    blocked = _require_feature_access()
+    if blocked:
+        return blocked
+
     user = request.user or {}
     data = _require_json()
     user_id = str(user.get("user_id") or "")
@@ -1473,6 +1589,10 @@ def api_add_bounty():
 @app.route("/api/bounties/<int:bounty_row_id>", methods=["DELETE"])
 @require_session
 def api_delete_bounty(bounty_row_id: int):
+    blocked = _require_feature_access()
+    if blocked:
+        return blocked
+
     user = request.user or {}
     user_id = str(user.get("user_id") or "")
     if not user_id:
@@ -1495,6 +1615,10 @@ def api_notifications():
 @app.route("/api/war/snapshot", methods=["POST"])
 @require_session
 def api_save_war_snapshot():
+    blocked = _require_feature_access()
+    if blocked:
+        return blocked
+
     user = request.user or {}
     api_key = str(user.get("api_key") or "").strip()
     if not api_key:
@@ -1543,6 +1667,10 @@ def api_list_war_snapshots():
 @app.route("/api/war/enemy-state", methods=["POST"])
 @require_session
 def api_upsert_enemy_state():
+    blocked = _require_feature_access()
+    if blocked:
+        return blocked
+
     data = _require_json()
     war_id = str(data.get("war_id") or "").strip()
     enemy_id = str(data.get("enemy_id") or data.get("user_id") or "").strip()
@@ -1575,6 +1703,10 @@ def api_list_assignments():
 @app.route("/api/war/assignments", methods=["POST"])
 @require_session
 def api_upsert_assignment():
+    blocked = _require_feature_access()
+    if blocked:
+        return blocked
+
     user = request.user or {}
     data = _require_json()
 
@@ -1600,6 +1732,10 @@ def api_upsert_assignment():
 @app.route("/api/war/assignments/<int:assignment_id>", methods=["DELETE"])
 @require_session
 def api_delete_assignment(assignment_id: int):
+    blocked = _require_feature_access()
+    if blocked:
+        return blocked
+
     delete_target_assignment(int(assignment_id))
     return ok(message="Assignment deleted.", id=assignment_id)
 
@@ -1616,6 +1752,10 @@ def api_list_notes():
 @app.route("/api/war/notes", methods=["POST"])
 @require_session
 def api_upsert_note():
+    blocked = _require_feature_access()
+    if blocked:
+        return blocked
+
     user = request.user or {}
     data = _require_json()
 
@@ -1639,6 +1779,10 @@ def api_upsert_note():
 @app.route("/api/war/notes/<int:note_id>", methods=["DELETE"])
 @require_session
 def api_delete_note(note_id: int):
+    blocked = _require_feature_access()
+    if blocked:
+        return blocked
+
     delete_war_note(int(note_id))
     return ok(message="Note deleted.", id=note_id)
 
