@@ -1347,19 +1347,19 @@ def api_save_war_snapshot():
     score = payload.get("score") or {}
 
     item = save_war_snapshot(
-        war_id=str(payload.get("war_id") or ""),
-        faction_id=str(user.get("faction_id") or ""),
-        faction_name=str(our.get("name") or user.get("faction_name") or ""),
-        enemy_faction_id=str(enemy.get("faction_id") or enemy.get("id") or ""),
-        enemy_faction_name=str(enemy.get("name") or ""),
-        our_score=_to_int(score.get("our")),
-        enemy_score=_to_int(score.get("enemy")),
-        lead=_to_int(score.get("our")) - _to_int(score.get("enemy")),
-        target_score=_to_int(score.get("target")),
-        start_ts=_to_int(war.get("start") or war.get("start_ts")),
-        end_ts=_to_int(war.get("end") or war.get("end_ts")),
-        status_text=str(war.get("status") or ""),
-    )
+    war_id=str(payload.get("war_id") or ""),
+    faction_id=str(user.get("faction_id") or ""),
+    faction_name=str(our.get("name") or user.get("faction_name") or ""),
+    enemy_faction_id=str(enemy.get("faction_id") or enemy.get("id") or ""),
+    enemy_faction_name=str(enemy.get("name") or ""),
+    score_us=_to_int(score.get("our")),
+    score_them=_to_int(score.get("enemy")),
+    target_score=_to_int(score.get("target")),
+    lead=_to_int(score.get("our")) - _to_int(score.get("enemy")),
+    start_ts=_to_int(war.get("start") or war.get("start_ts")),
+    end_ts=_to_int(war.get("end") or war.get("end_ts")),
+    status_text=str(war.get("status") or ""),
+)
     return ok(message="War snapshot saved.", item=item)
 
 
