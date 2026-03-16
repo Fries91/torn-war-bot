@@ -1025,6 +1025,7 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
         "enemy_faction_id": "",
         "enemy_faction_name": "",
         "enemy_members": [],
+        "enemy_members_source": "",
         "score_us": 0,
         "score_them": 0,
         "lead": 0,
@@ -1040,6 +1041,9 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
         "debug_factions": [],
         "debug_raw_keys": [],
         "debug_raw": {},
+        "debug_enemy_members_count": 0,
+        "debug_participants_type": "none",
+        "debug_participants_count": 0,
     }
 
     wars_res = faction_wars(api_key, faction_id=resolved_my_faction_id)
@@ -1352,13 +1356,16 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
     is_registered = phase in {"registered", "active"}
 
     enemy_members: List[Dict[str, Any]] = []
+    enemy_members_source = ""
+
     if enemy_id and is_registered:
         enemy_faction = faction_basic(api_key, faction_id=enemy_id)
         if enemy_faction.get("ok"):
             enemy_name = str(enemy_faction.get("faction_name") or enemy_name).strip()
             enemy_members = enemy_faction.get("members") or []
+            if enemy_members:
+                enemy_members_source = "faction_members_live"
 
-        # fallback: build enemy roster from ranked-war participant payload
         if not enemy_members:
             participants = (
                 raw.get("participants")
@@ -1405,9 +1412,32 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
                         uid = pdata.get("user_id") or pdata.get("id") or str(idx)
                         enemy_members.append(_normalize_member(uid, pdata))
 
+            if enemy_members:
+                enemy_members_source = "war_participants_live"
+
     status_text = str(chosen_war.get("status_text") or "")
     if not status_text:
         status_text = "War active" if is_active else "War registered" if is_registered else "Currently not in war"
+
+    participants_debug = (
+        raw.get("participants")
+        or raw.get("members")
+        or raw.get("roster")
+        or raw.get("players")
+    )
+
+    if isinstance(participants_debug, dict):
+        debug_participants_type = "dict"
+        debug_participants_count = len(participants_debug)
+    elif isinstance(participants_debug, list):
+        debug_participants_type = "list"
+        debug_participants_count = len(participants_debug)
+    elif participants_debug is None:
+        debug_participants_type = "none"
+        debug_participants_count = 0
+    else:
+        debug_participants_type = type(participants_debug).__name__
+        debug_participants_count = 0
 
     return {
         "ok": True,
@@ -1422,6 +1452,7 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
         "enemy_faction_id": enemy_id,
         "enemy_faction_name": enemy_name,
         "enemy_members": enemy_members,
+        "enemy_members_source": enemy_members_source,
         "score_us": score_us,
         "score_them": score_them,
         "lead": lead,
@@ -1437,4 +1468,7 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
         "debug_factions": factions,
         "debug_raw_keys": list(raw.keys()) if isinstance(raw, dict) else [],
         "debug_raw": raw,
+        "debug_enemy_members_count": len(enemy_members),
+        "debug_participants_type": debug_participants_type,
+        "debug_participants_count": debug_participants_count,
     }
