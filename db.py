@@ -213,7 +213,7 @@ def init_db():
         )
     """)
 
-    cur.execute("""
+        cur.execute("""
         CREATE TABLE IF NOT EXISTS war_terms (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             war_id TEXT DEFAULT '',
@@ -226,7 +226,7 @@ def init_db():
         )
     """)
 
-        cur.execute("""
+    cur.execute("""
         CREATE TABLE IF NOT EXISTS dibs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             faction_id TEXT NOT NULL,
@@ -399,6 +399,9 @@ def init_db():
         WHERE COALESCE(NULLIF(creator_name, ''), '') = ''
     """)
 
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_dibs_faction_id ON dibs(faction_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_dibs_war_id ON dibs(war_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_dibs_target_id ON dibs(target_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_dibs_faction_id ON dibs(faction_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_dibs_war_id ON dibs(war_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_dibs_target_id ON dibs(target_id)")
