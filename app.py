@@ -356,7 +356,12 @@ def _seconds_to_text(seconds: int) -> str:
 def _faction_basic_by_id(api_key: str, faction_id: str) -> Dict[str, Any]:
     faction_id = str(faction_id or "").strip()
     if not api_key or not faction_id:
-        return {"ok": False, "members": []}
+        return {
+            "ok": False,
+            "faction_id": faction_id,
+            "faction_name": "",
+            "members": [],
+        }
 
     try:
         data = faction_basic(api_key, faction_id=faction_id)
@@ -374,7 +379,12 @@ def _faction_basic_by_id(api_key: str, faction_id: str) -> Dict[str, Any]:
     except Exception:
         pass
 
-    return {"ok": False, "members": []}
+    return {
+        "ok": False,
+        "faction_id": faction_id,
+        "faction_name": "",
+        "members": [],
+    }
 
 
 def _ranked_war_payload_for_user(api_key: str, my_faction_id: str = "", my_faction_name: str = "") -> Dict[str, Any]:
@@ -976,26 +986,17 @@ def api_state():
         enemy_faction_name = ""
         raw_enemy_members = []
 
-    if enemy_faction_id and bool(war_info.get("has_war")) and not raw_enemy_members:
-        enemy_info = _faction_basic_by_id(war_api_key or api_key, enemy_faction_id)
-        raw_enemy_members = enemy_info.get("members") or []
-        if not enemy_faction_name:
-            enemy_faction_name = str(enemy_info.get("faction_name") or "").strip()
+    if enemy_faction_id and bool(war_info.get("has_war")):
+        if not raw_enemy_members:
+            enemy_info = _faction_basic_by_id(war_api_key or api_key, enemy_faction_id)
+            raw_enemy_members = enemy_info.get("members") or []
 
-        fetched_enemy_id = str(enemy_info.get("faction_id") or enemy_faction_id).strip()
-        fetched_enemy_name = str(enemy_info.get("faction_name") or enemy_faction_name).strip().lower()
+            fetched_enemy_name = str(enemy_info.get("faction_name") or "").strip()
+            if fetched_enemy_name:
+                enemy_faction_name = fetched_enemy_name
 
-        if fetched_enemy_id and our_faction_id and fetched_enemy_id == our_faction_id:
-            enemy_faction_id = ""
-            enemy_faction_name = ""
-            raw_enemy_members = []
-        elif fetched_enemy_name and our_faction_name and fetched_enemy_name == our_faction_name:
-            enemy_faction_id = ""
-            enemy_faction_name = ""
-            raw_enemy_members = []
-
-    if raw_enemy_members:
-        enemies = _merge_enemy_state(raw_enemy_members, war_id)
+        if raw_enemy_members:
+            enemies = _merge_enemy_state(raw_enemy_members, war_id)
 
     assignments = [_normalize_assignment(x) for x in (list_target_assignments_for_war(war_id) if war_id else [])]
     notes = [_normalize_note(x) for x in (list_war_notes(war_id) if war_id else [])]
