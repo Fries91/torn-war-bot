@@ -822,8 +822,17 @@ function _scrapeEnemyRosterNow() {
     var terms = s.war_terms || s.terms || {};
     var medDealsMessage = String(s.med_deals_message || s.medDealsMessage || '');
 
-    var ownFactionId = String((faction && (faction.faction_id || faction.id)) || '').trim();
-    var ownFactionName = String((faction && faction.name) || '').trim().toLowerCase();
+    var ownFactionId = String(
+        (faction && (faction.faction_id || faction.id)) ||
+        (s.user && s.user.faction_id) ||
+        ''
+    ).trim();
+
+    var ownFactionName = String(
+        (faction && faction.name) ||
+        (s.user && s.user.faction_name) ||
+        ''
+    ).trim().toLowerCase();
 
     var enemyFactionId = String(
         enemyFactionRaw.faction_id ||
@@ -858,6 +867,16 @@ function _scrapeEnemyRosterNow() {
         enemyFactionName = '';
     }
 
+    var seenEnemyIds = {};
+    enemies = enemies.filter(function (x) {
+        var id = String((x && (x.user_id || x.id || x.player_id)) || '').trim();
+        if (!id) return true;
+        if (id === getMyUserId()) return false;
+        if (seenEnemyIds[id]) return false;
+        seenEnemyIds[id] = true;
+        return true;
+    });
+
     var enemyFaction = Object.assign({}, enemyFactionRaw, {
         id: enemyFactionId || '',
         faction_id: enemyFactionId || '',
@@ -865,6 +884,7 @@ function _scrapeEnemyRosterNow() {
         score: Number(
             (enemyFactionRaw && enemyFactionRaw.score) ||
             s.enemy_score ||
+            (s.score && s.score.enemy) ||
             war.score_them ||
             0
         ) || 0,
@@ -946,7 +966,15 @@ if (!res.ok) {
 whDetectWarPairFromFactionPage();
 state = normalizeState(res.data || {});
 
-if (!arr(state && state.enemies).length) {
+var needEnemyScrape =
+    !arr(state && state.enemies).length &&
+    !!(
+        (state && state.has_war) ||
+        (state && state.enemy_faction_id) ||
+        (state && state.enemyFaction && state.enemyFaction.id)
+    );
+
+if (needEnemyScrape) {
     try {
         yield scrapeEnemyRosterNow();
     } catch (e) {}
@@ -1810,19 +1838,57 @@ function renderOverviewTab() {
 }
     
     function renderEnemiesTab() {
-    try {
+        try {
         var enemies = arr((state && state.enemies) || []);
         var enemyFaction =
             (state && state.enemy_faction) ||
             (state && state.enemyFaction) ||
             {};
         var war = (state && state.war) || {};
+        var fallbackPair = whLoadWarPairFallback() || {};
+
+        var ownFaction =
+            (state && state.faction) ||
+            (state && state.ourFaction) ||
+            {};
+
+        var ownFactionId = String(
+            (ownFaction && (ownFaction.faction_id || ownFaction.id)) ||
+            ((state && state.user) && state.user.faction_id) ||
+            ''
+        ).trim();
+
+        var ownFactionName = String(
+            (ownFaction && ownFaction.name) ||
+            ((state && state.user) && state.user.faction_name) ||
+            ''
+        ).trim().toLowerCase();
+
+        var enemyFactionId = String(
+            (enemyFaction && (enemyFaction.faction_id || enemyFaction.id)) ||
+            (state && state.enemy_faction_id) ||
+            (war && war.enemy_faction_id) ||
+            fallbackPair.enemy_faction_id ||
+            ''
+        ).trim();
 
         var enemyFactionName = String(
             (enemyFaction && enemyFaction.name) ||
-            state.enemy_faction_name ||
+            (state && state.enemy_faction_name) ||
+            (war && war.enemy_faction_name) ||
+            fallbackPair.enemy_faction_name ||
             'Unknown Enemy'
         ).trim();
+
+        if (enemyFactionId && ownFactionId && enemyFactionId === ownFactionId) {
+            enemyFactionId = '';
+            enemyFactionName = '—';
+        }
+
+        if (enemyFactionName && ownFactionName && enemyFactionName.toLowerCase() === ownFactionName) {
+            enemyFactionId = '';
+            enemyFactionName = '—';
+        }
 
         var scoreThem = Number(
             ((state && state.score) && state.score.enemy) ||
@@ -1836,12 +1902,28 @@ function renderOverviewTab() {
         ) || 0;
 
         var groups = splitRosterGroups(enemies || []);
+        var total =
+            groups.online.length +
+            groups.idle.length +
+            groups.travel.length +
+            groups.hospital.length +
+            groups.jail.length +
+            groups.offline.length;
+
+        var hasWar = !!(
+            (state && state.has_war) ||
+            (war && war.active) ||
+            (war && war.registered) ||
+            (war && war.war_id) ||
+            enemyFactionId ||
+            enemies.length
+        );
 
         return '\
           <div class="warhub-card">\
             <div class="warhub-section-title">\
               <h3>Enemies Overview</h3>\
-              <span class="warhub-count">' + fmtNum(enemies.length) + '</span>\
+              <span class="warhub-count">' + fmtNum(total) + '</span>\
             </div>\
             <div class="warhub-grid two">\
               <div class="warhub-metric">\
@@ -1850,7 +1932,7 @@ function renderOverviewTab() {
               </div>\
               <div class="warhub-metric">\
                 <div class="k">War Status</div>\
-                <div class="v">' + esc(String(war.status || war.phase || 'Active')) + '</div>\
+                <div class="v">' + esc(String(war.status || war.phase || (hasWar ? 'Active' : 'No War'))) + '</div>\
               </div>\
               <div class="warhub-metric">\
                 <div class="k">Enemy Score</div>\
@@ -1860,11 +1942,37 @@ function renderOverviewTab() {
                 <div class="k">Enemy Chain</div>\
                 <div class="v">' + fmtNum(chainThem) + '</div>\
               </div>\
+              <div class="warhub-metric">\
+                <div class="k">Online</div>\
+                <div class="v">' + fmtNum(groups.online.length) + '</div>\
+              </div>\
+              <div class="warhub-metric">\
+                <div class="k">Idle</div>\
+                <div class="v">' + fmtNum(groups.idle.length) + '</div>\
+              </div>\
+              <div class="warhub-metric">\
+                <div class="k">Hospital</div>\
+                <div class="v">' + fmtNum(groups.hospital.length) + '</div>\
+              </div>\
+              <div class="warhub-metric">\
+                <div class="k">Travel</div>\
+                <div class="v">' + fmtNum(groups.travel.length) + '</div>\
+              </div>\
+              <div class="warhub-metric">\
+                <div class="k">Jail</div>\
+                <div class="v">' + fmtNum(groups.jail.length) + '</div>\
+              </div>\
+              <div class="warhub-metric">\
+                <div class="k">Offline</div>\
+                <div class="v">' + fmtNum(groups.offline.length) + '</div>\
+              </div>\
             </div>\
           </div>\
           ' + rosterCard('Enemy Online', groups.online || [], { extraClass: 'online-box', enemy: true }) + '\
           ' + rosterCard('Enemy Idle', groups.idle || [], { extraClass: 'idle-box', enemy: true }) + '\
+          ' + rosterCard('Enemy Travel', groups.travel || [], { extraClass: 'travel-box', enemy: true }) + '\
           ' + rosterCard('Enemy Hospital', groups.hospital || [], { extraClass: 'hospital-box', enemy: true }) + '\
+          ' + rosterCard('Enemy Jail', groups.jail || [], { extraClass: 'jail-box', enemy: true }) + '\
           ' + rosterDropdown('Enemy Offline', groups.offline || [], { extraClass: 'offline-box', enemy: true }) + '\
         ';
     } catch (e) {
