@@ -155,22 +155,16 @@ def _member_state_from_last_action(last_action_text: str) -> str:
 
     if not s:
         return "offline"
-
     if any(x in s for x in ["hospital", "rehab"]):
         return "hospital"
-
     if any(x in s for x in ["jail", "jailed"]):
         return "jail"
-
     if any(x in s for x in ["abroad", "traveling", "travelling", "travel", "flying"]):
         return "travel"
-
     if any(x in s for x in ["online", "active", "abroad online"]):
         return "online"
-
     if any(x in s for x in ["idle", "inactive"]):
         return "idle"
-
     if any(x in s for x in ["offline", "away"]):
         return "offline"
 
@@ -216,74 +210,6 @@ def _normalize_member(uid: Any, member: Dict[str, Any]) -> Dict[str, Any]:
         )
     else:
         status_text = str(status_raw or "")
-
-    life = member.get("life")
-    current_life = None
-    max_life = None
-    if isinstance(life, dict):
-        current_life = _to_int(life.get("current"), 0)
-        max_life = _to_int(life.get("maximum"), 0)
-    elif (
-        member.get("current_life") is not None
-        or member.get("life_current") is not None
-        or member.get("life") is not None
-    ):
-        current_life = _to_int(
-            member.get("current_life")
-            or member.get("life_current")
-            or member.get("life"),
-            0,
-        )
-        max_life = _to_int(
-            member.get("max_life")
-            or member.get("life_max")
-            or member.get("maximum_life"),
-            0,
-        )
-
-    energy = member.get("energy")
-    current_energy = None
-    max_energy = None
-    if isinstance(energy, dict):
-        current_energy = _to_int(energy.get("current"), 0)
-        max_energy = _to_int(
-            energy.get("maximum")
-            or energy.get("max"),
-            0,
-        )
-    elif (
-        member.get("energy_current") is not None
-        or member.get("current_energy") is not None
-        or member.get("energy_now") is not None
-        or member.get("energy") is not None
-    ):
-        current_energy = _to_int(
-            member.get("energy_current")
-            or member.get("current_energy")
-            or member.get("energy_now")
-            or member.get("energy"),
-            0,
-        )
-        max_energy = _to_int(
-            member.get("energy_max")
-            or member.get("max_energy"),
-            0,
-        )
-
-    medical_cooldown = None
-    if (
-        member.get("medical_cooldown") is not None
-        or member.get("med_cooldown") is not None
-        or member.get("med_cd") is not None
-        or member.get("medicalcooldown") is not None
-    ):
-        medical_cooldown = _to_int(
-            member.get("medical_cooldown")
-            or member.get("med_cooldown")
-            or member.get("med_cd")
-            or member.get("medicalcooldown"),
-            0,
-        )
 
     combined = " ".join([status_text, status_detail, last_action]).strip().lower()
 
@@ -336,11 +262,6 @@ def _normalize_member(uid: Any, member: Dict[str, Any]) -> Dict[str, Any]:
         "in_hospital": in_hospital,
         "hospital_seconds": hospital_seconds,
         "hospital_until_ts": hospital_until_ts,
-        "life_current": current_life,
-        "life_max": max_life,
-        "energy_current": current_energy,
-        "energy_max": max_energy,
-        "medical_cooldown": medical_cooldown,
         "profile_url": profile_url(user_id),
         "attack_url": attack_url(user_id),
         "bounty_url": bounty_url(user_id),
@@ -411,112 +332,6 @@ def me_basic(api_key: str) -> Dict[str, Any]:
     }
 
 
-def member_live_bars(api_key: str) -> Dict[str, Any]:
-    api_key = str(api_key or "").strip()
-    if not api_key:
-        return {
-            "ok": False,
-            "error": "Missing API key.",
-            "user_id": "",
-        }
-
-    selections = "profile,bars,cooldowns"
-
-    res = _safe_get(
-        f"{API_BASE}/user",
-        {"selections": selections, "key": api_key},
-        cache_seconds=0,
-        cache_prefix="",
-    )
-
-    if not res.get("ok"):
-        res = _safe_get(
-            f"{API_BASE}/user/",
-            {"selections": selections, "key": api_key},
-            cache_seconds=0,
-            cache_prefix="",
-        )
-
-    if not res.get("ok"):
-        return {
-            "ok": False,
-            "error": res.get("error", "Could not load live member bars."),
-            "user_id": "",
-        }
-
-    data = res.get("data") or {}
-
-    player_id = str(
-        data.get("player_id")
-        or data.get("playerID")
-        or data.get("user_id")
-        or ""
-    ).strip()
-
-    bars = data.get("bars") or {}
-    cooldowns = data.get("cooldowns") or {}
-
-    life_obj = data.get("life") if isinstance(data.get("life"), dict) else {}
-    energy_obj = data.get("energy") if isinstance(data.get("energy"), dict) else {}
-
-    bars_life = bars.get("life") if isinstance(bars.get("life"), dict) else {}
-    bars_energy = bars.get("energy") if isinstance(bars.get("energy"), dict) else {}
-
-    life_current = None
-    life_max = None
-    if life_obj:
-        life_current = _to_int(life_obj.get("current"), 0)
-        life_max = _to_int(life_obj.get("maximum"), 0)
-    elif bars_life:
-        life_current = _to_int(
-            bars_life.get("current") or bars_life.get("amount"),
-            0,
-        )
-        life_max = _to_int(
-            bars_life.get("maximum") or bars_life.get("max"),
-            0,
-        )
-
-    energy_current = None
-    energy_max = None
-    if energy_obj:
-        energy_current = _to_int(energy_obj.get("current"), 0)
-        energy_max = _to_int(
-            energy_obj.get("maximum") or energy_obj.get("max"),
-            0,
-        )
-    elif bars_energy:
-        energy_current = _to_int(
-            bars_energy.get("current") or bars_energy.get("amount"),
-            0,
-        )
-        energy_max = _to_int(
-            bars_energy.get("maximum") or bars_energy.get("max"),
-            0,
-        )
-
-    medical_cooldown = None
-    if isinstance(cooldowns, dict) and cooldowns:
-        medical_cooldown = _to_int(
-            cooldowns.get("medical")
-            or cooldowns.get("medical_cooldown")
-            or cooldowns.get("med")
-            or 0,
-            0,
-        )
-
-    return {
-        "ok": True,
-        "user_id": player_id,
-        "name": str(data.get("name") or ""),
-        "life_current": life_current,
-        "life_max": life_max,
-        "energy_current": energy_current,
-        "energy_max": energy_max,
-        "medical_cooldown": medical_cooldown,
-    }
-
-
 def faction_basic(api_key: str, faction_id: str = "") -> Dict[str, Any]:
     faction_id = str(faction_id or "").strip()
 
@@ -531,15 +346,9 @@ def faction_basic(api_key: str, faction_id: str = "") -> Dict[str, Any]:
             }
 
         data = res_obj.get("data") or {}
-
-        members_raw = (
-            data.get("members")
-            or data.get("member_list")
-            or data.get("participants")
-            or {}
-        )
-
+        members_raw = data.get("members") or {}
         members: List[Dict[str, Any]] = []
+
         if isinstance(members_raw, dict):
             for uid, member in members_raw.items():
                 if isinstance(member, dict):
@@ -662,7 +471,7 @@ def _find_war_container(data: Dict[str, Any]) -> Tuple[str, Any]:
 
 
 def _extract_factions_from_war(war: Dict[str, Any]) -> Any:
-    for key in ("factions", "participants", "sides", "teams"):
+    for key in ("factions", "sides", "teams"):
         factions = war.get(key)
         if isinstance(factions, dict) and factions:
             return factions
@@ -696,10 +505,6 @@ def _war_phase(war: Dict[str, Any]) -> str:
         return "active"
 
     return "unknown"
-
-
-def _side_name(side_data: Dict[str, Any], fallback: str = "") -> str:
-    return str(side_data.get("name") or side_data.get("faction_name") or fallback or "")
 
 
 def _side_score(side_data: Dict[str, Any]) -> int:
@@ -1035,7 +840,6 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
         "enemy_faction_id": "",
         "enemy_faction_name": "",
         "enemy_members": [],
-        "enemy_members_source": "",
         "score_us": 0,
         "score_them": 0,
         "lead": 0,
@@ -1052,8 +856,6 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
         "debug_raw_keys": [],
         "debug_raw": {},
         "debug_enemy_members_count": 0,
-        "debug_participants_type": "none",
-        "debug_participants_count": 0,
     }
 
     wars_res = faction_wars(api_key, faction_id=resolved_my_faction_id)
@@ -1366,88 +1168,15 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
     is_registered = phase in {"registered", "active"}
 
     enemy_members: List[Dict[str, Any]] = []
-    enemy_members_source = ""
-
     if enemy_id and is_registered:
         enemy_faction = faction_basic(api_key, faction_id=enemy_id)
         if enemy_faction.get("ok"):
             enemy_name = str(enemy_faction.get("faction_name") or enemy_name).strip()
             enemy_members = enemy_faction.get("members") or []
-            if enemy_members:
-                enemy_members_source = "faction_members_live"
-
-        if not enemy_members:
-            participants = (
-                raw.get("participants")
-                or raw.get("members")
-                or raw.get("roster")
-                or raw.get("players")
-                or {}
-            )
-
-            def _participant_matches_enemy(pdata: Dict[str, Any]) -> bool:
-                pfid = str(
-                    pdata.get("faction_id")
-                    or pdata.get("faction")
-                    or pdata.get("team_id")
-                    or pdata.get("side_id")
-                    or ""
-                ).strip()
-
-                pname = str(
-                    pdata.get("faction_name")
-                    or pdata.get("team_name")
-                    or pdata.get("side_name")
-                    or ""
-                ).strip().lower()
-
-                if enemy_id and pfid and pfid == enemy_id:
-                    return True
-                if enemy_name and pname and pname == enemy_name.strip().lower():
-                    return True
-                return False
-
-            if isinstance(participants, dict):
-                for uid, pdata in participants.items():
-                    if not isinstance(pdata, dict):
-                        continue
-                    if _participant_matches_enemy(pdata):
-                        enemy_members.append(_normalize_member(uid, pdata))
-
-            elif isinstance(participants, list):
-                for idx, pdata in enumerate(participants):
-                    if not isinstance(pdata, dict):
-                        continue
-                    if _participant_matches_enemy(pdata):
-                        uid = pdata.get("user_id") or pdata.get("id") or str(idx)
-                        enemy_members.append(_normalize_member(uid, pdata))
-
-            if enemy_members:
-                enemy_members_source = "war_participants_live"
 
     status_text = str(chosen_war.get("status_text") or "")
     if not status_text:
         status_text = "War active" if is_active else "War registered" if is_registered else "Currently not in war"
-
-    participants_debug = (
-        raw.get("participants")
-        or raw.get("members")
-        or raw.get("roster")
-        or raw.get("players")
-    )
-
-    if isinstance(participants_debug, dict):
-        debug_participants_type = "dict"
-        debug_participants_count = len(participants_debug)
-    elif isinstance(participants_debug, list):
-        debug_participants_type = "list"
-        debug_participants_count = len(participants_debug)
-    elif participants_debug is None:
-        debug_participants_type = "none"
-        debug_participants_count = 0
-    else:
-        debug_participants_type = type(participants_debug).__name__
-        debug_participants_count = 0
 
     return {
         "ok": True,
@@ -1462,7 +1191,6 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
         "enemy_faction_id": enemy_id,
         "enemy_faction_name": enemy_name,
         "enemy_members": enemy_members,
-        "enemy_members_source": enemy_members_source,
         "score_us": score_us,
         "score_them": score_them,
         "lead": lead,
@@ -1479,6 +1207,4 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
         "debug_raw_keys": list(raw.keys()) if isinstance(raw, dict) else [],
         "debug_raw": raw,
         "debug_enemy_members_count": len(enemy_members),
-        "debug_participants_type": debug_participants_type,
-        "debug_participants_count": debug_participants_count,
     }
