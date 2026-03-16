@@ -2016,7 +2016,7 @@ function renderChainTab() {
         var memberId = x.member_user_id || x.user_id || '';
         var memberName = x.member_name || x.name || "ID ".concat(memberId);
         var enabled = !!x.enabled;
-        return "\n              <div class=\"warhub-list-item\">\n                <div class=\"warhub-row\">\n                  <div>\n                    <div class=\"warhub-name\">".concat(esc(memberName), "</div>\n                    <div class=\"warhub-meta\">").concat(esc(["ID ".concat(memberId)].filter(Boolean).join(' • ')), "</div>\n                  </div>\n                  <div class=\"warhub-actions\">\n                    <span class=\"warhub-pill ").concat(enabled ? 'enabled' : 'disabled', "\">").concat(enabled ? 'Enabled' : 'Disabled', "</span>\n                    ").concat(canManage ? "<button class=\"warhub-btn small ".concat(enabled ? '' : 'good', "\" data-toggle-member=\"").concat(esc(String(memberId)), "\" data-enabled=\"").concat(enabled ? '0' : '1', "\">").concat(enabled ? 'Disable' : 'Enable', "</button>") : '', "\n                    ").concat(canManage ? "<button class=\"warhub-btn small warn\" data-del-member=\"".concat(esc(String(memberId)), "\">Delete</button>") : '', "\n                  </div>\n                </div>\n              </div>\n            ");
+        return "\n              <div class=\"warhub-list-item\">\n                <div class=\"warhub-row\">\n                  <div>\n                    <div class=\"warhub-name\">".concat(esc(memberName), "</div>\n                    <div class=\"warhub-meta\">").concat(esc(["ID ".concat(memberId)].filter(Boolean).join(' • ')), "</div>\                  </div>\n                  <div class=\"warhub-actions\">\n                    <span class=\"warhub-pill ").concat(enabled ? 'enabled' : 'disabled', "\">").concat(enabled ? 'Enabled' : 'Disabled', "</span>\n                    ").concat(canManage ? "<button class=\"warhub-btn small ".concat(enabled ? '' : 'good', "\" data-toggle-member=\"").concat(esc(String(memberId)), "\" data-enabled=\"").concat(enabled ? '0' : '1', "\">").concat(enabled ? 'Disable' : 'Enable', "</button>") : '', "\n                    ").concat(canManage ? "<button class=\"warhub-btn small warn\" data-del-member=\"".concat(esc(String(memberId)), "\">Delete</button>") : '', "\n                  </div>\n                </div>\n              </div>\n            ");
     }).join('') : '<div class="warhub-empty">No member access rows yet.</div>', "\n        </div>\n      </div>\n    ");
 }
     function renderAdminTab() {
@@ -2037,7 +2037,7 @@ function renderChainTab() {
     var refreshMs = Number(GM_getValue(K_REFRESH, 30000)) || 30000;
     var overviewPrefs = getOverviewBoxPrefs();
 
-    return "\n      <div class=\"warhub-card\">\n        <h3>Keys</h3>\n        <label class=\"warhub-label\">Your Torn API Key</label>\n        <input class=\"warhub-input\" id=\"wh-api-key\" value=\"".concat(esc(apiKey), "\" placeholder=\"Paste your API key\">\n        <div class=\"warhub-actions\" style=\"margin-top:8px;\">\n          <button class=\"warhub-btn primary\" id=\"wh-save-keys\">Save Keys</button>\n          <button class=\"warhub-btn\" id=\"wh-login-btn\">Login</button>\n          <button class=\"warhub-btn warn\" id=\"wh-logout-btn\">Logout</button>\n        </div>\n      </div>\n\n      <div class=\"warhub-card\">\n        <h3>Overview Quick Boxes</h3>\n        <div class=\"warhub-mini\" style=\"margin-bottom:10px; line-height:1.5;\">\n          Each player can choose which boxes appear on their Overview tab.\n        </div>\n        <label class=\"warhub-check\"><input type=\"checkbox\" id=\"wh-overview-meddeals\" ").concat(overviewPrefs.meddeals ? 'checked' : '', "> Med Deals</label><br>\n        <label class=\"warhub-check\"><input type=\"checkbox\" id=\"wh-overview-dibs\" ").concat(overviewPrefs.dibs ? 'checked' : '', "> Dibs</label><br>\n        <label class=\"warhub-check\"><input type=\"checkbox\" id=\"wh-overview-terms\" ").concat(overviewPrefs.terms ? 'checked' : '', "> Terms</label><br>\n        <label class=\"warhub-check\"><input type=\"checkbox\" id=\"wh-overview-war\" ").concat(overviewPrefs.war ? 'checked' : '', "> War Overview</label>\n        <div class=\"warhub-actions\" style=\"margin-top:10px;\">\n          <button class=\"warhub-btn\" id=\"wh-save-overview-boxes\">Save Overview Boxes</button>\n        </div>\n      </div>\n\n      <div class=\"warhub-card\">\n        <h3>Polling</h3>\n        <label class=\"warhub-label\">Refresh every (ms)</label>\n        <input class=\"warhub-input\" id=\"wh-refresh-ms\" value=\"").concat(esc(String(refreshMs)), "\">\n        <div class=\"warhub-actions\" style=\"margin-top:8px;\">\n          <button class=\"warhub-btn\" id=\"wh-save-refresh\">Save Refresh</button>\n          <button class=\"warhub-btn\" id=\"wh-reset-positions\">Reset Positions</button>\n        </div>\n      </div>\n\n      <div class=\"warhub-card\">\n        <h3>Access Info</h3>\n        <div class=\"warhub-mini\" style=\"line-height:1.6;\">\n          Payment player: <strong>").concat(esc((accessState === null || accessState === void 0 ? void 0 : accessState.paymentPlayer) || PAYMENT_PLAYER), "</strong><br>\n          Price per enabled member: <strong>").concat(esc(fmtMoney((accessState === null || accessState === void 0 ? void 0 : accessState.pricePerMember) || PRICE_PER_MEMBER)), "</strong><br>\n          ").concat(accessSummaryMessage() ? "Status: <strong>".concat(esc(accessSummaryMessage()), "</strong>") : 'Status: <strong>Ready</strong>', "\n        </div>\n      </div>\n    ");
+    return "\n      <div class=\"warhub-card\">\n        <h3>Keys</h3>\n        <label class=\"warhub-label\">Your Torn API Key</label>\n        <input class=\"warhub-input\" id=\"wh-api-key\" value=\"".concat(esc(apiKey), "\" placeholder=\"Paste your API key\">\n        <div class=\"warhub-actions\" style=\"margin-top:8px;\">\n          <button class=\"warhub-btn primary\" id=\"wh-save-keys\">Save Keys</button>\n          <button class=\"warhub-btn\" id=\"wh-login-btn\">Login</button>\n          <button class=\"warhub-btn warn\" id=\"wh-logout-btn\">Logout</button>\n        </div>\n      </div>\n\n      <div class=\"warhub-card\">\n        <h3>Overview Quick Boxes</h3>\n        <div class=\"warhub-mini\" style=\"margin-bottom:10px; line-height:1.5;\">\n          Each player can choose which boxes appear on their Overview tab.\n        </div>\n        <label class=\"warhub-check\"><input type=\"checkbox\" id=\"wh-overview-meddeals\" ").concat(overviewPrefs.meddeals ? 'checked' : '', "> Med Deals</label><br>\n        <label class=\"warhub-check\"><input type=\"checkbox\" id=\"wh-overview-dibs\" ").concat(overviewPrefs.dibs ? 'checked' : '', "> Dibs</label><br>\n        <label class=\"warhub-check\"><input type=\"checkbox\" id=\"wh-overview-terms\" ").concat(overviewPrefs.terms ? 'checked' : '', "> Terms</label><br>\n        <label class=\"warhub-check\"><input type=\"checkbox\" id=\"wh-overview-war\" ").concat(overviewPrefs.war ? 'checked' : '', "> War Overview</label>\n        <div class=\"warhub-actions\" style=\"margin-top:10px;\">\n          <button class=\"warhub-btn\" id=\"wh-save-overview-boxes\">Save Overview Boxes</button>\n        </div>\n      </div>\n\n      <div class=\"warhub-card\">\n        <h3>Polling</h3>\n        <label class=\"warhub-label\">Refresh every (ms)</label>\n        <input class=\"warhub-input\" id=\"wh-refresh-ms\" value=\"").concat(esc(String(refreshMs)), "\">\n        <div class=\"warhub-actions\" style=\"margin-top:8px;\">\n          <button class=\"warhub-btn\" id=\"wh-save-refresh\">Save Refresh</button>\n          <button class=\"warhub-btn\" id=\"wh-reset-positions\">Reset Positions</button>\n        </div>\n      </div>\n\n      <div class=\"warhub-card\">\n        <h3>Access Info</h3>\n        <div class=\"warhub-mini\" style=\"line-height:1.6;\">\n          Payment player: <strong>").concat(esc((accessState === null || accessState === void 0 ? void 0 : accessState.paymentPlayer) || PAYMENT_PLAYER), "</strong><br>\n          Price per enabled member: <strong>").concat(esc(String((accessState === null || accessState === void 0 ? void 0 : accessState.pricePerMember) || PRICE_PER_MEMBER) + ' Xanax'), "</strong><br>\          ").concat(accessSummaryMessage() ? "Status: <strong>".concat(esc(accessSummaryMessage()), "</strong>") : 'Status: <strong>Ready</strong>', "\n        </div>\n      </div>\n    ");
 }
     function renderAccessBanner() {
         var msg = accessSummaryMessage();
@@ -2461,21 +2461,42 @@ if (medAdd) medAdd.addEventListener('click', _asyncToGenerator(function* () {
             setStatus('Local notifications cleared.');
         });
         var saveFactionMember = overlay ? overlay.querySelector('#wh-fm-save') : null;
-        if (saveFactionMember) saveFactionMember.addEventListener('click', _asyncToGenerator(function* () {
-            var member_user_id = cleanInputValue(overlay.querySelector('#wh-fm-userid').value || '');
-            var member_name = cleanInputValue(overlay.querySelector('#wh-fm-name').value || '');
-            var member_api_key = cleanInputValue(overlay.querySelector('#wh-fm-key').value || '');
-            var position = cleanInputValue(overlay.querySelector('#wh-fm-position').value || '');
-            if (!member_user_id) { setStatus('Member user ID is required.', true); return; }
-            var res = yield doAction('POST', '/api/faction/members', {
-                member_user_id: member_user_id,
-                member_name: member_name,
-                member_api_key: member_api_key,
-                enabled: true,
-                position: position
-            }, 'Faction member access saved.', false);
-            if (res) { yield refreshLeaderFactionData(); setStatus('Faction member access saved.'); }
-        }));
+if (saveFactionMember) saveFactionMember.addEventListener('click', _asyncToGenerator(function* () {
+    var member_user_id = cleanInputValue((overlay.querySelector('#wh-fm-userid') || {}).value || '');
+    if (!member_user_id) {
+        setStatus('Select a faction member first.', true);
+        return;
+    }
+
+    var picked = arr((state && state.members) || []).find(function (m) {
+        return String(m.user_id || m.id || '').trim() === member_user_id;
+    }) || {};
+
+    var member_name = cleanInputValue(
+        picked.name ||
+        picked.member_name ||
+        ''
+    );
+
+    var position = cleanInputValue(
+        picked.position ||
+        picked.faction_position ||
+        picked.role ||
+        ''
+    );
+
+    var res = yield doAction('POST', '/api/faction/members', {
+        member_user_id: member_user_id,
+        member_name: member_name,
+        enabled: true,
+        position: position
+    }, 'Faction member access saved.', false);
+
+    if (res) {
+        yield refreshLeaderFactionData();
+        setStatus('Faction member access saved.');
+    }
+}));
         if (overlay) overlay.querySelectorAll('[data-toggle-member]').forEach(function (btn) {
             btn.addEventListener('click', _asyncToGenerator(function* () {
                 var memberId = cleanInputValue(btn.getAttribute('data-toggle-member') || '');
