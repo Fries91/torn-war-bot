@@ -2099,53 +2099,52 @@ function renderChainTab() {
     }).length;
     var totalPayment = enabledCount * 3;
 
-    return "\
-      <div class=\"warhub-card\">\
+    return '\
+      <div class="warhub-card">\
         <h3>Keys</h3>\
-        <label class=\"warhub-label\">Your Torn API Key</label>\
-        <input class=\"warhub-input\" id=\"wh-api-key\" value=\"".concat(esc(apiKey), "\" placeholder=\"Paste your API key\">\
-        <div class=\"warhub-actions\" style=\"margin-top:8px;\">\
-          <button class=\"warhub-btn primary\" id=\"wh-save-keys\">Save Keys</button>\
-          <button class=\"warhub-btn\" id=\"wh-login-btn\">Login</button>\
-          <button class=\"warhub-btn warn\" id=\"wh-logout-btn\">Logout</button>\
+        <label class="warhub-label">Your Torn API Key</label>\
+        <input class="warhub-input" id="wh-api-key" value="' + esc(apiKey) + '" placeholder="Paste your API key">\
+        <div class="warhub-actions" style="margin-top:8px;">\
+          <button class="warhub-btn primary" id="wh-save-keys">Save Keys</button>\
+          <button class="warhub-btn" id="wh-login-btn">Login</button>\
+          <button class="warhub-btn warn" id="wh-logout-btn">Logout</button>\
         </div>\
       </div>\
-
-      <div class=\"warhub-card\">\
+\
+      <div class="warhub-card">\
         <h3>Overview Quick Boxes</h3>\
-        <div class=\"warhub-mini\" style=\"margin-bottom:10px; line-height:1.5;\">\
+        <div class="warhub-mini" style="margin-bottom:10px; line-height:1.5;">\
           Each player can choose which boxes appear on their Overview tab.\
         </div>\
-        <label class=\"warhub-check\"><input type=\"checkbox\" id=\"wh-overview-meddeals\" ".concat(overviewPrefs.meddeals ? 'checked' : '', "> Med Deals</label><br>\
-        <label class=\"warhub-check\"><input type=\"checkbox\" id=\"wh-overview-dibs\" ").concat(overviewPrefs.dibs ? 'checked' : '', "> Dibs</label><br>\
-        <label class=\"warhub-check\"><input type=\"checkbox\" id=\"wh-overview-terms\" ").concat(overviewPrefs.terms ? 'checked' : '', "> Terms</label><br>\
-        <label class=\"warhub-check\"><input type=\"checkbox\" id=\"wh-overview-war\" ").concat(overviewPrefs.war ? 'checked' : '', "> War Overview</label>\
-        <div class=\"warhub-actions\" style=\"margin-top:10px;\">\
-          <button class=\"warhub-btn\" id=\"wh-save-overview-boxes\">Save Overview Boxes</button>\
+        <label class="warhub-check"><input type="checkbox" id="wh-overview-meddeals" ' + (overviewPrefs.meddeals ? 'checked' : '') + '> Med Deals</label><br>\
+        <label class="warhub-check"><input type="checkbox" id="wh-overview-dibs" ' + (overviewPrefs.dibs ? 'checked' : '') + '> Dibs</label><br>\
+        <label class="warhub-check"><input type="checkbox" id="wh-overview-terms" ' + (overviewPrefs.terms ? 'checked' : '') + '> Terms</label><br>\
+        <label class="warhub-check"><input type="checkbox" id="wh-overview-war" ' + (overviewPrefs.war ? 'checked' : '') + '> War Overview</label>\
+        <div class="warhub-actions" style="margin-top:10px;">\
+          <button class="warhub-btn" id="wh-save-overview-boxes">Save Overview Boxes</button>\
         </div>\
       </div>\
-
-      <div class=\"warhub-card\">\
+\
+      <div class="warhub-card">\
         <h3>Polling</h3>\
-        <label class=\"warhub-label\">Refresh every (ms)</label>\
-        <input class=\"warhub-input\" id=\"wh-refresh-ms\" value=\"").concat(esc(String(refreshMs)), "\">\
-        <div class=\"warhub-actions\" style=\"margin-top:8px;\">\
-          <button class=\"warhub-btn\" id=\"wh-save-refresh\">Save Refresh</button>\
-          <button class=\"warhub-btn\" id=\"wh-reset-positions\">Reset Positions</button>\
+        <label class="warhub-label">Refresh every (ms)</label>\
+        <input class="warhub-input" id="wh-refresh-ms" value="' + esc(String(refreshMs)) + '">\
+        <div class="warhub-actions" style="margin-top:8px;">\
+          <button class="warhub-btn" id="wh-save-refresh">Save Refresh</button>\
+          <button class="warhub-btn" id="wh-reset-positions">Reset Positions</button>\
         </div>\
       </div>\
-
-      <div class=\"warhub-card\">\
+\
+      <div class="warhub-card">\
         <h3>Access Info</h3>\
-        <div class=\"warhub-mini\" style=\"line-height:1.6;\">\
-          Payment player: <strong>").concat(esc((accessState === null || accessState === void 0 ? void 0 : accessState.paymentPlayer) || PAYMENT_PLAYER), "</strong><br>\
+        <div class="warhub-mini" style="line-height:1.6;">\
+          Payment player: <strong>' + esc((accessState === null || accessState === void 0 ? void 0 : accessState.paymentPlayer) || PAYMENT_PLAYER) + '</strong><br>\
           Price per enabled member: <strong>3 Xanax</strong><br>\
-          Enabled members: <strong>").concat(esc(String(enabledCount)), "</strong><br>\
-          Total payment: <strong>").concat(esc(String(totalPayment) + ' Xanax'), "</strong><br>\
-          ").concat(accessSummaryMessage() ? "Status: <strong>".concat(esc(accessSummaryMessage()), "</strong>") : 'Status: <strong>Ready</strong>', "\
+          Enabled members: <strong>' + esc(String(enabledCount)) + '</strong><br>\
+          Total payment: <strong>' + esc(String(totalPayment) + ' Xanax') + '</strong><br>\
+          ' + (accessSummaryMessage() ? 'Status: <strong>' + esc(accessSummaryMessage()) + '</strong>' : 'Status: <strong>Ready</strong>') + '\
         </div>\
-      </div>\
-    ");
+      </div>';
 }
     function renderAccessBanner() {
         var msg = accessSummaryMessage();
