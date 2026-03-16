@@ -2014,7 +2014,7 @@ def ensure_faction_license(
             str(leader_user_id or ""), str(leader_user_id or ""),
             str(leader_name or ""), str(leader_name or ""),
             str(leader_api_key or ""), str(leader_api_key or ""),
-            int(PAYMENT_PER_MEMBER),
+            int(PAYMENT_XANAX_PER_MEMBER),
             _utc_now(),
             str(faction_id),
         ))
@@ -2055,7 +2055,7 @@ def ensure_faction_license(
         str(leader_user_id or ""),
         str(leader_name or ""),
         str(leader_api_key or ""),
-        int(PAYMENT_PER_MEMBER),
+        int(PAYMENT_XANAX_PER_MEMBER),
         now,
         now,
     ))
@@ -2285,14 +2285,14 @@ def get_total_faction_member_count(faction_id: str) -> int:
 
 def calc_faction_renewal_cost(faction_id: str) -> int:
     enabled_count = get_enabled_faction_member_count(faction_id)
-    return int(enabled_count * PAYMENT_PER_MEMBER)
+    return int(enabled_count * PAYMENT_XANAX_PER_MEMBER)
 
 
 def recalc_faction_license(faction_id: str) -> Dict[str, Any]:
     row = ensure_faction_license(faction_id)
     member_count = get_total_faction_member_count(faction_id)
     enabled_member_count = get_enabled_faction_member_count(faction_id)
-    renewal_cost = enabled_member_count * PAYMENT_PER_MEMBER
+    renewal_cost = enabled_member_count * PAYMENT_XANAX_PER_MEMBER
 
     con = _con()
     cur = con.cursor()
@@ -2309,7 +2309,7 @@ def recalc_faction_license(faction_id: str) -> Dict[str, Any]:
         int(member_count),
         int(enabled_member_count),
         int(renewal_cost),
-        int(PAYMENT_PER_MEMBER),
+        int(PAYMENT_XANAX_PER_MEMBER),
         _utc_now(),
         str(faction_id),
     ))
@@ -2362,7 +2362,7 @@ def start_faction_trial_if_needed(
         str(leader_api_key or ""),
         now,
         expires,
-        int(PAYMENT_PER_MEMBER),
+        int(PAYMENT_XANAX_PER_MEMBER),
         now,
         str(faction_id),
     ))
@@ -2392,7 +2392,7 @@ def compute_faction_license_status(faction_id: str, viewer_user_id: str = "") ->
     renewal_cost = int(row.get("renewal_cost") or 0)
     member_count = int(row.get("member_count") or 0)
     enabled_member_count = int(row.get("enabled_member_count") or 0)
-    payment_per_member = int(row.get("payment_per_member") or PAYMENT_PER_MEMBER)
+    payment_per_member = int(row.get("payment_per_member") or PAYMENT_XANAX_PER_MEMBER)
 
     trial_expires_dt = _parse_iso(trial_expires_at)
     paid_until_dt = _parse_iso(paid_until_at)
@@ -2430,7 +2430,7 @@ def compute_faction_license_status(faction_id: str, viewer_user_id: str = "") ->
         expires_at = trial_expires_at
         days_left = _days_left_until(trial_expires_dt)
         block_reason = "trial_expired"
-        message = f"Faction payment required. Send {renewal_cost:,} to {PAYMENT_PLAYER}."
+        message = f"Faction payment required. Send {renewal_cost} Xanax to Fries91 [3679030]."
     else:
         active = False
         status = "inactive"
@@ -2448,7 +2448,7 @@ def compute_faction_license_status(faction_id: str, viewer_user_id: str = "") ->
             block_reason = "trial_expired"
         elif not block_reason:
             block_reason = "payment_required"
-        message = f"Faction payment required. Send {renewal_cost:,} to {PAYMENT_PLAYER}."
+        message = f"Faction payment required. Send {renewal_cost} Xanax to Fries91 [3679030]."
 
     member_row = get_faction_member(faction_id, viewer_user_id) if viewer_user_id else None
     viewer_is_leader = bool(
@@ -2490,6 +2490,7 @@ def compute_faction_license_status(faction_id: str, viewer_user_id: str = "") ->
         "last_payment_kind": str(row.get("last_payment_kind") or ""),
         "last_payment_note": str(row.get("last_payment_note") or ""),
     }
+
 
 def process_faction_payment_warnings(faction_id: str) -> Dict[str, Any]:
     row = recalc_faction_license(faction_id)
@@ -2552,6 +2553,7 @@ def process_faction_payment_warnings(faction_id: str) -> Dict[str, Any]:
     con.commit()
     con.close()
     return compute_faction_license_status(faction_id)
+
 
 def renew_faction_after_payment(
     faction_id: str,
