@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         War Hub ⚔️
 // @namespace    fries91-war-hub
-// @version      3.0.6
+// @version      3.0.8
 // @description  War Hub by Fries91. Faction-license aware overlay with draggable icon, draggable overlay, PDA friendly, shared war tools, faction member management, and payment lock handling.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -35,6 +35,8 @@ var K_ACCESS_CACHE = 'warhub_access_cache_v3';
 var K_OVERVIEW_BOXES = 'warhub_overview_boxes_v3';
     var factionMembersCache = null;
     var PAYMENT_PLAYER = 'Fries91';
+    var OWNER_NAME = 'Fries91';
+    var OWNER_USER_ID = '3679030';
     var PRICE_PER_MEMBER = 3;
     var TAB_ORDER = [
     ['overview', 'Overview'],
@@ -148,6 +150,10 @@ var K_OVERVIEW_BOXES = 'warhub_overview_boxes_v3';
     }
     function normalizeAccessCache(raw) {
         var a = raw && _typeof(raw) === 'object' ? raw : {};
+        var canUseFeatures = a.canUseFeatures;
+        if (canUseFeatures == null) {
+            canUseFeatures = !!a.isOwner || !!a.isFactionLeader || !!a.memberEnabled;
+        }
         return {
             loggedIn: !!a.loggedIn,
             blocked: !!a.blocked,
@@ -159,17 +165,21 @@ var K_OVERVIEW_BOXES = 'warhub_overview_boxes_v3';
             reason: a.reason || '',
             message: a.message || '',
             source: a.source || '',
+            status: a.status || '',
             lastSeenAt: a.lastSeenAt || '',
             factionId: a.factionId || '',
             factionName: a.factionName || '',
+            userId: a.userId || '',
+            userName: a.userName || '',
             isFactionLeader: !!a.isFactionLeader,
             memberEnabled: !!a.memberEnabled,
-            pricePerMember: 3,
+            canUseFeatures: !!canUseFeatures,
+            pricePerMember: Number.isFinite(Number(a.pricePerMember)) ? Number(a.pricePerMember) : PRICE_PER_MEMBER,
             paymentPlayer: a.paymentPlayer || PAYMENT_PLAYER,
             isOwner: !!a.isOwner
         };
     }
-    function saveAccessCache() {
+        function saveAccessCache() {
         GM_setValue(K_ACCESS_CACHE, accessState || {});
     }
     function clearSavedKeys() {
@@ -183,42 +193,91 @@ var K_OVERVIEW_BOXES = 'warhub_overview_boxes_v3';
     function accessSummaryMessage() {
         if (!accessState) return '';
         var paymentPlayer = accessState.paymentPlayer || PAYMENT_PLAYER;
-        var ppm = 3;
+        var ppm = Number(accessState.pricePerMember || PRICE_PER_MEMBER) || PRICE_PER_MEMBER;
+
         if (accessState.paymentRequired || accessState.blocked || accessState.trialExpired) {
-            return accessState.message || accessState.reason || "Faction access locked. Payment goes to ".concat(paymentPlayer, ".");
-        }
-        if (accessState.trialActive) {
-            if (accessState.daysLeft != null) {
-                if (accessState.daysLeft <= 0) return "Faction trial ends today. Billing is ".concat(String(ppm), " Xanax per enabled member.");
-                return "Faction trial active. ".concat(accessState.daysLeft, " day").concat(accessState.daysLeft === 1 ? '' : 's', " left.");
+            if (accessState.isFactionLeader || isOwnerSession()) {
+                return accessState.message || accessState.reason || ("Faction access locked. Renewal goes to " + paymentPlayer + ".");
             }
-            if (accessState.expiresAt) return "Faction trial active until ".concat(fmtTs(accessState.expiresAt), ".");
-            return 'Faction trial active.';
+            if (accessState.memberEnabled) {
+                return accessState.message || ("Your access was enabled by your leader, but faction renewal is now required. Payment goes to " + paymentPlayer + ".");
+            }
+            return accessState.message || "Read-only access. Your leader must enable you after trial starts, or faction renewal is required.";
         }
+
+        if (accessState.trialActive) {
+            if (accessState.isFactionLeader || isOwnerSession()) {
+                if (accessState.daysLeft != null) {
+                    return "Faction trial active. " + accessState.daysLeft + " day" + (accessState.daysLeft === 1 ? '' : 's') + " left. Members can see War Hub now, and you choose who gets full access.";
+                }
+                return "Faction trial active. Members can see War Hub now, and you choose who gets full access.";
+            }
+
+            if (!accessState.memberEnabled && accessState.loggedIn) {
+                return "Faction trial is active, but you are read-only until your leader enables your access.";
+            }
+
+            if (accessState.memberEnabled) {
+                return "Your leader enabled your access for this faction cycle. Your access stays on until the next renewal/payment cycle.";
+            }
+        }
+
+        if (accessState.loggedIn && !accessState.isFactionLeader && !accessState.memberEnabled && !accessState.canUseFeatures) {
+            return "Read-only access. Your leader must enable you before you can use shared faction tools.";
+        }
+
+        if (accessState.loggedIn && (accessState.isFactionLeader || isOwnerSession())) {
+            return "Leader access ready. Trial starts automatically the first time the faction leader logs in. Billing is " + String(ppm) + " Xanax per enabled member.";
+        }
+
         return '';
     }
-    function isOwnerSession() {
-        return !!((accessState === null || accessState === void 0 ? void 0 : accessState.isOwner) || (state === null || state === void 0 ? void 0 : state.me) && state.me.is_owner || (state === null || state === void 0 ? void 0 : state.user) && state.user.is_owner || (state === null || state === void 0 ? void 0 : state.owner) && state.owner.is_owner);
+        function isOwnerSession() {
+        var meId = String(
+            (accessState && accessState.userId) ||
+            (state && state.me && (state.me.user_id || state.me.id || state.me.player_id)) ||
+            (state && state.user && (state.user.user_id || state.user.id || state.user.player_id)) ||
+            ''
+        ).trim();
+
+        var meName = String(
+            (accessState && accessState.userName) ||
+            (state && state.me && (state.me.name || state.me.player_name)) ||
+            (state && state.user && (state.user.name || state.user.player_name)) ||
+            ''
+        ).trim().toLowerCase();
+
+        return meId === OWNER_USER_ID || meName === OWNER_NAME.toLowerCase();
     }
-    function getAccessInfo(payload, httpStatus) {
+        function getAccessInfo(payload, httpStatus) {
         var d = payload && _typeof(payload) === 'object' ? payload : {};
         var access = d.access && _typeof(d.access) === 'object' ? d.access : {};
         var payment = d.payment && _typeof(d.payment) === 'object' ? d.payment : {};
         var factionAccess = d.faction_access && _typeof(d.faction_access) === 'object' ? d.faction_access : {};
         var memberAccess = d.member_access && _typeof(d.member_access) === 'object' ? d.member_access : {};
-        var paymentRequired = !!d.payment_required || !!d.requires_payment || !!d.paymentRequired || !!access.payment_required || !!access.requires_payment || !!access.paymentRequired;
+        var license = d.license && _typeof(d.license) === 'object' ? d.license : {};
+        var paymentRequired = !!d.payment_required || !!d.requires_payment || !!d.paymentRequired || !!access.payment_required || !!access.requires_payment || !!access.paymentRequired || !!license.payment_required;
         var blocked = !!d.blocked || !!d.access_blocked || !!d.locked || !!d.denied || !!access.blocked || !!access.access_blocked || !!access.locked || !!access.denied || paymentRequired;
-        var expiresAt = d.trial_expires_at || d.trialEndsAt || d.expires_at || access.trial_expires_at || access.trialEndsAt || access.expires_at || '';
-        var explicitDaysLeft = d.trial_days_left != null ? d.trial_days_left : d.days_left != null ? d.days_left : access.trial_days_left != null ? access.trial_days_left : access.days_left != null ? access.days_left : null;
+        var expiresAt = d.trial_expires_at || d.trialEndsAt || d.expires_at || access.trial_expires_at || access.trialEndsAt || access.expires_at || license.trial_expires_at || license.expires_at || '';
+        var explicitDaysLeft = d.trial_days_left != null ? d.trial_days_left : d.days_left != null ? d.days_left : access.trial_days_left != null ? access.trial_days_left : access.days_left != null ? access.days_left : license.days_left != null ? license.days_left : null;
         var computedDaysLeft = explicitDaysLeft != null ? Number(explicitDaysLeft) : fmtDaysLeftFromIso(expiresAt);
-        var trialExpired = !!d.trial_expired || !!d.expired || !!access.trial_expired || !!access.expired || computedDaysLeft != null && computedDaysLeft < 0 && !paymentRequired ? true : false;
-        var trialActive = !!d.trial_active || !!access.trial_active || computedDaysLeft != null && computedDaysLeft >= 0 && !paymentRequired && !trialExpired;
-        var accessStatus = String(d.access_status || d.status || access.status || access.access_status || '').toLowerCase();
-        var reason = d.reason || d.block_reason || d.error || access.reason || access.block_reason || memberAccess.reason || '';
-        var message = d.message || d.notice || d.details || access.message || access.notice || payment.message || '';
+        var trialExpired = !!d.trial_expired || !!d.expired || !!access.trial_expired || !!access.expired || !!license.trial_expired || computedDaysLeft != null && computedDaysLeft < 0 && !paymentRequired ? true : false;
+        var trialActive = !!d.trial_active || !!access.trial_active || !!license.trial_active || computedDaysLeft != null && computedDaysLeft >= 0 && !paymentRequired && !trialExpired;
+        var accessStatus = String(d.access_status || d.status || access.status || access.access_status || license.status || '').toLowerCase();
+        var reason = d.reason || d.block_reason || d.error || access.reason || access.block_reason || memberAccess.reason || license.block_reason || '';
+        var message = d.message || d.notice || d.details || access.message || access.notice || payment.message || license.message || '';
+        var isOwner = !!d.is_owner || !!(d.user && d.user.is_owner) || !!(d.me && d.me.is_owner) || !!(d.owner && d.owner.is_owner) || !!factionAccess.is_owner;
+        var isFactionLeader = !!d.is_faction_leader || !!access.is_faction_leader || !!factionAccess.is_faction_leader || !!(d.me && d.me.is_faction_leader);
+        var memberEnabled = !!memberAccess.enabled || !!factionAccess.member_enabled || !!access.member_enabled || !!memberAccess.allowed;
+        if (isFactionLeader || isOwner) memberEnabled = true;
+        var canUseFeatures = access.can_use_features;
+        if (canUseFeatures == null) canUseFeatures = access.canUseFeatures;
+        if (canUseFeatures == null) canUseFeatures = factionAccess.can_use_features;
+        if (canUseFeatures == null) canUseFeatures = isOwner || isFactionLeader || memberEnabled;
         var finalBlocked = blocked;
         var finalPaymentRequired = paymentRequired;
         var finalTrialExpired = trialExpired;
+
         if (accessStatus.includes('payment')) {
             finalBlocked = true;
             finalPaymentRequired = true;
@@ -229,14 +288,21 @@ var K_OVERVIEW_BOXES = 'warhub_overview_boxes_v3';
         } else if (accessStatus.includes('blocked') || accessStatus.includes('locked') || accessStatus.includes('denied')) {
             finalBlocked = true;
         }
+
         if ((httpStatus === 402 || httpStatus === 403) && !message) {
-            message = "Faction access blocked. Payment goes to ".concat(payment.required_player || PAYMENT_PLAYER, ".");
+            if (accessStatus === 'inactive' || reason === 'read_only_access' || (!memberEnabled && !isFactionLeader && !isOwner)) {
+                message = 'Read-only access. Your leader must enable you before you can use shared faction tools.';
+            } else {
+                message = "Faction access blocked. Payment goes to " + (payment.required_player || PAYMENT_PLAYER) + ".";
+            }
         }
+
         if (finalPaymentRequired && !message) {
-            message = "Faction payment required. Payment goes to ".concat(payment.required_player || PAYMENT_PLAYER, ".");
+            message = "Faction payment required. Payment goes to " + (payment.required_player || PAYMENT_PLAYER) + ".";
         } else if (finalBlocked && !message) {
             message = reason || 'Faction access locked.';
         }
+
         return {
             loggedIn: false,
             blocked: finalBlocked,
@@ -248,72 +314,86 @@ var K_OVERVIEW_BOXES = 'warhub_overview_boxes_v3';
             reason: String(reason || ''),
             message: String(message || ''),
             source: String(accessStatus || ''),
+            status: String(accessStatus || ''),
             lastSeenAt: new Date().toISOString(),
-            factionId: d.faction_id || (d.faction && d.faction.id) || (d.me && d.me.faction_id) || '',
-            factionName: d.faction_name || (d.faction && d.faction.name) || (d.me && d.me.faction_name) || '',
-            isFactionLeader: !!d.is_faction_leader || !!factionAccess.is_faction_leader || !!(d.me && d.me.is_faction_leader),
-            memberEnabled: !!memberAccess.enabled || !!factionAccess.member_enabled || !!memberAccess.allowed,
-            pricePerMember: 3,
-            paymentPlayer: String(payment.required_player || PAYMENT_PLAYER),
-            isOwner: !!d.is_owner || !!(d.user && d.user.is_owner) || !!(d.me && d.me.is_owner) || !!(d.owner && d.owner.is_owner) || !!factionAccess.is_owner
+            factionId: d.faction_id || (d.faction && d.faction.id) || (d.me && d.me.faction_id) || (d.user && d.user.faction_id) || '',
+            factionName: d.faction_name || (d.faction && d.faction.name) || (d.me && d.me.faction_name) || (d.user && d.user.faction_name) || '',
+            userId: String((d.user && (d.user.user_id || d.user.id)) || (d.me && (d.me.user_id || d.me.id || d.me.player_id)) || ''),
+            userName: String((d.user && (d.user.name || d.user.player_name)) || (d.me && (d.me.name || d.me.player_name)) || ''),
+            isFactionLeader: isFactionLeader,
+            memberEnabled: memberEnabled,
+            canUseFeatures: !!canUseFeatures && !finalBlocked && !finalPaymentRequired && !finalTrialExpired,
+            pricePerMember: Number(payment.payment_per_member || license.payment_per_member || PRICE_PER_MEMBER) || PRICE_PER_MEMBER,
+            paymentPlayer: String(payment.required_player || payment.payment_player || license.payment_player || PAYMENT_PLAYER),
+            isOwner: isOwner
         };
     }
-    function updateAccessFromPayload(payload, httpStatus, loggedInHint) {
+        function updateAccessFromPayload(payload, httpStatus, loggedInHint) {
     var next = getAccessInfo(payload, httpStatus);
     if (loggedInHint === true && !next.blocked) next.loggedIn = true;
     if (loggedInHint === false) next.loggedIn = false;
 
-    if (next.blocked || next.paymentRequired || next.trialExpired) {
-        accessState = next;
-        clearBlockedCredentials();
+    if (next.blocked || next.paymentRequired || next.trialExpired || (next.loggedIn && !next.canUseFeatures && !next.isFactionLeader && !next.isOwner)) {
+        accessState = normalizeAccessCache(_objectSpread(_objectSpread({}, accessState), next));
         saveAccessCache();
-        return next;
+        return accessState;
     }
 
-    if (next.trialActive || next.expiresAt || next.daysLeft != null || next.factionId || next.isFactionLeader) {
-        accessState = _objectSpread(
+    if (next.trialActive || next.expiresAt || next.daysLeft != null || next.factionId || next.isFactionLeader || next.userId || next.loggedIn) {
+        accessState = normalizeAccessCache(
             _objectSpread(
-                _objectSpread({}, accessState),
-                next
-            ),
-            {},
-            {
-                loggedIn: loggedInHint === true ? true : accessState.loggedIn,
-                blocked: false,
-                paymentRequired: false,
-                trialExpired: false,
-                expiresAt: next.expiresAt,
-                daysLeft: next.daysLeft,
-                reason: next.reason,
-                message: next.message,
-                source: next.source,
-                lastSeenAt: next.lastSeenAt,
-                isOwner: next.isOwner
-            }
+                _objectSpread(
+                    _objectSpread({}, accessState),
+                    next
+                ),
+                {},
+                {
+                    loggedIn: loggedInHint === true ? true : accessState.loggedIn,
+                    blocked: false,
+                    paymentRequired: false,
+                    trialExpired: false,
+                    expiresAt: next.expiresAt,
+                    daysLeft: next.daysLeft,
+                    reason: next.reason,
+                    message: next.message,
+                    source: next.source,
+                    status: next.status,
+                    lastSeenAt: next.lastSeenAt,
+                    isOwner: next.isOwner,
+                    isFactionLeader: next.isFactionLeader,
+                    memberEnabled: next.memberEnabled,
+                    canUseFeatures: next.canUseFeatures,
+                    userId: next.userId || accessState.userId,
+                    userName: next.userName || accessState.userName
+                }
+            )
         );
         saveAccessCache();
         return accessState;
     }
 
     if (loggedInHint === true) {
-        accessState = _objectSpread(_objectSpread({}, accessState), {}, {
+        accessState = normalizeAccessCache(_objectSpread(_objectSpread({}, accessState), {}, {
             loggedIn: true,
             blocked: false,
             paymentRequired: false,
             trialExpired: false,
             lastSeenAt: new Date().toISOString(),
             isOwner: !!next.isOwner || !!accessState.isOwner
-        });
+        }));
         saveAccessCache();
     }
 
     return accessState;
 }
-    function canUseProtectedFeatures() {
+        function canUseProtectedFeatures() {
         if (isOwnerSession()) return true;
-        return !(accessState !== null && accessState !== void 0 && accessState.blocked || accessState !== null && accessState !== void 0 && accessState.paymentRequired || accessState !== null && accessState !== void 0 && accessState.trialExpired);
+        if (accessState && (accessState.blocked || accessState.paymentRequired || accessState.trialExpired)) return false;
+        if (accessState && accessState.isFactionLeader) return true;
+        if (accessState && accessState.loggedIn && accessState.canUseFeatures === false) return false;
+        return !(accessState && accessState.loggedIn && !accessState.memberEnabled);
     }
-    function ensureAllowedOrMessage() {
+        function ensureAllowedOrMessage() {
         if (canUseProtectedFeatures()) return true;
         setStatus(accessSummaryMessage() || 'Faction access locked.', true);
         renderBody();
@@ -518,7 +598,7 @@ function parseEnemyRosterFromHtml(html, enemyFactionName) {
                     status: 403,
                     data: {
                         ok: false,
-                        payment_required: true,
+                        payment_required: !!(accessState && accessState.paymentRequired),
                         message: accessSummaryMessage() || 'Faction access blocked.'
                     },
                     error: accessSummaryMessage() || 'Faction access blocked.'
@@ -1467,7 +1547,7 @@ function renderOverviewTab() {
 }
     function renderInstructionsTab() {
         var banner = accessSummaryMessage() ? "<div class=\"warhub-banner ".concat((accessState !== null && accessState !== void 0 && accessState.paymentRequired) || (accessState !== null && accessState !== void 0 && accessState.blocked) || (accessState !== null && accessState !== void 0 && accessState.trialExpired) ? 'payment' : (accessState !== null && accessState !== void 0 && accessState.trialActive) ? 'trial' : 'good', "\">\n          <div><strong>Faction Access</strong></div>\n          <div class=\"warhub-mini\" style=\"margin-top:6px;\">").concat(esc(accessSummaryMessage()), "</div>\n        </div>") : '';
-        return "\n      ".concat(banner, "\n      <div class=\"warhub-card\">\n        <h3>Getting Started</h3>\n        <div class=\"warhub-list\">\n          <div class=\"warhub-list-item\">\n            <div class=\"warhub-name\">1. Save your Torn API key</div>\n            <div class=\"warhub-meta\">Open Settings and paste your personal API key, then press Save Keys.</div>\n          </div>\n          <div class=\"warhub-list-item\">\n            <div class=\"warhub-name\">2. Login to War Hub</div>\n            <div class=\"warhub-meta\">Press Login in Settings. Once connected, the overlay will load your faction and war state.</div>\n          </div>\n          <div class=\"warhub-list-item\">\n            <div class=\"warhub-name\">3. Leader-only faction access</div>\n            <div class=\"warhub-meta\">Faction leaders can manage member access from the Faction tab when licensing is enabled.</div>\n          </div>\n          <div class=\"warhub-list-item\">\n            <div class=\"warhub-name\">4. Use tabs for shared tools</div>\n            <div class=\"warhub-meta\">War, Terms, Targets, Assignments, Notes, and Med Deals are shared faction tools.</div>\n          </div>\n        </div>\n      </div>\n\n      <div class=\"warhub-card\">\n        <h3>Terms of Service</h3>\n        <div class=\"warhub-mini\" style=\"line-height:1.5;\">\n          This script is for faction coordination and convenience. You are responsible for your own Torn account, your own API key,\n          and anything you enter into this tool. Do not share full-access secrets with people you do not trust.\n        </div>\n      </div>\n\n      <div class=\"warhub-card\">\n        <h3>API Key Storage</h3>\n        <div class=\"warhub-mini\" style=\"line-height:1.5;\">\n          Your API key and session token are stored locally in your userscript storage on your device/browser.\n          The server receives your API key only when you log in or when actions require backend sync.\n          Faction-leader managed member access may store member API keys on the backend if the leader enters them in the Faction tab.\n        </div>\n      </div>\n    ");
+        return "\n      ".concat(banner, "\n      <div class=\"warhub-card\">\n        <h3>Getting Started</h3>\n        <div class=\"warhub-list\">\n          <div class=\"warhub-list-item\">\n            <div class=\"warhub-name\">1. Save your Torn API key</div>\n            <div class=\"warhub-meta\">Open Settings and paste your personal API key, then press Save Keys.</div>\n          </div>\n          <div class=\"warhub-list-item\">\n            <div class=\"warhub-name\">2. Login to War Hub</div>\n            <div class=\"warhub-meta\">Press Login in Settings. Once connected, the overlay will load your faction and war state.</div>\n          </div>\n          <div class=\"warhub-list-item\">\n            <div class=\"warhub-name\">3. Leader-only faction access</div>\n            <div class=\"warhub-meta\">Faction leaders start the faction trial on first login and manage which members get full access from the Faction tab.</div>\n          </div>\n          <div class=\"warhub-list-item\">\n            <div class=\"warhub-name\">4. Use tabs for shared tools</div>\n            <div class=\"warhub-meta\">War, Terms, Targets, Assignments, Notes, and Med Deals are shared faction tools. Members stay read-only until the leader enables them.</div>\n          </div>\n        </div>\n      </div>\n\n      <div class=\"warhub-card\">\n        <h3>Terms of Service</h3>\n        <div class=\"warhub-mini\" style=\"line-height:1.5;\">\n          This script is for faction coordination and convenience. You are responsible for your own Torn account, your own API key,\n          and anything you enter into this tool. Do not share full-access secrets with people you do not trust.\n        </div>\n      </div>\n\n      <div class=\"warhub-card\">\n        <h3>API Key Storage</h3>\n        <div class=\"warhub-mini\" style=\"line-height:1.5;\">\n          Your API key and session token are stored locally in your userscript storage on your device/browser.\n          The server receives your API key only when you log in or when actions require backend sync.\n          Faction-leader managed member access may store member API keys on the backend if the leader enters them in the Faction tab.\n        </div>\n      </div>\n    ");
     }
     function renderWarTab() {
     var war = (state === null || state === void 0 ? void 0 : state.war) || {};
@@ -2481,9 +2561,10 @@ function renderChainTab() {
     var factionRoster = arr((state && state.members) || []);
     var status = license.status || ((accessState && accessState.paymentRequired) ? 'payment_required' : (accessState && accessState.trialActive) ? 'trial' : 'active');
     var canManage = !!((accessState && accessState.isFactionLeader) || isOwnerSession());
-    var pricePerEnabledMember = 3;
+    var pricePerEnabledMember = Number((license && license.payment_per_member) || (accessState && accessState.pricePerMember) || PRICE_PER_MEMBER) || PRICE_PER_MEMBER;
     var enabledCount = members.filter(function (x) { return !!x.enabled; }).length;
     var totalXanax = enabledCount * pricePerEnabledMember;
+    var licenseCycleLocked = !!(license && (license.trial_active || license.paid_active || status === 'trial' || status === 'paid'));
 
     var rosterOptions = factionRoster.length
         ? sortAlphabetical(factionRoster).map(function (m) {
@@ -2505,6 +2586,7 @@ function renderChainTab() {
           <div class="warhub-metric"><div class="k">Enabled Members</div><div class="v">' + fmtNum(enabledCount) + '</div></div>\
           <div class="warhub-metric"><div class="k">Total Payment</div><div class="v">' + esc(String(totalXanax) + ' Xanax') + '</div></div>\
         </div>\
+        <div class="warhub-mini" style="margin-top:10px;line-height:1.5;">' + esc('Leader login starts the faction trial automatically. Members can open War Hub right away, but only enabled members get full access. Once a member is enabled for the current active cycle, this script keeps that access locked until the next renewal/payment cycle.') + '</div>\
       </div>\
 \
       <div class="warhub-card">\
@@ -2518,8 +2600,9 @@ function renderChainTab() {
             </select>\
           </div>\
           <div class="warhub-actions" style="margin-top:8px;">\
-            <button class="warhub-btn primary" id="wh-fm-save">Save Member Access</button>\
+            <button class="warhub-btn primary" id="wh-fm-save">Enable Member Access</button>\
           </div>\
+          <div class="warhub-mini" style="margin-top:8px;">' + esc(licenseCycleLocked ? 'Current cycle is active. New members can still be enabled, but enabled access stays locked for the rest of this cycle.' : 'When you enable a member, they get full access to shared faction tools.') + '</div>\
         ' : '<div class="warhub-empty">Leader access required.</div>') + '\
       </div>\
 \
@@ -2533,17 +2616,19 @@ function renderChainTab() {
             var memberId = x.member_user_id || x.user_id || '';
             var memberName = x.member_name || x.name || ('ID ' + memberId);
             var enabled = !!x.enabled;
+            var memberLocked = !!(enabled && licenseCycleLocked);
             return '\
               <div class="warhub-list-item">\
                 <div class="warhub-row">\
                   <div>\
                     <div class="warhub-name">' + esc(memberName) + '</div>\
-                    <div class="warhub-meta">' + esc(['ID ' + memberId].filter(Boolean).join(' • ')) + '</div>\
+                    <div class="warhub-meta">' + esc(['ID ' + memberId, memberLocked ? 'Locked until next renewal' : ''].filter(Boolean).join(' • ')) + '</div>\
                   </div>\
                   <div class="warhub-actions">\
                     <span class="warhub-pill ' + (enabled ? 'enabled' : 'disabled') + '">' + (enabled ? 'Enabled' : 'Disabled') + '</span>\
-                    ' + (canManage ? '<button class="warhub-btn small ' + (enabled ? '' : 'good') + '" data-toggle-member="' + esc(String(memberId)) + '" data-enabled="' + (enabled ? '0' : '1') + '">' + (enabled ? 'Disable' : 'Enable') + '</button>' : '') + '\
-                    ' + (canManage ? '<button class="warhub-btn small warn" data-del-member="' + esc(String(memberId)) + '">Delete</button>' : '') + '\
+                    ' + (memberLocked ? '<span class="warhub-pill leader">Cycle Locked</span>' : '') + '\
+                    ' + (canManage ? '<button class="warhub-btn small ' + (enabled ? '' : 'good') + '" data-toggle-member="' + esc(String(memberId)) + '" data-enabled="' + (enabled ? '0' : '1') + '"' + (memberLocked ? ' disabled data-cycle-locked="1"' : '') + '>' + (enabled ? 'Disable' : 'Enable') + '</button>' : '') + '\
+                    ' + (canManage ? '<button class="warhub-btn small warn" data-del-member="' + esc(String(memberId)) + '"' + (memberLocked ? ' disabled data-cycle-locked="1"' : '') + '>Delete</button>' : '') + '\
                   </div>\
                 </div>\
               </div>';
@@ -2551,7 +2636,7 @@ function renderChainTab() {
         </div>\
       </div>';
 }
-    function renderAdminTab() {
+        function renderAdminTab() {
         if (!isOwnerSession()) {
             return "\n        <div class=\"warhub-card\">\n          <h3>Admin</h3>\n          <div class=\"warhub-empty\">Owner access required.</div>\n        </div>\n      ";
         }
@@ -2623,10 +2708,20 @@ function renderChainTab() {
     function renderAccessBanner() {
         var msg = accessSummaryMessage();
         if (!msg) return '';
-        var cls = (accessState === null || accessState === void 0 ? void 0 : accessState.paymentRequired) || (accessState === null || accessState === void 0 ? void 0 : accessState.blocked) || (accessState === null || accessState === void 0 ? void 0 : accessState.trialExpired) ? 'payment' : (accessState === null || accessState === void 0 ? void 0 : accessState.trialActive) ? 'trial' : 'good';
-        return "\n      <div class=\"warhub-banner ".concat(cls, "\">\n        <div><strong>Faction Access</strong></div>\n        <div class=\"warhub-mini\" style=\"margin-top:6px;\">").concat(esc(msg), "</div>\n      </div>\n    ");
+        var cls = (accessState && (accessState.paymentRequired || accessState.blocked || accessState.trialExpired)) ? 'payment' : (accessState && accessState.trialActive) ? 'trial' : 'good';
+        var extra = '';
+
+        if (accessState && accessState.trialActive && (accessState.isFactionLeader || isOwnerSession())) {
+            extra = 'Trial starts automatically when the faction leader logs in. Members can see the script right away, but only enabled members can use shared tools.';
+        } else if (accessState && accessState.loggedIn && !accessState.isFactionLeader && !isOwnerSession() && !accessState.memberEnabled) {
+            extra = 'You can view the overlay, but your leader must enable you before you can use the faction tools.';
+        } else if (accessState && accessState.memberEnabled && !accessState.paymentRequired && !accessState.trialExpired) {
+            extra = 'Once your leader enables you for the current faction cycle, your access stays on until the next renewal/payment cycle.';
+        }
+
+        return "\n      <div class=\"warhub-banner ".concat(cls, "\">\n        <div><strong>Faction Access</strong></div>\n        <div class=\"warhub-mini\" style=\"margin-top:6px;\">").concat(esc(msg), "</div>\n        ").concat(extra ? '<div class=\"warhub-mini\" style=\"margin-top:6px;\">' + esc(extra) + '</div>' : '', "\n      </div>\n    ");
     }
-    function tabLocked(key) {
+        function tabLocked(key) {
         if (isOwnerSession()) return false;
         if (key === 'admin') return !isOwnerSession();
         if (key === 'terms' || key === 'faction') return !(accessState !== null && accessState !== void 0 && accessState.isFactionLeader);
@@ -2658,6 +2753,10 @@ default: return renderOverviewTab();
 }
     function renderBody() {
         if (!overlay) return;
+        if (tabLocked(currentTab)) {
+            currentTab = 'overview';
+            GM_setValue(K_TAB, currentTab);
+        }
         overlay.innerHTML = "\n      <div class=\"warhub-head\" id=\"warhub-drag-handle\">\n        <div class=\"warhub-toprow\">\n          <div>\n            <div class=\"warhub-title\">War Hub</div>\n            <div class=\"warhub-sub\">Fries91 • Torn overlay</div>\n          </div>\n          <button class=\"warhub-close\" id=\"warhub-close-btn\" type=\"button\">Close</button>\n        </div>\n      </div>\n      <div class=\"warhub-tabs\">\n        ".concat(TAB_ORDER.map(function (_ref) {
             var key = _ref[0], label = _ref[1];
             return tabBtn(key, label);
@@ -2901,6 +3000,11 @@ default: return renderOverviewTab();
     if (overlay) overlay.querySelectorAll('[data-tab]').forEach(function (btn) {
         btn.addEventListener('click', _asyncToGenerator(function* () {
             var tab = btn.getAttribute('data-tab') || 'war';
+            if (tabLocked(tab)) {
+                setStatus(tab === 'admin' ? 'Admin tab is locked to Fries91 [3679030].' : 'Leader access required for that tab.', true);
+                renderBody();
+                return;
+            }
             currentTab = tab;
             GM_setValue(K_TAB, currentTab);
 
@@ -3172,7 +3276,7 @@ default: return renderOverviewTab();
             member_name: member_name,
             enabled: true,
             position: position
-        }, 'Faction member access saved.', false);
+        }, 'Member enabled for this faction cycle.', false);
 
         if (res) {
             yield refreshLeaderFactionData();
@@ -3184,7 +3288,12 @@ default: return renderOverviewTab();
         btn.addEventListener('click', _asyncToGenerator(function* () {
             var memberId = cleanInputValue(btn.getAttribute('data-toggle-member') || '');
             var enabled = cleanInputValue(btn.getAttribute('data-enabled') || '') === '1';
+            var cycleLocked = cleanInputValue(btn.getAttribute('data-cycle-locked') || '') === '1';
             if (!memberId) return;
+            if (cycleLocked) {
+                setStatus('Enabled member access is locked until the next renewal/payment cycle.', true);
+                return;
+            }
             var res = yield doAction('POST', "/api/faction/members/".concat(encodeURIComponent(memberId), "/enable"), { enabled: enabled }, enabled ? 'Member enabled.' : 'Member disabled.', false);
             if (res) yield refreshLeaderFactionData();
         }));
@@ -3193,7 +3302,12 @@ default: return renderOverviewTab();
     if (overlay) overlay.querySelectorAll('[data-del-member]').forEach(function (btn) {
         btn.addEventListener('click', _asyncToGenerator(function* () {
             var memberId = cleanInputValue(btn.getAttribute('data-del-member') || '');
+            var cycleLocked = cleanInputValue(btn.getAttribute('data-cycle-locked') || '') === '1';
             if (!memberId) return;
+            if (cycleLocked) {
+                setStatus('Enabled member access is locked until the next renewal/payment cycle.', true);
+                return;
+            }
             var res = yield doAction('DELETE', "/api/faction/members/".concat(encodeURIComponent(memberId)), null, 'Faction member removed.', false);
             if (res) yield refreshLeaderFactionData();
         }));
