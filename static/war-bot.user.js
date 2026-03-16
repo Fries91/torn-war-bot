@@ -2019,14 +2019,19 @@ function renderChainTab() {
         var id = x.user_id || x.id || x.player_id || '';
         var name = x.name || x.player_name || "ID ".concat(id);
         return "<option value=\"".concat(esc(String(id)), "\" data-name=\"").concat(esc(name), "\">").concat(esc(name), " [").concat(esc(String(id)), "]</option>");
-    }).join(''), "\n            </select>\n          </div>\n          <div>\n            <label class=\"warhub-label\">Target ID</label>\n            <input class=\"warhub-input\" id=\"warhub-target-id\" placeholder=\"Target ID\"".concat(hasWar ? '' : ' disabled', " />\n          </div>\n        </div>\n        <div style=\"height:8px;\"></div>\n        <label class=\"warhub-label\">Notes / Reason</label>\n        <input class=\"warhub-input\" id=\"warhub-target-notes\" placeholder=\"Optional notes\"".concat(hasWar ? '' : ' disabled', " />\n        <div class=\"warhub-actions\" style=\"margin-top:8px;\">\n          <button class=\"warhub-btn primary\" id=\"warhub-target-add\"").concat(hasWar ? '' : ' disabled', ">Add Target</button>\n        </div>\n      </div>\n\n      <div class=\"warhub-card\">\n        <div class=\"warhub-section-title\">\n          <h3>Targets</h3>\n          <span class=\"warhub-count\">").concat(targets.length, "</span>\n        </div>\n        <div class=\"warhub-list\">\n          ").concat(targets.length ? targets.map(function (x) {
-        var id = x.target_id || x.user_id || x.id || '';
-        var name = x.target_name || x.name || "ID ".concat(id);
-        var rowId = x.id || x.target_row_id || x.target_id || '';
-        var meta = ["ID ".concat(id), x.notes || x.reason || ''].filter(Boolean).join(' • ');
+    }).join(''), "\n            </select>\n          </div>\n          <div>\n            <label class=\"warhub-label\">Target ID</label>\n            <input class=\"warhub-input\" id=\"warhub-target-id\" placeholder=\"Target ID\"".concat(hasWar ? '' : ' disabled', " />\n          </div>\n        </div>\n        <div style=\"height:8px;\"></div>\n        <label class=\"warhub-label\">Notes / Reason</label>\n        <input class=\"warhub-input\" id=\"warhub-target-notes\" placeholder=\"Optional notes\"".concat(hasWar ? '' : ' disabled', " />\n        <div class=\"warhub-actions\" style=\"margin-top:8px;\">\n          <button class=\"warhub-btn primary\" id=\"warhub-target-add\"").concat(hasWar ? '' : ' disabled', ">Add Target</button>\n        </div>\n      </div>\n\n      <div class=\"warhub-card\">\n        <div class=\"warhub-section-title\">\n          <h3>Targets</h3>\n          <span class=\"warhub-count\">").concat(targets.length, "</span>\n        </div>\n        <div class=\"warhub-list\">\n          ").concat(
+        targets.length ? targets.map(function (x) {
+            var id = x.target_id || x.user_id || x.id || '';
+            var name = x.target_name || x.name || "ID ".concat(id);
+            var rowId = x.id || x.target_row_id || x.target_id || '';
+            var meta = ["ID ".concat(id), x.notes || x.reason || ''].filter(Boolean).join(' • ');
 
-        return "\n              <div class=\"warhub-list-item\">\n                <div class=\"warhub-row\">\n                  <div>\n                    <div class=\"warhub-name\">".concat(esc(name), "</div>\n                    <div class=\"warhub-meta\">").concat(esc(meta), "</div>\n                  </div>\n                  <div class=\"warhub-actions\">\n                    ").concat(id ? "<a class=\"warhub-btn small primary\" href=\"https://www.torn.com/loader.php?sid=attack&user2ID=".concat(encodeURIComponent(id), "\" target=\"_blank\" rel=\"noopener noreferrer\">Attack</a>") : '', "\n                    <button class=\"warhub-btn small warn warhub-del-target\" data-id=\"").concat(esc(String(rowId)), "\">Delete</button>\n                  </div>\n                </div>\n              </div>\n            ");
-    }).join('') : '<div class="warhub-empty">No targets saved.</div>', "\n        </div>\n      </div>\n    ");
+            return "\n              <div class=\"warhub-list-item\">\n                <div class=\"warhub-row\">\n                  <div>\n                    <div class=\"warhub-name\">".concat(esc(name), "</div>\n                    <div class=\"warhub-meta\">").concat(esc(meta), "</div>\n                  </div>\n                  <div class=\"warhub-actions\">\n                    ").concat(
+                id ? "<a class=\"warhub-btn small primary\" href=\"https://www.torn.com/loader.php?sid=attack&user2ID=".concat(encodeURIComponent(id), "\" target=\"_blank\" rel=\"noopener noreferrer\">Attack</a>") : '',
+                "\n                    <button class=\"warhub-btn small warn warhub-del-target\" data-id=\""
+            ).concat(esc(String(rowId)), "\">Delete</button>\n                  </div>\n                </div>\n              </div>\n            ");
+        }).join('') : '<div class="warhub-empty">No targets saved.</div>',
+        "\n        </div>\n      </div>\n    ");
 }
     function renderAssignmentsTab() {
         var warId = String((state === null || state === void 0 ? void 0 : state.war) && state.war.war_id || (state === null || state === void 0 ? void 0 : state.war) && state.war.id || '');
@@ -3015,8 +3020,6 @@ function renderChainTab() {
     document.body.appendChild(badge);
     document.body.appendChild(overlay);
 
-    GM_deleteValue(K_SHIELD_POS);
-    resetShieldPosition();
     clampToViewport(shield);
     saveShieldPos();
 
@@ -3033,19 +3036,6 @@ function renderChainTab() {
         clampToViewport(shield);
         saveShieldPos();
     }
-
-    var savedOverlay = GM_getValue(K_OVERLAY_POS, null);
-    if (savedOverlay && typeof savedOverlay === 'object') {
-        if (savedOverlay.left) overlay.style.left = savedOverlay.left;
-        if (savedOverlay.top) overlay.style.top = savedOverlay.top;
-        if (savedOverlay.right) overlay.style.right = savedOverlay.right;
-        if (savedOverlay.bottom) overlay.style.bottom = savedOverlay.bottom;
-    } else {
-        positionOverlayNearShield();
-    }
-
-    clampToViewport(overlay);
-    saveOverlayPos();
 
     makeDraggable(shield, shield, saveShieldPos, function () {
         updateBadge();
@@ -3068,6 +3058,20 @@ function renderChainTab() {
     });
 
     renderBody();
+
+    var savedOverlay = GM_getValue(K_OVERLAY_POS, null);
+    if (savedOverlay && typeof savedOverlay === 'object' &&
+        typeof savedOverlay.left === 'number' &&
+        typeof savedOverlay.top === 'number') {
+        overlay.style.left = savedOverlay.left + 'px';
+        overlay.style.top = savedOverlay.top + 'px';
+        overlay.style.right = 'auto';
+        overlay.style.bottom = 'auto';
+        clampElementPosition(overlay, savedOverlay.left, savedOverlay.top);
+    } else {
+        positionOverlayNearShield();
+    }
+
     if (isOpen) overlay.classList.add('open');
     else overlay.classList.remove('open');
 
