@@ -715,6 +715,13 @@ if (!res.ok) {
 
 state = normalizeState(res.data || {});
 
+if (state && state.enemy_faction_id) {
+    whSaveWarPairFallback({
+        enemy_faction_id: state.enemy_faction_id || '',
+        enemy_faction_name: state.enemy_faction_name || ''
+    });
+}
+
 if ((accessState === null || accessState === void 0 ? void 0 : accessState.isFactionLeader) && !factionMembersCache) {
     loadFactionMembers()["catch"](function () {
         return null;
@@ -1653,6 +1660,7 @@ function renderOverviewTab() {
             (state && state.enemyFaction) ||
             {};
         var war = (state && state.war) || {};
+        var fallbackPair = whLoadWarPairFallback() || {};
 
         var ownFaction =
             (state && state.faction) ||
@@ -1675,6 +1683,7 @@ function renderOverviewTab() {
             (enemyFaction && (enemyFaction.faction_id || enemyFaction.id)) ||
             (state && state.enemy_faction_id) ||
             (war && war.enemy_faction_id) ||
+            fallbackPair.enemy_faction_id ||
             ''
         ).trim();
 
@@ -1682,6 +1691,7 @@ function renderOverviewTab() {
             (enemyFaction && enemyFaction.name) ||
             (state && state.enemy_faction_name) ||
             (war && war.enemy_faction_name) ||
+            fallbackPair.enemy_faction_name ||
             'Unknown Enemy'
         ).trim();
 
@@ -1747,47 +1757,22 @@ function renderOverviewTab() {
                 <div class="k">Enemy Chain</div>\
                 <div class="v">' + fmtNum(chainThem) + '</div>\
               </div>\
-              <div class="warhub-metric">\
-                <div class="k">Online</div>\
-                <div class="v">' + fmtNum(groups.online.length) + '</div>\
-              </div>\
-              <div class="warhub-metric">\
-                <div class="k">Idle</div>\
-                <div class="v">' + fmtNum(groups.idle.length) + '</div>\
-              </div>\
-              <div class="warhub-metric">\
-                <div class="k">Hospital</div>\
-                <div class="v">' + fmtNum(groups.hospital.length) + '</div>\
-              </div>\
-              <div class="warhub-metric">\
-                <div class="k">Travel</div>\
-                <div class="v">' + fmtNum(groups.travel.length) + '</div>\
-              </div>\
-              <div class="warhub-metric">\
-                <div class="k">Jail</div>\
-                <div class="v">' + fmtNum(groups.jail.length) + '</div>\
-              </div>\
-              <div class="warhub-metric">\
-                <div class="k">Offline</div>\
-                <div class="v">' + fmtNum(groups.offline.length) + '</div>\
-              </div>\
             </div>\
+            ' + (enemyFactionId ? '<div class="warhub-actions" style="margin-top:8px;"><a class="warhub-btn" href="https://www.torn.com/factions.php?step=profile&ID=' + encodeURIComponent(enemyFactionId) + '" target="_blank" rel="noopener noreferrer">Open Enemy Faction</a></div>' : '') + '\
           </div>\
-          ' + rosterCard('Enemy Online', groups.online || [], { extraClass: 'online-box', enemy: true }) + '\
-          ' + rosterCard('Enemy Idle', groups.idle || [], { extraClass: 'idle-box', enemy: true }) + '\
-          ' + rosterCard('Enemy Travel', groups.travel || [], { extraClass: 'travel-box', enemy: true }) + '\
-          ' + rosterCard('Enemy Hospital', groups.hospital || [], { extraClass: 'hospital-box', enemy: true }) + '\
-          ' + rosterCard('Enemy Jail', groups.jail || [], { extraClass: 'jail-box', enemy: true }) + '\
-          ' + rosterDropdown('Enemy Offline', groups.offline || [], { extraClass: 'offline-box', enemy: true }) + '\
+          ' + rosterCard('Online Enemies', groups.online, { extraClass: 'online-box' }) + '\
+          ' + rosterCard('Idle Enemies', groups.idle, { extraClass: 'idle-box' }) + '\
+          ' + rosterCard('Hospitalized Enemies', groups.hospital, { extraClass: 'hospital-box' }) + '\
+          ' + rosterCard('Traveling Enemies', groups.travel, { extraClass: 'travel-box' }) + '\
+          ' + rosterCard('Jailed Enemies', groups.jail, { extraClass: 'jail-box' }) + '\
+          ' + rosterDropdown('Offline Enemies', groups.offline, { extraClass: 'offline-box' }) + '\
         ';
     } catch (e) {
         return '\
           <div class="warhub-card">\
             <h3>Enemies</h3>\
-            <div class="warhub-empty">Enemies tab crashed.</div>\
-            <div class="warhub-muted" style="margin-top:8px;">' + esc(String((e && e.message) || e || 'Unknown error')) + '</div>\
-          </div>\
-        ';
+            <div class="warhub-empty">Could not render enemies.</div>\
+          </div>';
     }
 }
 
