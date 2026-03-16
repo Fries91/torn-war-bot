@@ -36,7 +36,7 @@ var K_ACCESS_CACHE = 'warhub_access_cache_v3';
 var K_OVERVIEW_BOXES = 'warhub_overview_boxes_v3';
     var factionMembersCache = null;
     var PAYMENT_PLAYER = 'Fries91';
-    var PRICE_PER_MEMBER = 3;
+    var PRICE_PER_MEMBER = '3';
     var TAB_ORDER = [
     ['overview', 'Overview'],
     ['faction', 'Faction'],
