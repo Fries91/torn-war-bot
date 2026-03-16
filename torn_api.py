@@ -1301,8 +1301,7 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
         enemy_id = ""
         enemy_name = ""
 
-    if enemy_name and my_name and enemy_name.lower() == my_name.lower():
-        enemy_id = ""
+    if enemy_name and my_name and enemy_name.lower() == my_name.lower() and not enemy_id:
         enemy_name = ""
 
     score_us = _side_score(my_side or {})
@@ -1334,8 +1333,16 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
     is_active = phase == "active"
     is_registered = phase in {"registered", "active"}
 
+    if not enemy_id and my_side and len(candidate_sides) == 2:
+        other_sides = [x for x in candidate_sides if not _same_side(x, my_side)]
+        if other_sides:
+            fallback_enemy = other_sides[0]
+            enemy_id = str(fallback_enemy.get("faction_id") or "").strip()
+            if not enemy_name:
+                enemy_name = str(fallback_enemy.get("faction_name") or "").strip()
+
     enemy_members: List[Dict[str, Any]] = []
-    if enemy_id and is_registered:
+    if is_registered and enemy_id:
         enemy_faction = faction_basic(api_key, faction_id=enemy_id)
         if enemy_faction.get("ok"):
             fetched_enemy_name = str(enemy_faction.get("faction_name") or "").strip()
