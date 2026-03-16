@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         War Hub ⚔️
 // @namespace    fries91-war-hub
-// @version      3.0.5
+// @version      3.0.6
 // @description  War Hub by Fries91. Faction-license aware overlay with draggable icon, draggable overlay, PDA friendly, shared war tools, faction member management, and payment lock handling.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -41,6 +41,7 @@ var K_OVERVIEW_BOXES = 'warhub_overview_boxes_v3';
     ['overview', 'Overview'],
     ['faction', 'Faction'],
     ['war', 'War'],
+    ['summary', 'Summary'],
     ['chain', 'Chain'],
     ['terms', 'Terms'],
     ['members', 'Members'],
@@ -48,8 +49,6 @@ var K_OVERVIEW_BOXES = 'warhub_overview_boxes_v3';
     ['hospital', 'Hospital'],
     ['meddeals', 'Med Deals'],
     ['targets', 'Targets'],
-    ['assignments', 'Assignments'],
-    ['notes', 'Notes'],
     ['instructions', 'Instructions'],
     ['settings', 'Settings'],
     ['admin', 'Admin']
@@ -741,15 +740,39 @@ if (overlay && isOpen && currentTab === 'admin' && isOwnerSession()) loadAdminDa
         return _loadState.apply(this, arguments);
     }
     function loadAnalytics() {
-        return _loadAnalytics.apply(this, arguments);
-    }
-    function _loadAnalytics() {
-        _loadAnalytics = _asyncToGenerator(function* () {
-            analyticsCache = analyticsCache || {};
+    return _loadAnalytics.apply(this, arguments);
+}
+function _loadAnalytics() {
+    _loadAnalytics = _asyncToGenerator(function* () {
+        if (!(accessState && accessState.isFactionLeader) && !isOwnerSession()) {
+            analyticsCache = null;
+            return null;
+        }
+
+        try {
+            var res = yield req('GET', '/api/war/summary');
+            if (!res.ok) {
+                analyticsCache = {
+                    ok: false,
+                    error: res.error || 'Could not load war summary.'
+                };
+                return analyticsCache;
+            }
+
+            analyticsCache = _objectSpread({
+                ok: true
+            }, res.data || {});
             return analyticsCache;
-        });
-        return _loadAnalytics.apply(this, arguments);
-    }
+        } catch (e) {
+            analyticsCache = {
+                ok: false,
+                error: 'Could not load war summary.'
+            };
+            return analyticsCache;
+        }
+    });
+    return _loadAnalytics.apply(this, arguments);
+}
     function loadFactionMembers() {
         return _loadFactionMembers.apply(this, arguments);
     }
@@ -2079,40 +2102,91 @@ function renderChainTab() {
             '</div>' +
         '</div>';
 }
-    function renderAssignmentsTab() {
-        var warId = String((state === null || state === void 0 ? void 0 : state.war) && state.war.war_id || (state === null || state === void 0 ? void 0 : state.war) && state.war.id || '');
-        var managed = arr((state === null || state === void 0 ? void 0 : state.factionManagement) && state.factionManagement.members || (factionMembersCache === null || factionMembersCache === void 0 ? void 0 : factionMembersCache.members) || []).filter(function (m) {
-            var uid = String(m.member_user_id || m.user_id || '');
-            return uid && !!m.enabled;
-        });
-        var rows = arr((state === null || state === void 0 ? void 0 : state.assignments) || []).length ? "\n      <div class=\"warhub-card\">\n        <div class=\"warhub-section-title\">\n          <h3 style=\"margin:0;\">Live Assignments</h3>\n          <span class=\"warhub-count\">".concat(fmtNum(arr(state.assignments).length), "</span>\n        </div>\n        <div class=\"warhub-list\">\n          ").concat(arr(state.assignments).map(function (a) {
-            var id = String(a.id || '');
-            var assigned = a.assigned_to_name || a.assignee || 'Unassigned';
-            var targetName = a.target_name || a.target || a.target_id || 'Unknown';
-            var attack = a.target_attack_url || (a.target_id ? "https://www.torn.com/loader.php?sid=attack&user2ID=".concat(encodeURIComponent(String(a.target_id))) : '');
-            return "\n                <div class=\"warhub-list-item\">\n                  <div class=\"warhub-row\">\n                    <div>\n                      <div class=\"warhub-name\">".concat(esc(targetName), "</div>\n                      <div class=\"warhub-meta\">").concat(esc(["Assigned: ".concat(assigned), a.priority || 'normal', a.note || ''].filter(Boolean).join(' • ')), "</div>\n                    </div>\n                    <div class=\"warhub-actions\">\n                      ").concat(attack ? "<a class=\"warhub-btn small primary warhub-link\" href=\"".concat(esc(attack), "\" target=\"_blank\" rel=\"noopener noreferrer\">Attack</a>") : '', "\n                      ").concat(id ? "<button class=\"warhub-btn small warn\" data-del-assignment-live=\"".concat(esc(id), "\">Delete</button>") : '', "\n                    </div>\n                  </div>\n                </div>\n              ");
-        }).join(''), "\n        </div>\n      </div>\n    ") : "\n      <div class=\"warhub-card\">\n        <h3>Live Assignments</h3>\n        <div class=\"warhub-empty\">No assignments yet.</div>\n      </div>\n    ";
-        return "\n      <div class=\"warhub-card\">\n        <h3>Assign Target</h3>\n        <div class=\"warhub-grid two\">\n          <div>\n            <label class=\"warhub-label\">War ID</label>\n            <input class=\"warhub-input\" id=\"wh-assignment-war-id\" value=\"".concat(esc(warId), "\" readonly>\n          </div>\n          <div>\n            <label class=\"warhub-label\">Target ID</label>\n            <input class=\"warhub-input\" id=\"wh-assignment-target-id\" placeholder=\"Enemy target ID\">\n          </div>\n          <div>\n            <label class=\"warhub-label\">Target Name</label>\n            <input class=\"warhub-input\" id=\"wh-assignment-target-name\" placeholder=\"Optional target name\">\n          </div>\n          <div>\n            <label class=\"warhub-label\">Assign To</label>\n            <select class=\"warhub-select\" id=\"wh-assignment-member\">\n              <option value=\"\">Select enabled member</option>\n              ").concat(managed.map(function (m) {
-            var uid = String(m.member_user_id || m.user_id || '');
-            var nm = String(m.member_name || m.name || uid);
-            return "<option value=\"".concat(esc(uid), "\" data-name=\"").concat(esc(nm), "\">").concat(esc(nm), " [").concat(esc(uid), "]</option>");
-        }).join(''), "\n            </select>\n          </div>\n        </div>\n        <div style=\"height:8px;\"></div>\n        <div class=\"warhub-grid two\">\n          <div>\n            <label class=\"warhub-label\">Priority</label>\n            <select class=\"warhub-select\" id=\"wh-assignment-priority\">\n              <option value=\"normal\">Normal</option>\n              <option value=\"high\">High</option>\n              <option value=\"low\">Low</option>\n            </select>\n          </div>\n          <div>\n            <label class=\"warhub-label\">Note</label>\n            <input class=\"warhub-input\" id=\"wh-assignment-note\" placeholder=\"Optional note\">\n          </div>\n        </div>\n        <div class=\"warhub-actions\" style=\"margin-top:8px;\">\n          <button class=\"warhub-btn primary\" id=\"wh-save-assignment\">Save Assignment</button>\n        </div>\n      </div>\n      ").concat(rows, "\n    ");
-    }
-    function noteRow(x) {
-        var id = String(x.id || x.note_id || '');
-        return "\n      <div class=\"warhub-list-item\">\n        <div class=\"warhub-row\">\n          <div>\n            <div class=\"warhub-name\">".concat(esc(x.target_name || "Target ".concat(x.target_id || '—')), "</div>\n            <div class=\"warhub-meta\">").concat(esc(x.note || ''), "</div>\n            <div class=\"warhub-mini\">").concat(esc([x.created_by_name || x.updated_by_name || '', fmtTs(x.created_at || x.updated_at || '')].filter(Boolean).join(' • ')), "</div>\n          </div>\n          <div class=\"warhub-actions\">\n            ").concat(id ? "<button class=\"warhub-btn small warn\" data-del-note-live=\"".concat(esc(id), "\">Delete</button>") : '', "\n          </div>\n        </div>\n      </div>\n    ");
-    }
-    function renderNotesTab() {
-        var localNotes = getNotes();
-        var shared = arr((state === null || state === void 0 ? void 0 : state.notes) || []);
-        return "\n      <div class=\"warhub-card\">\n        <h3>Local Notes</h3>\n        <label class=\"warhub-label\">Your personal notes</label>\n        <textarea class=\"warhub-textarea\" id=\"wh-notes\">".concat(esc(localNotes), "</textarea>\n        <div class=\"warhub-actions\" style=\"margin-top:8px;\">\n          <button class=\"warhub-btn primary\" id=\"wh-save-notes\">Save Local</button>\n          <button class=\"warhub-btn warn\" id=\"wh-clear-notes\">Clear Local</button>\n        </div>\n      </div>\n\n      <div class=\"warhub-card\">\n        <h3>Shared War Note</h3>\n        <div class=\"warhub-grid two\">\n          <div>\n            <label class=\"warhub-label\">War ID</label>\n            <input class=\"warhub-input\" id=\"wh-note-war-id\" value=\"").concat(esc(String((state === null || state === void 0 ? void 0 : state.war) && state.war.war_id || (state === null || state === void 0 ? void 0 : state.war) && state.war.id || '')), "\" readonly>\n          </div>\n          <div>\n            <label class=\"warhub-label\">Target ID</label>\n            <input class=\"warhub-input\" id=\"wh-note-target-id\" placeholder=\"Enemy target ID\">\n          </div>\n        </div>\n        <div style=\"height:8px;\"></div>\n        <label class=\"warhub-label\">Note</label>\n        <textarea class=\"warhub-textarea\" id=\"wh-note-text\" placeholder=\"Shared note for this target\"></textarea>\n        <div class=\"warhub-actions\" style=\"margin-top:8px;\">\n          <button class=\"warhub-btn primary\" id=\"wh-add-server-note\">Save Shared Note</button>\n        </div>\n      </div>\n\n      <div class=\"warhub-card\">\n        <div class=\"warhub-section-title\">\n          <h3>Shared Notes</h3>\n          <span class=\"warhub-count\">").concat(fmtNum(shared.length), "</span>\n        </div>\n        <div class=\"warhub-list\">\n          ").concat(shared.length ? shared.map(function (x) {
-            return noteRow(x);
-        }).join('') : '<div class="warhub-empty">No shared notes yet.</div>', "\n        </div>\n      </div>\n    ");
-    }
+    
     function renderAnalyticsTab() {
-        var snaps = arr((state === null || state === void 0 ? void 0 : state.snapshots) || []);
-        return "\n      <div class=\"warhub-card\">\n        <h3>Analytics</h3>\n        <div class=\"warhub-grid three\">\n          <div class=\"warhub-metric\">\n            <div class=\"k\">Snapshots</div>\n            <div class=\"v\">".concat(fmtNum(snaps.length), "</div>\n          </div>\n          <div class=\"warhub-metric\">\n            <div class=\"k\">Members</div>\n            <div class=\"v\">").concat(fmtNum(arr((state === null || state === void 0 ? void 0 : state.members) || []).length), "</div>\n          </div>\n          <div class=\"warhub-metric\">\n            <div class=\"k\">Enemies</div>\n            <div class=\"v\">").concat(fmtNum(arr((state === null || state === void 0 ? void 0 : state.enemies) || []).length), "</div>\n          </div>\n        </div>\n      </div>\n    ");
+    var canSee = !!((accessState && accessState.isFactionLeader) || isOwnerSession());
+    if (!canSee) {
+        return '\
+          <div class="warhub-card">\
+            <h3>War Summary</h3>\
+            <div class="warhub-empty">Only faction leaders and admin can access this tab.</div>\
+          </div>';
     }
+
+    var sum = analyticsCache || {};
+    var totals = sum.totals || {};
+    var members = arr(sum.members || []);
+
+    return '\
+      <div class="warhub-card">\
+        <div class="warhub-section-title">\
+          <h3>War Summary</h3>\
+          <span class="warhub-count">' + fmtNum(members.length) + '</span>\
+        </div>\
+        <div class="warhub-grid three">\
+          <div class="warhub-metric">\
+            <div class="k">Hits</div>\
+            <div class="v">' + fmtNum(Number(totals.hits || 0)) + '</div>\
+          </div>\
+          <div class="warhub-metric">\
+            <div class="k">Respect Gained</div>\
+            <div class="v">' + fmtNum(Number(totals.respect_gained || 0)) + '</div>\
+          </div>\
+          <div class="warhub-metric">\
+            <div class="k">Respect Lost</div>\
+            <div class="v">' + fmtNum(Number(totals.respect_lost || 0)) + '</div>\
+          </div>\
+          <div class="warhub-metric">\
+            <div class="k">Attacks Won</div>\
+            <div class="v">' + fmtNum(Number(totals.wins || 0)) + '</div>\
+          </div>\
+          <div class="warhub-metric">\
+            <div class="k">Attacks Lost</div>\
+            <div class="v">' + fmtNum(Number(totals.losses || 0)) + '</div>\
+          </div>\
+          <div class="warhub-metric">\
+            <div class="k">Net Respect</div>\
+            <div class="v">' + fmtNum(Number(totals.net_respect || ((Number(totals.respect_gained || 0)) - (Number(totals.respect_lost || 0))))) + '</div>\
+          </div>\
+        </div>\
+      </div>\
+      <div class="warhub-card">\
+        <div class="warhub-section-title">\
+          <h3>Member Breakdown</h3>\
+          <span class="warhub-count">' + fmtNum(members.length) + '</span>\
+        </div>\
+        <div class="warhub-list">\
+          ' + (members.length ? members.map(function (m) {
+                var uid = m.user_id || m.id || '';
+                var name = m.name || m.member_name || ('ID ' + uid);
+                var hits = Number(m.hits || 0);
+                var gained = Number(m.respect_gained || 0);
+                var lost = Number(m.respect_lost || 0);
+                var wins = Number(m.wins || 0);
+                var losses = Number(m.losses || 0);
+                return '\
+                  <div class="warhub-list-item">\
+                    <div class="warhub-row">\
+                      <div>\
+                        <div class="warhub-name">' + esc(name) + '</div>\
+                        <div class="warhub-meta">ID ' + esc(String(uid || '—')) + '</div>\
+                      </div>\
+                      <div class="warhub-actions">\
+                        <span class="warhub-pill">Hits ' + fmtNum(hits) + '</span>\
+                        <span class="warhub-pill">+Respect ' + fmtNum(gained) + '</span>\
+                        <span class="warhub-pill">-Respect ' + fmtNum(lost) + '</span>\
+                        <span class="warhub-pill">W ' + fmtNum(wins) + '</span>\
+                        <span class="warhub-pill">L ' + fmtNum(losses) + '</span>\
+                      </div>\
+                    </div>\
+                  </div>';
+            }).join('') : '<div class="warhub-empty">No war summary data yet.</div>') + '\
+        </div>\
+        <div class="warhub-actions" style="margin-top:8px;">\
+          <button class="warhub-btn" id="wh-refresh-summary">Refresh Summary</button>\
+        </div>\
+      </div>';
+}
     function renderNotificationsTab() {
         var items = mergedNotifications();
         return "\n      <div class=\"warhub-card\">\n        <div class=\"warhub-section-title\">\n          <h3>Notifications</h3>\n          <span class=\"warhub-count\">".concat(fmtNum(items.length), "</span>\n        </div>\n        <div class=\"warhub-list\">\n          ").concat(items.length ? items.map(function (x) {
@@ -2284,21 +2358,20 @@ function renderChainTab() {
     function renderTabContent() {
     switch (currentTab) {
         case 'overview': return renderOverviewTab();
-        case 'faction': return "".concat(renderAccessBanner()).concat(renderFactionTab());
-        case 'war': return "".concat(renderAccessBanner()).concat(renderWarTab());
-        case 'chain': return "".concat(renderAccessBanner()).concat(renderChainTab());
-        case 'terms': return renderTermsTab();
-        case 'members': return "".concat(renderAccessBanner()).concat(renderMembersTab());
-        case 'enemies': return "".concat(renderAccessBanner()).concat(renderEnemiesTab());
-        case 'hospital': return "".concat(renderAccessBanner()).concat(renderHospitalTab());
-        case 'meddeals': return "".concat(renderAccessBanner()).concat(renderMedDealsTab());
-        case 'targets': return "".concat(renderAccessBanner()).concat(renderTargetsTab());
-        case 'assignments': return "".concat(renderAccessBanner()).concat(renderAssignmentsTab());
-        case 'notes': return "".concat(renderAccessBanner()).concat(renderNotesTab());
-        case 'instructions': return renderInstructionsTab();
-        case 'settings': return renderSettingsTab();
-        case 'admin': return renderAdminTab();
-        default: return renderOverviewTab();
+case 'faction': return "".concat(renderAccessBanner()).concat(renderFactionTab());
+case 'war': return "".concat(renderAccessBanner()).concat(renderWarTab());
+case 'summary': return "".concat(renderAccessBanner()).concat(renderAnalyticsTab());
+case 'chain': return "".concat(renderAccessBanner()).concat(renderChainTab());
+case 'terms': return renderTermsTab();
+case 'members': return "".concat(renderAccessBanner()).concat(renderMembersTab());
+case 'enemies': return "".concat(renderAccessBanner()).concat(renderEnemiesTab());
+case 'hospital': return "".concat(renderAccessBanner()).concat(renderHospitalTab());
+case 'meddeals': return "".concat(renderAccessBanner()).concat(renderMedDealsTab());
+case 'targets': return "".concat(renderAccessBanner()).concat(renderTargetsTab());
+case 'instructions': return renderInstructionsTab();
+case 'settings': return renderSettingsTab();
+case 'admin': return renderAdminTab();
+default: return renderOverviewTab();
     }
 }
     function renderBody() {
@@ -2718,83 +2791,6 @@ function renderChainTab() {
 
             yield loadState(true);
             renderBody();
-        }));
-    });
-
-    var saveAssign = overlay ? overlay.querySelector('#wh-save-assignment') : null;
-    if (saveAssign) saveAssign.addEventListener('click', _asyncToGenerator(function* () {
-        var war_id = cleanInputValue(((state === null || state === void 0 ? void 0 : state.war) && state.war.war_id) || ((state === null || state === void 0 ? void 0 : state.war) && state.war.id) || '');
-        var target_id = cleanInputValue((overlay.querySelector('#wh-assignment-target-id') || {}).value || '');
-        var target_name = cleanInputValue((overlay.querySelector('#wh-assignment-target-name') || {}).value || '');
-        var sel = overlay.querySelector('#wh-assignment-member');
-        var opt = sel && sel.selectedOptions ? sel.selectedOptions[0] : null;
-        var assigned_to_user_id = cleanInputValue((opt === null || opt === void 0 ? void 0 : opt.value) || '');
-        var assigned_to_name = cleanInputValue((opt === null || opt === void 0 ? void 0 : opt.dataset.name) || '');
-        var priority = cleanInputValue((overlay.querySelector('#wh-assignment-priority') || {}).value || 'normal');
-        var note = cleanInputValue((overlay.querySelector('#wh-assignment-note') || {}).value || '');
-
-        if (!war_id || !target_id) {
-            setStatus('War ID and target ID are required.', true);
-            return;
-        }
-
-        var res = yield doAction('POST', '/api/war/assignments', {
-            war_id: war_id,
-            target_id: target_id,
-            target_name: target_name,
-            assigned_to_user_id: assigned_to_user_id,
-            assigned_to_name: assigned_to_name,
-            priority: priority,
-            note: note
-        }, 'Assignment saved.');
-
-        if (res) renderBody();
-    }));
-
-    if (overlay) overlay.querySelectorAll('[data-del-assignment-live]').forEach(function (btn) {
-        btn.addEventListener('click', _asyncToGenerator(function* () {
-            var id = cleanInputValue(btn.getAttribute('data-del-assignment-live') || '');
-            if (!id) return;
-            var res = yield doAction('DELETE', "/api/war/assignments/".concat(encodeURIComponent(id)), null, 'Assignment deleted.');
-            if (res) renderBody();
-        }));
-    });
-
-    var saveNotes = overlay ? overlay.querySelector('#wh-save-notes') : null;
-    if (saveNotes) saveNotes.addEventListener('click', function () {
-        var txt = (overlay.querySelector('#wh-notes') || {}).value || '';
-        setNotes(txt);
-        setStatus('Local notes saved.');
-    });
-
-    var clearNotes = overlay ? overlay.querySelector('#wh-clear-notes') : null;
-    if (clearNotes) clearNotes.addEventListener('click', function () {
-        setNotes('');
-        renderBody();
-        setStatus('Local notes cleared.');
-    });
-
-    var addServerNote = overlay ? overlay.querySelector('#wh-add-server-note') : null;
-    if (addServerNote) addServerNote.addEventListener('click', _asyncToGenerator(function* () {
-        var war_id = cleanInputValue(((state === null || state === void 0 ? void 0 : state.war) && state.war.war_id) || ((state === null || state === void 0 ? void 0 : state.war) && state.war.id) || '');
-        var target_id = cleanInputValue((overlay.querySelector('#wh-note-target-id') || {}).value || '');
-        var note = cleanInputValue((overlay.querySelector('#wh-note-text') || {}).value || '');
-
-        if (!war_id || !target_id || !note) {
-            setStatus('War ID, target ID and note are required.', true);
-            return;
-        }
-
-        var res = yield doAction('POST', '/api/war/notes', { war_id: war_id, target_id: target_id, note: note }, 'Shared note saved.');
-        if (res) renderBody();
-    }));
-
-    if (overlay) overlay.querySelectorAll('[data-del-note-live]').forEach(function (btn) {
-        btn.addEventListener('click', _asyncToGenerator(function* () {
-            var id = cleanInputValue(btn.getAttribute('data-del-note-live') || '');
-            if (!id) return;
-            var res = yield doAction('DELETE', "/api/war/notes/".concat(encodeURIComponent(id)), null, 'Shared note deleted.');
-            if (res) renderBody();
         }));
     });
 
