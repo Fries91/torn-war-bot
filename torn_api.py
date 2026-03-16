@@ -890,7 +890,7 @@ def faction_wars(api_key: str, faction_id: str = "") -> Dict[str, Any]:
 
 
 def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: str = "") -> Dict[str, Any]:
-    me = me_basic(api_key)
+    me = me_basic(api_key) or {}
     resolved_my_faction_id = str(my_faction_id or me.get("faction_id") or "").strip()
     resolved_my_faction_name = str(my_faction_name or me.get("faction_name") or "").strip()
     my_name_lower = resolved_my_faction_name.lower().strip()
