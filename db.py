@@ -75,6 +75,9 @@ def _days_left_until(dt: Optional[datetime]) -> Optional[int]:
     except Exception:
         return None
 
+def _faction_payment_text(enabled_member_count: int) -> str:
+    total_xanax = int(enabled_member_count or 0) * int(PAYMENT_XANAX_PER_MEMBER)
+    return f"Send {total_xanax} Xanax to Fries91 [3679030]."
 
 def init_db():
     con = _con()
@@ -2748,7 +2751,8 @@ def get_owner_faction_dashboard(limit: int = 250) -> Dict[str, Any]:
     factions = list_all_faction_licenses(limit=limit)
     return {
         "payment_player": PAYMENT_PLAYER,
-        "payment_per_member": PAYMENT_PER_MEMBER,
+        "payment_per_member": PAYMENT_XANAX_PER_MEMBER,
+        "payment_kind": PAYMENT_KIND,
         "factions": factions,
     }
 
@@ -2781,13 +2785,14 @@ def get_faction_admin_dashboard_summary() -> Dict[str, Any]:
     con.close()
 
     return {
-        "payment_player": PAYMENT_PLAYER,
-        "payment_per_member": PAYMENT_PER_MEMBER,
-        "faction_licenses_total": faction_licenses_total,
-        "trials_total": trials_total,
-        "paid_total": paid_total,
-        "payment_required_total": payment_required_total,
-        "enabled_members_total": enabled_members_total,
-        "stored_members_total": stored_members_total,
-        "projected_renewal_total": projected_renewal_total,
-    }
+    "payment_player": PAYMENT_PLAYER,
+    "payment_per_member": PAYMENT_XANAX_PER_MEMBER,
+    "payment_kind": PAYMENT_KIND,
+    "faction_licenses_total": faction_licenses_total,
+    "trials_total": trials_total,
+    "paid_total": paid_total,
+    "payment_required_total": payment_required_total,
+    "enabled_members_total": enabled_members_total,
+    "stored_members_total": stored_members_total,
+    "projected_renewal_total": projected_renewal_total,
+}
