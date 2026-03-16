@@ -2004,36 +2004,80 @@ function renderChainTab() {
     ");
 }
     function renderTargetsTab() {
-    var targets = arr((state === null || state === void 0 ? void 0 : state.targets) || []);
-    var enemies = sortAlphabetical(arr((state === null || state === void 0 ? void 0 : state.enemies) || []));
+    var targets = arr((state && state.targets) || []);
+    var enemies = sortAlphabetical(arr((state && state.enemies) || []));
     var hasWar = !!(
-        (state === null || state === void 0 ? void 0 : state.has_war) ||
-        ((state === null || state === void 0 ? void 0 : state.war) && state.war.active) ||
-        ((state === null || state === void 0 ? void 0 : state.war) && state.war.war_id) ||
-        (state === null || state === void 0 ? void 0 : state.enemy_faction_id) ||
-        ((state === null || state === void 0 ? void 0 : state.enemyFaction) && state.enemyFaction.id) ||
+        (state && state.has_war) ||
+        ((state && state.war) && state.war.active) ||
+        ((state && state.war) && state.war.war_id) ||
+        (state && state.enemy_faction_id) ||
+        ((state && state.enemyFaction) && state.enemyFaction.id) ||
         enemies.length
     );
 
-    return "\n      <div class=\"warhub-card\">\n        <h3>Add Target</h3>\n        <div class=\"warhub-grid two\">\n          <div>\n            <label class=\"warhub-label\">Enemy</label>\n            <select class=\"warhub-select\" id=\"warhub-target-enemy\"".concat(hasWar ? '' : ' disabled', ">\n              <option value=\"\">").concat(hasWar ? 'Select enemy' : 'Currently not in a war', "</option>\n              ").concat(enemies.map(function (x) {
+    var enemyOptions = enemies.map(function (x) {
         var id = x.user_id || x.id || x.player_id || '';
-        var name = x.name || x.player_name || "ID ".concat(id);
-        return "<option value=\"".concat(esc(String(id)), "\" data-name=\"").concat(esc(name), "\">").concat(esc(name), " [").concat(esc(String(id)), "]</option>");
-    }).join(''), "\n            </select>\n          </div>\n          <div>\n            <label class=\"warhub-label\">Target ID</label>\n            <input class=\"warhub-input\" id=\"warhub-target-id\" placeholder=\"Target ID\"".concat(hasWar ? '' : ' disabled', " />\n          </div>\n        </div>\n        <div style=\"height:8px;\"></div>\n        <label class=\"warhub-label\">Notes / Reason</label>\n        <input class=\"warhub-input\" id=\"warhub-target-notes\" placeholder=\"Optional notes\"".concat(hasWar ? '' : ' disabled', " />\n        <div class=\"warhub-actions\" style=\"margin-top:8px;\">\n          <button class=\"warhub-btn primary\" id=\"warhub-target-add\"").concat(hasWar ? '' : ' disabled', ">Add Target</button>\n        </div>\n      </div>\n\n      <div class=\"warhub-card\">\n        <div class=\"warhub-section-title\">\n          <h3>Targets</h3>\n          <span class=\"warhub-count\">").concat(targets.length, "</span>\n        </div>\n        <div class=\"warhub-list\">\n          ").concat(
-        targets.length
-            ? targets.map(function (x) {
-                var id = x.target_id || x.user_id || x.id || '';
-                var name = x.target_name || x.name || "ID ".concat(id);
-                var rowId = x.id || x.target_row_id || x.target_id || '';
-                var meta = ["ID ".concat(id), x.notes || x.reason || ''].filter(Boolean).join(' • ');
+        var name = x.name || x.player_name || ("ID " + id);
+        return '<option value="' + esc(String(id)) + '" data-name="' + esc(name) + '">' +
+            esc(name) + ' [' + esc(String(id)) + ']</option>';
+    }).join('');
 
-                return "\n              <div class=\"warhub-list-item\">\n                <div class=\"warhub-row\">\n                  <div>\n                    <div class=\"warhub-name\">".concat(esc(name), "</div>\n                    <div class=\"warhub-meta\">").concat(esc(meta), "</div>\n                  </div>\n                  <div class=\"warhub-actions\">\n                    ").concat(
-                    id ? "<a class=\"warhub-btn small primary\" href=\"https://www.torn.com/loader.php?sid=attack&user2ID=".concat(encodeURIComponent(id), "\" target=\"_blank\" rel=\"noopener noreferrer\">Attack</a>") : '',
-                    "\n                    <button class=\"warhub-btn small warn warhub-del-target\" data-id=\""
-                ).concat(esc(String(rowId)), "\">Delete</button>\n                  </div>\n                </div>\n              </div>\n            ");
-            }).join('')
-            : '<div class="warhub-empty">No targets saved.</div>',
-        "\n        </div>\n      </div>\n    ");
+    var targetRows = targets.length ? targets.map(function (x) {
+        var id = x.target_id || x.user_id || x.id || '';
+        var name = x.target_name || x.name || ("ID " + id);
+        var rowId = x.id || x.target_row_id || x.target_id || '';
+        var meta = [('ID ' + id), x.notes || x.reason || ''].filter(Boolean).join(' • ');
+
+        return '' +
+            '<div class="warhub-list-item">' +
+                '<div class="warhub-row">' +
+                    '<div>' +
+                        '<div class="warhub-name">' + esc(name) + '</div>' +
+                        '<div class="warhub-meta">' + esc(meta) + '</div>' +
+                    '</div>' +
+                    '<div class="warhub-actions">' +
+                        (id
+                            ? '<a class="warhub-btn small primary" href="https://www.torn.com/loader.php?sid=attack&user2ID=' + encodeURIComponent(id) + '" target="_blank" rel="noopener noreferrer">Attack</a>'
+                            : '') +
+                        '<button class="warhub-btn small warn warhub-del-target" data-id="' + esc(String(rowId)) + '">Delete</button>' +
+                    '</div>' +
+                '</div>' +
+            '</div>';
+    }).join('') : '<div class="warhub-empty">No targets saved.</div>';
+
+    return '' +
+        '<div class="warhub-card">' +
+            '<h3>Add Target</h3>' +
+            '<div class="warhub-grid two">' +
+                '<div>' +
+                    '<label class="warhub-label">Enemy</label>' +
+                    '<select class="warhub-select" id="warhub-target-enemy"' + (hasWar ? '' : ' disabled') + '>' +
+                        '<option value="">' + (hasWar ? 'Select enemy' : 'Currently not in a war') + '</option>' +
+                        enemyOptions +
+                    '</select>' +
+                '</div>' +
+                '<div>' +
+                    '<label class="warhub-label">Target ID</label>' +
+                    '<input class="warhub-input" id="warhub-target-id" placeholder="Target ID"' + (hasWar ? '' : ' disabled') + ' />' +
+                '</div>' +
+            '</div>' +
+            '<div style="height:8px;"></div>' +
+            '<label class="warhub-label">Notes / Reason</label>' +
+            '<input class="warhub-input" id="warhub-target-notes" placeholder="Optional notes"' + (hasWar ? '' : ' disabled') + ' />' +
+            '<div class="warhub-actions" style="margin-top:8px;">' +
+                '<button class="warhub-btn primary" id="warhub-target-add"' + (hasWar ? '' : ' disabled') + '>Add Target</button>' +
+            '</div>' +
+        '</div>' +
+
+        '<div class="warhub-card">' +
+            '<div class="warhub-section-title">' +
+                '<h3>Targets</h3>' +
+                '<span class="warhub-count">' + targets.length + '</span>' +
+            '</div>' +
+            '<div class="warhub-list">' +
+                targetRows +
+            '</div>' +
+        '</div>';
 }
     function renderAssignmentsTab() {
         var warId = String((state === null || state === void 0 ? void 0 : state.war) && state.war.war_id || (state === null || state === void 0 ? void 0 : state.war) && state.war.id || '');
