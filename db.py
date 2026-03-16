@@ -76,8 +76,8 @@ def _days_left_until(dt: Optional[datetime]) -> Optional[int]:
         return None
 
 def _faction_payment_text(enabled_member_count: int) -> str:
-    total_xanax = int(enabled_member_count or 0) * int(PAYMENT_XANAX_PER_MEMBER)
-    return f"Send {total_xanax} Xanax to Fries91 [3679030]."
+    total_amount = int(enabled_member_count or 0) * int(PAYMENT_XANAX_PER_MEMBER)
+    return f"Send {total_amount} {PAYMENT_KIND} to {PAYMENT_PLAYER} [{PAYMENT_NOTIFY_USER_ID}]."
 
 def init_db():
     con = _con()
@@ -2563,7 +2563,7 @@ def renew_faction_after_payment(
     amount: int,
     payment_player: str = PAYMENT_PLAYER,
     renewed_by: str = "",
-    payment_kind: str = "cash",
+    payment_kind: str = PAYMENT_KIND,
     note: str = "",
     received_by: str = "",
     extend_days: int = DEFAULT_PAID_DAYS,
@@ -2602,7 +2602,7 @@ def renew_faction_after_payment(
         str(row.get("leader_user_id") or ""),
         str(row.get("leader_name") or ""),
         int(amount or 0),
-        str(payment_kind or "cash"),
+        str(payment_kind or PAYMENT_KIND),
         str(note or ""),
         final_received_by,
         now,
@@ -2628,7 +2628,7 @@ def renew_faction_after_payment(
     """, (
         new_paid_until,
         int(amount or 0),
-        str(payment_kind or "cash"),
+        str(payment_kind or PAYMENT_KIND),
         str(note or ""),
         now,
         now,
