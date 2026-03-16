@@ -879,7 +879,7 @@ def api_auth():
         if not api_key:
             return err("Missing api_key.", 400)
 
-        me = me_basic(api_key)
+        me = me_basic(api_key) or {}
         if not me or not me.get("ok") or not str(me.get("user_id") or "").strip():
             return err(
                 me.get("error", "Invalid API key or Torn API unavailable."),
@@ -1192,6 +1192,44 @@ def api_state():
         "compact_mode": _safe_bool(get_user_setting(user_id, "compact_mode")),
     }
 
+    war_payload = {
+        "war_id": war_id,
+        "status": war_info.get("status_text") or (
+            "War active"
+            if war_info.get("active")
+            else "War registered"
+            if war_info.get("registered")
+            else "Currently not in war"
+        ),
+        "active": bool(war_info.get("active")),
+        "registered": bool(war_info.get("registered")),
+        "phase": str(war_info.get("phase") or "none"),
+        "war_type": str(war_info.get("war_type") or ""),
+        "start": _to_int(war_info.get("start")),
+        "end": _to_int(war_info.get("end")),
+        "target_score": _to_int(war_info.get("target_score")),
+    }
+
+    our_faction_payload = {
+        "faction_id": str(war_info.get("my_faction_id") or live_faction_id or ""),
+        "name": str(war_info.get("my_faction_name") or live_faction_name or ""),
+        "score": _to_int(war_info.get("score_us")),
+        "chain": _to_int(war_info.get("chain_us")),
+    }
+
+    enemy_faction_payload = {
+        "faction_id": enemy_faction_id,
+        "name": enemy_faction_name,
+        "score": _to_int(war_info.get("score_them")),
+        "chain": _to_int(war_info.get("chain_them")),
+    }
+
+    score_payload = {
+        "our": _to_int(war_info.get("score_us")),
+        "enemy": _to_int(war_info.get("score_them")),
+        "target": _to_int(war_info.get("target_score")),
+    }
+
     return ok(
         now=utc_now(),
         me=me,
@@ -1214,35 +1252,13 @@ def api_state():
         },
         settings=settings,
         license=license_status,
-        war={
-            "war_id": war_id,
-            "status": war_info.get("status_text") or (
-                "War active"
-                if war_info.get("active")
-                else "War registered"
-                if war_info.get("registered")
-                else "Currently not in war"
-            ),
-            "active": bool(war_info.get("active")),
-            "registered": bool(war_info.get("registered")),
-            "phase": str(war_info.get("phase") or "none"),
-            "war_type": str(war_info.get("war_type") or ""),
-            "start": _to_int(war_info.get("start")),
-            "end": _to_int(war_info.get("end")),
-            "target_score": _to_int(war_info.get("target_score")),
-        },
-        faction={
-            "faction_id": str(war_info.get("my_faction_id") or live_faction_id or ""),
-            "name": str(war_info.get("my_faction_name") or live_faction_name or ""),
-            "score": _to_int(war_info.get("score_us")),
-            "chain": _to_int(war_info.get("chain_us")),
-        },
-        enemy_faction={
-            "faction_id": enemy_faction_id,
-            "name": enemy_faction_name,
-            "score": _to_int(war_info.get("score_them")),
-            "chain": _to_int(war_info.get("chain_them")),
-        },
+        war=war_payload,
+        faction=our_faction_payload,
+        our_faction=our_faction_payload,
+        enemy_faction=enemy_faction_payload,
+        enemyFaction=enemy_faction_payload,
+        enemy_faction_id=enemy_faction_id,
+        enemy_faction_name=enemy_faction_name,
         members=members,
         enemies=enemies,
         assignments=assignments,
@@ -1250,14 +1266,11 @@ def api_state():
         terms=terms,
         dibs=dibs,
         med_deals=med_deals,
+        medDeals=med_deals,
         targets=targets,
         bounties=bounties,
         notifications=notifications,
-        score={
-            "our": _to_int(war_info.get("score_us")),
-            "enemy": _to_int(war_info.get("score_them")),
-            "target": _to_int(war_info.get("target_score")),
-        },
+        score=score_payload,
         has_war=has_war,
         is_ranked_war=has_war,
         debug={
