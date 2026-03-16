@@ -56,6 +56,14 @@ from db import (
     list_all_faction_licenses,
     get_faction_admin_dashboard_summary,
     list_faction_members,
+    get_faction_exemption,
+    get_user_exemption,
+    list_faction_exemptions,
+    list_user_exemptions,
+    upsert_faction_exemption,
+    upsert_user_exemption,
+    delete_faction_exemption,
+    delete_user_exemption,
     get_faction_member_access,
     upsert_faction_member_access,
     set_faction_member_enabled,
@@ -295,6 +303,17 @@ def _build_license_status_payload(faction_id: str, viewer_user_id: str = "") -> 
     return status
 
 
+def _get_exemption_payload(user_id: str = "", faction_id: str = "") -> Dict[str, Any]:
+    faction_row = get_faction_exemption(faction_id) if faction_id else None
+    user_row = get_user_exemption(user_id) if user_id else None
+    return {
+        "is_faction_exempt": bool(faction_row),
+        "is_user_exempt": bool(user_row),
+        "faction_exemption": faction_row or {},
+        "user_exemption": user_row or {},
+    }
+
+
 def _is_faction_leader(api_key: str, user_id: str, faction_id: str) -> bool:
     api_key = str(api_key or "").strip()
     user_id = str(user_id or "").strip()
@@ -342,6 +361,7 @@ def _feature_access_for_user(user: Dict[str, Any]) -> Dict[str, Any]:
     is_owner = _session_is_owner(user)
     license_status = _build_license_status_payload(faction_id, viewer_user_id=user_id) if faction_id else {}
     leader_user_id = str(license_status.get("leader_user_id") or "").strip()
+    exemption = _get_exemption_payload(user_id=user_id, faction_id=faction_id)
 
     is_leader = (
         is_owner
@@ -352,10 +372,22 @@ def _feature_access_for_user(user: Dict[str, Any]) -> Dict[str, Any]:
     member_row = get_faction_member_access(faction_id, user_id) if faction_id and user_id else {}
     member_enabled = True if is_leader else _safe_bool((member_row or {}).get("enabled"))
 
-    payment_required = bool(license_status.get("payment_required"))
-    expired = str(license_status.get("status") or "").lower() == "expired"
+    payment_required = bool(license_status.get("payment_required")) and not bool(exemption.get("is_faction_exempt"))
+    expired = str(license_status.get("status") or "").lower() == "expired" and not bool(exemption.get("is_faction_exempt"))
 
-    can_use_features = is_owner or is_leader or (member_enabled and not payment_required and not expired)
+    can_use_features = (
+        is_owner
+        or is_leader
+        or bool(exemption.get("is_faction_exempt"))
+        or bool(exemption.get("is_user_exempt"))
+        or (member_enabled and not payment_required and not expired)
+    )
+
+    message = str(license_status.get("message") or "")
+    if exemption.get("is_faction_exempt"):
+        message = "Faction is exempt from payment and renewal."
+    elif exemption.get("is_user_exempt"):
+        message = "Player exemption active. Full script access is unlocked except Admin and leader-only tabs."
 
     return {
         "is_owner": is_owner,
@@ -364,9 +396,12 @@ def _feature_access_for_user(user: Dict[str, Any]) -> Dict[str, Any]:
         "payment_required": payment_required,
         "expired": expired,
         "trial_active": bool(license_status.get("trial_active")),
-        "status": str(license_status.get("status") or ""),
+        "status": "exempt_user" if exemption.get("is_user_exempt") and not exemption.get("is_faction_exempt") else str(license_status.get("status") or ""),
         "can_use_features": can_use_features,
-        "license": license_status,
+        "is_user_exempt": bool(exemption.get("is_user_exempt")),
+        "is_faction_exempt": bool(exemption.get("is_faction_exempt")),
+        "message": message,
+        "license": {**license_status, **exemption},
     }
 
 
@@ -923,25 +958,16 @@ def api_auth():
                 )
 
         license_status = _build_license_status_payload(faction_id, viewer_user_id=user_id) if faction_id else {}
-        member_row = get_faction_member_access(faction_id, user_id) if faction_id else {}
-        member_enabled = True if (is_owner or leader_login) else _safe_bool((member_row or {}).get("enabled"))
+        access = _feature_access_for_user({
+            "user_id": user_id,
+            "name": name,
+            "api_key": api_key,
+            "faction_id": faction_id,
+            "faction_name": faction_name,
+        })
 
         delete_sessions_for_user(user_id)
         token = create_session(user_id)
-
-        access = {
-            "member_enabled": member_enabled,
-            "is_faction_leader": bool(is_owner or leader_login or (str(license_status.get("leader_user_id") or "") == user_id)),
-            "trial_active": bool(license_status.get("trial_active")),
-            "payment_required": bool(license_status.get("payment_required")),
-            "expired": str(license_status.get("status") or "").lower() == "expired",
-            "status": str(license_status.get("status") or ""),
-            "can_use_features": bool(
-                is_owner
-                or leader_login
-                or (member_enabled and not bool(license_status.get("payment_required")) and str(license_status.get("status") or "").lower() != "expired")
-            ),
-        }
 
         return ok(
             message="Authenticated.",
@@ -954,8 +980,19 @@ def api_auth():
                 "is_owner": is_owner,
                 "is_leader": access["is_faction_leader"],
             },
-            access=access,
-            license=license_status,
+            access={
+                "member_enabled": bool(access.get("member_enabled")),
+                "is_faction_leader": bool(access.get("is_faction_leader")),
+                "payment_required": bool(access.get("payment_required")),
+                "expired": bool(access.get("expired")),
+                "trial_active": bool(access.get("trial_active")),
+                "status": str(access.get("status") or ""),
+                "can_use_features": bool(access.get("can_use_features")),
+                "is_user_exempt": bool(access.get("is_user_exempt")),
+                "is_faction_exempt": bool(access.get("is_faction_exempt")),
+                "message": str(access.get("message") or ""),
+            },
+            license=access.get("license") or license_status,
         )
     except Exception as e:
         return err("Login failed.", 500, details=str(e))
@@ -1140,15 +1177,35 @@ def api_state():
         enemy_faction_name = ""
         raw_enemy_members = []
 
-    if enemy_faction_name and our_faction_name and enemy_faction_name.strip().lower() == our_faction_name:
-        enemy_faction_id = ""
+    if (
+        enemy_faction_name
+        and our_faction_name
+        and enemy_faction_name.strip().lower() == our_faction_name
+        and not enemy_faction_id
+        and not raw_enemy_members
+    ):
         enemy_faction_name = ""
-        raw_enemy_members = []
 
     has_war = bool(war_info.get("has_war"))
 
-    if enemy_faction_id and has_war:
-        if not raw_enemy_members:
+    if has_war and (not enemy_faction_id or not enemy_faction_name):
+        fallback_sides = [x for x in (war_info.get("debug_factions") or []) if isinstance(x, dict)]
+        for side in fallback_sides:
+            side_id = str(side.get("faction_id") or "").strip()
+            side_name = str(side.get("faction_name") or "").strip()
+            if side_id and our_faction_id and side_id == our_faction_id:
+                continue
+            if side_name and our_faction_name and side_name.lower() == our_faction_name:
+                continue
+            if not enemy_faction_id and side_id:
+                enemy_faction_id = side_id
+            if not enemy_faction_name and side_name:
+                enemy_faction_name = side_name
+            if enemy_faction_id or enemy_faction_name:
+                break
+
+    if has_war and (enemy_faction_id or enemy_faction_name or raw_enemy_members):
+        if not raw_enemy_members and enemy_faction_id:
             enemy_info = _faction_basic_by_id(war_api_key or api_key, enemy_faction_id)
             raw_enemy_members = enemy_info.get("members") or []
 
@@ -1157,15 +1214,17 @@ def api_state():
                 enemy_faction_name = fetched_enemy_name
 
         if raw_enemy_members:
+            our_member_ids = {
+                str(m.get("user_id") or m.get("id") or "").strip()
+                for m in members
+                if str(m.get("user_id") or m.get("id") or "").strip()
+            }
             seen_enemy_ids = set()
             filtered_enemy_members = []
 
             for enemy in raw_enemy_members:
                 enemy_user_id = str(enemy.get("user_id") or enemy.get("id") or "").strip()
-                if enemy_user_id and any(
-                    enemy_user_id == str(m.get("user_id") or m.get("id") or "").strip()
-                    for m in members
-                ):
+                if enemy_user_id and enemy_user_id in our_member_ids:
                     continue
                 if enemy_user_id and enemy_user_id in seen_enemy_ids:
                     continue
@@ -1249,9 +1308,12 @@ def api_state():
             "trial_active": bool(access.get("trial_active")),
             "status": str(access.get("status") or ""),
             "can_use_features": bool(access.get("can_use_features")),
+            "is_user_exempt": bool(access.get("is_user_exempt")),
+            "is_faction_exempt": bool(access.get("is_faction_exempt")),
+            "message": str(access.get("message") or ""),
         },
         settings=settings,
-        license=license_status,
+        license=access.get("license") or license_status,
         war=war_payload,
         faction=our_faction_payload,
         our_faction=our_faction_payload,
@@ -1937,7 +1999,12 @@ def api_faction_member_delete(member_user_id: str):
 def api_admin_faction_licenses():
     items = list_all_faction_licenses() or []
     summary = get_faction_admin_dashboard_summary() or {}
-    return ok(items=items, summary=summary)
+    return ok(
+        items=items,
+        summary=summary,
+        faction_exemptions=list_faction_exemptions() or [],
+        user_exemptions=list_user_exemptions() or [],
+    )
 
 
 @app.route("/api/admin/faction-licenses/<faction_id>/history", methods=["GET"])
@@ -1972,6 +2039,66 @@ def api_admin_faction_license_expire(faction_id: str):
     return ok(message="Faction expired.", faction_id=str(faction_id))
 
 
+@app.route("/api/admin/exemptions/factions", methods=["POST"])
+@require_owner
+def api_admin_add_faction_exemption():
+    user = request.user or {}
+    data = _require_json()
+    faction_id = str(data.get("faction_id") or "").strip()
+    faction_name = str(data.get("faction_name") or "").strip()
+    note = str(data.get("note") or "").strip()
+    if not faction_id:
+        return err("Missing faction_id.", 400)
+
+    item = upsert_faction_exemption(
+        faction_id=faction_id,
+        faction_name=faction_name,
+        note=note,
+        added_by_user_id=str(user.get("user_id") or ""),
+        added_by_name=str(user.get("name") or ""),
+    )
+    return ok(message="Faction exemption saved.", item=item)
+
+
+@app.route("/api/admin/exemptions/factions/<faction_id>", methods=["DELETE"])
+@require_owner
+def api_admin_delete_faction_exemption(faction_id: str):
+    delete_faction_exemption(str(faction_id))
+    return ok(message="Faction exemption removed.", faction_id=str(faction_id))
+
+
+@app.route("/api/admin/exemptions/users", methods=["POST"])
+@require_owner
+def api_admin_add_user_exemption():
+    user = request.user or {}
+    data = _require_json()
+    user_id = str(data.get("user_id") or "").strip()
+    user_name = str(data.get("user_name") or "").strip()
+    faction_id = str(data.get("faction_id") or "").strip()
+    faction_name = str(data.get("faction_name") or "").strip()
+    note = str(data.get("note") or "").strip()
+    if not user_id:
+        return err("Missing user_id.", 400)
+
+    item = upsert_user_exemption(
+        user_id=user_id,
+        user_name=user_name,
+        faction_id=faction_id,
+        faction_name=faction_name,
+        note=note,
+        added_by_user_id=str(user.get("user_id") or ""),
+        added_by_name=str(user.get("name") or ""),
+    )
+    return ok(message="Player exemption saved.", item=item)
+
+
+@app.route("/api/admin/exemptions/users/<user_id>", methods=["DELETE"])
+@require_owner
+def api_admin_delete_user_exemption(user_id: str):
+    delete_user_exemption(str(user_id))
+    return ok(message="Player exemption removed.", user_id=str(user_id))
+
+
 @app.route("/api/license-admin/dashboard", methods=["GET"])
 def api_license_admin_dashboard():
     allowed, response = _require_license_admin()
@@ -1980,7 +2107,12 @@ def api_license_admin_dashboard():
 
     items = list_all_faction_licenses() or []
     summary = get_faction_admin_dashboard_summary() or {}
-    return ok(items=items, summary=summary)
+    return ok(
+        items=items,
+        summary=summary,
+        faction_exemptions=list_faction_exemptions() or [],
+        user_exemptions=list_user_exemptions() or [],
+    )
 
 
 @app.route("/api/license-admin/factions/<faction_id>/history", methods=["GET"])
