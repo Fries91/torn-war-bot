@@ -2307,26 +2307,53 @@ function renderChainTab() {
     }
 }
     function positionOverlayNearShield() {
-        if (!shield || !overlay) return;
-        var sr = shield.getBoundingClientRect();
-        var overlayWidth = Math.min(window.innerWidth - 16, 520);
-        var left = sr.right - overlayWidth;
-        var top = sr.bottom + 8;
-        if (window.innerWidth <= 700) {
-            left = 6;
-            top = 54;
-        }
-        clampElementPosition(overlay, left, top);
+    if (!shield || !overlay) return;
+
+    var saved = GM_getValue(K_OVERLAY_POS, null);
+    if (saved && typeof saved.left === 'number' && typeof saved.top === 'number') {
+        overlay.style.left = saved.left + 'px';
+        overlay.style.top = saved.top + 'px';
+        overlay.style.right = 'auto';
+        overlay.style.bottom = 'auto';
+        clampElementPosition(overlay, saved.left, saved.top);
+        return;
     }
+
+    var sr = shield.getBoundingClientRect();
+    var overlayWidth = Math.min(window.innerWidth - 16, 520);
+    var left = sr.right - overlayWidth;
+    var top = sr.bottom + 8;
+
+    if (window.innerWidth <= 700) {
+        left = 6;
+        top = 54;
+    }
+
+    overlay.style.right = 'auto';
+    overlay.style.bottom = 'auto';
+    clampElementPosition(overlay, left, top);
+}
     function openOverlay() {
-        if (!overlay) return;
-        isOpen = true;
-        GM_setValue(K_OPEN, true);
-        overlay.classList.add('open');
-        if (!GM_getValue(K_OVERLAY_POS, null)) positionOverlayNearShield();
-        clampToViewport(overlay);
-        renderBody();
+    if (!overlay) return;
+
+    isOpen = true;
+    GM_setValue(K_OPEN, true);
+    overlay.classList.add('open');
+
+    var saved = GM_getValue(K_OVERLAY_POS, null);
+
+    renderBody();
+
+    if (saved && typeof saved.left === 'number' && typeof saved.top === 'number') {
+        overlay.style.left = saved.left + 'px';
+        overlay.style.top = saved.top + 'px';
+        overlay.style.right = 'auto';
+        overlay.style.bottom = 'auto';
+        clampElementPosition(overlay, saved.left, saved.top);
+    } else {
+        positionOverlayNearShield();
     }
+}
     function closeOverlay() {
         if (!overlay) return;
         isOpen = false;
@@ -2337,14 +2364,11 @@ function renderChainTab() {
         if (isOpen) closeOverlay(); else openOverlay();
     }
     function saveOverlayPos() {
-        if (!overlay) return;
-        GM_setValue(K_OVERLAY_POS, {
-            left: overlay.style.left || '',
-            top: overlay.style.top || '',
-            right: overlay.style.right || '',
-            bottom: overlay.style.bottom || ''
-        });
-    }
+    if (!overlay) return;
+    var left = parseInt(overlay.style.left || '0', 10);
+    var top = parseInt(overlay.style.top || '0', 10);
+    GM_setValue(K_OVERLAY_POS, { left: left, top: top });
+}
     function saveShieldPos() {
         if (!shield) return;
         GM_setValue(K_SHIELD_POS, {
@@ -2355,65 +2379,91 @@ function renderChainTab() {
         });
     }
     function makeDraggable(handleEl, moveEl, saveFn, extra) {
-        var active = null;
-        var startX = 0;
-        var startY = 0;
-        var startLeft = 0;
-        var startTop = 0;
-        var moved = false;
-        var THRESHOLD = 6;
-        function cleanup() {
-            document.removeEventListener('pointermove', onMove, true);
-            document.removeEventListener('pointerup', onUp, true);
-            document.removeEventListener('pointercancel', onUp, true);
-            handleEl.classList.remove('dragging');
-            moveEl.classList.remove('dragging');
-            moveEl.dataset.dragging = '0';
-            active = null;
-        }
-        function onMove(e) {
-            if (active !== e.pointerId) return;
-            var dx = e.clientX - startX;
-            var dy = e.clientY - startY;
-            if (!moved && (Math.abs(dx) >= THRESHOLD || Math.abs(dy) >= THRESHOLD)) moved = true;
-            if (!moved) return;
-            e.preventDefault();
-            dragMoved = true;
-            handleEl.classList.add('dragging');
-            moveEl.classList.add('dragging');
-            moveEl.dataset.dragging = '1';
-            clampElementPosition(moveEl, startLeft + dx, startTop + dy);
-            if (typeof extra === 'function') extra();
-        }
-        function onUp(e) {
-            if (active !== e.pointerId) return;
-            if (moved && typeof saveFn === 'function') saveFn();
-            setTimeout(function () {
-                dragMoved = false;
-            }, 120);
-            cleanup();
-        }
-        handleEl.addEventListener('pointerdown', function (e) {
-            var t = e.target;
-            if (t && (t.closest('button') || t.closest('a') || t.closest('input') || t.closest('textarea') || t.closest('select') || t.closest('summary'))) return;
-            active = e.pointerId;
-            moved = false;
-            dragMoved = false;
-            var rect = moveEl.getBoundingClientRect();
-            startX = e.clientX;
-            startY = e.clientY;
-            startLeft = rect.left;
-            startTop = rect.top;
-            moveEl.style.left = "".concat(rect.left, "px");
-            moveEl.style.top = "".concat(rect.top, "px");
-            moveEl.style.right = 'auto';
-            moveEl.style.bottom = 'auto';
-            if (handleEl.setPointerCapture) handleEl.setPointerCapture(e.pointerId);
-            document.addEventListener('pointermove', onMove, true);
-            document.addEventListener('pointerup', onUp, true);
-            document.addEventListener('pointercancel', onUp, true);
-        });
+    var active = null;
+    var startX = 0;
+    var startY = 0;
+    var startLeft = 0;
+    var startTop = 0;
+    var moved = false;
+    var THRESHOLD = 6;
+
+    function cleanup() {
+        document.removeEventListener('pointermove', onMove, true);
+        document.removeEventListener('pointerup', onUp, true);
+        document.removeEventListener('pointercancel', onUp, true);
+        handleEl.classList.remove('dragging');
+        moveEl.classList.remove('dragging');
+        moveEl.dataset.dragging = '0';
+        active = null;
     }
+
+    function onMove(e) {
+        if (active !== e.pointerId) return;
+
+        var dx = e.clientX - startX;
+        var dy = e.clientY - startY;
+
+        if (!moved && (Math.abs(dx) >= THRESHOLD || Math.abs(dy) >= THRESHOLD)) {
+            moved = true;
+        }
+        if (!moved) return;
+
+        e.preventDefault();
+        dragMoved = true;
+        handleEl.classList.add('dragging');
+        moveEl.classList.add('dragging');
+        moveEl.dataset.dragging = '1';
+        moveEl.style.right = 'auto';
+        moveEl.style.bottom = 'auto';
+        clampElementPosition(moveEl, startLeft + dx, startTop + dy);
+
+        if (typeof extra === 'function') extra();
+    }
+
+    function onUp(e) {
+        if (active !== e.pointerId) return;
+
+        if (moved && typeof saveFn === 'function') {
+            saveFn();
+        }
+
+        setTimeout(function () {
+            dragMoved = false;
+        }, 120);
+
+        cleanup();
+    }
+
+    handleEl.addEventListener('pointerdown', function (e) {
+        var t = e.target;
+        if (t && (t.closest('button') || t.closest('a') || t.closest('input') || t.closest('textarea') || t.closest('select') || t.closest('summary'))) {
+            return;
+        }
+
+        active = e.pointerId;
+        moved = false;
+        dragMoved = false;
+
+        var rect = moveEl.getBoundingClientRect();
+        startX = e.clientX;
+        startY = e.clientY;
+        startLeft = rect.left;
+        startTop = rect.top;
+
+        moveEl.style.left = "".concat(rect.left, "px");
+        moveEl.style.top = "".concat(rect.top, "px");
+        moveEl.style.right = 'auto';
+        moveEl.style.bottom = 'auto';
+
+        if (handleEl.setPointerCapture) {
+            handleEl.setPointerCapture(e.pointerId);
+        }
+
+        document.addEventListener('pointermove', onMove, true);
+        document.addEventListener('pointerup', onUp, true);
+        document.addEventListener('pointercancel', onUp, true);
+    });
+}
     function bindOverlayDrag() {
         var handle = overlay ? overlay.querySelector('#warhub-drag-handle') : null;
         if (!handle || !overlay) return;
