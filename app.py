@@ -609,10 +609,18 @@ def _normalize_note(row: Dict[str, Any]) -> Dict[str, Any]:
 def _merge_enemy_state(enemies: List[Dict[str, Any]], war_id: str) -> List[Dict[str, Any]]:
     state_map = get_enemy_state_map(war_id) if war_id else {}
     merged = []
+    seen_ids = set()
+
     for enemy in enemies or []:
-        enemy_id = str(enemy.get("user_id") or enemy.get("id") or "")
+        enemy_id = str(enemy.get("user_id") or enemy.get("id") or "").strip()
+        if enemy_id and enemy_id in seen_ids:
+            continue
+        if enemy_id:
+            seen_ids.add(enemy_id)
+
         st = state_map.get(enemy_id) if enemy_id else None
         merged.append(_clean_member(enemy, st))
+
     merged.sort(key=_bucket_sort_key)
     return merged
 
@@ -911,31 +919,37 @@ def api_state():
     faction_info = faction_basic(api_key, faction_id=faction_id) if api_key else {"ok": False, "members": []}
 
     war_api_key = api_key
-    if faction_map:
-        leader_row = None
+    leader_war_api_key = ""
+    viewer_war_api_key = ""
 
+    if faction_map:
         for _, row in faction_map.items():
             if not isinstance(row, dict):
                 continue
 
-            row_user_id = str(row.get("member_user_id") or row.get("user_id") or "")
-            row_api_key = str(row.get("member_api_key") or row.get("api_key") or "").strip()
-            row_position = str(row.get("position") or "").lower()
-            row_enabled = bool(row.get("enabled", True))
-
-            if row_api_key and "leader" in row_position:
-                leader_row = row
-                break
-
-            if row_api_key and row_enabled and row_user_id == user_id:
-                war_api_key = row_api_key
-
-        if leader_row:
-            war_api_key = str(
-                leader_row.get("member_api_key")
-                or leader_row.get("api_key")
-                or war_api_key
+            row_user_id = str(
+                row.get("member_user_id")
+                or row.get("user_id")
+                or ""
             ).strip()
+            row_api_key = str(
+                row.get("member_api_key")
+                or row.get("api_key")
+                or ""
+            ).strip()
+            row_position = str(row.get("position") or "").strip().lower()
+            row_enabled = _safe_bool(row.get("enabled", True))
+
+            if row_api_key and row_user_id == user_id and row_enabled:
+                viewer_war_api_key = row_api_key
+
+            if row_api_key and ("leader" in row_position or "co-leader" in row_position):
+                leader_war_api_key = row_api_key
+
+    if leader_war_api_key:
+        war_api_key = leader_war_api_key
+    elif viewer_war_api_key:
+        war_api_key = viewer_war_api_key
 
     war_info = ranked_war_summary(
         war_api_key,
@@ -979,7 +993,7 @@ def api_state():
     enemy_faction_name = str(war_info.get("enemy_faction_name") or "").strip()
 
     raw_enemy_members = war_info.get("enemy_members") or []
-    enemies = []
+    enemies: List[Dict[str, Any]] = []
 
     our_faction_id = str(war_info.get("my_faction_id") or live_faction_id or "").strip()
     our_faction_name = str(war_info.get("my_faction_name") or live_faction_name or "").strip().lower()
@@ -994,7 +1008,9 @@ def api_state():
         enemy_faction_name = ""
         raw_enemy_members = []
 
-    if enemy_faction_id and bool(war_info.get("has_war")):
+    has_war = bool(war_info.get("has_war"))
+
+    if enemy_faction_id and has_war:
         if not raw_enemy_members:
             enemy_info = _faction_basic_by_id(war_api_key or api_key, enemy_faction_id)
             raw_enemy_members = enemy_info.get("members") or []
@@ -1004,6 +1020,23 @@ def api_state():
                 enemy_faction_name = fetched_enemy_name
 
         if raw_enemy_members:
+            seen_enemy_ids = set()
+            filtered_enemy_members = []
+
+            for enemy in raw_enemy_members:
+                enemy_user_id = str(enemy.get("user_id") or enemy.get("id") or "").strip()
+                if enemy_user_id and any(
+                    enemy_user_id == str(m.get("user_id") or m.get("id") or "").strip()
+                    for m in members
+                ):
+                    continue
+                if enemy_user_id and enemy_user_id in seen_enemy_ids:
+                    continue
+                if enemy_user_id:
+                    seen_enemy_ids.add(enemy_user_id)
+                filtered_enemy_members.append(enemy)
+
+            raw_enemy_members = filtered_enemy_members
             enemies = _merge_enemy_state(raw_enemy_members, war_id)
 
     assignments = [_normalize_assignment(x) for x in (list_target_assignments_for_war(war_id) if war_id else [])]
@@ -1077,8 +1110,8 @@ def api_state():
             "enemy": _to_int(war_info.get("score_them")),
             "target": _to_int(war_info.get("target_score")),
         },
-        has_war=bool(war_info.get("has_war")),
-        is_ranked_war=bool(war_info.get("has_war")),
+        has_war=has_war,
+        is_ranked_war=has_war,
         debug={
             "source_note": str(war_info.get("source_note") or ""),
             "my_faction_id": str(war_info.get("my_faction_id") or ""),
@@ -1093,6 +1126,15 @@ def api_state():
             "debug_factions": war_info.get("debug_factions") or [],
             "debug_raw_keys": war_info.get("debug_raw_keys") or [],
             "debug_raw": war_info.get("debug_raw") or {},
+            "war_api_key_source": (
+                "leader_saved_key"
+                if leader_war_api_key
+                else "viewer_saved_key"
+                if viewer_war_api_key
+                else "session_user_key"
+                if war_api_key
+                else "none"
+            ),
         },
     )
 
