@@ -1208,3 +1208,131 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
         "debug_raw": raw,
         "debug_enemy_members_count": len(enemy_members),
     }
+
+
+def member_live_bars(api_key: str, user_id: str = "") -> Dict[str, Any]:
+    api_key = str(api_key or "").strip()
+    user_id = str(user_id or "").strip()
+
+    if not api_key:
+        return {
+            "ok": False,
+            "error": "Missing API key.",
+            "user_id": user_id,
+            "bars": {},
+            "states": {},
+            "status": {},
+        }
+
+    selections = "bars,profile,personalstats"
+    attempts = []
+
+    if user_id:
+        attempts.append((
+            f"{API_BASE}/user/{user_id}",
+            {"selections": selections, "key": api_key},
+            f"user_live_direct_{user_id}",
+        ))
+        attempts.append((
+            f"{API_BASE}/user/",
+            {"selections": selections, "ID": user_id, "key": api_key},
+            f"user_live_upper_{user_id}",
+        ))
+        attempts.append((
+            f"{API_BASE}/user/",
+            {"selections": selections, "id": user_id, "key": api_key},
+            f"user_live_lower_{user_id}",
+        ))
+    else:
+        attempts.append((
+            f"{API_BASE}/user/",
+            {"selections": selections, "key": api_key},
+            "user_live_self",
+        ))
+
+    last_error = "Could not load user live bars."
+
+    for url, params, prefix in attempts:
+        res = _safe_get(
+            url,
+            params,
+            cache_seconds=0,
+            cache_prefix=prefix,
+        )
+        if not res.get("ok"):
+            last_error = str(res.get("error") or last_error)
+            continue
+
+        data = res.get("data") or {}
+        bars = data.get("bars") or {}
+        life = bars.get("life") if isinstance(bars, dict) else {}
+        energy = bars.get("energy") if isinstance(bars, dict) else {}
+        nerve = bars.get("nerve") if isinstance(bars, dict) else {}
+        happy = bars.get("happy") if isinstance(bars, dict) else {}
+        status = data.get("status") or {}
+        last_action = data.get("last_action") or {}
+
+        resolved_user_id = str(
+            user_id
+            or data.get("player_id")
+            or data.get("playerID")
+            or data.get("user_id")
+            or ""
+        ).strip()
+
+        return {
+            "ok": True,
+            "user_id": resolved_user_id,
+            "name": str(data.get("name") or ""),
+            "bars": {
+                "life": {
+                    "current": _to_int((life or {}).get("current"), 0),
+                    "maximum": _to_int((life or {}).get("maximum"), 0),
+                    "ticktime": _to_int((life or {}).get("ticktime"), 0),
+                    "interval": _to_int((life or {}).get("interval"), 0),
+                    "fulltime": _to_int((life or {}).get("fulltime"), 0),
+                },
+                "energy": {
+                    "current": _to_int((energy or {}).get("current"), 0),
+                    "maximum": _to_int((energy or {}).get("maximum"), 0),
+                    "ticktime": _to_int((energy or {}).get("ticktime"), 0),
+                    "interval": _to_int((energy or {}).get("interval"), 0),
+                    "fulltime": _to_int((energy or {}).get("fulltime"), 0),
+                },
+                "nerve": {
+                    "current": _to_int((nerve or {}).get("current"), 0),
+                    "maximum": _to_int((nerve or {}).get("maximum"), 0),
+                    "ticktime": _to_int((nerve or {}).get("ticktime"), 0),
+                    "interval": _to_int((nerve or {}).get("interval"), 0),
+                    "fulltime": _to_int((nerve or {}).get("fulltime"), 0),
+                },
+                "happy": {
+                    "current": _to_int((happy or {}).get("current"), 0),
+                    "maximum": _to_int((happy or {}).get("maximum"), 0),
+                    "ticktime": _to_int((happy or {}).get("ticktime"), 0),
+                    "interval": _to_int((happy or {}).get("interval"), 0),
+                    "fulltime": _to_int((happy or {}).get("fulltime"), 0),
+                },
+            },
+            "states": {
+                "status": str((status or {}).get("state") or ""),
+                "description": str((status or {}).get("description") or ""),
+                "details": str((status or {}).get("details") or ""),
+                "color": str((status or {}).get("color") or ""),
+                "last_action": str(
+                    (last_action or {}).get("status")
+                    or (last_action or {}).get("relative")
+                    or ""
+                ),
+            },
+            "status": status if isinstance(status, dict) else {},
+        }
+
+    return {
+        "ok": False,
+        "error": last_error,
+        "user_id": user_id,
+        "bars": {},
+        "states": {},
+        "status": {},
+    }
