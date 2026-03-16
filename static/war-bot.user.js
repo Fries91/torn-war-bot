@@ -1458,8 +1458,8 @@ function renderOverviewTab() {
         (enemy === null || enemy === void 0 ? void 0 : enemy.faction_id) ||
         (enemy === null || enemy === void 0 ? void 0 : enemy.id) ||
         (state === null || state === void 0 ? void 0 : state.enemy_faction_id) ||
-        (state === null || state === void 0 ? void 0 : state.war) && state.war.enemy_faction_id ||
-        (state === null || state === void 0 ? void 0 : state.war) && state.war.opponent_faction_id ||
+        ((state === null || state === void 0 ? void 0 : state.war) && state.war.enemy_faction_id) ||
+        ((state === null || state === void 0 ? void 0 : state.war) && state.war.opponent_faction_id) ||
         fallbackPair.enemy_faction_id ||
         ''
     ).trim();
@@ -1467,8 +1467,8 @@ function renderOverviewTab() {
     var enemyFactionName = String(
         (enemy === null || enemy === void 0 ? void 0 : enemy.name) ||
         (state === null || state === void 0 ? void 0 : state.enemy_faction_name) ||
-        (state === null || state === void 0 ? void 0 : state.war) && state.war.enemy_faction_name ||
-        (state === null || state === void 0 ? void 0 : state.war) && state.war.opponent_faction_name ||
+        ((state === null || state === void 0 ? void 0 : state.war) && state.war.enemy_faction_name) ||
+        ((state === null || state === void 0 ? void 0 : state.war) && state.war.opponent_faction_name) ||
         fallbackPair.enemy_faction_name ||
         '—'
     ).trim();
@@ -1482,17 +1482,72 @@ function renderOverviewTab() {
         enemyFactionName = '—';
     }
 
-    var scoreUs = Number((state === null || state === void 0 ? void 0 : state.score) && state.score.our || (war === null || war === void 0 ? void 0 : war.our_score) || (our === null || our === void 0 ? void 0 : our.score) || 0) || 0;
-    var scoreThem = Number((state === null || state === void 0 ? void 0 : state.score) && state.score.enemy || (war === null || war === void 0 ? void 0 : war.enemy_score) || (enemy === null || enemy === void 0 ? void 0 : enemy.score) || 0) || 0;
-    var target = Number((state === null || state === void 0 ? void 0 : state.score) && state.score.target || (war === null || war === void 0 ? void 0 : war.target_score) || (war === null || war === void 0 ? void 0 : war.target) || 0) || 0;
+    var scoreUs = Number(
+        ((state === null || state === void 0 ? void 0 : state.score) && state.score.our) ||
+        (war === null || war === void 0 ? void 0 : war.our_score) ||
+        (our === null || our === void 0 ? void 0 : our.score) ||
+        0
+    ) || 0;
+
+    var scoreThem = Number(
+        ((state === null || state === void 0 ? void 0 : state.score) && state.score.enemy) ||
+        (war === null || war === void 0 ? void 0 : war.enemy_score) ||
+        (enemy === null || enemy === void 0 ? void 0 : enemy.score) ||
+        0
+    ) || 0;
+
+    var target = Number(
+        ((state === null || state === void 0 ? void 0 : state.score) && state.score.target) ||
+        (war === null || war === void 0 ? void 0 : war.target_score) ||
+        (war === null || war === void 0 ? void 0 : war.target) ||
+        0
+    ) || 0;
+
     var lead = scoreUs - scoreThem;
-    var hasWar = !!((state === null || state === void 0 ? void 0 : state.has_war) || (war === null || war === void 0 ? void 0 : war.active) || (war === null || war === void 0 ? void 0 : war.war_id) || (war === null || war === void 0 ? void 0 : war.id) || enemyFactionId || arr(state && state.enemies).length);
+    var hasWar = !!(
+        (state === null || state === void 0 ? void 0 : state.has_war) ||
+        (war === null || war === void 0 ? void 0 : war.active) ||
+        (war === null || war === void 0 ? void 0 : war.war_id) ||
+        (war === null || war === void 0 ? void 0 : war.id) ||
+        enemyFactionId ||
+        arr((state === null || state === void 0 ? void 0 : state.enemies) || []).length
+    );
 
     if (!hasWar) {
         return "\n        <div class=\"warhub-card\">\n          <h3>War</h3>\n          <div class=\"warhub-empty\">Currently not in a war.</div>\n        </div>\n      ";
     }
 
-    return "\n      <div class=\"warhub-card\">\n        <div class=\"warhub-section-title\">\n          <h3>War Overview</h3>\n          <span class=\"warhub-count\">".concat(esc(String((war === null || war === void 0 ? void 0 : war.war_id) || (war === null || war === void 0 ? void 0 : war.id) || 'Live')), "</span>\n        </div>\n\n        <div class=\"warhub-grid three\">\n          <div class=\"warhub-metric warhub-score-us\">\n            <div class=\"k\">Our Score</div>\n            <div class=\"v\">").concat(fmtNum(scoreUs), "</div>\n          </div>\n          <div class=\"warhub-metric warhub-score-them\">\n            <div class=\"k\">Enemy Score</div>\n            <div class=\"v\">").concat(fmtNum(scoreThem), "</div>\n          </div>\n          <div class=\"warhub-metric warhub-score-lead\">\n            <div class=\"k\">").concat(lead >= 0 ? 'Lead' : 'Behind', "</div>\n            <div class=\"v\">").concat(fmtNum(Math.abs(lead)), "</div>\n          </div>\n        </div>\n\n        <div class=\"warhub-divider\"></div>\n\n        <div class=\"warhub-grid two\">\n          <div class=\"warhub-metric\">\n            <div class=\"k\">Our Faction</div>\n            <div class=\"v\">").concat(esc((our === null || our === void 0 ? void 0 : our.name) || (state === null || state === void 0 ? void 0 : state.user) && state.user.faction_name || '—'), "</div>\n          </div>\n          <div class=\"warhub-metric\">\n            <div class=\"k\">Enemy Faction</div>\n            <div class=\"v\">").concat(esc(enemyFactionName), "</div>\n          </div>\n          <div class=\"warhub-metric\">\n            <div class=\"k\">Target Score</div>\n            <div class=\"v\">").concat(fmtNum(target), "</div>\n          </div>\n          <div class=\"warhub-metric\">\n            <div class=\"k\">Status</div>\n            <div class=\"v\">").concat(esc((war === null || war === void 0 ? void 0 : war.status) || 'Active'), "</div>\n          </div>\n        </div>\n\n        <div class=\"warhub-divider\"></div>\n\n        <div class=\"warhub-actions\">\n          <button class=\"warhub-btn primary\" id=\"warhub-save-snapshot\">Save Snapshot</button>\n          ").concat(enemyFactionId ? "<a class=\"warhub-btn\" href=\"https://www.torn.com/factions.php?step=profile&ID=".concat(encodeURIComponent(enemyFactionId), "\" target=\"_blank\" rel=\"noopener noreferrer\">Enemy Faction</a>") : '', "\n        </div>\n      </div>\n    ");
+    return "\n      <div class=\"warhub-card\">\n        <div class=\"warhub-section-title\">\n          <h3>War Overview</h3>\n          <span class=\"warhub-count\">".concat(
+        esc(String((war === null || war === void 0 ? void 0 : war.war_id) || (war === null || war === void 0 ? void 0 : war.id) || 'Live')),
+        "</span>\n        </div>\n\n        <div class=\"warhub-grid three\">\n          <div class=\"warhub-metric warhub-score-us\">\n            <div class=\"k\">Our Score</div>\n            <div class=\"v\">"
+    ).concat(
+        fmtNum(scoreUs),
+        "</div>\n          </div>\n          <div class=\"warhub-metric warhub-score-them\">\n            <div class=\"k\">Enemy Score</div>\n            <div class=\"v\">"
+    ).concat(
+        fmtNum(scoreThem),
+        "</div>\n          </div>\n          <div class=\"warhub-metric warhub-score-lead\">\n            <div class=\"k\">"
+    ).concat(
+        lead >= 0 ? 'Lead' : 'Behind',
+        "</div>\n            <div class=\"v\">"
+    ).concat(
+        fmtNum(Math.abs(lead)),
+        "</div>\n          </div>\n        </div>\n\n        <div class=\"warhub-divider\"></div>\n\n        <div class=\"warhub-grid two\">\n          <div class=\"warhub-metric\">\n            <div class=\"k\">Our Faction</div>\n            <div class=\"v\">"
+    ).concat(
+        esc((our === null || our === void 0 ? void 0 : our.name) || (((state === null || state === void 0 ? void 0 : state.user) && state.user.faction_name) || '—')),
+        "</div>\n          </div>\n          <div class=\"warhub-metric\">\n            <div class=\"k\">Enemy Faction</div>\n            <div class=\"v\">"
+    ).concat(
+        esc(enemyFactionName || '—'),
+        "</div>\n          </div>\n          <div class=\"warhub-metric\">\n            <div class=\"k\">Target Score</div>\n            <div class=\"v\">"
+    ).concat(
+        fmtNum(target),
+        "</div>\n          </div>\n          <div class=\"warhub-metric\">\n            <div class=\"k\">Status</div>\n            <div class=\"v\">"
+    ).concat(
+        esc((war === null || war === void 0 ? void 0 : war.status) || 'Active'),
+        "</div>\n          </div>\n        </div>\n\n        <div class=\"warhub-divider\"></div>\n\n        <div class=\"warhub-actions\">\n          "
+    ).concat(
+        enemyFactionId ? "<a class=\"warhub-btn\" href=\"https://www.torn.com/factions.php?step=profile&ID=".concat(encodeURIComponent(enemyFactionId), "\" target=\"_blank\" rel=\"noopener noreferrer\">Enemy Faction</a>") : '',
+        "\n        </div>\n      </div>\n    "
+    );
 }
     function renderTermsTab() {
         var warId = (state === null || state === void 0 ? void 0 : state.war) && state.war.war_id || (state === null || state === void 0 ? void 0 : state.war) && state.war.id || '';
@@ -1804,7 +1859,7 @@ function renderChainTab() {
         return String(x.user_id || x.id || x.player_id || x.member_user_id || '') === myUserId;
     }) || {};
 
-    var myAvailable = !!myMember.available;
+        var myAvailable = myMember.available === true;
     var myChainSitter = !!myMember.chain_sitter;
 
     var availabilityButtons =
@@ -1898,12 +1953,12 @@ function renderChainTab() {
         <h3>Add Med Deal</h3>\n\
         <div>\n\
           <label class=\"warhub-label\">Enemy</label>\n\
-          <select class=\"warhub-select\" id=\"warhub-med-item\">\n\
-            <option value=\"\">".concat(hasWar ? 'Select enemy member' : 'Currently not in a war', "</option>\n\
+          <select class=\"warhub-select\" id=\"warhub-med-item\"".concat(hasWar ? '' : ' disabled', ">\n\
+            <option value=\"\">").concat(hasWar ? 'Select enemy member' : 'Currently not in a war', "</option>\n\
             ").concat(enemies.map(function (x) {
                 var id = x.user_id || x.id || x.player_id || '';
                 var name = x.name || x.player_name || "ID ".concat(id);
-                return "<option value=\"".concat(esc(name), "\" data-id=\"").concat(esc(String(id)), "\">").concat(esc(name), " [").concat(esc(String(id)), "]</option>");
+                return "<option value=\"".concat(esc(String(id)), "\">").concat(esc(name), " [").concat(esc(String(id)), "]</option>");
             }).join(''), "\n\
           </select>\n\
         </div>\n\
@@ -1913,7 +1968,7 @@ function renderChainTab() {
           <input class=\"warhub-input\" id=\"warhub-med-note\" placeholder=\"Optional note\" />\n\
         </div>\n\
         <div class=\"warhub-actions\" style=\"margin-top:8px;\">\n\
-          <button class=\"warhub-btn primary\" id=\"warhub-med-add\">Add Med Deal</button>\n\
+          <button class=\"warhub-btn primary\" id=\"warhub-med-add\"").concat(hasWar ? '' : ' disabled', ">Add Med Deal</button>\n\
         </div>\n\
       </div>\n\
 \n\
@@ -1924,15 +1979,21 @@ function renderChainTab() {
         </div>\n\
         <div class=\"warhub-list\">\n\
           ").concat(deals.length ? deals.map(function (x) {
+                var dealId = String(x.id || x.deal_id || '');
+                var sellerName = x.seller_name || x.created_by_name || 'Unknown user';
+                var enemyName = x.item_name || x.buyer_name || x.enemy_name || x.target_name || '';
+                var noteText = x.note || '';
+                var meta = [enemyName, noteText].filter(Boolean).join(' • ');
+
                 return "\
             <div class=\"warhub-list-item\">\n\
               <div class=\"warhub-row\">\n\
                 <div>\n\
-                  <div class=\"warhub-name\">".concat(esc(x.seller_name || x.created_by_name || 'Unknown user'), "</div>\n\
-                  <div class=\"warhub-meta\">").concat(esc([x.item_name || x.buyer_name || '', x.note || ''].filter(Boolean).join(' • ')), "</div>\n\
+                  <div class=\"warhub-name\">".concat(esc(sellerName), "</div>\n\
+                  <div class=\"warhub-meta\">").concat(esc(meta || 'No details'), "</div>\n\
                 </div>\n\
                 <div class=\"warhub-actions\">\n\
-                  <button class=\"warhub-btn small warn warhub-del-med\" data-id=\"").concat(esc(String(x.id || x.deal_id || '')), "\">Delete</button>\n\
+                  <button class=\"warhub-btn small warn warhub-del-med\" data-id=\"").concat(esc(dealId), "\">Delete</button>\n\
                 </div>\n\
               </div>\n\
             </div>\n\
@@ -1943,19 +2004,30 @@ function renderChainTab() {
     ");
 }
     function renderTargetsTab() {
-        var targets = arr((state === null || state === void 0 ? void 0 : state.targets) || []);
-        var enemies = sortAlphabetical(arr((state === null || state === void 0 ? void 0 : state.enemies) || []));
-        return "\n      <div class=\"warhub-card\">\n        <h3>Add Target</h3>\n        <div class=\"warhub-grid two\">\n          <div>\n            <label class=\"warhub-label\">Enemy</label>\n            <select class=\"warhub-select\" id=\"warhub-target-enemy\">\n              <option value=\"\">Select enemy</option>\n              ".concat(enemies.map(function (x) {
-            var id = x.user_id || x.id || '';
-            var name = x.name || "ID ".concat(id);
-            return "<option value=\"".concat(esc(String(id)), "\" data-name=\"").concat(esc(name), "\">").concat(esc(name), " [").concat(esc(String(id)), "]</option>");
-        }).join(''), "\n            </select>\n          </div>\n          <div>\n            <label class=\"warhub-label\">Target ID</label>\n            <input class=\"warhub-input\" id=\"warhub-target-id\" placeholder=\"Target ID\" />\n          </div>\n        </div>\n        <div style=\"height:8px;\"></div>\n        <label class=\"warhub-label\">Notes / Reason</label>\n        <input class=\"warhub-input\" id=\"warhub-target-notes\" placeholder=\"Optional notes\" />\n        <div class=\"warhub-actions\" style=\"margin-top:8px;\">\n          <button class=\"warhub-btn primary\" id=\"warhub-target-add\">Add Target</button>\n        </div>\n      </div>\n\n      <div class=\"warhub-card\">\n        <div class=\"warhub-section-title\">\n          <h3>Targets</h3>\n          <span class=\"warhub-count\">").concat(targets.length, "</span>\n        </div>\n        <div class=\"warhub-list\">\n          ").concat(targets.length ? targets.map(function (x) {
-            var id = x.target_id || x.user_id || '';
-            var name = x.target_name || x.name || "ID ".concat(id);
-            var rowId = x.id || x.target_row_id || '';
-            return "\n              <div class=\"warhub-list-item\">\n                <div class=\"warhub-row\">\n                  <div>\n                    <div class=\"warhub-name\">".concat(esc(name), "</div>\n                    <div class=\"warhub-meta\">").concat(esc(["ID ".concat(id), x.notes || x.reason || ''].filter(Boolean).join(' • ')), "</div>\n                  </div>\n                  <div class=\"warhub-actions\">\n                    ").concat(id ? "<a class=\"warhub-btn small primary\" href=\"https://www.torn.com/loader.php?sid=attack&user2ID=".concat(encodeURIComponent(id), "\" target=\"_blank\" rel=\"noopener noreferrer\">Attack</a>") : '', "\n                    <button class=\"warhub-btn small warn warhub-del-target\" data-id=\"").concat(esc(String(rowId)), "\">Delete</button>\n                  </div>\n                </div>\n              </div>\n            ");
-        }).join('') : '<div class="warhub-empty">No targets saved.</div>', "\n        </div>\n      </div>\n    ");
-    }
+    var targets = arr((state === null || state === void 0 ? void 0 : state.targets) || []);
+    var enemies = sortAlphabetical(arr((state === null || state === void 0 ? void 0 : state.enemies) || []));
+    var hasWar = !!(
+        (state === null || state === void 0 ? void 0 : state.has_war) ||
+        ((state === null || state === void 0 ? void 0 : state.war) && state.war.active) ||
+        ((state === null || state === void 0 ? void 0 : state.war) && state.war.war_id) ||
+        (state === null || state === void 0 ? void 0 : state.enemy_faction_id) ||
+        ((state === null || state === void 0 ? void 0 : state.enemyFaction) && state.enemyFaction.id) ||
+        enemies.length
+    );
+
+    return "\n      <div class=\"warhub-card\">\n        <h3>Add Target</h3>\n        <div class=\"warhub-grid two\">\n          <div>\n            <label class=\"warhub-label\">Enemy</label>\n            <select class=\"warhub-select\" id=\"warhub-target-enemy\"".concat(hasWar ? '' : ' disabled', ">\n              <option value=\"\">").concat(hasWar ? 'Select enemy' : 'Currently not in a war', "</option>\n              ").concat(enemies.map(function (x) {
+        var id = x.user_id || x.id || x.player_id || '';
+        var name = x.name || x.player_name || "ID ".concat(id);
+        return "<option value=\"".concat(esc(String(id)), "\" data-name=\"").concat(esc(name), "\">").concat(esc(name), " [").concat(esc(String(id)), "]</option>");
+    }).join(''), "\n            </select>\n          </div>\n          <div>\n            <label class=\"warhub-label\">Target ID</label>\n            <input class=\"warhub-input\" id=\"warhub-target-id\" placeholder=\"Target ID\"".concat(hasWar ? '' : ' disabled', " />\n          </div>\n        </div>\n        <div style=\"height:8px;\"></div>\n        <label class=\"warhub-label\">Notes / Reason</label>\n        <input class=\"warhub-input\" id=\"warhub-target-notes\" placeholder=\"Optional notes\"".concat(hasWar ? '' : ' disabled', " />\n        <div class=\"warhub-actions\" style=\"margin-top:8px;\">\n          <button class=\"warhub-btn primary\" id=\"warhub-target-add\"").concat(hasWar ? '' : ' disabled', ">Add Target</button>\n        </div>\n      </div>\n\n      <div class=\"warhub-card\">\n        <div class=\"warhub-section-title\">\n          <h3>Targets</h3>\n          <span class=\"warhub-count\">").concat(targets.length, "</span>\n        </div>\n        <div class=\"warhub-list\">\n          ").concat(targets.length ? targets.map(function (x) {
+        var id = x.target_id || x.user_id || x.id || '';
+        var name = x.target_name || x.name || "ID ".concat(id);
+        var rowId = x.id || x.target_row_id || x.target_id || '';
+        var meta = ["ID ".concat(id), x.notes || x.reason || ''].filter(Boolean).join(' • ');
+
+        return "\n              <div class=\"warhub-list-item\">\n                <div class=\"warhub-row\">\n                  <div>\n                    <div class=\"warhub-name\">".concat(esc(name), "</div>\n                    <div class=\"warhub-meta\">").concat(esc(meta), "</div>\n                  </div>\n                  <div class=\"warhub-actions\">\n                    ").concat(id ? "<a class=\"warhub-btn small primary\" href=\"https://www.torn.com/loader.php?sid=attack&user2ID=".concat(encodeURIComponent(id), "\" target=\"_blank\" rel=\"noopener noreferrer\">Attack</a>") : '', "\n                    <button class=\"warhub-btn small warn warhub-del-target\" data-id=\"").concat(esc(String(rowId)), "\">Delete</button>\n                  </div>\n                </div>\n              </div>\n            ");
+    }).join('') : '<div class="warhub-empty">No targets saved.</div>', "\n        </div>\n      </div>\n    ");
+}
     function renderAssignmentsTab() {
         var warId = String((state === null || state === void 0 ? void 0 : state.war) && state.war.war_id || (state === null || state === void 0 ? void 0 : state.war) && state.war.id || '');
         var managed = arr((state === null || state === void 0 ? void 0 : state.factionManagement) && state.factionManagement.members || (factionMembersCache === null || factionMembersCache === void 0 ? void 0 : factionMembersCache.members) || []).filter(function (m) {
@@ -2369,382 +2441,511 @@ function renderChainTab() {
         return _loadAdminDashboard.apply(this, arguments);
     }
     function bindOverlayEvents() {
-        if (overlay) overlay.querySelectorAll('[data-tab]').forEach(function (btn) {
-            btn.addEventListener('click', _asyncToGenerator(function* () {
-                var tab = btn.getAttribute('data-tab') || 'war';
-                currentTab = tab;
-                GM_setValue(K_TAB, currentTab);
-                if (tab === 'faction' && ((accessState === null || accessState === void 0 ? void 0 : accessState.isFactionLeader) || isOwnerSession())) yield loadFactionMembers(true);
-                if (tab === 'admin' && isOwnerSession()) yield loadAdminDashboard();
-                renderBody();
-            }));
-        });
-        var closeBtn = overlay ? overlay.querySelector('#warhub-close-btn') : null;
-        if (closeBtn) closeBtn.addEventListener('click', function () { closeOverlay(); });
-        var snapBtn = overlay ? overlay.querySelector('#warhub-save-snapshot') : null;
-        if (snapBtn) snapBtn.addEventListener('click', _asyncToGenerator(function* () { yield doAction('POST', '/api/war/snapshot', {}, 'War snapshot saved.'); }));
-        var avOn = overlay ? overlay.querySelector('#warhub-set-available') : null;
-        if (avOn) avOn.addEventListener('click', _asyncToGenerator(function* () { yield doAction('POST', '/api/availability', { available: true }, 'Availability set to available.'); }));
-        var avOff = overlay ? overlay.querySelector('#warhub-set-unavailable') : null;
-        if (avOff) avOff.addEventListener('click', _asyncToGenerator(function* () { yield doAction('POST', '/api/availability', { available: false }, 'Availability set to unavailable.'); }));
-        var chOn = overlay ? overlay.querySelector('#warhub-set-chain-on') : null;
-        if (chOn) chOn.addEventListener('click', _asyncToGenerator(function* () { yield doAction('POST', '/api/chain-sitter', { enabled: true }, 'Chain sitter enabled.'); }));
-        var chOff = overlay ? overlay.querySelector('#warhub-set-chain-off') : null;
-        if (chOff) chOff.addEventListener('click', _asyncToGenerator(function* () { yield doAction('POST', '/api/chain-sitter', { enabled: false }, 'Chain sitter disabled.'); }));
-        var medAdd = overlay ? overlay.querySelector('#warhub-med-add') : null;
-if (medAdd) medAdd.addEventListener('click', _asyncToGenerator(function* () {
-    var itemField = overlay ? overlay.querySelector('#warhub-med-item') : null;
-    var noteField = overlay ? overlay.querySelector('#warhub-med-note') : null;
+    if (overlay) overlay.querySelectorAll('[data-tab]').forEach(function (btn) {
+        btn.addEventListener('click', _asyncToGenerator(function* () {
+            var tab = btn.getAttribute('data-tab') || 'war';
+            currentTab = tab;
+            GM_setValue(K_TAB, currentTab);
+            if (tab === 'faction' && ((accessState === null || accessState === void 0 ? void 0 : accessState.isFactionLeader) || isOwnerSession())) yield loadFactionMembers(true);
+            if (tab === 'admin' && isOwnerSession()) yield loadAdminDashboard();
+            renderBody();
+        }));
+    });
 
-    var seller_name = cleanInputValue(
-        (state && state.me && (state.me.name || state.me.player_name)) ||
-        (state && state.user && (state.user.name || state.user.player_name)) ||
-        ''
-    );
+    var closeBtn = overlay ? overlay.querySelector('#warhub-close-btn') : null;
+    if (closeBtn) closeBtn.addEventListener('click', function () { closeOverlay(); });
 
-    var item_name = cleanInputValue((itemField ? itemField.value : '') || '');
-    var note = cleanInputValue((noteField ? noteField.value : '') || '');
+    var avOn = overlay ? overlay.querySelector('#warhub-set-available') : null;
+    if (avOn) avOn.addEventListener('click', _asyncToGenerator(function* () {
+        var res = yield doAction('POST', '/api/availability', { available: true }, 'Availability set to available.', false);
+        if (res) {
+            yield loadState(true);
+            renderBody();
+        }
+    }));
 
-    if (!seller_name || !item_name) {
-        setStatus('Enemy is required.', true);
-        return;
-    }
+    var avOff = overlay ? overlay.querySelector('#warhub-set-unavailable') : null;
+    if (avOff) avOff.addEventListener('click', _asyncToGenerator(function* () {
+        var res = yield doAction('POST', '/api/availability', { available: false }, 'Availability set to unavailable.', false);
+        if (res) {
+            yield loadState(true);
+            renderBody();
+        }
+    }));
 
-    var res = yield doAction('POST', '/api/med-deals', {
-        seller_name: seller_name,
-        item_name: item_name,
-        price: '',
-        note: note
-    }, 'Med deal added.');
+    var chOn = overlay ? overlay.querySelector('#warhub-set-chain-on') : null;
+    if (chOn) chOn.addEventListener('click', _asyncToGenerator(function* () {
+        var res = yield doAction('POST', '/api/chain-sitter', { enabled: true }, 'Chain sitter enabled.', false);
+        if (res) {
+            yield loadState(true);
+            renderBody();
+        }
+    }));
 
-    if (res) renderBody();
-}));
-        
-        if (overlay) overlay.querySelectorAll('.warhub-del-med').forEach(function (btn) {
-            btn.addEventListener('click', _asyncToGenerator(function* () {
-                var id = cleanInputValue(btn.getAttribute('data-id') || '');
-                if (!id) return;
-                var res = yield doAction('DELETE', "/api/med-deals/".concat(encodeURIComponent(id)), null, 'Med deal deleted.');
-                if (res) renderBody();
-            }));
-        });
-        if (overlay) overlay.querySelectorAll('.warhub-dibs-btn').forEach(function (btn) {
-    btn.addEventListener('click', _asyncToGenerator(function* () {
-        var targetId = cleanInputValue(btn.getAttribute('data-target-id') || '');
-        var targetName = cleanInputValue(btn.getAttribute('data-target-name') || '');
+    var chOff = overlay ? overlay.querySelector('#warhub-set-chain-off') : null;
+    if (chOff) chOff.addEventListener('click', _asyncToGenerator(function* () {
+        var res = yield doAction('POST', '/api/chain-sitter', { enabled: false }, 'Chain sitter disabled.', false);
+        if (res) {
+            yield loadState(true);
+            renderBody();
+        }
+    }));
 
-        if (!targetId) return;
+    var medAdd = overlay ? overlay.querySelector('#warhub-med-add') : null;
+    if (medAdd) medAdd.addEventListener('click', _asyncToGenerator(function* () {
+        var itemField = overlay ? overlay.querySelector('#warhub-med-item') : null;
+        var noteField = overlay ? overlay.querySelector('#warhub-med-note') : null;
 
-        var res = yield doAction('POST', '/api/dibs', {
-            target_id: targetId,
-            target_name: targetName
-        }, 'Dibs claimed.', false);
+        var seller_name = cleanInputValue(
+            (state && state.me && (state.me.name || state.me.player_name)) ||
+            (state && state.user && (state.user.name || state.user.player_name)) ||
+            ''
+        );
+
+        var item_name = cleanInputValue((itemField ? itemField.value : '') || '');
+        var note = cleanInputValue((noteField ? noteField.value : '') || '');
+
+        if (!seller_name || !item_name) {
+            setStatus('Enemy is required.', true);
+            return;
+        }
+
+        var res = yield doAction('POST', '/api/med-deals', {
+            seller_name: seller_name,
+            item_name: item_name,
+            price: '',
+            note: note
+        }, 'Med deal added.', false);
 
         if (res) {
             yield loadState(true);
             renderBody();
         }
     }));
-});
-        
-        var targetSel = overlay ? overlay.querySelector('#warhub-target-enemy') : null;
-        if (targetSel) targetSel.addEventListener('change', function () {
-            var opt = targetSel.selectedOptions ? targetSel.selectedOptions[0] : null;
-            var id = cleanInputValue((opt === null || opt === void 0 ? void 0 : opt.value) || '');
-            overlay.querySelector('#warhub-target-id').value = id;
-        });
-        var targetAdd = overlay ? overlay.querySelector('#warhub-target-add') : null;
-        if (targetAdd) targetAdd.addEventListener('click', _asyncToGenerator(function* () {
-            var sel = overlay.querySelector('#warhub-target-enemy');
-            var opt = sel && sel.selectedOptions ? sel.selectedOptions[0] : null;
-            var target_id = cleanInputValue((overlay.querySelector('#warhub-target-id').value) || ((opt === null || opt === void 0 ? void 0 : opt.value) || ''));
-            var target_name = cleanInputValue((opt === null || opt === void 0 ? void 0 : opt.dataset.name) || '');
-            var notes = cleanInputValue(overlay.querySelector('#warhub-target-notes').value || '');
-            if (!target_id) { setStatus('Target ID is required.', true); return; }
-            var res = yield doAction('POST', '/api/targets', { target_id: target_id, target_name: target_name, notes: notes }, 'Target added.');
-            if (res) renderBody();
-        }));
-        if (overlay) overlay.querySelectorAll('.warhub-del-target').forEach(function (btn) {
-            btn.addEventListener('click', _asyncToGenerator(function* () {
-                var id = cleanInputValue(btn.getAttribute('data-id') || '');
-                if (!id) return;
-                var res = yield doAction('DELETE', "/api/targets/".concat(encodeURIComponent(id)), null, 'Target deleted.');
-                if (res) renderBody();
-            }));
-        });
-        var saveAssign = overlay ? overlay.querySelector('#wh-save-assignment') : null;
-        if (saveAssign) saveAssign.addEventListener('click', _asyncToGenerator(function* () {
-            var war_id = cleanInputValue(((state === null || state === void 0 ? void 0 : state.war) && state.war.war_id) || ((state === null || state === void 0 ? void 0 : state.war) && state.war.id) || '');
-            var target_id = cleanInputValue(overlay.querySelector('#wh-assignment-target-id').value || '');
-            var target_name = cleanInputValue(overlay.querySelector('#wh-assignment-target-name').value || '');
-            var sel = overlay.querySelector('#wh-assignment-member');
-            var opt = sel && sel.selectedOptions ? sel.selectedOptions[0] : null;
-            var assigned_to_user_id = cleanInputValue((opt === null || opt === void 0 ? void 0 : opt.value) || '');
-            var assigned_to_name = cleanInputValue((opt === null || opt === void 0 ? void 0 : opt.dataset.name) || '');
-            var priority = cleanInputValue(overlay.querySelector('#wh-assignment-priority').value || 'normal');
-            var note = cleanInputValue(overlay.querySelector('#wh-assignment-note').value || '');
-            if (!war_id || !target_id) { setStatus('War ID and target ID are required.', true); return; }
-            var res = yield doAction('POST', '/api/war/assignments', {
-                war_id: war_id,
-                target_id: target_id,
-                target_name: target_name,
-                assigned_to_user_id: assigned_to_user_id,
-                assigned_to_name: assigned_to_name,
-                priority: priority,
-                note: note
-            }, 'Assignment saved.');
-            if (res) renderBody();
-        }));
-        if (overlay) overlay.querySelectorAll('[data-del-assignment-live]').forEach(function (btn) {
-            btn.addEventListener('click', _asyncToGenerator(function* () {
-                var id = cleanInputValue(btn.getAttribute('data-del-assignment-live') || '');
-                if (!id) return;
-                var res = yield doAction('DELETE', "/api/war/assignments/".concat(encodeURIComponent(id)), null, 'Assignment deleted.');
-                if (res) renderBody();
-            }));
-        });
-        var saveNotes = overlay ? overlay.querySelector('#wh-save-notes') : null;
-        if (saveNotes) saveNotes.addEventListener('click', function () {
-            var txt = overlay.querySelector('#wh-notes').value || '';
-            setNotes(txt);
-            setStatus('Local notes saved.');
-        });
-        var clearNotes = overlay ? overlay.querySelector('#wh-clear-notes') : null;
-        if (clearNotes) clearNotes.addEventListener('click', function () {
-            setNotes('');
-            renderBody();
-            setStatus('Local notes cleared.');
-        });
-        var addServerNote = overlay ? overlay.querySelector('#wh-add-server-note') : null;
-        if (addServerNote) addServerNote.addEventListener('click', _asyncToGenerator(function* () {
-            var war_id = cleanInputValue(((state === null || state === void 0 ? void 0 : state.war) && state.war.war_id) || ((state === null || state === void 0 ? void 0 : state.war) && state.war.id) || '');
-            var target_id = cleanInputValue(overlay.querySelector('#wh-note-target-id').value || '');
-            var note = cleanInputValue(overlay.querySelector('#wh-note-text').value || '');
-            if (!war_id || !target_id || !note) { setStatus('War ID, target ID and note are required.', true); return; }
-            var res = yield doAction('POST', '/api/war/notes', { war_id: war_id, target_id: target_id, note: note }, 'Shared note saved.');
-            if (res) renderBody();
-        }));
-        if (overlay) overlay.querySelectorAll('[data-del-note-live]').forEach(function (btn) {
-            btn.addEventListener('click', _asyncToGenerator(function* () {
-                var id = cleanInputValue(btn.getAttribute('data-del-note-live') || '');
-                if (!id) return;
-                var res = yield doAction('DELETE', "/api/war/notes/".concat(encodeURIComponent(id)), null, 'Shared note deleted.');
-                if (res) renderBody();
-            }));
-        });
-        var saveTerms = overlay ? overlay.querySelector('#warhub-terms-save') : null;
-        if (saveTerms) saveTerms.addEventListener('click', _asyncToGenerator(function* () {
-            var war_id = cleanInputValue(((state === null || state === void 0 ? void 0 : state.war) && state.war.war_id) || ((state === null || state === void 0 ? void 0 : state.war) && state.war.id) || '');
-            var terms = cleanInputValue(overlay.querySelector('#warhub-terms-text').value || '');
-            if (!war_id) { setStatus('No active war detected.', true); return; }
-            var res = yield doAction('POST', '/api/war-terms', { war_id: war_id, terms: terms }, 'War terms saved.');
-            if (res) renderBody();
-        }));
-        var delTerms = overlay ? overlay.querySelector('#warhub-terms-delete') : null;
-        if (delTerms) delTerms.addEventListener('click', _asyncToGenerator(function* () {
-            var war_id = cleanInputValue(((state === null || state === void 0 ? void 0 : state.war) && state.war.war_id) || ((state === null || state === void 0 ? void 0 : state.war) && state.war.id) || '');
-            if (!war_id) { setStatus('No active war detected.', true); return; }
-            var res = yield doAction('DELETE', "/api/war-terms?war_id=".concat(encodeURIComponent(war_id)), null, 'War terms deleted.');
-            if (res) renderBody();
-        }));
-        var refreshAlerts = overlay ? overlay.querySelector('#wh-mark-alerts-seen') : null;
-        if (refreshAlerts) refreshAlerts.addEventListener('click', _asyncToGenerator(function* () {
-            var res = yield req('GET', '/api/notifications');
-            if (!res.ok) { setStatus(res.error || 'Could not refresh notifications.', true); return; }
-            setStatus('Notifications refreshed.');
+
+    if (overlay) overlay.querySelectorAll('.warhub-del-med').forEach(function (btn) {
+        btn.addEventListener('click', _asyncToGenerator(function* () {
+            var id = cleanInputValue(btn.getAttribute('data-id') || '');
+            if (!id) return;
+
+            var res = yield doAction('DELETE', "/api/med-deals/".concat(encodeURIComponent(id)), null, 'Med deal deleted.', false);
+            if (!res) return;
+
+            var remainingDeals = arr((state && (state.medDeals || state.med_deals)) || []).filter(function (x) {
+                return String(x.id || x.deal_id || '') !== id;
+            });
+
+            state = state || {};
+            state.medDeals = remainingDeals;
+            state.med_deals = remainingDeals;
+
             yield loadState(true);
             renderBody();
         }));
-        var clearAlerts = overlay ? overlay.querySelector('#wh-clear-alerts') : null;
-        if (clearAlerts) clearAlerts.addEventListener('click', function () {
-            setLocalNotifications([]);
-            updateBadge();
+    });
+
+    if (overlay) overlay.querySelectorAll('.warhub-dibs-btn').forEach(function (btn) {
+        btn.addEventListener('click', _asyncToGenerator(function* () {
+            var targetId = cleanInputValue(btn.getAttribute('data-target-id') || '');
+            var targetName = cleanInputValue(btn.getAttribute('data-target-name') || '');
+
+            if (!targetId) return;
+
+            var res = yield doAction('POST', '/api/dibs', {
+                target_id: targetId,
+                target_name: targetName
+            }, 'Dibs claimed.', false);
+
+            if (res) {
+                yield loadState(true);
+                renderBody();
+            }
+        }));
+    });
+
+    var targetSel = overlay ? overlay.querySelector('#warhub-target-enemy') : null;
+    if (targetSel) targetSel.addEventListener('change', function () {
+        var opt = targetSel.selectedOptions ? targetSel.selectedOptions[0] : null;
+        var id = cleanInputValue((opt === null || opt === void 0 ? void 0 : opt.value) || '');
+        var targetIdField = overlay ? overlay.querySelector('#warhub-target-id') : null;
+        if (targetIdField) targetIdField.value = id;
+    });
+
+    var targetAdd = overlay ? overlay.querySelector('#warhub-target-add') : null;
+    if (targetAdd) targetAdd.addEventListener('click', _asyncToGenerator(function* () {
+        var sel = overlay ? overlay.querySelector('#warhub-target-enemy') : null;
+        var opt = sel && sel.selectedOptions ? sel.selectedOptions[0] : null;
+        var targetIdField = overlay ? overlay.querySelector('#warhub-target-id') : null;
+        var targetNotesField = overlay ? overlay.querySelector('#warhub-target-notes') : null;
+
+        var target_id = cleanInputValue(((targetIdField && targetIdField.value) || ((opt === null || opt === void 0 ? void 0 : opt.value) || '')));
+        var target_name = cleanInputValue((opt === null || opt === void 0 ? void 0 : opt.dataset.name) || '');
+        var notes = cleanInputValue(((targetNotesField && targetNotesField.value) || ''));
+
+        if (!target_id) {
+            setStatus('Target ID is required.', true);
+            return;
+        }
+
+        var res = yield doAction('POST', '/api/targets', {
+            target_id: target_id,
+            target_name: target_name,
+            notes: notes
+        }, 'Target added.', false);
+
+        if (res) {
+            yield loadState(true);
             renderBody();
-            setStatus('Local notifications cleared.');
-        });
-        var saveFactionMember = overlay ? overlay.querySelector('#wh-fm-save') : null;
-if (saveFactionMember) saveFactionMember.addEventListener('click', _asyncToGenerator(function* () {
-    var member_user_id = cleanInputValue((overlay.querySelector('#wh-fm-userid') || {}).value || '');
-    if (!member_user_id) {
-        setStatus('Select a faction member first.', true);
-        return;
-    }
+        }
+    }));
 
-    var picked = arr((state && state.members) || []).find(function (m) {
-        return String(m.user_id || m.id || '').trim() === member_user_id;
-    }) || {};
+    if (overlay) overlay.querySelectorAll('.warhub-del-target').forEach(function (btn) {
+        btn.addEventListener('click', _asyncToGenerator(function* () {
+            var id = cleanInputValue(btn.getAttribute('data-id') || '');
+            if (!id) return;
 
-    var member_name = cleanInputValue(
-        picked.name ||
-        picked.member_name ||
-        ''
-    );
+            var res = yield doAction('DELETE', "/api/targets/".concat(encodeURIComponent(id)), null, 'Target deleted.', false);
+            if (!res) return;
 
-    var position = cleanInputValue(
-        picked.position ||
-        picked.faction_position ||
-        picked.role ||
-        ''
-    );
+            var remainingTargets = arr((state && state.targets) || []).filter(function (x) {
+                return String(x.id || x.target_row_id || x.target_id || '') !== id;
+            });
 
-    var res = yield doAction('POST', '/api/faction/members', {
-        member_user_id: member_user_id,
-        member_name: member_name,
-        enabled: true,
-        position: position
-    }, 'Faction member access saved.', false);
+            state = state || {};
+            state.targets = remainingTargets;
 
-    if (res) {
-        yield refreshLeaderFactionData();
-        setStatus('Faction member access saved.');
-    }
-}));
-        if (overlay) overlay.querySelectorAll('[data-toggle-member]').forEach(function (btn) {
-            btn.addEventListener('click', _asyncToGenerator(function* () {
-                var memberId = cleanInputValue(btn.getAttribute('data-toggle-member') || '');
-                var enabled = cleanInputValue(btn.getAttribute('data-enabled') || '') === '1';
-                if (!memberId) return;
-                var res = yield doAction('POST', "/api/faction/members/".concat(encodeURIComponent(memberId), "/enable"), { enabled: enabled }, enabled ? 'Member enabled.' : 'Member disabled.', false);
-                if (res) yield refreshLeaderFactionData();
-            }));
-        });
-        if (overlay) overlay.querySelectorAll('[data-del-member]').forEach(function (btn) {
-            btn.addEventListener('click', _asyncToGenerator(function* () {
-                var memberId = cleanInputValue(btn.getAttribute('data-del-member') || '');
-                if (!memberId) return;
-                var res = yield doAction('DELETE', "/api/faction/members/".concat(encodeURIComponent(memberId)), null, 'Faction member removed.', false);
-                if (res) yield refreshLeaderFactionData();
-            }));
-        });
-        if (overlay) overlay.querySelectorAll('[data-admin-history]').forEach(function (btn) {
-            btn.addEventListener('click', _asyncToGenerator(function* () {
-                var factionId = cleanInputValue(btn.getAttribute('data-admin-history') || '');
-                if (!factionId) return;
-                var res = yield adminReq('GET', "/api/admin/faction-licenses/".concat(encodeURIComponent(factionId), "/history"));
-                if (!res.ok) { setStatus(res.error || 'Could not load payment history.', true); return; }
-                var items = arr((res.data === null || res.data === void 0 ? void 0 : res.data.items) || []);
-                var lines = items.length ? items.map(function (x) {
-                    var amount = x.amount != null ? fmtMoney(x.amount) : '—';
-                    var when = fmtTs(x.created_at || x.ts || x.time || '');
-                    var by = x.renewed_by || x.created_by || x.payment_player || '';
-                    return "".concat(when, " • ").concat(amount).concat(by ? " • ".concat(by) : '');
-                }).join('\n') : 'No payment history found.';
-                alert(lines);
-            }));
-        });
-        if (overlay) overlay.querySelectorAll('[data-admin-renew]').forEach(function (btn) {
-            btn.addEventListener('click', _asyncToGenerator(function* () {
-                var factionId = cleanInputValue(btn.getAttribute('data-admin-renew') || '');
-                if (!factionId) return;
-                var amountText = prompt('Renew faction for how much?', '3');
-                if (amountText == null) return;
-                var amount = Number(String(amountText).replace(/[^\d.-]/g, ''));
-                if (!Number.isFinite(amount) || amount <= 0) { setStatus('Invalid renewal amount.', true); return; }
-                var note = prompt('Optional note for renewal:', '') || '';
-                var res = yield adminReq('POST', "/api/admin/faction-licenses/".concat(encodeURIComponent(factionId), "/renew"), { amount: amount, note: note });
-                if (!res.ok) { setStatus(res.error || 'Renew failed.', true); return; }
-                setStatus('Faction renewed.');
-                yield loadAdminDashboard();
-            }));
-        });
-        if (overlay) overlay.querySelectorAll('[data-admin-expire]').forEach(function (btn) {
-            btn.addEventListener('click', _asyncToGenerator(function* () {
-                var factionId = cleanInputValue(btn.getAttribute('data-admin-expire') || '');
-                if (!factionId) return;
-                if (!confirm("Expire faction ".concat(factionId, "?"))) return;
-                var res = yield adminReq('POST', "/api/admin/faction-licenses/".concat(encodeURIComponent(factionId), "/expire"), {});
-                if (!res.ok) { setStatus(res.error || 'Expire failed.', true); return; }
-                setStatus('Faction expired.');
-                yield loadAdminDashboard();
-            }));
-        });
-        var saveKeys = overlay ? overlay.querySelector('#wh-save-keys') : null;
-        if (saveKeys) saveKeys.addEventListener('click', function () {
-            var apiKey = cleanInputValue(overlay.querySelector('#wh-api-key').value || '');
-            GM_setValue(K_API_KEY, apiKey);
-            setStatus('API key saved locally.');
-        });
-        var loginBtn = overlay ? overlay.querySelector('#wh-login-btn') : null;
-        if (loginBtn) loginBtn.addEventListener('click', _asyncToGenerator(function* () {
-            var apiKey = cleanInputValue(overlay.querySelector('#wh-api-key').value || '');
-            if (apiKey) GM_setValue(K_API_KEY, apiKey);
-            var okLogin = yield login(true);
-            if (!okLogin) return;
-            setStatus('Login successful.');
             yield loadState(true);
             renderBody();
         }));
-                var logoutBtn = overlay ? overlay.querySelector('#wh-logout-btn') : null;
-        if (logoutBtn) logoutBtn.addEventListener('click', _asyncToGenerator(function* () {
-            yield req('POST', '/api/logout', {});
-            clearSavedKeys();
-            state = null;
-            analyticsCache = null;
-            factionMembersCache = null;
-            accessState = normalizeAccessCache({});
-            saveAccessCache();
-            renderBody();
-            updateBadge();
-            setStatus('Logged out.');
+    });
+
+    var saveAssign = overlay ? overlay.querySelector('#wh-save-assignment') : null;
+    if (saveAssign) saveAssign.addEventListener('click', _asyncToGenerator(function* () {
+        var war_id = cleanInputValue(((state === null || state === void 0 ? void 0 : state.war) && state.war.war_id) || ((state === null || state === void 0 ? void 0 : state.war) && state.war.id) || '');
+        var target_id = cleanInputValue((overlay.querySelector('#wh-assignment-target-id') || {}).value || '');
+        var target_name = cleanInputValue((overlay.querySelector('#wh-assignment-target-name') || {}).value || '');
+        var sel = overlay.querySelector('#wh-assignment-member');
+        var opt = sel && sel.selectedOptions ? sel.selectedOptions[0] : null;
+        var assigned_to_user_id = cleanInputValue((opt === null || opt === void 0 ? void 0 : opt.value) || '');
+        var assigned_to_name = cleanInputValue((opt === null || opt === void 0 ? void 0 : opt.dataset.name) || '');
+        var priority = cleanInputValue((overlay.querySelector('#wh-assignment-priority') || {}).value || 'normal');
+        var note = cleanInputValue((overlay.querySelector('#wh-assignment-note') || {}).value || '');
+
+        if (!war_id || !target_id) {
+            setStatus('War ID and target ID are required.', true);
+            return;
+        }
+
+        var res = yield doAction('POST', '/api/war/assignments', {
+            war_id: war_id,
+            target_id: target_id,
+            target_name: target_name,
+            assigned_to_user_id: assigned_to_user_id,
+            assigned_to_name: assigned_to_name,
+            priority: priority,
+            note: note
+        }, 'Assignment saved.');
+
+        if (res) renderBody();
+    }));
+
+    if (overlay) overlay.querySelectorAll('[data-del-assignment-live]').forEach(function (btn) {
+        btn.addEventListener('click', _asyncToGenerator(function* () {
+            var id = cleanInputValue(btn.getAttribute('data-del-assignment-live') || '');
+            if (!id) return;
+            var res = yield doAction('DELETE', "/api/war/assignments/".concat(encodeURIComponent(id)), null, 'Assignment deleted.');
+            if (res) renderBody();
         }));
+    });
 
-        var membersSearch = overlay ? overlay.querySelector('#warhub-members-search') : null;
-        if (membersSearch) membersSearch.addEventListener('input', function () {
-            state = state || {};
-            state.membersSearch = String(membersSearch.value || '');
-            renderBody();
-        });
+    var saveNotes = overlay ? overlay.querySelector('#wh-save-notes') : null;
+    if (saveNotes) saveNotes.addEventListener('click', function () {
+        var txt = (overlay.querySelector('#wh-notes') || {}).value || '';
+        setNotes(txt);
+        setStatus('Local notes saved.');
+    });
 
-        var membersSearchClear = overlay ? overlay.querySelector('#warhub-members-search-clear') : null;
-        if (membersSearchClear) membersSearchClear.addEventListener('click', function () {
-            state = state || {};
-            state.membersSearch = '';
-            renderBody();
-        });
-        
-        var saveRefresh = overlay ? overlay.querySelector('#wh-save-refresh') : null;
-        if (saveRefresh) saveRefresh.addEventListener('click', function () {
-    var raw = cleanInputValue(overlay.querySelector('#wh-refresh-ms').value || '30000');
-    var ms = Math.max(10000, Number(raw) || 30000);
-    GM_setValue(K_REFRESH, ms);
-    startPolling();
-    setStatus("Refresh saved: ".concat(ms, "ms"));
-});
+    var clearNotes = overlay ? overlay.querySelector('#wh-clear-notes') : null;
+    if (clearNotes) clearNotes.addEventListener('click', function () {
+        setNotes('');
+        renderBody();
+        setStatus('Local notes cleared.');
+    });
 
-var resetPositions = overlay ? overlay.querySelector('#wh-reset-positions') : null;
-if (resetPositions) resetPositions.addEventListener('click', function () {
-    GM_deleteValue(K_SHIELD_POS);
-    GM_deleteValue(K_OVERLAY_POS);
-    resetShieldPosition();
-    positionOverlayNearShield();
-    saveShieldPos();
-    saveOverlayPos();
-    updateBadge();
-    setStatus('Positions reset.');
-});
+    var addServerNote = overlay ? overlay.querySelector('#wh-add-server-note') : null;
+    if (addServerNote) addServerNote.addEventListener('click', _asyncToGenerator(function* () {
+        var war_id = cleanInputValue(((state === null || state === void 0 ? void 0 : state.war) && state.war.war_id) || ((state === null || state === void 0 ? void 0 : state.war) && state.war.id) || '');
+        var target_id = cleanInputValue((overlay.querySelector('#wh-note-target-id') || {}).value || '');
+        var note = cleanInputValue((overlay.querySelector('#wh-note-text') || {}).value || '');
 
-var saveOverviewBoxes = overlay ? overlay.querySelector('#wh-save-overview-boxes') : null;
-if (saveOverviewBoxes) saveOverviewBoxes.addEventListener('click', function () {
-    var prefs = {
-        meddeals: !!(overlay.querySelector('#wh-overview-meddeals') && overlay.querySelector('#wh-overview-meddeals').checked),
-        dibs: !!(overlay.querySelector('#wh-overview-dibs') && overlay.querySelector('#wh-overview-dibs').checked),
-        terms: !!(overlay.querySelector('#wh-overview-terms') && overlay.querySelector('#wh-overview-terms').checked),
-        war: !!(overlay.querySelector('#wh-overview-war') && overlay.querySelector('#wh-overview-war').checked)
-    };
-    GM_setValue(K_OVERVIEW_BOXES, prefs);
-    setStatus('Overview boxes saved.');
-    renderBody();
-});
+        if (!war_id || !target_id || !note) {
+            setStatus('War ID, target ID and note are required.', true);
+            return;
+        }
 
-if (overlay) overlay.querySelectorAll('[data-overview-go]').forEach(function (btn) {
-    btn.addEventListener('click', function () {
-        var nextTab = cleanInputValue(btn.getAttribute('data-overview-go') || '');
-        if (!nextTab) return;
-        currentTab = nextTab;
-        GM_setValue(K_TAB, currentTab);
+        var res = yield doAction('POST', '/api/war/notes', { war_id: war_id, target_id: target_id, note: note }, 'Shared note saved.');
+        if (res) renderBody();
+    }));
+
+    if (overlay) overlay.querySelectorAll('[data-del-note-live]').forEach(function (btn) {
+        btn.addEventListener('click', _asyncToGenerator(function* () {
+            var id = cleanInputValue(btn.getAttribute('data-del-note-live') || '');
+            if (!id) return;
+            var res = yield doAction('DELETE', "/api/war/notes/".concat(encodeURIComponent(id)), null, 'Shared note deleted.');
+            if (res) renderBody();
+        }));
+    });
+
+    var saveTerms = overlay ? overlay.querySelector('#warhub-terms-save') : null;
+    if (saveTerms) saveTerms.addEventListener('click', _asyncToGenerator(function* () {
+        var war_id = cleanInputValue(((state === null || state === void 0 ? void 0 : state.war) && state.war.war_id) || ((state === null || state === void 0 ? void 0 : state.war) && state.war.id) || '');
+        var terms = cleanInputValue((overlay.querySelector('#warhub-terms-text') || {}).value || '');
+
+        if (!war_id) {
+            setStatus('No active war detected.', true);
+            return;
+        }
+
+        var res = yield doAction('POST', '/api/war-terms', { war_id: war_id, terms: terms }, 'War terms saved.');
+        if (res) renderBody();
+    }));
+
+    var delTerms = overlay ? overlay.querySelector('#warhub-terms-delete') : null;
+    if (delTerms) delTerms.addEventListener('click', _asyncToGenerator(function* () {
+        var war_id = cleanInputValue(((state === null || state === void 0 ? void 0 : state.war) && state.war.war_id) || ((state === null || state === void 0 ? void 0 : state.war) && state.war.id) || '');
+
+        if (!war_id) {
+            setStatus('No active war detected.', true);
+            return;
+        }
+
+        var res = yield doAction('DELETE', "/api/war-terms?war_id=".concat(encodeURIComponent(war_id)), null, 'War terms deleted.');
+        if (res) renderBody();
+    }));
+
+    var refreshAlerts = overlay ? overlay.querySelector('#wh-mark-alerts-seen') : null;
+    if (refreshAlerts) refreshAlerts.addEventListener('click', _asyncToGenerator(function* () {
+        var res = yield req('GET', '/api/notifications');
+        if (!res.ok) {
+            setStatus(res.error || 'Could not refresh notifications.', true);
+            return;
+        }
+        setStatus('Notifications refreshed.');
+        yield loadState(true);
+        renderBody();
+    }));
+
+    var clearAlerts = overlay ? overlay.querySelector('#wh-clear-alerts') : null;
+    if (clearAlerts) clearAlerts.addEventListener('click', function () {
+        setLocalNotifications([]);
+        updateBadge();
+        renderBody();
+        setStatus('Local notifications cleared.');
+    });
+
+    var saveFactionMember = overlay ? overlay.querySelector('#wh-fm-save') : null;
+    if (saveFactionMember) saveFactionMember.addEventListener('click', _asyncToGenerator(function* () {
+        var member_user_id = cleanInputValue((overlay.querySelector('#wh-fm-userid') || {}).value || '');
+        if (!member_user_id) {
+            setStatus('Select a faction member first.', true);
+            return;
+        }
+
+        var picked = arr((state && state.members) || []).find(function (m) {
+            return String(m.user_id || m.id || '').trim() === member_user_id;
+        }) || {};
+
+        var member_name = cleanInputValue(
+            picked.name ||
+            picked.member_name ||
+            ''
+        );
+
+        var position = cleanInputValue(
+            picked.position ||
+            picked.faction_position ||
+            picked.role ||
+            ''
+        );
+
+        var res = yield doAction('POST', '/api/faction/members', {
+            member_user_id: member_user_id,
+            member_name: member_name,
+            enabled: true,
+            position: position
+        }, 'Faction member access saved.', false);
+
+        if (res) {
+            yield refreshLeaderFactionData();
+            setStatus('Faction member access saved.');
+        }
+    }));
+
+    if (overlay) overlay.querySelectorAll('[data-toggle-member]').forEach(function (btn) {
+        btn.addEventListener('click', _asyncToGenerator(function* () {
+            var memberId = cleanInputValue(btn.getAttribute('data-toggle-member') || '');
+            var enabled = cleanInputValue(btn.getAttribute('data-enabled') || '') === '1';
+            if (!memberId) return;
+            var res = yield doAction('POST', "/api/faction/members/".concat(encodeURIComponent(memberId), "/enable"), { enabled: enabled }, enabled ? 'Member enabled.' : 'Member disabled.', false);
+            if (res) yield refreshLeaderFactionData();
+        }));
+    });
+
+    if (overlay) overlay.querySelectorAll('[data-del-member]').forEach(function (btn) {
+        btn.addEventListener('click', _asyncToGenerator(function* () {
+            var memberId = cleanInputValue(btn.getAttribute('data-del-member') || '');
+            if (!memberId) return;
+            var res = yield doAction('DELETE', "/api/faction/members/".concat(encodeURIComponent(memberId)), null, 'Faction member removed.', false);
+            if (res) yield refreshLeaderFactionData();
+        }));
+    });
+
+    if (overlay) overlay.querySelectorAll('[data-admin-history]').forEach(function (btn) {
+        btn.addEventListener('click', _asyncToGenerator(function* () {
+            var factionId = cleanInputValue(btn.getAttribute('data-admin-history') || '');
+            if (!factionId) return;
+            var res = yield adminReq('GET', "/api/admin/faction-licenses/".concat(encodeURIComponent(factionId), "/history"));
+            if (!res.ok) {
+                setStatus(res.error || 'Could not load payment history.', true);
+                return;
+            }
+            var items = arr((res.data === null || res.data === void 0 ? void 0 : res.data.items) || []);
+            var lines = items.length ? items.map(function (x) {
+                var amount = x.amount != null ? fmtMoney(x.amount) : '—';
+                var when = fmtTs(x.created_at || x.ts || x.time || '');
+                var by = x.renewed_by || x.created_by || x.payment_player || '';
+                return "".concat(when, " • ").concat(amount).concat(by ? " • ".concat(by) : '');
+            }).join('\n') : 'No payment history found.';
+            alert(lines);
+        }));
+    });
+
+    if (overlay) overlay.querySelectorAll('[data-admin-renew]').forEach(function (btn) {
+        btn.addEventListener('click', _asyncToGenerator(function* () {
+            var factionId = cleanInputValue(btn.getAttribute('data-admin-renew') || '');
+            if (!factionId) return;
+            var amountText = prompt('Renew faction for how much?', '3');
+            if (amountText == null) return;
+            var amount = Number(String(amountText).replace(/[^\d.-]/g, ''));
+            if (!Number.isFinite(amount) || amount <= 0) {
+                setStatus('Invalid renewal amount.', true);
+                return;
+            }
+            var note = prompt('Optional note for renewal:', '') || '';
+            var res = yield adminReq('POST', "/api/admin/faction-licenses/".concat(encodeURIComponent(factionId), "/renew"), { amount: amount, note: note });
+            if (!res.ok) {
+                setStatus(res.error || 'Renew failed.', true);
+                return;
+            }
+            setStatus('Faction renewed.');
+            yield loadAdminDashboard();
+        }));
+    });
+
+    if (overlay) overlay.querySelectorAll('[data-admin-expire]').forEach(function (btn) {
+        btn.addEventListener('click', _asyncToGenerator(function* () {
+            var factionId = cleanInputValue(btn.getAttribute('data-admin-expire') || '');
+            if (!factionId) return;
+            if (!confirm("Expire faction ".concat(factionId, "?"))) return;
+            var res = yield adminReq('POST', "/api/admin/faction-licenses/".concat(encodeURIComponent(factionId), "/expire"), {});
+            if (!res.ok) {
+                setStatus(res.error || 'Expire failed.', true);
+                return;
+            }
+            setStatus('Faction expired.');
+            yield loadAdminDashboard();
+        }));
+    });
+
+    var saveKeys = overlay ? overlay.querySelector('#wh-save-keys') : null;
+    if (saveKeys) saveKeys.addEventListener('click', function () {
+        var apiKey = cleanInputValue((overlay.querySelector('#wh-api-key') || {}).value || '');
+        GM_setValue(K_API_KEY, apiKey);
+        setStatus('API key saved locally.');
+    });
+
+    var loginBtn = overlay ? overlay.querySelector('#wh-login-btn') : null;
+    if (loginBtn) loginBtn.addEventListener('click', _asyncToGenerator(function* () {
+        var apiKey = cleanInputValue((overlay.querySelector('#wh-api-key') || {}).value || '');
+        if (apiKey) GM_setValue(K_API_KEY, apiKey);
+        var okLogin = yield login(true);
+        if (!okLogin) return;
+        setStatus('Login successful.');
+        yield loadState(true);
+        renderBody();
+    }));
+
+    var logoutBtn = overlay ? overlay.querySelector('#wh-logout-btn') : null;
+    if (logoutBtn) logoutBtn.addEventListener('click', _asyncToGenerator(function* () {
+        yield req('POST', '/api/logout', {});
+        clearSavedKeys();
+        state = null;
+        analyticsCache = null;
+        factionMembersCache = null;
+        accessState = normalizeAccessCache({});
+        saveAccessCache();
+        renderBody();
+        updateBadge();
+        setStatus('Logged out.');
+    }));
+
+    var membersSearch = overlay ? overlay.querySelector('#warhub-members-search') : null;
+    if (membersSearch) membersSearch.addEventListener('input', function () {
+        state = state || {};
+        state.membersSearch = String(membersSearch.value || '');
         renderBody();
     });
-});
+
+    var membersSearchClear = overlay ? overlay.querySelector('#warhub-members-search-clear') : null;
+    if (membersSearchClear) membersSearchClear.addEventListener('click', function () {
+        state = state || {};
+        state.membersSearch = '';
+        renderBody();
+    });
+
+    var saveRefresh = overlay ? overlay.querySelector('#wh-save-refresh') : null;
+    if (saveRefresh) saveRefresh.addEventListener('click', function () {
+        var raw = cleanInputValue((overlay.querySelector('#wh-refresh-ms') || {}).value || '30000');
+        var ms = Math.max(10000, Number(raw) || 30000);
+        GM_setValue(K_REFRESH, ms);
+        startPolling();
+        setStatus("Refresh saved: ".concat(ms, "ms"));
+    });
+
+    var resetPositions = overlay ? overlay.querySelector('#wh-reset-positions') : null;
+    if (resetPositions) resetPositions.addEventListener('click', function () {
+        GM_deleteValue(K_SHIELD_POS);
+        GM_deleteValue(K_OVERLAY_POS);
+        resetShieldPosition();
+        positionOverlayNearShield();
+        saveShieldPos();
+        saveOverlayPos();
+        updateBadge();
+        setStatus('Positions reset.');
+    });
+
+    var saveOverviewBoxes = overlay ? overlay.querySelector('#wh-save-overview-boxes') : null;
+    if (saveOverviewBoxes) saveOverviewBoxes.addEventListener('click', function () {
+        var prefs = {
+            meddeals: !!(overlay.querySelector('#wh-overview-meddeals') && overlay.querySelector('#wh-overview-meddeals').checked),
+            dibs: !!(overlay.querySelector('#wh-overview-dibs') && overlay.querySelector('#wh-overview-dibs').checked),
+            terms: !!(overlay.querySelector('#wh-overview-terms') && overlay.querySelector('#wh-overview-terms').checked),
+            war: !!(overlay.querySelector('#wh-overview-war') && overlay.querySelector('#wh-overview-war').checked)
+        };
+        GM_setValue(K_OVERVIEW_BOXES, prefs);
+        setStatus('Overview boxes saved.');
+        renderBody();
+    });
+
+    if (overlay) overlay.querySelectorAll('[data-overview-go]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var nextTab = cleanInputValue(btn.getAttribute('data-overview-go') || '');
+            if (!nextTab) return;
+            currentTab = nextTab;
+            GM_setValue(K_TAB, currentTab);
+            renderBody();
+        });
+    });
 }
     function mount() {
     if (mounted) return;
