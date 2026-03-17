@@ -1188,7 +1188,7 @@ def api_state():
 
     has_war = bool(war_info.get("has_war"))
 
-            if has_war or enemy_faction_id or enemy_faction_name or raw_enemy_members:
+    if has_war or enemy_faction_id or enemy_faction_name or raw_enemy_members:
         fallback_sides = [x for x in (war_info.get("debug_factions") or []) if isinstance(x, dict)]
 
         if not enemy_faction_id or not enemy_faction_name:
@@ -1210,7 +1210,7 @@ def api_state():
                     break
 
         if not raw_enemy_members and enemy_faction_id:
-            enemy_info = _faction_basic_by_id(war_api_key or api_key, enemy_faction_id)
+            enemy_info = _faction_basic_by_id(war_api_key or api_key, enemy_faction_id) or {}
             raw_enemy_members = enemy_info.get("members") or []
 
             fetched_enemy_name = str(enemy_info.get("faction_name") or "").strip()
