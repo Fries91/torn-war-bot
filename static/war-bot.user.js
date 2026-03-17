@@ -3671,7 +3671,11 @@ default: return renderOverviewTab();
         var prevRight = overlay.style.right || '';
         var prevBottom = overlay.style.bottom || '';
         var prevBody = overlay.querySelector('.warhub-body');
+        var prevTabs = overlay.querySelector('.warhub-tabs');
         var prevScrollTop = prevBody ? prevBody.scrollTop : Number(GM_getValue(K_OVERLAY_SCROLL, 0)) || 0;
+        var prevTabsScrollLeft = prevTabs ? prevTabs.scrollLeft : Number(GM_getValue(K_TABS_SCROLL_LEFT, 0)) || 0;
+        var pageScrollX = window.pageXOffset || window.scrollX || 0;
+        var pageScrollY = window.pageYOffset || window.scrollY || 0;
         if (tabLocked(currentTab)) {
             currentTab = 'overview';
             GM_setValue(K_TAB, currentTab);
@@ -3690,11 +3694,21 @@ default: return renderOverviewTab();
             overlay.style.bottom = prevBottom;
         }
         var nextBody = overlay.querySelector('.warhub-body');
+        var nextTabs = overlay.querySelector('.warhub-tabs');
+        if (nextTabs) {
+            nextTabs.scrollLeft = prevTabsScrollLeft;
+            nextTabs.addEventListener('scroll', function () {
+                GM_setValue(K_TABS_SCROLL_LEFT, nextTabs.scrollLeft || 0);
+            }, { passive: true });
+        }
         if (nextBody) {
             nextBody.scrollTop = prevScrollTop;
             nextBody.addEventListener('scroll', function () {
                 GM_setValue(K_OVERLAY_SCROLL, nextBody.scrollTop || 0);
             }, { passive: true });
+        }
+        if (typeof window.scrollTo === 'function') {
+            window.scrollTo(pageScrollX, pageScrollY);
         }
     }
     function clampElementPosition(el, left, top) {
@@ -4459,11 +4473,22 @@ default: return renderOverviewTab();
     });
 
     var saveKeys = overlay ? overlay.querySelector('#wh-save-keys') : null;
-    if (saveKeys) saveKeys.addEventListener('click', function () {
+    if (saveKeys) saveKeys.addEventListener('click', _asyncToGenerator(function* () {
         var apiKey = cleanInputValue((overlay.querySelector('#wh-api-key') || {}).value || '');
         GM_setValue(K_API_KEY, apiKey);
+        if (!apiKey) {
+            setStatus('API key cleared.');
+            return;
+        }
+        var okLogin = yield login(false);
+        if (okLogin) {
+            setStatus('API key saved. Auto-login ready.');
+            yield loadState(true);
+            if (isOpen) renderBody();
+            return;
+        }
         setStatus('API key saved locally.');
-    });
+    }));
 
     var loginBtn = overlay ? overlay.querySelector('#wh-login-btn') : null;
     if (loginBtn) loginBtn.addEventListener('click', _asyncToGenerator(function* () {
@@ -4471,7 +4496,7 @@ default: return renderOverviewTab();
         if (apiKey) GM_setValue(K_API_KEY, apiKey);
         var okLogin = yield login(true);
         if (!okLogin) return;
-        setStatus('Login successful.');
+        setStatus('Login successful. It will stay signed in on return.');
         yield loadState(true);
         renderBody();
     }));
@@ -4701,9 +4726,11 @@ default: return renderOverviewTab();
                 setStatus('Server offline or unreachable.', true);
                 return;
             }
-            var hasApiKey = !!cleanInputValue(GM_getValue(K_API_KEY, ''));
-            var hasSession = !!cleanInputValue(GM_getValue(K_SESSION, ''));
-            if (hasApiKey && !hasSession) yield login(false);
+            var savedApiKey = cleanInputValue(GM_getValue(K_API_KEY, ''));
+            var hasApiKey = !!savedApiKey;
+            if (hasApiKey) {
+                yield login(false).catch(function () { return false; });
+            }
             if (cleanInputValue(GM_getValue(K_SESSION, '')) && canUseProtectedFeatures()) {
                 yield loadState(true);
                 yield loadAnalytics().catch(function () { return null; });
