@@ -81,6 +81,7 @@ from torn_api import (
     profile_url,
     attack_url,
     bounty_url,
+    top_five_members_for_war,
 )
 
 load_dotenv()
@@ -742,6 +743,36 @@ def _normalize_dib(row: Dict[str, Any]) -> Dict[str, Any]:
     r["note"] = str(r.get("note") or r.get("reason") or "")
     r["created_at"] = str(r.get("created_at") or "")
     return r
+
+
+def _build_top_five_faction_payload(
+    faction_id: str,
+    faction_name: str,
+    members: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    ranked = top_five_members_for_war(members or [], limit=5)
+    players: List[Dict[str, Any]] = []
+
+    for index, member in enumerate(ranked, start=1):
+        players.append({
+            "rank": index,
+            "user_id": str(member.get("user_id") or member.get("id") or "").strip(),
+            "name": str(member.get("name") or "Unknown"),
+            "level": _to_int(member.get("level"), 0),
+            "position": str(member.get("position") or ""),
+            "online_state": str(member.get("online_state") or member.get("activity_bucket") or "offline"),
+            "status": str(member.get("display_status") or member.get("status_detail") or member.get("status") or member.get("last_action") or ""),
+            "profile_url": str(member.get("profile_url") or profile_url(str(member.get("user_id") or member.get("id") or ""))),
+            "attack_url": str(member.get("attack_url") or attack_url(str(member.get("user_id") or member.get("id") or ""))),
+            "rank_score": _to_int(member.get("rank_score"), 0),
+        })
+
+    return {
+        "faction_id": str(faction_id or ""),
+        "faction_name": str(faction_name or ""),
+        "count": len(players),
+        "players": players,
+    }
 
 
 def _merge_enemy_state(enemies: List[Dict[str, Any]], war_id: str) -> List[Dict[str, Any]]:
@@ -1997,6 +2028,57 @@ def api_faction_member_delete(member_user_id: str):
 
     delete_faction_member_access(faction_id, str(member_user_id))
     return ok(message="Faction member removed.", member_user_id=str(member_user_id))
+
+
+@app.route("/api/admin/war-top-five", methods=["GET"])
+@require_owner
+def api_admin_war_top_five():
+    user = request.user or {}
+    api_key = str(user.get("api_key") or "").strip()
+    if not api_key:
+        return err("Missing API key.", 400)
+
+    me = me_basic(api_key) or {}
+    my_faction_id = str(me.get("faction_id") or user.get("faction_id") or "").strip()
+    my_faction_name = str(me.get("faction_name") or user.get("faction_name") or "").strip()
+
+    own_faction = faction_basic(api_key, faction_id=my_faction_id) if my_faction_id else {"ok": False, "members": []}
+    war = ranked_war_summary(api_key, my_faction_id=my_faction_id, my_faction_name=my_faction_name) or {}
+
+    factions: List[Dict[str, Any]] = []
+
+    if my_faction_id or my_faction_name:
+        factions.append(
+            _build_top_five_faction_payload(
+                my_faction_id,
+                my_faction_name or str(own_faction.get("faction_name") or ""),
+                own_faction.get("members") or [],
+            )
+        )
+
+    enemy_faction_id = str(war.get("enemy_faction_id") or "").strip()
+    enemy_faction_name = str(war.get("enemy_faction_name") or "").strip()
+    enemy_members = war.get("enemy_members") or []
+
+    if enemy_faction_id or enemy_faction_name or enemy_members:
+        factions.append(
+            _build_top_five_faction_payload(
+                enemy_faction_id,
+                enemy_faction_name,
+                enemy_members,
+            )
+        )
+
+    return ok(
+        war={
+            "war_id": str(war.get("war_id") or ""),
+            "phase": str(war.get("phase") or "none"),
+            "status": str(war.get("status_text") or "Currently not in war"),
+            "registered": bool(war.get("registered")),
+            "active": bool(war.get("active")),
+        },
+        factions=factions,
+    )
 
 
 @app.route("/api/admin/faction-licenses", methods=["GET"])
