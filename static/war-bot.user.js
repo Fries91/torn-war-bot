@@ -2789,6 +2789,18 @@ function renderChainTab() {
         <h3>Faction Licenses</h3>\
         <div class="warhub-list">' + licenseHtml + '</div>\
       </div>\
+\
+      <div class="warhub-card">\
+        <div class="warhub-section-title">\
+          <h3>API State Debug</h3>\
+          <div class="warhub-actions">\
+            <button class="warhub-btn small" id="wh-admin-refresh-api-state">Refresh</button>\
+          </div>\
+        </div>\
+        <div class="warhub-mini" style="margin-bottom:8px; line-height:1.5;">Use this on PDA to check enemy_faction_id, enemy_faction_name, enemies, and debug fields from /api/state.</div>\
+        ' + ((state && state.adminApiStateError) ? '<div class="warhub-banner payment" style="margin-bottom:8px;">' + esc(state.adminApiStateError) + '</div>' : '') + '\
+        <textarea class="warhub-input" id="wh-admin-api-state-json" readonly style="min-height:240px; font-family:monospace; white-space:pre;">' + esc((state && state.adminApiStateText) || '') + '</textarea>\
+      </div>\
     ';
     }
     function renderSettingsTab() {
@@ -3144,6 +3156,32 @@ default: return renderOverviewTab();
         });
         return _loadAdminDashboard.apply(this, arguments);
     }
+    function loadAdminApiState() {
+        return _loadAdminApiState.apply(this, arguments);
+    }
+    function _loadAdminApiState() {
+        _loadAdminApiState = _asyncToGenerator(function* () {
+            if (!isOwnerSession()) return null;
+            var res = yield req('GET', '/api/state');
+            state = state || {};
+            if (!res.ok) {
+                state.adminApiStateError = res.error || 'Could not load /api/state.';
+                state.adminApiStateText = '';
+                if (overlay && isOpen && currentTab === 'admin') renderBody();
+                return null;
+            }
+            var payload = res.data || {};
+            state.adminApiStateError = '';
+            try {
+                state.adminApiStateText = JSON.stringify(payload, null, 2);
+            } catch (e) {
+                state.adminApiStateText = String(payload || '');
+            }
+            if (overlay && isOpen && currentTab === 'admin') renderBody();
+            return payload;
+        });
+        return _loadAdminApiState.apply(this, arguments);
+    }
     function bindOverlayEvents() {
     if (overlay) overlay.querySelectorAll('[data-tab]').forEach(function (btn) {
         btn.addEventListener('click', _asyncToGenerator(function* () {
@@ -3166,6 +3204,7 @@ default: return renderOverviewTab();
 
             if (tab === 'admin' && isOwnerSession()) {
                 yield loadAdminDashboard();
+                yield loadAdminApiState();
             }
 
             renderBody();
@@ -3596,6 +3635,16 @@ default: return renderOverviewTab();
             yield loadAdminDashboard();
         }));
     });
+
+    var refreshApiState = overlay ? overlay.querySelector('#wh-admin-refresh-api-state') : null;
+    if (refreshApiState) refreshApiState.addEventListener('click', _asyncToGenerator(function* () {
+        yield loadAdminApiState();
+        if (!(state && state.adminApiStateError)) {
+            setStatus('API state refreshed.');
+        } else {
+            setStatus(state.adminApiStateError || 'Could not load /api/state.', true);
+        }
+    }));
 
     var saveKeys = overlay ? overlay.querySelector('#wh-save-keys') : null;
     if (saveKeys) saveKeys.addEventListener('click', function () {
