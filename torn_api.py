@@ -150,6 +150,65 @@ def _extract_hospital_until_ts(member: Dict[str, Any], fallback_seconds: int = 0
     return 0
 
 
+def _war_member_priority_score(member: Dict[str, Any]) -> int:
+    online_state = str(member.get("online_state") or "").strip().lower()
+    level = _to_int(member.get("level"), 0)
+    hospital_seconds = _to_int(member.get("hospital_seconds"), 0)
+
+    bucket_score = {
+        "online": 6000,
+        "idle": 5000,
+        "travel": 3500,
+        "offline": 2500,
+        "jail": 1000,
+        "hospital": 0,
+    }.get(online_state, 1500)
+
+    score = bucket_score + (level * 25)
+
+    if hospital_seconds > 0:
+        score -= min(hospital_seconds // 60, 1800)
+
+    if str(member.get("position") or "").strip().lower() == "leader":
+        score += 250
+    elif "co-leader" in str(member.get("position") or "").strip().lower():
+        score += 150
+
+    return score
+
+
+def top_five_members_for_war(members: List[Dict[str, Any]], limit: int = 5) -> List[Dict[str, Any]]:
+    cleaned: List[Dict[str, Any]] = []
+    seen_ids = set()
+
+    for raw in members or []:
+        if not isinstance(raw, dict):
+            continue
+        member = dict(raw)
+        user_id = str(member.get("user_id") or member.get("id") or "").strip()
+        if user_id and user_id in seen_ids:
+            continue
+        if user_id:
+            seen_ids.add(user_id)
+
+        member["user_id"] = user_id
+        member["id"] = user_id or member.get("id")
+        member["name"] = str(member.get("name") or "Unknown")
+        member["level"] = _to_int(member.get("level"), 0)
+        member["rank_score"] = _war_member_priority_score(member)
+        cleaned.append(member)
+
+    cleaned.sort(
+        key=lambda x: (
+            -_to_int(x.get("rank_score"), 0),
+            -_to_int(x.get("level"), 0),
+            str(x.get("name") or "").lower(),
+        )
+    )
+
+    return cleaned[: max(1, int(limit or 5))]
+
+
 def _member_state_from_last_action(last_action_text: str) -> str:
     s = str(last_action_text or "").strip().lower()
 
