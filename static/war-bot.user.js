@@ -797,78 +797,112 @@ function parseEnemyRosterFromHtml(html, enemyFactionName) {
     function loadState() {
         return _loadState.apply(this, arguments);
     }
-    function _loadState() {
-        _loadState = _asyncToGenerator(function* () {
-            var silent = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : false;
-            if (loadInFlight) return;
-            if (!canUseProtectedFeatures()) {
-                if (!silent) setStatus(accessSummaryMessage() || 'Faction access blocked.', true);
-                renderBody();
+    function loadState() {
+    return _loadState.apply(this, arguments);
+}
+function _loadState() {
+    _loadState = _asyncToGenerator(function* () {
+        var silent = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : false;
+        if (loadInFlight) return;
+        if (!canUseProtectedFeatures()) {
+            if (!silent) setStatus(accessSummaryMessage() || 'Faction access blocked.', true);
+            renderBody();
+            return;
+        }
+
+        loadInFlight = true;
+        try {
+            var res = yield req('GET', '/api/state');
+            if (!res.ok) {
+                if (!silent) setStatus(res.error || 'Could not load state.', true);
+                if ((accessState === null || accessState === void 0 ? void 0 : accessState.blocked) || (accessState === null || accessState === void 0 ? void 0 : accessState.paymentRequired) || (accessState === null || accessState === void 0 ? void 0 : accessState.trialExpired)) renderBody();
                 return;
             }
-            loadInFlight = true;
-            try {
-                var res = yield req('GET', '/api/state');
-if (!res.ok) {
-    if (!silent) setStatus(res.error || 'Could not load state.', true);
-    if ((accessState === null || accessState === void 0 ? void 0 : accessState.blocked) || (accessState === null || accessState === void 0 ? void 0 : accessState.paymentRequired) || (accessState === null || accessState === void 0 ? void 0 : accessState.trialExpired)) renderBody();
-    return;
-}
 
-var prevState = state ? normalizeState(state) : null;
-var nextState = normalizeState(res.data || {});
+            var prevState = state ? normalizeState(state) : null;
+            var nextState = normalizeState(res.data || {});
+            var fallbackPair = whLoadWarPairFallback() || {};
 
-if (prevState) {
-    var prevEnemies = arr((prevState && prevState.enemies) || []);
-    var nextEnemies = arr((nextState && nextState.enemies) || []);
-    var prevEnemyId = String((prevState && prevState.enemy_faction_id) || (((prevState || {}).enemyFaction || {}).faction_id) || '').trim();
-    var nextEnemyId = String((nextState && nextState.enemy_faction_id) || (((nextState || {}).enemyFaction || {}).faction_id) || '').trim();
-    var prevEnemyName = String((prevState && prevState.enemy_faction_name) || (((prevState || {}).enemyFaction || {}).name) || '').trim().toLowerCase();
-    var nextEnemyName = String((nextState && nextState.enemy_faction_name) || (((nextState || {}).enemyFaction || {}).name) || '').trim().toLowerCase();
-    var sameEnemy = !!(
-        (prevEnemyId && nextEnemyId && prevEnemyId === nextEnemyId) ||
-        (!nextEnemyId && prevEnemyId) ||
-        (prevEnemyName && nextEnemyName && prevEnemyName === nextEnemyName)
-    );
+            var prevEnemies = arr((prevState && prevState.enemies) || []);
+            var nextEnemies = arr((nextState && nextState.enemies) || []);
 
-    if (prevEnemies.length && !nextEnemies.length && sameEnemy) {
-        nextState.enemies = prevEnemies.slice();
-        nextState.enemyFaction = Object.assign({}, (prevState && prevState.enemyFaction) || {}, (nextState && nextState.enemyFaction) || {});
-        nextState.enemy_faction = nextState.enemyFaction;
-        if (!nextState.enemy_faction_id) nextState.enemy_faction_id = prevEnemyId;
-        if (!nextState.enemy_faction_name) nextState.enemy_faction_name = (prevState && prevState.enemy_faction_name) || '';
-    }
-}
+            var prevEnemyId = String((prevState && prevState.enemy_faction_id) || (((prevState || {}).enemyFaction || {}).faction_id) || (((prevState || {}).enemy_faction || {}).faction_id) || '').trim();
+            var nextEnemyId = String((nextState && nextState.enemy_faction_id) || (((nextState || {}).enemyFaction || {}).faction_id) || (((nextState || {}).enemy_faction || {}).faction_id) || fallbackPair.enemy_faction_id || '').trim();
 
-state = nextState;
+            var prevEnemyName = String((prevState && prevState.enemy_faction_name) || (((prevState || {}).enemyFaction || {}).name) || (((prevState || {}).enemy_faction || {}).name) || '').trim();
+            var nextEnemyName = String((nextState && nextState.enemy_faction_name) || (((nextState || {}).enemyFaction || {}).name) || (((nextState || {}).enemy_faction || {}).name) || fallbackPair.enemy_faction_name || '').trim();
 
-if (state && state.enemy_faction_id) {
-    whSaveWarPairFallback({
-        enemy_faction_id: state.enemy_faction_id || '',
-        enemy_faction_name: state.enemy_faction_name || ''
-    });
-}
+            var ownFactionId = String((((nextState || {}).faction || {}).faction_id) || (((nextState || {}).user || {}).faction_id) || '').trim();
+            var ownFactionName = String((((nextState || {}).faction || {}).name) || (((nextState || {}).user || {}).faction_name) || '').trim().toLowerCase();
 
-if ((accessState === null || accessState === void 0 ? void 0 : accessState.isFactionLeader) && !factionMembersCache) {
-    loadFactionMembers()["catch"](function () {
-        return null;
-    });
-}
+            var nextLooksLikeOwnFaction = !!(
+                (nextEnemyId && ownFactionId && nextEnemyId === ownFactionId) ||
+                (nextEnemyName && ownFactionName && nextEnemyName.toLowerCase() === ownFactionName)
+            );
 
-if (!silent) setStatus('');
-var shouldRerender = !!(overlay && isOpen && !(overlay && overlay.dataset.dragging === '1'));
-if (silent && (isTypingInOverlay() || dragMoved)) shouldRerender = false;
-if (shouldRerender) renderBody();
-updateBadge();
-if (overlay && isOpen && currentTab === 'admin' && isOwnerSession() && !silent) loadAdminDashboard()["catch"](function () {
-    return null;
-});
-            } finally {
-                loadInFlight = false;
+            if (nextLooksLikeOwnFaction) {
+                nextEnemyId = '';
+                nextEnemyName = '';
             }
-        });
-        return _loadState.apply(this, arguments);
-    }
+
+            var sameEnemy = !!(
+                (prevEnemyId && nextEnemyId && prevEnemyId === nextEnemyId) ||
+                (!nextEnemyId && prevEnemyId) ||
+                (prevEnemyName && nextEnemyName && prevEnemyName.toLowerCase() === nextEnemyName.toLowerCase()) ||
+                (!nextEnemyName && !!prevEnemyName)
+            );
+
+            if (prevEnemies.length && (!nextEnemies.length || nextLooksLikeOwnFaction || !nextEnemyId && !nextEnemyName) && sameEnemy) {
+                nextState.enemies = prevEnemies.slice();
+
+                var prevEnemyFaction = (prevState && (prevState.enemyFaction || prevState.enemy_faction)) || {};
+                var nextEnemyFaction = (nextState && (nextState.enemyFaction || nextState.enemy_faction)) || {};
+
+                nextState.enemyFaction = Object.assign({}, prevEnemyFaction, nextEnemyFaction);
+                nextState.enemy_faction = nextState.enemyFaction;
+
+                if (!nextState.enemy_faction_id && prevEnemyId) nextState.enemy_faction_id = prevEnemyId;
+                if (!nextState.enemy_faction_name && prevEnemyName) nextState.enemy_faction_name = prevEnemyName;
+
+                if (!nextState.enemyFaction.faction_id && prevEnemyId) nextState.enemyFaction.faction_id = prevEnemyId;
+                if (!nextState.enemyFaction.name && prevEnemyName) nextState.enemyFaction.name = prevEnemyName;
+            }
+
+            state = nextState;
+
+            var saveEnemyId = String((state && state.enemy_faction_id) || (((state || {}).enemyFaction || {}).faction_id) || '').trim();
+            var saveEnemyName = String((state && state.enemy_faction_name) || (((state || {}).enemyFaction || {}).name) || '').trim();
+
+            if (saveEnemyId || saveEnemyName) {
+                whSaveWarPairFallback({
+                    enemy_faction_id: saveEnemyId,
+                    enemy_faction_name: saveEnemyName
+                });
+            }
+
+            if ((accessState === null || accessState === void 0 ? void 0 : accessState.isFactionLeader) && !factionMembersCache) {
+                loadFactionMembers()["catch"](function () {
+                    return null;
+                });
+            }
+
+            if (!silent) setStatus('');
+            var shouldRerender = !!(overlay && isOpen && !(overlay && overlay.dataset.dragging === '1'));
+            if (silent && (isTypingInOverlay() || dragMoved)) shouldRerender = false;
+            if (shouldRerender) renderBody();
+            updateBadge();
+
+            if (overlay && isOpen && currentTab === 'admin' && isOwnerSession() && !silent) {
+                loadAdminDashboard()["catch"](function () {
+                    return null;
+                });
+            }
+        } finally {
+            loadInFlight = false;
+        }
+    });
+    return _loadState.apply(this, arguments);
+}
     function loadAnalytics() {
     return _loadAnalytics.apply(this, arguments);
 }
@@ -1645,16 +1679,27 @@ function renderOverviewTab() {
 
         var ownFactionId = String((ownFaction && (ownFaction.faction_id || ownFaction.id)) || ((state && state.user) && state.user.faction_id) || '').trim();
         var ownFactionName = String((ownFaction && ownFaction.name) || ((state && state.user) && state.user.faction_name) || '').trim().toLowerCase();
+
         var enemyFactionId = String((enemyFaction && (enemyFaction.faction_id || enemyFaction.id)) || (state && state.enemy_faction_id) || (war && war.enemy_faction_id) || fallbackPair.enemy_faction_id || '').trim();
         var enemyFactionName = String((enemyFaction && enemyFaction.name) || (state && state.enemy_faction_name) || (war && war.enemy_faction_name) || fallbackPair.enemy_faction_name || 'Unknown Enemy').trim();
 
-        if (enemyFactionId && ownFactionId && enemyFactionId === ownFactionId) {
-            enemyFactionId = '';
-            enemyFactionName = '—';
+        var looksLikeOwnFaction = !!(
+            (enemyFactionId && ownFactionId && enemyFactionId === ownFactionId) ||
+            (enemyFactionName && ownFactionName && enemyFactionName.toLowerCase() === ownFactionName)
+        );
+
+        if (looksLikeOwnFaction && fallbackPair && (fallbackPair.enemy_faction_id || fallbackPair.enemy_faction_name)) {
+            enemyFactionId = String(fallbackPair.enemy_faction_id || enemyFactionId || '').trim();
+            enemyFactionName = String(fallbackPair.enemy_faction_name || enemyFactionName || 'Unknown Enemy').trim();
+            looksLikeOwnFaction = !!(
+                (enemyFactionId && ownFactionId && enemyFactionId === ownFactionId) ||
+                (enemyFactionName && ownFactionName && enemyFactionName.toLowerCase() === ownFactionName)
+            );
         }
-        if (enemyFactionName && ownFactionName && enemyFactionName.toLowerCase() === ownFactionName) {
-            enemyFactionId = '';
-            enemyFactionName = '—';
+
+        if (looksLikeOwnFaction && enemies.length) {
+            enemyFactionId = enemyFactionId || String(fallbackPair.enemy_faction_id || '').trim();
+            enemyFactionName = enemyFactionName || String(fallbackPair.enemy_faction_name || 'Unknown Enemy').trim();
         }
 
         var scoreThem = Number(((state && state.score) && state.score.enemy) || (enemyFaction && enemyFaction.score) || 0) || 0;
@@ -1694,9 +1739,9 @@ function renderOverviewTab() {
           ' + rosterCard('Hospital Enemies', groups.hospital, { extraClass: 'hospital-box', enemy: true }) + '\
           ' + rosterCard('Travel Enemies', groups.travel, { extraClass: 'travel-box', enemy: true }) + '\
           ' + rosterCard('Jailed Enemies', groups.jail, { extraClass: 'jail-box', enemy: true }) + '\
-          ' + rosterDropdown('Offline Enemies', groups.offline, { extraClass: 'offline-box', enemy: true }) + '';
+          ' + rosterCard('Offline Enemies', groups.offline, { extraClass: 'offline-box', enemy: true });
     } catch (e) {
-        return '<div class="warhub-card"><div class="warhub-empty">Enemy tab crashed.</div></div>';
+        return '<div class="warhub-card"><div class="warhub-empty">Could not render enemies.</div></div>';
     }
 }
 function renderHospitalTab() {
