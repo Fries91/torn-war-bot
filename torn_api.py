@@ -1302,13 +1302,6 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
     enemy_id = str((enemy_side or {}).get("faction_id") or "").strip()
     enemy_name = str((enemy_side or {}).get("faction_name") or "").strip()
 
-    if enemy_id and my_id and enemy_id == my_id:
-        enemy_id = ""
-        enemy_name = ""
-
-    if enemy_name and my_name and enemy_name.lower() == my_name.lower() and not enemy_id:
-        enemy_name = ""
-
     score_us = _side_score(my_side or {})
     score_them = _side_score(enemy_side or {})
     chain_us = _side_chain(my_side or {})
@@ -1323,6 +1316,32 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
                 score_us = _side_score(side)
                 chain_us = _side_chain(side)
                 break
+
+    if (not enemy_id and not enemy_name) or (enemy_id and my_id and enemy_id == my_id):
+        fallback_enemy = None
+        for side in candidate_sides:
+            if not _is_me(side):
+                fallback_enemy = side
+                break
+        if fallback_enemy:
+            fallback_enemy_id = str(fallback_enemy.get("faction_id") or "").strip()
+            fallback_enemy_name = str(fallback_enemy.get("faction_name") or "").strip()
+            if fallback_enemy_id:
+                enemy_id = fallback_enemy_id
+            if fallback_enemy_name:
+                enemy_name = fallback_enemy_name
+
+    if enemy_id and my_id and enemy_id == my_id and enemy_name and my_name and enemy_name.lower() != my_name.lower():
+        enemy_id = ""
+
+    if enemy_name and my_name and enemy_name.lower() == my_name.lower() and not enemy_id:
+        keep_name = False
+        for side in candidate_sides:
+            if not _is_me(side) and _fname(side) and _fname_lower(side) == enemy_name.lower():
+                keep_name = True
+                break
+        if not keep_name:
+            enemy_name = ""
 
     lead = score_us - score_them
     target_score = _to_int(chosen_war.get("target_score"), 0)
