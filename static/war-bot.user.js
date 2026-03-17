@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         War Hub ⚔️
 // @namespace    fries91-war-hub
-// @version      3.1.1
+// @version      3.0.9
 // @description  War Hub by Fries91. Faction-license aware overlay with draggable icon, draggable overlay, PDA friendly, shared war tools, faction member management, and payment lock handling.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -74,7 +74,7 @@ var K_TABS_SCROLL_LEFT = 'warhub_tabs_scroll_left_v3';
     var lastStatusMsg = '';
     var lastStatusErr = false;
     var accessState = normalizeAccessCache(GM_getValue(K_ACCESS_CACHE, null));
-    var css = "\n    #warhub-shield {\n      position: fixed !important;\n      z-index: 2147483647 !important;\n      width: 42px !important;\n      height: 42px !important;\n      border-radius: 12px !important;\n      display: flex !important;\n      align-items: center !important;\n      justify-content: center !important;\n      font-size: 22px !important;\n      line-height: 1 !important;\n      cursor: grab !important;\n      user-select: none !important;\n      -webkit-user-select: none !important;\n      -webkit-touch-callout: none !important;\n      touch-action: none !important;\n      box-shadow: 0 8px 24px rgba(0,0,0,.45) !important;\n      border: 1px solid rgba(255,255,255,.10) !important;\n      background: radial-gradient(circle at 30% 20%, rgba(220,75,75,.98), rgba(110,12,12,.98) 55%, rgba(48,6,6,.98)) !important;\n      color: #fff !important;\n      top: 120px !important;\n      right: 14px !important;\n      left: auto !important;\n      bottom: auto !important;\n      opacity: 1 !important;\n      visibility: visible !important;\n      pointer-events: auto !important;\n    }\n    #warhub-shield.dragging { cursor: grabbing !important; }\n\n    #warhub-badge {\n      position: fixed !important;\n      z-index: 2147483647 !important;\n      min-width: 16px !important;\n      height: 16px !important;\n      padding: 0 4px !important;\n      border-radius: 999px !important;\n      background: #ffd54a !important;\n      color: #111 !important;\n      font-size: 10px !important;\n      line-height: 16px !important;\n      text-align: center !important;\n      font-weight: 800 !important;\n      box-shadow: 0 3px 12px rgba(0,0,0,.45) !important;\n      display: none !important;\n      pointer-events: none !important;\n    }\n\n    #warhub-overlay {\n      position: fixed !important;\n      z-index: 2147483646 !important;\n      right: 12px !important;\n      top: 170px !important;\n      width: min(96vw, 520px) !important;\n      height: min(88vh, 900px) !important;\n      max-height: 88vh !important;\n      min-height: 420px !important;\n      overflow: hidden !important;\n      border-radius: 14px !important;\n      background: linear-gradient(180deg, #171717, #0c0c0c) !important;\n      color: #f2f2f2 !important;\n      border: 1px solid rgba(255,255,255,.08) !important;\n      box-shadow: 0 16px 38px rgba(0,0,0,.54) !important;\n      display: none !important;\n      font-family: -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif !important;\n      left: auto !important;\n      bottom: auto !important;\n      flex-direction: column !important;\n      box-sizing: border-box !important;\n      opacity: 1 !important;\n      visibility: visible !important;\n    }\n    #warhub-overlay.open { display: flex !important; }\n\n    #warhub-overlay *,\n    #warhub-overlay *::before,\n    #warhub-overlay *::after {\n      box-sizing: border-box !important;\n    }\n\n    .warhub-head {\n      padding: 10px 12px 9px !important;\n      border-bottom: 1px solid rgba(255,255,255,.08) !important;\n      background: linear-gradient(180deg, rgba(170,18,18,.30), rgba(20,20,20,.20)) !important;\n      cursor: grab !important;\n      user-select: none !important;\n      -webkit-user-select: none !important;\n      -webkit-touch-callout: none !important;\n      touch-action: none !important;\n      flex: 0 0 auto !important;\n      display: block !important;\n      width: 100% !important;\n      min-height: 54px !important;\n    }\n    .warhub-head.dragging { cursor: grabbing !important; }\n\n    .warhub-toprow {\n      display: flex !important;\n      align-items: center !important;\n      justify-content: space-between !important;\n      gap: 10px !important;\n      width: 100% !important;\n    }\n\n    .warhub-title {\n      font-weight: 800 !important;\n      font-size: 16px !important;\n      letter-spacing: .2px !important;\n      color: #fff !important;\n    }\n    .warhub-sub {\n      opacity: .72 !important;\n      font-size: 11px !important;\n      margin-top: 2px !important;\n      color: #fff !important;\n    }\n\n    .warhub-close {\n      appearance: none !important;\n      -webkit-appearance: none !important;\n      border: 0 !important;\n      border-radius: 9px !important;\n      background: rgba(255,255,255,.08) !important;\n      color: #fff !important;\n      padding: 5px 9px !important;\n      font-weight: 700 !important;\n      cursor: pointer !important;\n      font-size: 12px !important;\n      flex: 0 0 auto !important;\n      display: inline-flex !important;\n      align-items: center !important;\n      justify-content: center !important;\n      min-height: 30px !important;\n    }\n\n    .warhub-tabs {\n      display: flex !important;\n      flex: 0 0 auto !important;\n      flex-wrap: nowrap !important;\n      align-items: center !important;\n      gap: 6px !important;\n      padding: 8px !important;\n      overflow-x: auto !important;\n      overflow-y: hidden !important;\n      border-bottom: 1px solid rgba(255,255,255,.08) !important;\n      background: rgba(255,255,255,.02) !important;\n      scrollbar-width: thin !important;\n      -webkit-overflow-scrolling: touch !important;\n      width: 100% !important;\n      min-height: 48px !important;\n      max-height: 48px !important;\n      white-space: nowrap !important;\n    }\n\n    .warhub-tab {\n      appearance: none !important;\n      -webkit-appearance: none !important;\n      border: 0 !important;\n      border-radius: 999px !important;\n      background: rgba(255,255,255,.07) !important;\n      color: #fff !important;\n      padding: 6px 10px !important;\n      font-size: 11px !important;\n      font-weight: 700 !important;\n      white-space: nowrap !important;\n      cursor: pointer !important;\n      flex: 0 0 auto !important;\n      display: inline-flex !important;\n      align-items: center !important;\n      justify-content: center !important;\n      min-height: 30px !important;\n      line-height: 1.1 !important;\n      opacity: 1 !important;\n      visibility: visible !important;\n      gap: 6px !important;\n    }\n    .warhub-tab.active {\n      background: linear-gradient(180deg, #d23333, #831515) !important;\n      color: #fff !important;\n    }\n    .warhub-tab.locked {\n      opacity: .55 !important;\n    }\n\n    .warhub-body {\n      padding: 8px !important;\n      overflow-y: auto !important;\n      overflow-x: hidden !important;\n      -webkit-overflow-scrolling: touch !important;\n      flex: 1 1 auto !important;\n      min-height: 0 !important;\n      width: 100% !important;\n      display: block !important;\n    }\n\n    .warhub-status {\n      display: none !important;\n      margin-bottom: 8px !important;\n      padding: 8px 10px !important;\n      border-radius: 10px !important;\n      font-size: 12px !important;\n      background: rgba(255,255,255,.06) !important;\n      color: #fff !important;\n    }\n    .warhub-status.show { display: block !important; }\n    .warhub-status.err {\n      background: rgba(185,52,52,.22) !important;\n      color: #ffdcdc !important;\n    }\n\n    .warhub-banner {\n      margin-bottom: 8px !important;\n      padding: 10px 12px !important;\n      border-radius: 10px !important;\n      background: rgba(255,255,255,.06) !important;\n      border: 1px solid rgba(255,255,255,.08) !important;\n      display: grid !important;\n      gap: 6px !important;\n    }\n\n    .warhub-grid {\n      display: grid !important;\n      gap: 8px !important;\n    }\n    .warhub-grid.two {\n      grid-template-columns: repeat(2, minmax(0, 1fr)) !important;\n    }\n    .warhub-grid.three {\n      grid-template-columns: repeat(3, minmax(0, 1fr)) !important;\n    }\n\n    .warhub-card {\n      background: rgba(255,255,255,.04) !important;\n      border: 1px solid rgba(255,255,255,.08) !important;\n      border-radius: 12px !important;\n      padding: 10px !important;\n      margin-bottom: 8px !important;\n      overflow: hidden !important;\n    }\n    .warhub-card h3 {\n      margin: 0 0 8px !important;\n      font-size: 13px !important;\n      color: #fff !important;\n    }\n\n    .warhub-section-title {\n      display: flex !important;\n      align-items: center !important;\n      justify-content: space-between !important;\n      gap: 8px !important;\n      margin-bottom: 8px !important;\n    }\n    .warhub-section-title h3 {\n      margin: 0 !important;\n      color: #fff !important;\n    }\n\n    .warhub-row {\n      display: flex !important;\n      align-items: center !important;\n      justify-content: space-between !important;\n      gap: 8px !important;\n      padding: 8px 0 !important;\n      border-bottom: 1px solid rgba(255,255,255,.06) !important;\n    }\n    .warhub-row:last-child {\n      border-bottom: 0 !important;\n      padding-bottom: 0 !important;\n    }\n\n    .warhub-left {\n      min-width: 0 !important;\n      display: grid !important;\n      gap: 2px !important;\n    }\n\n    .warhub-name {\n      font-weight: 800 !important;\n      color: #fff !important;\n      font-size: 13px !important;\n      line-height: 1.2 !important;\n      word-break: break-word !important;\n    }\n\n    .warhub-meta {\n      font-size: 11px !important;\n      opacity: .74 !important;\n      color: #fff !important;\n      line-height: 1.25 !important;\n      word-break: break-word !important;\n    }\n\n    .warhub-right {\n      display: flex !important;\n      align-items: center !important;\n      justify-content: flex-end !important;\n      gap: 6px !important;\n      flex-wrap: wrap !important;\n      flex: 0 0 auto !important;\n    }\n\n    .warhub-actions {\n      display: flex !important;\n      flex-wrap: wrap !important;\n      gap: 6px !important;\n    }\n\n    .warhub-btn {\n      appearance: none !important;\n      -webkit-appearance: none !important;\n      border: 0 !important;\n      border-radius: 9px !important;\n      background: rgba(255,255,255,.09) !important;\n      color: #fff !important;\n      padding: 7px 10px !important;\n      font-size: 12px !important;\n      font-weight: 800 !important;\n      cursor: pointer !important;\n      min-height: 30px !important;\n      text-decoration: none !important;\n      display: inline-flex !important;\n      align-items: center !important;\n      justify-content: center !important;\n      line-height: 1 !important;\n    }\n    .warhub-btn.primary {\n      background: linear-gradient(180deg, #d23333, #831515) !important;\n      color: #fff !important;\n    }\n    .warhub-btn.good {\n      background: linear-gradient(180deg, #2d9b5d, #186a3b) !important;\n      color: #fff !important;\n    }\n    .warhub-btn.warn {\n      background: linear-gradient(180deg, #b93b3b, #7a1e1e) !important;\n      color: #fff !important;\n    }\n\n    .warhub-metric {\n      border-radius: 11px !important;\n      background: rgba(255,255,255,.05) !important;\n      border: 1px solid rgba(255,255,255,.08) !important;\n      padding: 10px !important;\n    }\n    .warhub-metric .k {\n      font-size: 11px !important;\n      opacity: .72 !important;\n      color: #fff !important;\n    }\n    .warhub-metric .v {\n      margin-top: 3px !important;\n      font-size: 18px !important;\n      font-weight: 900 !important;\n      color: #fff !important;\n      line-height: 1.15 !important;\n      word-break: break-word !important;\n    }\n\n    .warhub-empty {\n      padding: 12px !important;\n      text-align: center !important;\n      font-size: 12px !important;\n      opacity: .76 !important;\n      color: #fff !important;\n    }\n\n    .warhub-select,\n    .warhub-input,\n    .warhub-textarea {\n      width: 100% !important;\n      border: 1px solid rgba(255,255,255,.12) !important;\n      background: rgba(255,255,255,.06) !important;\n      color: #fff !important;\n      border-radius: 10px !important;\n      padding: 9px 10px !important;\n      font-size: 13px !important;\n      outline: none !important;\n      box-shadow: none !important;\n    }\n\n    .warhub-input[readonly] {\n      opacity: .9 !important;\n      background: rgba(255,255,255,.035) !important;\n    }\n\n    .warhub-textarea { min-height: 94px !important; resize: vertical !important; }\n\n    .warhub-label {\n      font-size: 11px !important;\n      opacity: .74 !important;\n      margin-bottom: 4px !important;\n      display: block !important;\n      color: #fff !important;\n    }\n\n   .warhub-pill {\n      display: inline-flex !important;\n      align-items: center !important;\n      gap: 6px !important;\n      padding: 4px 8px !important;\n      border-radius: 999px !important;\n      background: rgba(255,255,255,.07) !important;\n      border: 1px solid rgba(255,255,255,.08) !important;\n      font-size: 11px !important;\n      font-weight: 700 !important;\n    }\n\n    .warhub-pill.online {\n      background: rgba(40,140,90,.20) !important;\n      color: #b7ffd5 !important;\n    }\n\n    .warhub-pill.idle {\n      background: rgba(197,141,46,.22) !important;\n      color: #ffe3a5 !important;\n    }\n\n    .warhub-pill.offline {\n      background: rgba(113,113,113,.20) !important;\n      color: #dadada !important;\n    }\n\n    .warhub-pill.hosp {\n      background: rgba(181,62,62,.24) !important;\n      color: #ffd0d0 !important;\n    }\n\n    .warhub-pill.travel {\n      background: rgba(53,110,190,.24) !important;\n      color: #d5e7ff !important;\n    }\n\n    .warhub-pill.jail {\n      background: rgba(110,68,175,.24) !important;\n      color: #e5d8ff !important;\n    }\n\n    .warhub-pill.leader {\n      background: rgba(66,110,185,.24) !important;\n      color: #d3e3ff !important;\n    }\n\n    .warhub-pill.enabled {\n      background: rgba(35,140,82,.22) !important;\n      color: #b7ffd5 !important;\n    }\n\n    .warhub-pill.disabled {\n      background: rgba(145,37,37,.24) !important;\n      color: #ffd0d0 !important;\n    }\n\n    .warhub-pill.good {\n      background: rgba(34,197,94,.18) !important;\n      border-color: rgba(34,197,94,.45) !important;\n      color: #bbf7d0 !important;\n    }\n\n    .warhub-pill.bad {\n      background: rgba(239,68,68,.18) !important;\n      border-color: rgba(239,68,68,.45) !important;\n      color: #fecaca !important;\n    }\n\n    .warhub-pill.neutral {\n      background: rgba(148,163,184,.16) !important;\n      border-color: rgba(148,163,184,.35) !important;\n      color: #e2e8f0 !important;\n    }\n\n    .warhub-pos {\n      color: #86efac !important;\n    }\n\n    .warhub-neg {\n      color: #fca5a5 !important;\n    }\n\n    .warhub-divider {\n      height: 1px !important;\n      background: rgba(255,255,255,.07) !important;\n      margin: 8px 0 !important;\n    }\n    .warhub-mini { font-size: 11px !important; opacity: .78 !important; color: #fff !important; }\n    .warhub-link { color: #fff !important; text-decoration: none !important; }\n\n    .warhub-section-scroll {\n      max-height: 52vh !important;\n      overflow-y: auto !important;\n      overflow-x: hidden !important;\n      -webkit-overflow-scrolling: touch !important;\n      padding-right: 2px !important;\n    }\n\n    .warhub-payment-line {\n      padding: 8px 10px !important;\n      border-radius: 10px !important;\n      background: rgba(255,255,255,.06) !important;\n      font-weight: 800 !important;\n      text-align: center !important;\n      margin-top: 8px !important;\n    }\n\n    @media (max-width: 700px) {\n      #warhub-overlay {\n        width: 98vw !important;\n        height: 88vh !important;\n        min-height: 360px !important;\n        top: 56px !important;\n        left: 1vw !important;\n        right: 1vw !important;\n        border-radius: 12px !important;\n      }\n      .warhub-grid.two, .warhub-grid.three { grid-template-columns: 1fr !important; }\n      .warhub-body { padding-bottom: 18px !important; }\n      #warhub-shield {\n        width: 40px !important;\n        height: 40px !important;\n        font-size: 21px !important;\n      }\n      .warhub-section-scroll { max-height: 34vh !important; }\n      .warhub-tabs {\n        min-height: 44px !important;\n        max-height: 44px !important;\n      }\n    }\n  ";
+    var css = "\n    #warhub-shield {\n      position: fixed !important;\n      z-index: 2147483647 !important;\n      width: 42px !important;\n      height: 42px !important;\n      border-radius: 12px !important;\n      display: flex !important;\n      align-items: center !important;\n      justify-content: center !important;\n      font-size: 22px !important;\n      line-height: 1 !important;\n      cursor: grab !important;\n      user-select: none !important;\n      -webkit-user-select: none !important;\n      -webkit-touch-callout: none !important;\n      touch-action: none !important;\n      box-shadow: 0 8px 24px rgba(0,0,0,.45) !important;\n      border: 1px solid rgba(255,255,255,.10) !important;\n      background: radial-gradient(circle at 30% 20%, rgba(220,75,75,.98), rgba(110,12,12,.98) 55%, rgba(48,6,6,.98)) !important;\n      color: #fff !important;\n      top: 120px !important;\n      right: 14px !important;\n      left: auto !important;\n      bottom: auto !important;\n      opacity: 1 !important;\n      visibility: visible !important;\n      pointer-events: auto !important;\n    }\n    #warhub-shield.dragging { cursor: grabbing !important; }\n\n    #warhub-badge {\n      position: fixed !important;\n      z-index: 2147483647 !important;\n      min-width: 16px !important;\n      height: 16px !important;\n      padding: 0 4px !important;\n      border-radius: 999px !important;\n      background: #ffd54a !important;\n      color: #111 !important;\n      font-size: 10px !important;\n      line-height: 16px !important;\n      text-align: center !important;\n      font-weight: 800 !important;\n      box-shadow: 0 3px 12px rgba(0,0,0,.45) !important;\n      display: none !important;\n      pointer-events: none !important;\n    }\n\n    #warhub-overlay {\n      position: fixed !important;\n      z-index: 2147483646 !important;\n      right: 12px !important;\n      top: 170px !important;\n      width: min(96vw, 520px) !important;\n      height: min(88vh, 900px) !important;\n      max-height: 88vh !important;\n      min-height: 420px !important;\n      overflow: hidden !important;\n      border-radius: 14px !important;\n      background: linear-gradient(180deg, #171717, #0c0c0c) !important;\n      color: #f2f2f2 !important;\n      border: 1px solid rgba(255,255,255,.08) !important;\n      box-shadow: 0 16px 38px rgba(0,0,0,.54) !important;\n      display: none !important;\n      font-family: -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif !important;\n      left: auto !important;\n      bottom: auto !important;\n      flex-direction: column !important;\n      box-sizing: border-box !important;\n      opacity: 1 !important;\n      visibility: visible !important;\n    }\n    #warhub-overlay.open { display: flex !important; }\n\n    #warhub-overlay *,\n    #warhub-overlay *::before,\n    #warhub-overlay *::after {\n      box-sizing: border-box !important;\n    }\n\n    .warhub-head {\n      padding: 10px 12px 9px !important;\n      border-bottom: 1px solid rgba(255,255,255,.08) !important;\n      background: linear-gradient(180deg, rgba(170,18,18,.30), rgba(20,20,20,.20)) !important;\n      cursor: grab !important;\n      user-select: none !important;\n      -webkit-user-select: none !important;\n      -webkit-touch-callout: none !important;\n      touch-action: none !important;\n      flex: 0 0 auto !important;\n      display: block !important;\n      width: 100% !important;\n      min-height: 54px !important;\n    }\n    .warhub-head.dragging { cursor: grabbing !important; }\n\n    .warhub-toprow {\n      display: flex !important;\n      align-items: center !important;\n      justify-content: space-between !important;\n      gap: 10px !important;\n      width: 100% !important;\n    }\n\n    .warhub-title {\n      font-weight: 800 !important;\n      font-size: 16px !important;\n      letter-spacing: .2px !important;\n      color: #fff !important;\n    }\n    .warhub-sub {\n      opacity: .72 !important;\n      font-size: 11px !important;\n      margin-top: 2px !important;\n      color: #fff !important;\n    }\n\n    .warhub-close {\n      appearance: none !important;\n      -webkit-appearance: none !important;\n      border: 0 !important;\n      border-radius: 9px !important;\n      background: rgba(255,255,255,.08) !important;\n      color: #fff !important;\n      padding: 5px 9px !important;\n      font-weight: 700 !important;\n      cursor: pointer !important;\n      font-size: 12px !important;\n      flex: 0 0 auto !important;\n      display: inline-flex !important;\n      align-items: center !important;\n      justify-content: center !important;\n      min-height: 30px !important;\n    }\n\n    .warhub-tabs {\n      display: flex !important;\n      flex: 0 0 auto !important;\n      flex-wrap: nowrap !important;\n      align-items: center !important;\n      gap: 6px !important;\n      padding: 8px !important;\n      overflow-x: auto !important;\n      overflow-y: hidden !important;\n      border-bottom: 1px solid rgba(255,255,255,.08) !important;\n      background: rgba(255,255,255,.02) !important;\n      scrollbar-width: thin !important;\n      -webkit-overflow-scrolling: touch !important;\n      width: 100% !important;\n      min-height: 48px !important;\n      max-height: 48px !important;\n      white-space: nowrap !important;\n    }\n\n    .warhub-tab {\n      appearance: none !important;\n      -webkit-appearance: none !important;\n      border: 0 !important;\n      border-radius: 999px !important;\n      background: rgba(255,255,255,.07) !important;\n      color: #fff !important;\n      padding: 6px 10px !important;\n      font-size: 11px !important;\n      font-weight: 700 !important;\n      white-space: nowrap !important;\n      cursor: pointer !important;\n      flex: 0 0 auto !important;\n      display: inline-flex !important;\n      align-items: center !important;\n      justify-content: center !important;\n      min-height: 30px !important;\n      line-height: 1.1 !important;\n      opacity: 1 !important;\n      visibility: visible !important;\n      gap: 6px !important;\n    }\n    .warhub-tab.active {\n      background: linear-gradient(180deg, #d23333, #831515) !important;\n      color: #fff !important;\n    }\n    .warhub-tab.locked {\n      opacity: .55 !important;\n    }\n\n    .warhub-body {\n      padding: 8px !important;\n      overflow-y: auto !important;\n      overflow-x: hidden !important;\n      -webkit-overflow-scrolling: touch !important;\n      flex: 1 1 auto !important;\n      min-height: 0 !important;\n      width: 100% !important;\n      display: block !important;\n    }\n\n    .warhub-status {\n      display: none !important;\n      margin-bottom: 8px !important;\n      padding: 8px 10px !important;\n      border-radius: 10px !important;\n      font-size: 12px !important;\n      background: rgba(255,255,255,.06) !important;\n      color: #fff !important;\n    }\n    .warhub-status.show { display: block !important; }\n    .warhub-status.err {\n      background: rgba(185,52,52,.22) !important;\n      color: #ffdcdc !important;\n    }\n\n    .warhub-banner {\n      margin-bottom: 8px !important;\n      padding: 10px 12px !important;\n      border-radius: 12px !important;\n      border: 1px solid rgba(255,255,255,.10) !important;\n      background: rgba(255,255,255,.05) !important;\n      color: #fff !important;\n    }\n    .warhub-banner.payment {\n      background: linear-gradient(180deg, rgba(150,43,43,.38), rgba(72,19,19,.26)) !important;\n      border-color: rgba(255,130,130,.22) !important;\n    }\n    .warhub-banner.trial {\n      background: linear-gradient(180deg, rgba(164,116,25,.34), rgba(83,59,12,.22)) !important;\n      border-color: rgba(255,215,118,.22) !important;\n    }\n    .warhub-banner.good {\n      background: linear-gradient(180deg, rgba(35,140,82,.30), rgba(21,96,58,.20)) !important;\n      border-color: rgba(109,214,143,.18) !important;\n    }\n\n    .warhub-grid { display: grid !important; gap: 8px !important; }\n    .warhub-grid.two { grid-template-columns: repeat(2, minmax(0,1fr)) !important; }\n    .warhub-grid.three { grid-template-columns: repeat(3, minmax(0,1fr)) !important; }\n\n    .warhub-card {\n      border: 1px solid rgba(255,255,255,.07) !important;\n      background: rgba(255,255,255,.03) !important;\n      border-radius: 12px !important;\n      padding: 10px !important;\n      margin-bottom: 8px !important;\n      overflow: hidden !important;\n      color: #fff !important;\n    }\n\n    .warhub-card h3 {\n      margin: 0 0 8px !important;\n      font-size: 13px !important;\n      font-weight: 800 !important;\n      letter-spacing: .2px !important;\n      color: #fff !important;\n    }\n\n    .warhub-section-title {\n      display: flex !important;\n      align-items: center !important;\n      justify-content: space-between !important;\n      gap: 8px !important;\n      margin-bottom: 8px !important;\n    }\n\n    .warhub-count {\n      padding: 4px 8px !important;\n      border-radius: 999px !important;\n      background: rgba(255,255,255,.08) !important;\n      font-size: 11px !important;\n      font-weight: 800 !important;\n      color: #fff !important;\n    }\n\n    .warhub-roster-card.hospital-box {\n      border-color: rgba(255,130,130,.16) !important;\n      background: linear-gradient(180deg, rgba(145,37,37,.18), rgba(255,255,255,.03)) !important;\n    }\n\n    .warhub-roster-card.online-box {\n      border-color: rgba(109,214,143,.16) !important;\n      background: linear-gradient(180deg, rgba(31,120,63,.18), rgba(255,255,255,.03)) !important;\n    }\n\n    .warhub-roster-card.idle-box {\n      border-color: rgba(255,215,118,.16) !important;\n      background: linear-gradient(180deg, rgba(145,114,27,.18), rgba(255,255,255,.03)) !important;\n    }\n\n  .warhub-roster-card.travel-box {border-color: rgba(90,160,255,.16) !important;background: linear-gradient(180deg, rgba(36,87,155,.18), rgba(255,255,255,.03)) !important} .warhub-roster-card.jail-box {border-color: rgba(183,120,255,.16) !important;background: linear-gradient(180deg, rgba(98,53,145,.18), rgba(255,255,255,.03)) !important;}  .warhub-roster-card.offline-box {\n      border-color: rgba(180,180,180,.12) !important;\n      background: linear-gradient(180deg, rgba(70,70,70,.18), rgba(255,255,255,.03)) !important;\n    }\n\n    .warhub-dropdown {\n      border: 1px solid rgba(255,255,255,.07) !important;\n      border-radius: 12px !important;\n      background: rgba(255,255,255,.03) !important;\n      margin-bottom: 8px !important;\n      overflow: hidden !important;\n    }\n\n    .warhub-dropdown summary {\n      list-style: none !important;\n      cursor: pointer !important;\n      padding: 10px !important;\n      user-select: none !important;\n      outline: none !important;\n    }\n\n    .warhub-dropdown summary::-webkit-details-marker {\n      display: none !important;\n    }\n\n    .warhub-dropdown-body {\n      padding: 0 10px 10px 10px !important;\n    }\n\n    .warhub-metric {\n      border-radius: 10px !important;\n      background: rgba(255,255,255,.05) !important;\n      padding: 8px !important;\n      min-height: 54px !important;\n    }\n    .warhub-metric .k {\n      opacity: .7 !important;\n      font-size: 10px !important;\n      text-transform: uppercase !important;\n      letter-spacing: .45px !important;\n      color: #fff !important;\n    }\n    .warhub-metric .v {\n      font-size: 16px !important;\n      font-weight: 800 !important;\n      margin-top: 4px !important;\n      word-break: break-word !important;\n      color: #fff !important;\n    }\n\n    .warhub-score-us {\n      background: linear-gradient(180deg, rgba(31,120,63,.40), rgba(17,67,35,.28)) !important;\n      border: 1px solid rgba(109,214,143,.18) !important;\n    }\n    .warhub-score-them {\n      background: linear-gradient(180deg, rgba(145,37,37,.40), rgba(88,18,18,.28)) !important;\n      border: 1px solid rgba(255,130,130,.18) !important;\n    }\n    .warhub-score-lead {\n      background: linear-gradient(180deg, rgba(145,114,27,.38), rgba(97,72,13,.26)) !important;\n      border: 1px solid rgba(255,215,118,.18) !important;\n    }\n\n    .warhub-list { display: grid !important; gap: 6px !important; }\n\n    .warhub-list-item {\n      border-radius: 10px !important;\n      background: rgba(255,255,255,.04) !important;\n      padding: 8px !important;\n      display: grid !important;\n      gap: 4px !important;\n      color: #fff !important;\n    }\n\n    .warhub-row {\n      display: flex !important;\n      align-items: center !important;\n      justify-content: space-between !important;\n      gap: 8px !important;\n      flex-wrap: wrap !important;\n    }\n\n    .warhub-name { font-weight: 700 !important; color: #fff !important; }\n    .warhub-meta { opacity: .76 !important; font-size: 11px !important; color: #fff !important; }\n    .warhub-empty { opacity: .75 !important; font-size: 12px !important; color: #fff !important; }\n    .warhub-actions { display: flex !important; gap: 6px !important; flex-wrap: wrap !important; }\n\n    .warhub-btn, .warhub-input, .warhub-select, .warhub-textarea {\n      font: inherit !important;\n      border-radius: 10px !important;\n      border: 1px solid rgba(255,255,255,.10) !important;\n      background: rgba(255,255,255,.05) !important;\n      color: #fff !important;\n    }\n\n    .warhub-btn {\n      appearance: none !important;\n      -webkit-appearance: none !important;\n      padding: 7px 10px !important;\n      cursor: pointer !important;\n      font-size: 12px !important;\n      font-weight: 700 !important;\n      text-decoration: none !important;\n      display: inline-flex !important;\n      align-items: center !important;\n      justify-content: center !important;\n    }\n\n    .warhub-btn.primary { background: linear-gradient(180deg, #cc3737, #821616) !important; border-color: rgba(255,255,255,.12) !important; }\n    .warhub-btn.good { background: linear-gradient(180deg, #238c52, #15603a) !important; }\n    .warhub-btn.warn { background: linear-gradient(180deg, #af7b22, #775114) !important; }\n    .warhub-btn.small { padding: 5px 8px !important; font-size: 11px !important; }\n    .warhub-btn[disabled] { opacity: .45 !important; cursor: not-allowed !important; }\n\n    .warhub-input, .warhub-select, .warhub-textarea {\n      width: 100% !important;\n      padding: 8px 10px !important;\n      font-size: 12px !important;\n    }\n\n    .warhub-input[readonly] {\n      opacity: .9 !important;\n      background: rgba(255,255,255,.035) !important;\n    }\n\n    .warhub-textarea { min-height: 94px !important; resize: vertical !important; }\n\n    .warhub-label {\n      font-size: 11px !important;\n      opacity: .74 !important;\n      margin-bottom: 4px !important;\n      display: block !important;\n      color: #fff !important;\n    }\n\n   .warhub-pill {\n      display: inline-flex !important;\n      align-items: center !important;\n      gap: 6px !important;\n      padding: 4px 8px !important;\n      border-radius: 999px !important;\n      background: rgba(255,255,255,.07) !important;\n      border: 1px solid rgba(255,255,255,.08) !important;\n      font-size: 11px !important;\n      font-weight: 700 !important;\n    }\n\n    .warhub-pill.online {\n      background: rgba(40,140,90,.20) !important;\n      color: #b7ffd5 !important;\n    }\n\n    .warhub-pill.idle {\n      background: rgba(197,141,46,.22) !important;\n      color: #ffe3a5 !important;\n    }\n\n    .warhub-pill.offline {\n      background: rgba(113,113,113,.20) !important;\n      color: #dadada !important;\n    }\n\n    .warhub-pill.hosp {\n      background: rgba(181,62,62,.24) !important;\n      color: #ffd0d0 !important;\n    }\n\n    .warhub-pill.travel {\n      background: rgba(53,110,190,.24) !important;\n      color: #d5e7ff !important;\n    }\n\n    .warhub-pill.jail {\n      background: rgba(110,68,175,.24) !important;\n      color: #e5d8ff !important;\n    }\n\n    .warhub-pill.leader {\n      background: rgba(66,110,185,.24) !important;\n      color: #d3e3ff !important;\n    }\n\n    .warhub-pill.enabled {\n      background: rgba(35,140,82,.22) !important;\n      color: #b7ffd5 !important;\n    }\n\n    .warhub-pill.disabled {\n      background: rgba(145,37,37,.24) !important;\n      color: #ffd0d0 !important;\n    }\n\n    .warhub-pill.good {\n      background: rgba(34,197,94,.18) !important;\n      border-color: rgba(34,197,94,.45) !important;\n      color: #bbf7d0 !important;\n    }\n\n    .warhub-pill.bad {\n      background: rgba(239,68,68,.18) !important;\n      border-color: rgba(239,68,68,.45) !important;\n      color: #fecaca !important;\n    }\n\n    .warhub-pill.neutral {\n      background: rgba(148,163,184,.16) !important;\n      border-color: rgba(148,163,184,.35) !important;\n      color: #e2e8f0 !important;\n    }\n\n    .warhub-pos {\n      color: #86efac !important;\n    }\n\n    .warhub-neg {\n      color: #fca5a5 !important;\n    }\n\n    .warhub-divider {\n      height: 1px !important;\n      background: rgba(255,255,255,.07) !important;\n      margin: 8px 0 !important;\n    }\n    .warhub-mini { font-size: 11px !important; opacity: .78 !important; color: #fff !important; }\n    .warhub-link { color: #fff !important; text-decoration: none !important; }\n\n    .warhub-section-scroll {\n      max-height: 52vh !important;\n      overflow-y: auto !important;\n      overflow-x: hidden !important;\n      -webkit-overflow-scrolling: touch !important;\n      padding-right: 2px !important;\n    }\n\n    .warhub-payment-line {\n      padding: 8px 10px !important;\n      border-radius: 10px !important;\n      background: rgba(255,255,255,.06) !important;\n      font-weight: 800 !important;\n      text-align: center !important;\n      margin-top: 8px !important;\n    }\n\n    @media (max-width: 700px) {\n      #warhub-overlay {\n        width: 98vw !important;\n        height: 88vh !important;\n        min-height: 360px !important;\n        top: 56px !important;\n        left: 1vw !important;\n        right: 1vw !important;\n        border-radius: 12px !important;\n      }\n      .warhub-grid.two, .warhub-grid.three { grid-template-columns: 1fr !important; }\n      .warhub-body { padding-bottom: 18px !important; }\n      #warhub-shield {\n        width: 40px !important;\n        height: 40px !important;\n        font-size: 21px !important;\n      }\n      .warhub-section-scroll { max-height: 34vh !important; }\n      .warhub-tabs {\n        min-height: 44px !important;\n        max-height: 44px !important;\n      }\n    }\n  ";
     GM_addStyle(css);
     function esc(v) {
         return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
@@ -219,253 +219,354 @@ var K_TABS_SCROLL_LEFT = 'warhub_tabs_scroll_left_v3';
             return accessState.message || "Read-only access. Your leader must enable you after trial starts, or faction renewal is required.";
         }
 
-        if (!accessState.loggedIn) {
-            return accessState.message || 'Log in with your Torn API key to start using War Hub.';
-        }
-
-        if (accessState.isFactionLeader || isOwnerSession()) {
-            if (accessState.trialActive) {
-                var days = accessState.daysLeft != null ? accessState.daysLeft : fmtDaysLeftFromIso(accessState.expiresAt);
-                return accessState.message || ("Faction trial active" + (days != null ? " \u2022 " + days + " day" + (days === 1 ? '' : 's') + " left" : '') + ".");
+        if (accessState.trialActive) {
+            if (accessState.isFactionLeader || isOwnerSession()) {
+                if (accessState.daysLeft != null) {
+                    return "Faction trial active. " + accessState.daysLeft + " day" + (accessState.daysLeft === 1 ? '' : 's') + " left. Members can see War Hub now, and you choose who gets full access.";
+                }
+                return "Faction trial active. Members can see War Hub now, and you choose who gets full access.";
             }
-            return accessState.message || 'Leader access active.';
+
+            if (!accessState.memberEnabled && accessState.loggedIn) {
+                return "Faction trial is active, but you are read-only until your leader enables your access.";
+            }
+
+            if (accessState.memberEnabled) {
+                return "Your leader enabled your access for this faction cycle. Your access stays on until the next renewal/payment cycle.";
+            }
         }
 
-        if (accessState.memberEnabled) {
-            return accessState.message || 'Member access enabled by your faction leader.';
+        if (accessState.loggedIn && !accessState.isFactionLeader && !accessState.memberEnabled && !accessState.canUseFeatures) {
+            return "Read-only access. Your leader must enable you before you can use shared faction tools.";
         }
 
-        return accessState.message || 'Read-only access until your faction leader enables your script.';
+        if (accessState.loggedIn && (accessState.isFactionLeader || isOwnerSession())) {
+            return "Leader access ready. Trial starts automatically the first time the faction leader logs in. Billing is " + String(ppm) + " Xanax per enabled member.";
+        }
+
+        return '';
     }
-    function canUseFeaturesNow() {
-        return !!(accessState && accessState.canUseFeatures);
+        function isOwnerSession() {
+        var meId = String(
+            (accessState && accessState.userId) ||
+            (state && state.me && (state.me.user_id || state.me.id || state.me.player_id)) ||
+            (state && state.user && (state.user.user_id || state.user.id || state.user.player_id)) ||
+            ''
+        ).trim();
+
+        var meName = String(
+            (accessState && accessState.userName) ||
+            (state && state.me && (state.me.name || state.me.player_name)) ||
+            (state && state.user && (state.user.name || state.user.player_name)) ||
+            ''
+        ).trim().toLowerCase();
+
+        return meId === OWNER_USER_ID || meName === OWNER_NAME.toLowerCase();
     }
-    function getSavedApiKey() {
-        return cleanInputValue(GM_getValue(K_API_KEY, ''));
+        function getAccessInfo(payload, httpStatus) {
+        var d = payload && _typeof(payload) === 'object' ? payload : {};
+        var access = d.access && _typeof(d.access) === 'object' ? d.access : {};
+        var payment = d.payment && _typeof(d.payment) === 'object' ? d.payment : {};
+        var factionAccess = d.faction_access && _typeof(d.faction_access) === 'object' ? d.faction_access : {};
+        var memberAccess = d.member_access && _typeof(d.member_access) === 'object' ? d.member_access : {};
+        var license = d.license && _typeof(d.license) === 'object' ? d.license : {};
+        var paymentRequired = !!d.payment_required || !!d.requires_payment || !!d.paymentRequired || !!access.payment_required || !!access.requires_payment || !!access.paymentRequired || !!license.payment_required;
+        var blocked = !!d.blocked || !!d.access_blocked || !!d.locked || !!d.denied || !!access.blocked || !!access.access_blocked || !!access.locked || !!access.denied || paymentRequired;
+        var expiresAt = d.trial_expires_at || d.trialEndsAt || d.expires_at || access.trial_expires_at || access.trialEndsAt || access.expires_at || license.trial_expires_at || license.expires_at || '';
+        var explicitDaysLeft = d.trial_days_left != null ? d.trial_days_left : d.days_left != null ? d.days_left : access.trial_days_left != null ? access.trial_days_left : access.days_left != null ? access.days_left : license.days_left != null ? license.days_left : null;
+        var computedDaysLeft = explicitDaysLeft != null ? Number(explicitDaysLeft) : fmtDaysLeftFromIso(expiresAt);
+        var trialExpired = !!d.trial_expired || !!d.expired || !!access.trial_expired || !!access.expired || !!license.trial_expired || computedDaysLeft != null && computedDaysLeft < 0 && !paymentRequired ? true : false;
+        var trialActive = !!d.trial_active || !!access.trial_active || !!license.trial_active || computedDaysLeft != null && computedDaysLeft >= 0 && !paymentRequired && !trialExpired;
+        var accessStatus = String(d.access_status || d.status || access.status || access.access_status || license.status || '').toLowerCase();
+        var reason = d.reason || d.block_reason || d.error || access.reason || access.block_reason || memberAccess.reason || license.block_reason || '';
+        var message = d.message || d.notice || d.details || access.message || access.notice || payment.message || license.message || '';
+        var isOwner = !!d.is_owner || !!(d.user && d.user.is_owner) || !!(d.me && d.me.is_owner) || !!(d.owner && d.owner.is_owner) || !!factionAccess.is_owner;
+        var isFactionLeader = !!d.is_faction_leader || !!access.is_faction_leader || !!factionAccess.is_faction_leader || !!(d.me && d.me.is_faction_leader);
+        var isUserExempt = !!access.is_user_exempt || !!factionAccess.is_user_exempt || !!license.viewer_is_exempt_user;
+        var isFactionExempt = !!access.is_faction_exempt || !!factionAccess.is_faction_exempt || !!license.faction_exempt;
+        var memberEnabled = !!memberAccess.enabled || !!factionAccess.member_enabled || !!access.member_enabled || !!memberAccess.allowed;
+        if (isFactionLeader || isOwner) memberEnabled = true;
+        var canUseFeatures = access.can_use_features;
+        if (canUseFeatures == null) canUseFeatures = access.canUseFeatures;
+        if (canUseFeatures == null) canUseFeatures = factionAccess.can_use_features;
+        if (canUseFeatures == null) canUseFeatures = isOwner || isFactionLeader || isUserExempt || isFactionExempt || memberEnabled;
+        var finalBlocked = blocked;
+        var finalPaymentRequired = paymentRequired;
+        var finalTrialExpired = trialExpired;
+
+        if (isFactionExempt || isUserExempt) {
+            finalBlocked = false;
+            finalPaymentRequired = false;
+            finalTrialExpired = false;
+        } else if (accessStatus.includes('payment')) {
+            finalBlocked = true;
+            finalPaymentRequired = true;
+            finalTrialExpired = true;
+        } else if (accessStatus.includes('expired')) {
+            finalBlocked = true;
+            finalTrialExpired = true;
+        } else if (accessStatus.includes('blocked') || accessStatus.includes('locked') || accessStatus.includes('denied')) {
+            finalBlocked = true;
+        }
+
+        if ((httpStatus === 402 || httpStatus === 403) && !message) {
+            if (accessStatus === 'inactive' || reason === 'read_only_access' || (!memberEnabled && !isFactionLeader && !isOwner)) {
+                message = 'Read-only access. Your leader must enable you before you can use shared faction tools.';
+            } else {
+                message = "Faction access blocked. Payment goes to " + (payment.required_player || PAYMENT_PLAYER) + ".";
+            }
+        }
+
+        if (finalPaymentRequired && !message) {
+            message = "Faction payment required. Payment goes to " + (payment.required_player || PAYMENT_PLAYER) + ".";
+        } else if (finalBlocked && !message) {
+            message = reason || 'Faction access locked.';
+        }
+
+        return {
+            loggedIn: false,
+            blocked: finalBlocked,
+            paymentRequired: finalPaymentRequired,
+            trialActive: !!trialActive && !finalBlocked,
+            trialExpired: finalTrialExpired || finalPaymentRequired,
+            expiresAt: expiresAt || '',
+            daysLeft: Number.isFinite(computedDaysLeft) ? computedDaysLeft : null,
+            reason: String(reason || ''),
+            message: String(message || ''),
+            source: String(accessStatus || ''),
+            status: String(accessStatus || ''),
+            lastSeenAt: new Date().toISOString(),
+            factionId: d.faction_id || (d.faction && d.faction.id) || (d.me && d.me.faction_id) || (d.user && d.user.faction_id) || '',
+            factionName: d.faction_name || (d.faction && d.faction.name) || (d.me && d.me.faction_name) || (d.user && d.user.faction_name) || '',
+            userId: String((d.user && (d.user.user_id || d.user.id)) || (d.me && (d.me.user_id || d.me.id || d.me.player_id)) || ''),
+            userName: String((d.user && (d.user.name || d.user.player_name)) || (d.me && (d.me.name || d.me.player_name)) || ''),
+            isFactionLeader: isFactionLeader,
+            memberEnabled: memberEnabled,
+            canUseFeatures: (!!canUseFeatures && !finalBlocked && !finalPaymentRequired && !finalTrialExpired) || isUserExempt || isFactionExempt,
+            pricePerMember: Number(payment.payment_per_member || license.payment_per_member || PRICE_PER_MEMBER) || PRICE_PER_MEMBER,
+            paymentPlayer: String(payment.required_player || payment.payment_player || license.payment_player || PAYMENT_PLAYER),
+            isOwner: isOwner,
+            isUserExempt: isUserExempt,
+            isFactionExempt: isFactionExempt
+        };
     }
-    function getSavedAdminKey() {
-        return cleanInputValue(GM_getValue(K_ADMIN_KEY, ''));
+        function updateAccessFromPayload(payload, httpStatus, loggedInHint) {
+    var next = getAccessInfo(payload, httpStatus);
+    if (loggedInHint === true && !next.blocked) next.loggedIn = true;
+    if (loggedInHint === false) next.loggedIn = false;
+
+    if (next.blocked || next.paymentRequired || next.trialExpired || (next.loggedIn && !next.canUseFeatures && !next.isFactionLeader && !next.isOwner)) {
+        accessState = normalizeAccessCache(_objectSpread(_objectSpread({}, accessState), next));
+        saveAccessCache();
+        return accessState;
     }
-    function getSessionId() {
-        return cleanInputValue(GM_getValue(K_SESSION, ''));
+
+    if (next.trialActive || next.expiresAt || next.daysLeft != null || next.factionId || next.isFactionLeader || next.userId || next.loggedIn) {
+        accessState = normalizeAccessCache(
+            _objectSpread(
+                _objectSpread(
+                    _objectSpread({}, accessState),
+                    next
+                ),
+                {},
+                {
+                    loggedIn: loggedInHint === true ? true : accessState.loggedIn,
+                    blocked: false,
+                    paymentRequired: false,
+                    trialExpired: false,
+                    expiresAt: next.expiresAt,
+                    daysLeft: next.daysLeft,
+                    reason: next.reason,
+                    message: next.message,
+                    source: next.source,
+                    status: next.status,
+                    lastSeenAt: next.lastSeenAt,
+                    isOwner: next.isOwner,
+                    isFactionLeader: next.isFactionLeader,
+                    memberEnabled: next.memberEnabled,
+                    canUseFeatures: next.canUseFeatures,
+                    userId: next.userId || accessState.userId,
+                    userName: next.userName || accessState.userName
+                }
+            )
+        );
+        saveAccessCache();
+        return accessState;
     }
-    function saveSessionId(sessionId) {
-        sessionId = cleanInputValue(sessionId || '');
-        if (sessionId) GM_setValue(K_SESSION, sessionId);else GM_deleteValue(K_SESSION);
+
+    if (loggedInHint === true) {
+        accessState = normalizeAccessCache(_objectSpread(_objectSpread({}, accessState), {}, {
+            loggedIn: true,
+            blocked: false,
+            paymentRequired: false,
+            trialExpired: false,
+            lastSeenAt: new Date().toISOString(),
+            isOwner: !!next.isOwner || !!accessState.isOwner
+        }));
+        saveAccessCache();
     }
-    function saveApiKey(v) {
-        v = cleanInputValue(v || '');
-        if (v) GM_setValue(K_API_KEY, v);else GM_deleteValue(K_API_KEY);
+
+    return accessState;
+}
+        function canUseProtectedFeatures() {
+        if (isOwnerSession()) return true;
+        if (accessState && (accessState.blocked || accessState.paymentRequired || accessState.trialExpired)) return false;
+        if (accessState && accessState.isFactionLeader) return true;
+        if (accessState && accessState.loggedIn && accessState.canUseFeatures === false) return false;
+        return !(accessState && accessState.loggedIn && !accessState.memberEnabled);
     }
-    function saveAdminKey(v) {
-        v = cleanInputValue(v || '');
-        if (v) GM_setValue(K_ADMIN_KEY, v);else GM_deleteValue(K_ADMIN_KEY);
-    }
-    function isOwnerSession() {
-        var uid = String((state && state.user && state.user.user_id) || (state && state.me && state.me.user_id) || (accessState && accessState.userId) || '').trim();
-        return uid === OWNER_USER_ID;
-    }
-    function ownerTokenAllowed() {
-        var saved = cleanInputValue(GM_getValue(K_OWNER_TOKEN, ''));
-        return !!saved && saved === String(window.AVAIL_TOKEN || '');
-    }
-    function activeUserId() {
-        return String((state && state.user && state.user.user_id) || (state && state.me && state.me.user_id) || '').trim();
-    }
-    function activeFactionId() {
-        return String((state && state.user && state.user.faction_id) || (state && state.me && state.me.faction_id) || '').trim();
-    }
-    function activeFactionName() {
-        return String((state && state.user && state.user.faction_name) || (state && state.me && state.me.faction_name) || '').trim();
-    }
-    function wantsLiveStats() {
-        var me = arr((state && state.members) || []).find(function (m) {
-            return String((m && (m.user_id || m.id)) || '') === activeUserId();
-        });
-        return !!(me && me.live_stats_enabled);
-    }
-    function supportFormLink() {
-        var uid = activeUserId();
-        return uid ? "https://www.torn.com/messages.php#/p=compose&XID=".concat(OWNER_USER_ID, "&subject=").concat(encodeURIComponent('War Hub support request'), "&message=").concat(encodeURIComponent('Hi ' + OWNER_NAME + ', I need help with War Hub. My user ID is ' + uid + '.')) : "https://www.torn.com/profiles.php?XID=".concat(OWNER_USER_ID);
-    }
-    function adminSupportLink() {
-        return "https://www.torn.com/profiles.php?XID=".concat(OWNER_USER_ID);
-    }
-    function buildQuery(params) {
-        var pairs = [];
-        Object.keys(params || {}).forEach(function (k) {
-            var v = params[k];
-            if (v == null || v === '') return;
-            pairs.push("".concat(encodeURIComponent(k), "=").concat(encodeURIComponent(String(v))));
-        });
-        return pairs.length ? "?".concat(pairs.join('&')) : '';
-    }
-    function currentWarId() {
-        return String((state && state.war && state.war.war_id) || '').trim();
-    }
-    function currentWarStatus() {
-        return state && state.war ? state.war.status || '' : '';
-    }
-    function currentTargetScore() {
-        return Number((state && state.score && state.score.target) || (state && state.war && state.war.target_score) || 0) || 0;
-    }
-    function currentOurScore() {
-        return Number((state && state.score && state.score.our) || (state && state.war && state.war.score_us) || 0) || 0;
-    }
-    function currentEnemyScore() {
-        return Number((state && state.score && state.score.enemy) || (state && state.war && state.war.score_them) || 0) || 0;
-    }
-    function currentNetScore() {
-        return currentOurScore() - currentEnemyScore();
-    }
-    function withSessionHeaders(extra) {
-        var headers = _objectSpread({}, extra || {});
-        var sid = getSessionId();
-        if (sid) headers['X-Session-Id'] = sid;
-        return headers;
+        function ensureAllowedOrMessage() {
+        if (canUseProtectedFeatures()) return true;
+        setStatus(accessSummaryMessage() || 'Faction access locked.', true);
+        renderBody();
+        return false;
     }
     function gmXhr(method, path, body, extraHeaders) {
-        return new Promise(function (resolve, reject) {
-            var url = path.indexOf('http') === 0 ? path : "".concat(BASE_URL).concat(path);
+        return new Promise(function (resolve) {
+            var token = cleanInputValue(GM_getValue(K_SESSION, ''));
+            var url = "".concat(BASE_URL).concat(path);
             var headers = _objectSpread({
-                'Content-Type': 'application/json'
+                Accept: 'application/json'
             }, extraHeaders || {});
+            if (token) headers['X-Session-Token'] = token;
+            if (body != null) headers['Content-Type'] = 'application/json';
             GM_xmlhttpRequest({
                 method: method,
                 url: url,
                 headers: headers,
-                data: body ? JSON.stringify(body) : undefined,
-                timeout: 30000,
-                onload: function onload(resp) {
+                data: body != null ? JSON.stringify(body) : undefined,
+                timeout: 60000,
+                onload: function onload(res) {
+                    var json = null;
                     try {
-                        var json = resp && resp.responseText ? JSON.parse(resp.responseText) : {};
-                        resolve({
-                            ok: resp.status >= 200 && resp.status < 300,
-                            status: resp.status,
-                            data: json
-                        });
-                    } catch (e) {
-                        resolve({
-                            ok: false,
-                            status: resp.status || 0,
-                            data: {
-                                ok: false,
-                                error: 'Invalid server response.'
-                            }
-                        });
-                    }
+                        json = JSON.parse(res.responseText || '{}');
+                    } catch (_unused3) {}
+                    resolve({
+                        ok: res.status >= 200 && res.status < 300 && (!json || json.ok !== false),
+                        status: res.status,
+                        data: json,
+                        error: (json === null || json === void 0 ? void 0 : json.error) || (json === null || json === void 0 ? void 0 : json.details) || (res.status >= 400 ? "HTTP ".concat(res.status) : 'Request failed')
+                    });
                 },
                 onerror: function onerror() {
-                    reject(new Error("Network error: ".concat(method, " ").concat(path)));
+                    return resolve({
+                        ok: false,
+                        status: 0,
+                        data: null,
+                        error: "Network error: ".concat(method, " ").concat(path)
+                    });
                 },
                 ontimeout: function ontimeout() {
-                    reject(new Error("Timeout: ".concat(method, " ").concat(path)));
+                    return resolve({
+                        ok: false,
+                        status: 0,
+                        data: null,
+                        error: "Request timed out: ".concat(method, " ").concat(path)
+                    });
                 }
             });
         });
     }
-    function api(method, path, body) {
-        return gmXhr(method, path, body, withSessionHeaders());
+    
+function whGetOwnFactionId() {
+    try {
+        return String((state && state.faction && (state.faction.faction_id || state.faction.id)) || '').trim();
+    } catch (e) {
+        return '';
     }
-    function detectEnemyFromWarInfo(s, members) {
-    var war = s && s.war ? s.war : {};
-    var ourFactionId = String((s && s.faction && s.faction.faction_id) || (s && s.me && s.me.faction_id) || '').trim();
-    var ourFactionName = String((s && s.faction && s.faction.name) || (s && s.me && s.me.faction_name) || '').trim().toLowerCase();
-
-    var enemyId = String((s && s.enemy_faction_id) || (s && s.enemyFaction && s.enemyFaction.faction_id) || (s && s.enemy_faction && s.enemy_faction.faction_id) || '').trim();
-    var enemyName = String((s && s.enemy_faction_name) || (s && s.enemyFaction && s.enemyFaction.name) || (s && s.enemy_faction && s.enemy_faction.name) || '').trim();
-
-    if (enemyId && ourFactionId && enemyId === ourFactionId) enemyId = '';
-    if (enemyName && ourFactionName && enemyName.toLowerCase() === ourFactionName) enemyName = '';
-
-    var debugFactions = arr(s && s.debug && s.debug.debug_factions);
-    if ((!enemyId || !enemyName) && debugFactions.length) {
-        debugFactions.forEach(function (row) {
-            if (!row || _typeof(row) !== 'object') return;
-            var fid = String(row.faction_id || '').trim();
-            var fname = String(row.faction_name || '').trim();
-
-            if (fid && ourFactionId && fid === ourFactionId) return;
-            if (fname && ourFactionName && fname.toLowerCase() === ourFactionName) return;
-
-            if (!enemyId && fid) enemyId = fid;
-            if (!enemyName && fname) enemyName = fname;
-        });
-    }
-
-    var rawEnemies = arr((s && s.enemies) || (war && war.enemy_members) || (s && s.enemy_members));
-    var enemyMembers = rawEnemies.filter(function (x) {
-        var uid = String((x && (x.user_id || x.id)) || '').trim();
-        return uid && !arr(members).some(function (m) {
-            return String((m && (m.user_id || m.id)) || '').trim() === uid;
-        });
-    });
-
-    return {
-        enemyId: enemyId,
-        enemyName: enemyName,
-        enemyMembers: enemyMembers
-    };
 }
-function getEnemyFactionMeta() {
+
+function whSaveWarPairFallback(data) {
+    try {
+        GM_setValue('war_pair_fallback_v1', JSON.stringify({
+            enemy_faction_id: String(data.enemy_faction_id || ''),
+            enemy_faction_name: String(data.enemy_faction_name || ''),
+            saved_at: Date.now()
+        }));
+    } catch (e) {}
+}
+
+function whLoadWarPairFallback() {
+    try {
+        var raw = GM_getValue('war_pair_fallback_v1', '');
+        if (!raw) return null;
+        var obj = JSON.parse(raw);
+        if (!obj || !obj.enemy_faction_id) return null;
+        return obj;
+    } catch (e) {
+        return null;
+    }
+}
+
+    function getEnemyFactionMeta() {
     var s = state || {};
+    var enemyFaction = s.enemy_faction || s.enemyFaction || {};
     var war = s.war || {};
-    var members = arr(s.members);
-    var detected = detectEnemyFromWarInfo(s, members);
+    var ownFaction = s.faction || s.our_faction || {};
+    var fallbackPair = whLoadWarPairFallback() || {};
+
+    var ownFactionId = String(
+        (ownFaction && (ownFaction.faction_id || ownFaction.id)) ||
+        (s.user && s.user.faction_id) ||
+        ''
+    ).trim();
+
+    var ownFactionName = String(
+        (ownFaction && ownFaction.name) ||
+        (s.user && s.user.faction_name) ||
+        ''
+    ).trim().toLowerCase();
+
+    var enemyFactionId = String(
+        (enemyFaction && (enemyFaction.faction_id || enemyFaction.id)) ||
+        s.enemy_faction_id ||
+        (war && war.enemy_faction_id) ||
+        fallbackPair.enemy_faction_id ||
+        ''
+    ).trim();
+
+    var enemyFactionName = String(
+        (enemyFaction && enemyFaction.name) ||
+        s.enemy_faction_name ||
+        (war && war.enemy_faction_name) ||
+        fallbackPair.enemy_faction_name ||
+        ''
+    ).trim();
+
+    if (enemyFactionId && ownFactionId && enemyFactionId === ownFactionId) {
+        enemyFactionId = '';
+        enemyFactionName = '';
+    }
+
+    if (enemyFactionName && ownFactionName && enemyFactionName.toLowerCase() === ownFactionName) {
+        enemyFactionId = '';
+        enemyFactionName = '';
+    }
 
     return {
-        id: detected.enemyId || String((s.enemy_faction && s.enemy_faction.faction_id) || (s.enemyFaction && s.enemyFaction.faction_id) || '').trim(),
-        name: detected.enemyName || String((s.enemy_faction && s.enemy_faction.name) || (s.enemyFaction && s.enemyFaction.name) || '').trim(),
-        score: Number((s.enemy_faction && s.enemy_faction.score) || (s.enemyFaction && s.enemyFaction.score) || war.score_them || 0) || 0,
-        chain: Number((s.enemy_faction && s.enemy_faction.chain) || (s.enemyFaction && s.enemyFaction.chain) || war.chain_them || 0) || 0,
-        members: detected.enemyMembers
+        id: enemyFactionId,
+        name: enemyFactionName
     };
 }
-    function canViewTab(tab) {
-        if (tab === 'admin') return isOwnerSession();
-        if (tab === 'wartop5') return isOwnerSession();
-        if (tab === 'faction') return !!(accessState && (accessState.isFactionLeader || isOwnerSession() || accessState.isUserExempt || accessState.isFactionExempt));
-        return true;
-    }
-    function visibleTabs() {
-        return TAB_ORDER.filter(function (row) {
-            return canViewTab(row[0]);
-        });
-    }
-    function isTabVisible(tab) {
-        return visibleTabs().some(function (row) {
-            return row[0] === tab;
-        });
-    }
-    function ensureVisibleTab() {
-        if (!isTabVisible(currentTab)) {
-            currentTab = visibleTabs()[0][0];
-            GM_setValue(K_TAB, currentTab);
-        }
-    }
-    function upsertLocalNotification(note) {
-        if (!note || !note.message) return;
-        var list = getLocalNotifications();
-        list.unshift({
-            id: "local-".concat(Date.now(), "-").concat(Math.random().toString(36).slice(2, 8)),
-            message: note.message,
-            created_at: new Date().toISOString()
-        });
-        setLocalNotifications(list.slice(0, 50));
-        updateBadge();
-        if (currentTab === 'overview' && isOpen) renderBody();
-    }
+
+function fetchSameOriginHtml(url) {
+    return fetch(url, {
+        credentials: 'include'
+    }).then(function (res) {
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        return res.text();
+    });
+}
+
+function parseEnemyRosterFromHtml(html, enemyFactionName) {
+    return [];
+}
     function healthCheck() {
         return _healthCheck.apply(this, arguments);
     }
     function _healthCheck() {
         _healthCheck = _asyncToGenerator(function* () {
-            try {
-                var res = yield gmXhr('GET', '/api/health');
-                return !!(res.ok && res.data && res.data.ok);
-            } catch (_unused3) {
-                return false;
-            }
+            return gmXhr('GET', '/health');
         });
         return _healthCheck.apply(this, arguments);
     }
@@ -474,155 +575,205 @@ function getEnemyFactionMeta() {
     }
     function _login() {
         _login = _asyncToGenerator(function* () {
-            var apiKey = cleanInputValue(getSavedApiKey());
-            if (!apiKey) throw new Error('Enter and save your API key first.');
-            var ownerToken = cleanInputValue(GM_getValue(K_OWNER_TOKEN, ''));
-            var payload = ownerTokenAllowed() ? {
-                api_key: apiKey,
-                owner_token: ownerToken
-            } : {
+            var showDebug = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : false;
+            var apiKey = cleanInputValue(GM_getValue(K_API_KEY, ''));
+            if (!apiKey) return false;
+            if (showDebug) setStatus('Trying login with saved API key...');
+            var res = yield gmXhr('POST', '/api/auth', {
                 api_key: apiKey
-            };
-            var res = yield gmXhr('POST', '/api/login', payload);
-            if (!res.ok || !res.data || !res.data.ok) {
-                var err = res && res.data && (res.data.error || res.data.message) || 'Login failed.';
-                if (res && res.data && (res.data.blocked || res.data.payment_required)) {
-                    accessState = normalizeAccessCache({
-                        loggedIn: true,
-                        blocked: !!res.data.blocked,
-                        paymentRequired: !!res.data.payment_required,
-                        trialActive: !!res.data.trial_active,
-                        trialExpired: !!res.data.trial_expired,
-                        expiresAt: res.data.expires_at || '',
-                        daysLeft: res.data.days_left,
-                        reason: res.data.reason || '',
-                        message: res.data.message || err,
-                        source: 'login-block',
-                        userId: res.data.user_id || '',
-                        userName: res.data.user_name || '',
-                        factionId: res.data.faction_id || '',
-                        factionName: res.data.faction_name || '',
-                        isFactionLeader: !!res.data.is_faction_leader,
-                        memberEnabled: !!res.data.member_enabled,
-                        canUseFeatures: !!(res.data.can_use_features || res.data.is_faction_leader || res.data.member_enabled),
-                        paymentPlayer: res.data.payment_player || PAYMENT_PLAYER,
-                        pricePerMember: res.data.price_per_member || PRICE_PER_MEMBER,
-                        isOwner: !!res.data.is_owner,
-                        isUserExempt: !!res.data.is_user_exempt,
-                        isFactionExempt: !!res.data.is_faction_exempt
-                    });
-                    saveAccessCache();
-                }
-                throw new Error(err);
-            }
-            saveSessionId(res.data.session_id || '');
-            accessState = normalizeAccessCache({
-                loggedIn: true,
-                blocked: false,
-                paymentRequired: !!res.data.payment_required,
-                trialActive: !!res.data.trial_active,
-                trialExpired: !!res.data.trial_expired,
-                expiresAt: res.data.expires_at || '',
-                daysLeft: res.data.days_left,
-                reason: '',
-                message: res.data.message || 'Logged in.',
-                source: 'login',
-                userId: res.data.user_id || '',
-                userName: res.data.user_name || '',
-                factionId: res.data.faction_id || '',
-                factionName: res.data.faction_name || '',
-                isFactionLeader: !!res.data.is_faction_leader,
-                memberEnabled: !!res.data.member_enabled,
-                canUseFeatures: !!(res.data.can_use_features || res.data.is_faction_leader || res.data.member_enabled),
-                paymentPlayer: res.data.payment_player || PAYMENT_PLAYER,
-                pricePerMember: res.data.price_per_member || PRICE_PER_MEMBER,
-                isOwner: !!res.data.is_owner,
-                isUserExempt: !!res.data.is_user_exempt,
-                isFactionExempt: !!res.data.is_faction_exempt
             });
-            saveAccessCache();
-            return res.data;
+            updateAccessFromPayload(res.data, res.status, false);
+            if (!res.ok) {
+                if ((accessState === null || accessState === void 0 ? void 0 : accessState.blocked) || (accessState === null || accessState === void 0 ? void 0 : accessState.paymentRequired) || (accessState === null || accessState === void 0 ? void 0 : accessState.trialExpired)) {
+                    setStatus(accessSummaryMessage() || 'Faction access blocked.', true);
+                    renderBody();
+                    return false;
+                }
+                setStatus(res.error || 'Login failed.', true);
+                return false;
+            }
+            var token = (res.data === null || res.data === void 0 ? void 0 : res.data.token) || (res.data === null || res.data === void 0 ? void 0 : res.data.session_token) || (res.data === null || res.data === void 0 ? void 0 : res.data.session);
+            if (token) {
+                GM_setValue(K_SESSION, cleanInputValue(token));
+                updateAccessFromPayload(res.data, res.status, true);
+                return true;
+            }
+            if ((accessState === null || accessState === void 0 ? void 0 : accessState.blocked) || (accessState === null || accessState === void 0 ? void 0 : accessState.paymentRequired) || (accessState === null || accessState === void 0 ? void 0 : accessState.trialExpired)) {
+                setStatus(accessSummaryMessage() || 'Faction access blocked.', true);
+                renderBody();
+                return false;
+            }
+            setStatus('Login failed.', true);
+            return false;
         });
         return _login.apply(this, arguments);
     }
-    function _req() {
+
+     function req(method, path, body) {
         return _req.apply(this, arguments);
     }
     function _req() {
         _req = _asyncToGenerator(function* (method, path, body) {
-            var res = yield api(method, path, body);
-            if (res && res.status === 401) {
-                saveSessionId('');
-                throw new Error('Session expired. Please log in again.');
+            if (!canUseProtectedFeatures() && path !== '/health' && path !== '/api/auth') {
+                return {
+                    ok: false,
+                    status: 403,
+                    data: {
+                        ok: false,
+                        payment_required: !!(accessState && accessState.paymentRequired),
+                        message: accessSummaryMessage() || 'Faction access blocked.'
+                    },
+                    error: accessSummaryMessage() || 'Faction access blocked.'
+                };
             }
-            if (!res.ok || !res.data || !res.data.ok) {
-                var err = res && res.data && (res.data.error || res.data.message) || 'Request failed.';
-                throw new Error(err);
+            var res = yield gmXhr(method, path, body);
+            updateAccessFromPayload(res.data, res.status, !!cleanInputValue(GM_getValue(K_SESSION, '')));
+            if ((accessState === null || accessState === void 0 ? void 0 : accessState.blocked) || (accessState === null || accessState === void 0 ? void 0 : accessState.paymentRequired) || (accessState === null || accessState === void 0 ? void 0 : accessState.trialExpired)) {
+                return {
+                    ok: false,
+                    status: res.status || 403,
+                    data: res.data,
+                    error: accessSummaryMessage() || res.error || 'Faction access blocked.'
+                };
             }
-            return res.data;
+            if (!res.ok && (res.status === 401 || res.status === 403)) {
+                var okLogin = yield login(false);
+                if (okLogin) {
+                    res = yield gmXhr(method, path, body);
+                    updateAccessFromPayload(res.data, res.status, true);
+                }
+            }
+            return res;
         });
         return _req.apply(this, arguments);
-    }
-    function req(method, path, body) {
-        return _req(method, path, body);
     }
     function adminReq(method, path, body) {
         return _adminReq.apply(this, arguments);
     }
     function _adminReq() {
         _adminReq = _asyncToGenerator(function* (method, path, body) {
-            var payload = _objectSpread({}, body || {});
-            var adminKey = cleanInputValue(getSavedAdminKey());
-            if (adminKey) payload.admin_key = adminKey;
-            var data = yield req(method, path, payload);
-            return data;
+            if (!isOwnerSession()) {
+                return {
+                    ok: false,
+                    status: 403,
+                    data: null,
+                    error: 'Admin access required.'
+                };
+            }
+            return req(method, path, body);
         });
         return _adminReq.apply(this, arguments);
     }
     function normalizeState(data) {
     var s = data || {};
-    var members = arr(s.members);
-    var faction = s.faction || s.our_faction || {};
-    var war = s.war || {};
+    var me = s.me || s.user || {};
+    var war = Object.assign({}, s.war || s.war_info || {});
+    if (war.active == null) war.active = !!(s.has_war || war.war_id || war.id);
 
-    var detectedEnemy = detectEnemyFromWarInfo(s, members);
-    var enemyFaction = _objectSpread({
-        faction_id: detectedEnemy.enemyId || String((s.enemy_faction && s.enemy_faction.faction_id) || (s.enemyFaction && s.enemyFaction.faction_id) || '').trim(),
-        name: detectedEnemy.enemyName || String((s.enemy_faction && s.enemy_faction.name) || (s.enemyFaction && s.enemyFaction.name) || '').trim(),
-        score: Number((s.enemy_faction && s.enemy_faction.score) || (s.enemyFaction && s.enemyFaction.score) || war.score_them || 0) || 0,
-        chain: Number((s.enemy_faction && s.enemy_faction.chain) || (s.enemyFaction && s.enemyFaction.chain) || war.chain_them || 0) || 0
-    }, s.enemy_faction || s.enemyFaction || {});
+    var faction = s.faction || s.my_faction || s.ourFaction || {};
+    var enemyFactionRaw = s.enemy_faction || s.enemyFaction || {};
 
-    var enemies = detectedEnemy.enemyMembers.length ? detectedEnemy.enemyMembers : arr(s.enemies);
+    var members = arr(s.members || s.member_list || []);
+    var enemies = arr(s.enemies || s.enemy_members || war.enemy_members || []);
+    var medDeals = arr(s.med_deals || s.medDeals || []);
+    var dibs = arr(s.dibs || []);
+    var notifications = arr(s.notifications || []);
+    var bounties = arr(s.bounties || []);
+    var targets = arr(s.targets || []);
+    var terms = s.war_terms || s.terms || {};
+    var medDealsMessage = String(s.med_deals_message || s.medDealsMessage || '');
 
-    var medDeals = arr(s.med_deals || s.medDeals);
-    var medDealsMessage = s.med_deals_message || s.medDealsMessage || '';
+    var ownFactionId = String(
+        (faction && (faction.faction_id || faction.id)) ||
+        (s.user && s.user.faction_id) ||
+        ''
+    ).trim();
 
-    var dibs = arr(s.dibs);
-    var terms = s.terms || s.war_terms || null;
-    var notifications = arr(s.notifications);
-    var bounties = arr(s.bounties);
-    var targets = arr(s.targets);
-    var hasWar = !!(s.has_war || s.is_ranked_war || war.active || war.registered || currentWarId());
+    var ownFactionName = String(
+        (faction && faction.name) ||
+        (s.user && s.user.faction_name) ||
+        ''
+    ).trim().toLowerCase();
+
+    var enemyFactionId = String(
+        enemyFactionRaw.faction_id ||
+        enemyFactionRaw.id ||
+        s.enemy_faction_id ||
+        war.enemy_faction_id ||
+        war.opponent_faction_id ||
+        ''
+    ).trim();
+
+    var enemyFactionName = String(
+        enemyFactionRaw.name ||
+        s.enemy_faction_name ||
+        war.enemy_faction_name ||
+        war.opponent_faction_name ||
+        ''
+    ).trim();
+
+    if (enemyFactionId && ownFactionId && enemyFactionId === ownFactionId) {
+        enemyFactionId = '';
+        enemyFactionName = '';
+    }
+    if (enemyFactionName && ownFactionName && enemyFactionName.toLowerCase() === ownFactionName) {
+        enemyFactionId = '';
+        enemyFactionName = '';
+    }
+
+    var seenEnemyIds = {};
+    enemies = enemies.filter(function (x) {
+        var id = String((x && (x.user_id || x.id || x.player_id)) || '').trim();
+        if (!id) return true;
+        if (id === getMyUserId()) return false;
+        if (seenEnemyIds[id]) return false;
+        seenEnemyIds[id] = true;
+        return true;
+    });
+
+    var enemyFaction = Object.assign({}, enemyFactionRaw, {
+        id: enemyFactionId || '',
+        faction_id: enemyFactionId || '',
+        name: enemyFactionName || 'Enemy Faction',
+        score: Number(
+            (enemyFactionRaw && enemyFactionRaw.score) ||
+            s.enemy_score ||
+            (s.score && s.score.enemy) ||
+            war.score_them ||
+            0
+        ) || 0,
+        chain: Number(
+            (enemyFactionRaw && enemyFactionRaw.chain) ||
+            war.chain_them ||
+            0
+        ) || 0
+    });
+
+    var hasWar = !!(
+        s.has_war ||
+        s.is_ranked_war ||
+        war.active ||
+        war.registered ||
+        war.war_id ||
+        war.id ||
+        enemyFactionId ||
+        enemies.length
+    );
 
     return {
-        ok: !!s.ok,
-        me: s.me || {},
         user: s.user || {},
-        access: s.access || {},
-        members: members,
-        faction: faction,
-        our_faction: s.our_faction || faction,
+        me: me,
         war: war,
+        faction: faction,
+        ourFaction: faction,
         enemyFaction: enemyFaction,
         enemy_faction: enemyFaction,
-        enemy_faction_id: enemyFaction.faction_id || '',
-        enemy_faction_name: enemyFaction.name || '',
+        enemy_faction_id: enemyFactionId || '',
+        enemy_faction_name: enemyFactionName || '',
+        members: members,
         enemies: enemies,
-        assignments: arr(s.assignments),
-        notes: arr(s.notes),
-        med_deals: medDeals,
         medDeals: medDeals,
+        med_deals: medDeals,
         med_deals_message: medDealsMessage,
         medDealsMessage: medDealsMessage,
         dibs: dibs,
@@ -663,727 +814,1461 @@ if (!res.ok) {
     if ((accessState === null || accessState === void 0 ? void 0 : accessState.blocked) || (accessState === null || accessState === void 0 ? void 0 : accessState.paymentRequired) || (accessState === null || accessState === void 0 ? void 0 : accessState.trialExpired)) renderBody();
     return;
 }
+
 var prevState = state ? normalizeState(state) : null;
-var nextState = normalizeState(res);
-var prevEnemyMeta = prevState ? getEnemyMetaFromState(prevState) : { id: '', name: '', members: [] };
-var nextEnemyMeta = getEnemyMetaFromState(nextState);
+var nextState = normalizeState(res.data || {});
 
-var fallbackEnemyKey = '';
-try {
-    fallbackEnemyKey = String(GM_getValue('warhub_last_enemy_key_v3', '') || '');
-} catch (_unused4) {}
+if (prevState) {
+    var prevEnemies = arr((prevState && prevState.enemies) || []);
+    var nextEnemies = arr((nextState && nextState.enemies) || []);
+    var prevEnemyId = String((prevState && prevState.enemy_faction_id) || (((prevState || {}).enemyFaction || {}).faction_id) || '').trim();
+    var nextEnemyId = String((nextState && nextState.enemy_faction_id) || (((nextState || {}).enemyFaction || {}).faction_id) || '').trim();
+    var prevEnemyName = String((prevState && prevState.enemy_faction_name) || (((prevState || {}).enemyFaction || {}).name) || '').trim().toLowerCase();
+    var nextEnemyName = String((nextState && nextState.enemy_faction_name) || (((nextState || {}).enemyFaction || {}).name) || '').trim().toLowerCase();
+    var sameEnemy = !!(
+        (prevEnemyId && nextEnemyId && prevEnemyId === nextEnemyId) ||
+        (!nextEnemyId && prevEnemyId) ||
+        (prevEnemyName && nextEnemyName && prevEnemyName === nextEnemyName)
+    );
 
-var fallbackEnemyData = null;
-try {
-    fallbackEnemyData = GM_getValue('warhub_last_enemy_data_v3', null);
-} catch (_unused5) {}
-
-var nextEnemyKey = (nextEnemyMeta.id || '') + '|' + (nextEnemyMeta.name || '');
-var prevEnemyKey = (prevEnemyMeta.id || '') + '|' + (prevEnemyMeta.name || '');
-
-if (
-    nextEnemyMeta.members.length > 0 &&
-    nextEnemyKey &&
-    nextEnemyKey !== '|'
-) {
-    try {
-        GM_setValue('warhub_last_enemy_key_v3', nextEnemyKey);
-        GM_setValue('warhub_last_enemy_data_v3', {
-            enemy_faction_id: nextEnemyMeta.id || '',
-            enemy_faction_name: nextEnemyMeta.name || '',
-            enemies: nextEnemyMeta.members
-        });
-    } catch (_unused6) {}
-}
-
-if (
-    nextEnemyMeta.members.length === 0 &&
-    fallbackEnemyData &&
-    _typeof(fallbackEnemyData) === 'object'
-) {
-    var fallbackId = String(fallbackEnemyData.enemy_faction_id || '').trim();
-    var fallbackName = String(fallbackEnemyData.enemy_faction_name || '').trim();
-    var fallbackMembers = arr(fallbackEnemyData.enemies);
-
-    var sameAsNext =
-        (fallbackId && nextEnemyMeta.id && fallbackId === nextEnemyMeta.id) ||
-        (fallbackName && nextEnemyMeta.name && fallbackName.toLowerCase() === String(nextEnemyMeta.name || '').toLowerCase());
-
-    var nextMissingIdentity = !nextEnemyMeta.id && !nextEnemyMeta.name;
-
-    if ((sameAsNext || nextMissingIdentity || fallbackEnemyKey === nextEnemyKey) && fallbackMembers.length) {
-        nextState.enemies = fallbackMembers;
-        if (!nextState.enemy_faction_id && fallbackId) nextState.enemy_faction_id = fallbackId;
-        if (!nextState.enemy_faction_name && fallbackName) nextState.enemy_faction_name = fallbackName;
-
-        if (!nextState.enemy_faction || _typeof(nextState.enemy_faction) !== 'object') nextState.enemy_faction = {};
-        if (!nextState.enemyFaction || _typeof(nextState.enemyFaction) !== 'object') nextState.enemyFaction = {};
-
-        if (!nextState.enemy_faction.faction_id && fallbackId) nextState.enemy_faction.faction_id = fallbackId;
-        if (!nextState.enemy_faction.name && fallbackName) nextState.enemy_faction.name = fallbackName;
-
-        if (!nextState.enemyFaction.faction_id && fallbackId) nextState.enemyFaction.faction_id = fallbackId;
-        if (!nextState.enemyFaction.name && fallbackName) nextState.enemyFaction.name = fallbackName;
+    if (prevEnemies.length && !nextEnemies.length && sameEnemy) {
+        nextState.enemies = prevEnemies.slice();
+        nextState.enemyFaction = Object.assign({}, (prevState && prevState.enemyFaction) || {}, (nextState && nextState.enemyFaction) || {});
+        nextState.enemy_faction = nextState.enemyFaction;
+        if (!nextState.enemy_faction_id) nextState.enemy_faction_id = prevEnemyId;
+        if (!nextState.enemy_faction_name) nextState.enemy_faction_name = (prevState && prevState.enemy_faction_name) || '';
     }
 }
 
-var preserved = preserveEditingState();
 state = nextState;
-syncAccessFromState(state);
-ensureVisibleTab();
-restoreEditingState(preserved);
-if (!silent || !isTypingInOverlay()) {
-    renderBody();
+
+if (state && state.enemy_faction_id) {
+    whSaveWarPairFallback({
+        enemy_faction_id: state.enemy_faction_id || '',
+        enemy_faction_name: state.enemy_faction_name || ''
+    });
 }
-if (!silent) {
-    setStatus('');
+
+if ((accessState === null || accessState === void 0 ? void 0 : accessState.isFactionLeader) && !factionMembersCache) {
+    loadFactionMembers()["catch"](function () {
+        return null;
+    });
 }
-            } catch (e) {
-                if (!silent) setStatus(e.message || 'Could not load state.', true);
+
+if (!silent) setStatus('');
+var shouldRerender = !!(overlay && isOpen && !(overlay && overlay.dataset.dragging === '1'));
+if (silent && (isTypingInOverlay() || dragMoved)) shouldRerender = false;
+if (shouldRerender) renderBody();
+updateBadge();
+if (overlay && isOpen && currentTab === 'admin' && isOwnerSession() && !silent) loadAdminDashboard()["catch"](function () {
+    return null;
+});
             } finally {
                 loadInFlight = false;
-                updateBadge();
             }
         });
         return _loadState.apply(this, arguments);
     }
-    function getEnemyMetaFromState(s) {
-        var st = normalizeState(s || {});
-        var factionId = String(st.enemy_faction_id || (st.enemy_faction && st.enemy_faction.faction_id) || (st.enemyFaction && st.enemyFaction.faction_id) || '').trim();
-        var factionName = String(st.enemy_faction_name || (st.enemy_faction && st.enemy_faction.name) || (st.enemyFaction && st.enemyFaction.name) || '').trim();
-        var enemies = arr(st.enemies);
-        return {
-            id: factionId,
-            name: factionName,
-            members: enemies
-        };
-    }
-    function syncAccessFromState(s) {
-        var access = s && s.access && _typeof(s.access) === 'object' ? s.access : {};
-        var me = s && s.me && _typeof(s.me) === 'object' ? s.me : {};
-        var user = s && s.user && _typeof(s.user) === 'object' ? s.user : {};
-        var license = s && s.license && _typeof(s.license) === 'object' ? s.license : {};
-        var loggedIn = !!(getSessionId() || user.user_id || me.user_id);
-        var blocked = !!(license.blocked || access.blocked);
-        var paymentRequired = !!(license.payment_required || access.payment_required);
-        var trialExpired = !!(license.trial_expired || access.trial_expired);
-        var trialActive = !!(license.trial_active || access.trial_active);
-        var isFactionLeader = !!(user.is_leader || access.is_faction_leader);
-        var memberEnabled = !!(access.member_enabled || license.viewer_member_enabled || access.memberEnabled);
-        var canUseFeatures = !!(access.can_use_features || access.canUseFeatures || isOwnerSession() || isFactionLeader || memberEnabled || access.is_user_exempt || access.is_faction_exempt || license.viewer_is_exempt_user || license.faction_exempt);
-        accessState = normalizeAccessCache({
-            loggedIn: loggedIn,
-            blocked: blocked,
-            paymentRequired: paymentRequired,
-            trialActive: trialActive,
-            trialExpired: trialExpired,
-            expiresAt: license.expires_at || access.expires_at || access.expiresAt || '',
-            daysLeft: license.days_left || access.days_left || access.daysLeft,
-            reason: license.block_reason || access.reason || '',
-            message: access.message || license.message || '',
-            source: 'state',
-            userId: user.user_id || me.user_id || access.user_id || '',
-            userName: user.name || me.name || access.user_name || '',
-            factionId: user.faction_id || me.faction_id || access.faction_id || license.faction_id || '',
-            factionName: user.faction_name || me.faction_name || access.faction_name || license.faction_name || '',
-            isFactionLeader: isFactionLeader,
-            memberEnabled: memberEnabled,
-            canUseFeatures: canUseFeatures,
-            paymentPlayer: license.payment_player || access.payment_player || PAYMENT_PLAYER,
-            pricePerMember: license.payment_per_member || access.price_per_member || PRICE_PER_MEMBER,
-            isOwner: !!(user.is_owner || access.is_owner),
-            isUserExempt: !!(access.is_user_exempt || license.viewer_is_exempt_user),
-            isFactionExempt: !!(access.is_faction_exempt || license.faction_exempt)
-        });
-        saveAccessCache();
-    }
-    function canUseProtectedFeatures() {
-        if (!accessState) return true;
-        if (isOwnerSession()) return true;
-        return !!accessState.canUseFeatures;
-    }
-    function preserveEditingState() {
-        if (!overlay) return null;
-        var active = document.activeElement;
-        var isInside = !!(active && overlay.contains(active));
-        var body = overlay.querySelector('.warhub-body');
-        var tabs = overlay.querySelector('.warhub-tabs');
-        return {
-            activeId: isInside ? active.id || '' : '',
-            activeName: isInside ? active.getAttribute('name') || '' : '',
-            selectionStart: isInside && typeof active.selectionStart === 'number' ? active.selectionStart : null,
-            selectionEnd: isInside && typeof active.selectionEnd === 'number' ? active.selectionEnd : null,
-            bodyScrollTop: body ? body.scrollTop : 0,
-            tabsScrollLeft: tabs ? tabs.scrollLeft : 0,
-            pageScrollX: window.scrollX || window.pageXOffset || 0,
-            pageScrollY: window.scrollY || window.pageYOffset || 0
-        };
-    }
-    function restoreEditingState(snapshot) {
-        if (!snapshot || !overlay) return;
-        var body = overlay.querySelector('.warhub-body');
-        var tabs = overlay.querySelector('.warhub-tabs');
-        if (body) body.scrollTop = snapshot.bodyScrollTop || 0;
-        if (tabs) tabs.scrollLeft = snapshot.tabsScrollLeft || 0;
+    function loadAnalytics() {
+    return _loadAnalytics.apply(this, arguments);
+}
+function _loadAnalytics() {
+    _loadAnalytics = _asyncToGenerator(function* () {
+        if (!(accessState && accessState.isFactionLeader) && !isOwnerSession()) {
+            analyticsCache = null;
+            return null;
+        }
+
         try {
-            window.scrollTo(snapshot.pageScrollX || 0, snapshot.pageScrollY || 0);
-        } catch (_unused7) {}
-        var target = null;
-        if (snapshot.activeId) {
-            target = overlay.querySelector('#' + cssEscape(snapshot.activeId));
-        }
-        if (!target && snapshot.activeName) {
-            target = overlay.querySelector('[name="' + cssEscape(snapshot.activeName) + '"]');
-        }
-        if (target && typeof target.focus === 'function') {
-            try {
-                target.focus({
-                    preventScroll: true
-                });
-            } catch (_unused8) {
-                try {
-                    target.focus();
-                } catch (_unused9) {}
+            var res = yield req('GET', '/api/war/summary');
+            if (!res.ok) {
+                analyticsCache = {
+                    ok: false,
+                    error: res.error || 'Could not load war summary.'
+                };
+                return analyticsCache;
             }
-            if (typeof target.setSelectionRange === 'function' && snapshot.selectionStart != null && snapshot.selectionEnd != null) {
-                try {
-                    target.setSelectionRange(snapshot.selectionStart, snapshot.selectionEnd);
-                } catch (_unused10) {}
-            }
+
+            analyticsCache = _objectSpread({
+                ok: true
+            }, res.data || {});
+            return analyticsCache;
+        } catch (e) {
+            analyticsCache = {
+                ok: false,
+                error: 'Could not load war summary.'
+            };
+            return analyticsCache;
         }
+    });
+    return _loadAnalytics.apply(this, arguments);
+}
+    function loadFactionMembers() {
+        return _loadFactionMembers.apply(this, arguments);
     }
-    function cssEscape(value) {
-        return String(value || '').replace(/([ #;?%&,.+*~\\':"!^$[\]()=>|/@])/g, '\\$1');
-    }
-    function isTypingInOverlay() {
-        if (!overlay) return false;
-        var active = document.activeElement;
-        if (!active || !overlay.contains(active)) return false;
-        var tag = String(active.tagName || '').toLowerCase();
-        return tag === 'input' || tag === 'textarea' || active.isContentEditable;
-    }
-    function schedulePoll() {
-        if (pollTimer) clearInterval(pollTimer);
-        var ms = Number(GM_getValue(K_REFRESH, 30000)) || 30000;
-        ms = Math.max(10000, ms);
-        pollTimer = setInterval(function () {
-            if (!isOpen) return;
-            if (dragMoved) return;
-            if (isDraggingOverlay || isDraggingShield) return;
-            var preserved = preserveEditingState();
-            var pageX = window.scrollX || window.pageXOffset || 0;
-            var pageY = window.scrollY || window.pageYOffset || 0;
-            var selectedTab = currentTab;
-            var tabs = overlay ? overlay.querySelector('.warhub-tabs') : null;
-            var tabsLeft = tabs ? tabs.scrollLeft : 0;
-            loadState(true).then(function () {
-                currentTab = selectedTab;
-                GM_setValue(K_TAB, currentTab);
-                requestAnimationFrame(function () {
-                    if (overlay && overlay.classList.contains('open')) {
-                        var body = overlay.querySelector('.warhub-body');
-                        var tabsEl = overlay.querySelector('.warhub-tabs');
-                        if (body && preserved) body.scrollTop = preserved.bodyScrollTop || 0;
-                        if (tabsEl) tabsEl.scrollLeft = tabsLeft || 0;
-                    }
-                    try {
-                        window.scrollTo(pageX, pageY);
-                    } catch (_unused11) {}
-                });
-            })["catch"](function () {});
-        }, ms);
-    }
-    function sortByName(list) {
-        return arr(list).slice().sort(function (a, b) {
-            return String((a && a.name) || '').localeCompare(String((b && b.name) || ''));
+    function _loadFactionMembers() {
+        _loadFactionMembers = _asyncToGenerator(function* () {
+            var force = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : false;
+            if (!(accessState !== null && accessState !== void 0 && accessState.isFactionLeader) && !isOwnerSession()) {
+                factionMembersCache = null;
+                return null;
+            }
+            if (factionMembersCache && !force) return factionMembersCache;
+            var res = yield req('GET', '/api/faction/members');
+            if (!res.ok) {
+                setStatus(res.error || 'Could not load faction member access.', true);
+                return null;
+            }
+            factionMembersCache = _objectSpread(_objectSpread({}, res.data || {}), {}, {
+                members: arr((res.data === null || res.data === void 0 ? void 0 : res.data.items) || (res.data === null || res.data === void 0 ? void 0 : res.data.members) || [])
+            });
+            return factionMembersCache;
         });
+        return _loadFactionMembers.apply(this, arguments);
     }
-    function onlineRank(m) {
-        var s = String((m && m.online_state) || '').toLowerCase();
-        if (s === 'online') return 0;
-        if (s === 'idle') return 1;
-        if (s === 'travel') return 2;
-        if (s === 'hospital') return 3;
-        if (s === 'jail') return 4;
-        return 5;
+    function refreshLeaderFactionData() {
+        return _refreshLeaderFactionData.apply(this, arguments);
     }
-    function sortMembersLive(list) {
-        return arr(list).slice().sort(function (a, b) {
-            var ar = onlineRank(a);
-            var br = onlineRank(b);
-            if (ar !== br) return ar - br;
-            var ah = Number((a && a.hospital_seconds) || 0) || 0;
-            var bh = Number((b && b.hospital_seconds) || 0) || 0;
-            if (ah !== bh) return ah - bh;
-            return String((a && a.name) || '').localeCompare(String((b && b.name) || ''));
+    function _refreshLeaderFactionData() {
+        _refreshLeaderFactionData = _asyncToGenerator(function* () {
+            if (!(accessState !== null && accessState !== void 0 && accessState.isFactionLeader) && !isOwnerSession()) return;
+            yield loadFactionMembers(true);
+            yield loadState(true);
+            renderBody();
         });
+        return _refreshLeaderFactionData.apply(this, arguments);
     }
+    function doAction(method, path, body, okMsg) {
+        return _doAction.apply(this, arguments);
+    }
+    function _doAction() {
+        _doAction = _asyncToGenerator(function* (method, path, body, okMsg) {
+            var reload = arguments.length > 4 && arguments[4] !== undefined ? arguments[4] : true;
+            if (!ensureAllowedOrMessage()) return null;
+            var res = yield req(method, path, body);
+            if (!res.ok) {
+                setStatus(res.error || 'Action failed.', true);
+                return null;
+            }
+            if (okMsg) setStatus(okMsg);
+            if (reload) yield loadState(true);
+            return res;
+        });
+        return _doAction.apply(this, arguments);
+    }
+    function getHospSeconds(x) {
+        return Number((x === null || x === void 0 ? void 0 : x.hospital_seconds) || (x === null || x === void 0 ? void 0 : x.hosp_time) || (x === null || x === void 0 ? void 0 : x.hospital_time) || (x === null || x === void 0 ? void 0 : x.status) && x.status.until || 0) || 0;
+    }
+    function getPresenceState(x) {
+    var hosp = getHospSeconds(x);
+    if (hosp > 0) return 'hospital';
+
+    var raw = String(
+        (x === null || x === void 0 ? void 0 : x.online_state) ||
+        (x === null || x === void 0 ? void 0 : x.online_status) ||
+        (x === null || x === void 0 ? void 0 : x.status_class) ||
+        (x === null || x === void 0 ? void 0 : x.activity_bucket) ||
+        (x === null || x === void 0 ? void 0 : x.status) ||
+        (x === null || x === void 0 ? void 0 : x.display_status) ||
+        (x === null || x === void 0 ? void 0 : x.last_action) ||
+        ''
+    ).toLowerCase();
+
+    if (
+        raw.includes('hospital') ||
+        raw.includes('rehab')
+    ) return 'hospital';
+
+    if (
+        raw.includes('jail') ||
+        raw.includes('jailed')
+    ) return 'jail';
+
+    if (
+        raw.includes('travel') ||
+        raw.includes('travelling') ||
+        raw.includes('traveling') ||
+        raw.includes('abroad') ||
+        raw.includes('flying')
+    ) return 'travel';
+
+    if (
+        raw.includes('online') ||
+        raw === 'okay'
+    ) return 'online';
+
+    if (raw.includes('idle')) return 'idle';
+
+    return 'offline';
+}
     function sortHosp(list) {
-        return arr(list).slice().sort(function (a, b) {
-            return (Number((a && a.hospital_seconds) || 0) || 0) - (Number((b && b.hospital_seconds) || 0) || 0);
+        return [].concat(_toConsumableArray(arr(list))).sort(function (a, b) {
+            return getHospSeconds(a) - getHospSeconds(b);
         });
     }
-    function statusPill(member) {
-        var online = String((member && member.online_state) || '').toLowerCase();
-        var label = member && (member.display_status || member.status || member.status_detail || member.last_action) || 'Unknown';
-        if (online === 'online') return '<span class="warhub-pill online">Online</span>';
-        if (online === 'idle') return '<span class="warhub-pill idle">Idle</span>';
-        if (online === 'travel') return '<span class="warhub-pill travel">' + esc(label) + '</span>';
-        if (online === 'hospital') return '<span class="warhub-pill hosp">' + esc(member && member.hospital_text || label || 'Hospital') + '</span>';
-        if (online === 'jail') return '<span class="warhub-pill jail">' + esc(label) + '</span>';
-        return '<span class="warhub-pill offline">' + esc(label || 'Offline') + '</span>';
+    function sortAlphabetical(list) {
+        return [].concat(_toConsumableArray(arr(list))).sort(function (a, b) {
+            var an = String((a === null || a === void 0 ? void 0 : a.name) || (a === null || a === void 0 ? void 0 : a.player_name) || (a === null || a === void 0 ? void 0 : a.member_name) || '').toLowerCase();
+            var bn = String((b === null || b === void 0 ? void 0 : b.name) || (b === null || b === void 0 ? void 0 : b.player_name) || (b === null || b === void 0 ? void 0 : b.member_name) || '').toLowerCase();
+            return an.localeCompare(bn);
+        });
     }
-    function renderMemberRow(member) {
-        var userId = String((member && (member.user_id || member.id)) || '');
-        var canUse = canUseProtectedFeatures();
-        var attackUrl = member && member.attack_url ? member.attack_url : userId ? "https://www.torn.com/loader.php?sid=attack&user2ID=".concat(userId) : '#';
-        var bountyUrl = member && member.bounty_url ? member.bounty_url : userId ? "https://www.torn.com/bounties.php#/p=add&userID=".concat(userId) : '#';
-        var profileUrl = member && member.profile_url ? member.profile_url : userId ? "https://www.torn.com/profiles.php?XID=".concat(userId) : '#';
-        var pos = member && member.position ? '<span class="warhub-pill leader">' + esc(member.position) + '</span>' : '';
-        return '\
-      <div class="warhub-row">\
-        <div class="warhub-left">\
-          <div class="warhub-name"><a class="warhub-link" target="_blank" href="' + esc(profileUrl) + '">' + esc((member && member.name) || 'Unknown') + '</a></div>\
-          <div class="warhub-meta">Lv ' + esc(String((member && member.level) || '—')) + ' • ' + esc((member && member.last_action) || (member && member.status_detail) || 'Unknown') + '</div>\
-          <div class="warhub-right" style="justify-content:flex-start;">' + statusPill(member) + ' ' + pos + '</div>\
-        </div>\
-        <div class="warhub-right">\
-          <a class="warhub-btn" target="_blank" href="' + esc(profileUrl) + '">Profile</a>\
-          ' + (canUse ? '<a class="warhub-btn primary" target="_blank" href="' + esc(attackUrl) + '">Attack</a>' : '') + '\
-          ' + (canUse ? '<a class="warhub-btn" target="_blank" href="' + esc(bountyUrl) + '">Bounty</a>' : '') + '\
-        </div>\
-      </div>';
+    function sortRosterGroup(list, type) {
+        if (type === 'hospital') return sortHosp(list);
+        return sortAlphabetical(list);
     }
-    function renderEnemyRow(member) {
-        var userId = String((member && (member.user_id || member.id)) || '');
-        var canUse = canUseProtectedFeatures();
-        var attackUrl = member && member.attack_url ? member.attack_url : userId ? "https://www.torn.com/loader.php?sid=attack&user2ID=".concat(userId) : '#';
-        var profileUrl = member && member.profile_url ? member.profile_url : userId ? "https://www.torn.com/profiles.php?XID=".concat(userId) : '#';
-        var pos = member && member.position ? '<span class="warhub-pill leader">' + esc(member.position) + '</span>' : '';
-        return '\
-      <div class="warhub-row">\
-        <div class="warhub-left">\
-          <div class="warhub-name"><a class="warhub-link" target="_blank" href="' + esc(profileUrl) + '">' + esc((member && member.name) || 'Unknown') + '</a></div>\
-          <div class="warhub-meta">Lv ' + esc(String((member && member.level) || '—')) + ' • ' + esc((member && member.last_action) || (member && member.status_detail) || 'Unknown') + '</div>\
-          <div class="warhub-right" style="justify-content:flex-start;">' + statusPill(member) + ' ' + pos + '</div>\
+    function splitRosterGroups(list) {
+    var hospital = [];
+    var online = [];
+    var idle = [];
+    var travel = [];
+    var jail = [];
+    var offline = [];
+
+    arr(list).forEach(function (x) {
+        var stateName = getPresenceState(x);
+
+        if (stateName === 'hospital') {
+            hospital.push(x);
+        } else if (stateName === 'online') {
+            online.push(x);
+        } else if (stateName === 'idle') {
+            idle.push(x);
+        } else if (stateName === 'travel') {
+            travel.push(x);
+        } else if (stateName === 'jail') {
+            jail.push(x);
+        } else {
+            offline.push(x);
+        }
+    });
+
+    return {
+        hospital: sortRosterGroup(hospital, 'hospital'),
+        online: sortRosterGroup(online, 'online'),
+        idle: sortRosterGroup(idle, 'idle'),
+        travel: sortRosterGroup(travel, 'travel'),
+        jail: sortRosterGroup(jail, 'jail'),
+        offline: sortRosterGroup(offline, 'offline')
+    };
+}
+
+    function getActiveDibs() {
+    return arr((state === null || state === void 0 ? void 0 : state.dibs) || []);
+}
+
+    function getOverviewBoxPrefs() {
+    var saved = GM_getValue(K_OVERVIEW_BOXES, null);
+    var defaults = {
+        meddeals: true,
+        dibs: true,
+        terms: true,
+        war: true
+    };
+
+    if (!saved || typeof saved !== 'object') return defaults;
+
+    return {
+        meddeals: saved.meddeals !== false,
+        dibs: saved.dibs !== false,
+        terms: saved.terms !== false,
+        war: saved.war !== false
+    };
+}
+    
+function getMyUserId() {
+    return String(
+        ((state === null || state === void 0 ? void 0 : state.me) && (
+            (state === null || state === void 0 ? void 0 : state.me.user_id) ||
+            (state === null || state === void 0 ? void 0 : state.me.id) ||
+            (state === null || state === void 0 ? void 0 : state.me.player_id)
+        )) ||
+        ((state === null || state === void 0 ? void 0 : state.user) && (
+            (state === null || state === void 0 ? void 0 : state.user.user_id) ||
+            (state === null || state === void 0 ? void 0 : state.user.id) ||
+            (state === null || state === void 0 ? void 0 : state.user.player_id)
+        )) ||
+        ''
+    );
+}
+
+function getMyUserName() {
+    return String(
+        ((state === null || state === void 0 ? void 0 : state.me) && (
+            (state === null || state === void 0 ? void 0 : state.me.name) ||
+            (state === null || state === void 0 ? void 0 : state.me.player_name)
+        )) ||
+        ((state === null || state === void 0 ? void 0 : state.user) && (
+            (state === null || state === void 0 ? void 0 : state.user.name) ||
+            (state === null || state === void 0 ? void 0 : state.user.player_name)
+        )) ||
+        'You'
+    );
+}
+
+function findDibsForTarget(targetId) {
+    var id = String(targetId || '');
+    return getActiveDibs().find(function (d) {
+        return String(d.target_id || d.enemy_id || d.user_id || '') === id;
+    }) || null;
+}
+
+function isDibsCooldownActive(dib) {
+    if (!dib) return false;
+    var until = dib.cooldown_until || dib.available_again_at || dib.locked_until || '';
+    if (!until) return false;
+    var ts = new Date(until).getTime();
+    return Number.isFinite(ts) && ts > Date.now();
+}
+
+function filterHospitalEnemiesForTab(list) {
+    return arr(list).filter(function (x) {
+        var id = String(x.user_id || x.id || x.player_id || '');
+        var dib = findDibsForTarget(id);
+        if (!dib) return true;
+        if (isDibsCooldownActive(dib)) return false;
+        if (String(dib.status || '').toLowerCase() === 'active') return false;
+        return true;
+    });
+}
+
+function renderDibsOverviewCard() {
+    var myId = getMyUserId();
+    var myDibs = getActiveDibs().filter(function (d) {
+        return String(d.assigned_to_user_id || d.user_id || '') === myId;
+    });
+
+    return '\
+      <div class="warhub-card">\
+        <div class="warhub-section-title">\
+          <h3>Dibs Overview</h3>\
+          <span class="warhub-count">' + fmtNum(myDibs.length) + '</span>\
         </div>\
-        <div class="warhub-right">\
-          <a class="warhub-btn" target="_blank" href="' + esc(profileUrl) + '">Profile</a>\
-          ' + (canUse ? '<a class="warhub-btn primary" target="_blank" href="' + esc(attackUrl) + '">Attack</a>' : '') + '\
-        </div>\
-      </div>';
-    }
-    function renderNotificationRows(items) {
-        items = arr(items);
-        if (!items.length) return '<div class="warhub-empty">No notifications yet.</div>';
-        return items.map(function (n) {
+        <div class="warhub-list">' +
+          (myDibs.length ? myDibs.map(function (d) {
+            var name = d.target_name || d.enemy_name || ('ID ' + (d.target_id || d.enemy_id || '—'));
+            var status = d.status || 'active';
+            var until = d.cooldown_until || d.available_again_at || '';
+            var extra = isDibsCooldownActive(d) ? ('Available again ' + fmtTs(until)) : status;
             return '\
-        <div class="warhub-row">\
-          <div class="warhub-left">\
-            <div class="warhub-name">' + esc(n.message || 'Notification') + '</div>\
-            <div class="warhub-meta">' + esc(fmtTs(n.created_at || n.createdAt || new Date().toISOString())) + '</div>\
-          </div>\
-        </div>';
-        }).join('');
+              <div class="warhub-list-item">\
+                <div class="warhub-row">\
+                  <div>\
+                    <div class="warhub-name">' + esc(name) + '</div>\
+                    <div class="warhub-meta">' + esc(extra) + '</div>\
+                  </div>\
+                </div>\
+              </div>';
+          }).join('') : '<div class="warhub-empty">No dibs claimed.</div>') +
+        '</div>\
+      </div>';
+}
+
+function hospitalMemberRow(x, enemy) {
+    if (enemy === void 0) enemy = false;
+
+    var id = x.user_id || x.id || x.player_id || x.member_user_id || '';
+    var name = x.name || x.player_name || x.member_name || ("ID " + id);
+    var hosp = getHospSeconds(x);
+    var hospText = x.hospital_text || '';
+    var level = x.level ? ("Lvl " + x.level) : '';
+    var last = x.last_action || x.last_action_relative || x.last || '—';
+
+    var lifeCur = Number(x.life_current || x.current_life || x.life || 0);
+    var lifeMax = Number(x.life_max || x.maximum_life || x.max_life || 0);
+    var lifeText = lifeMax > 0 ? (lifeCur.toLocaleString() + "/" + lifeMax.toLocaleString()) : '—';
+
+    var energyCur = Number(x.energy_current || x.energy || x.energy_now || 0);
+    var energyMax = Number(x.energy_max || x.max_energy || 150);
+    var energyText = energyMax > 0 ? (energyCur.toLocaleString() + "/" + energyMax.toLocaleString()) : '—';
+
+    var dib = enemy ? findDibsForTarget(id) : null;
+    var dibMine = dib && String(dib.assigned_to_user_id || '') === getMyUserId();
+    var dibCooldown = dib && isDibsCooldownActive(dib);
+    var dibTaken = dib && !dibCooldown && !dibMine && String(dib.status || '').toLowerCase() === 'active';
+
+    var dibButton = '';
+    if (enemy) {
+        if (dibMine) {
+            dibButton = '<button class="warhub-btn small good" disabled>My Dibs</button>';
+        } else if (dibTaken) {
+            dibButton = '<button class="warhub-btn small" disabled>Taken</button>';
+        } else if (dibCooldown) {
+            dibButton = '<button class="warhub-btn small" disabled>Cooldown</button>';
+        } else {
+            dibButton = '<button class="warhub-btn small warn warhub-dibs-btn" data-target-id="' + esc(String(id)) + '" data-target-name="' + esc(name) + '">Dibs</button>';
+        }
     }
-    function canDeleteTerms() {
-        return !!(isOwnerSession() || (accessState && accessState.isFactionLeader));
+
+    return '\
+      <div class="warhub-list-item">\
+        <div class="warhub-row">\
+          <div>\
+            <div class="warhub-name">' + esc(name) + '</div>\
+            <div class="warhub-meta">' + esc([level, last].filter(Boolean).join(' • ')) + '</div>\
+            <div class="warhub-meta">' + esc(['Hosp ' + fmtHosp(hosp, hospText), 'Life ' + lifeText, 'Energy ' + energyText].join(' • ')) + '</div>\
+          </div>\
+          <div class="warhub-actions">\
+            <span class="warhub-pill hosp">Hosp ' + esc(fmtHosp(hosp, hospText)) + '</span>\
+            ' + dibButton + '\
+          </div>\
+        </div>\
+      </div>';
+}
+    
+    function memberRow(x, enemy) {
+    if (enemy === void 0) enemy = false;
+
+    var id = x.user_id || x.id || x.player_id || x.member_user_id || '';
+    var name = x.name || x.player_name || x.member_name || ("ID " + id);
+
+    var presence = getPresenceState(x);
+    var hosp = getHospSeconds(x);
+    var hospText = x.hospital_text || '';
+    var last = x.last_action || x.last_action_relative || x.last || '—';
+    var level = x.level ? ("Lvl " + x.level) : '';
+
+    var lifeCur = Number(x.life_current || x.current_life || x.life || 0);
+    var lifeMax = Number(x.life_max || x.maximum_life || x.max_life || 0);
+    var lifeText = lifeMax > 0 ? (lifeCur.toLocaleString() + "/" + lifeMax.toLocaleString()) : (lifeCur > 0 ? lifeCur.toLocaleString() : '—');
+
+    var hasEnergy = x.energy_current != null || x.energy != null || x.energy_now != null || x.current_energy != null;
+    var energyCur = Number(x.energy_current ?? x.current_energy ?? x.energy_now ?? x.energy ?? 0);
+    var energyMax = Number(x.energy_max ?? x.max_energy ?? 150);
+    var energyText = hasEnergy ? (energyMax > 0 ? (energyCur.toLocaleString() + "/" + energyMax.toLocaleString()) : energyCur.toLocaleString()) : '—';
+
+    var hasMedCd = x.medical_cooldown != null || x.med_cooldown != null || x.med_cd != null || x.medicalcooldown != null;
+    var medCd = Number(x.medical_cooldown ?? x.med_cooldown ?? x.med_cd ?? x.medicalcooldown ?? 0);
+    var medText = hasMedCd ? (medCd > 0 ? fmtHosp(medCd) : 'Ready') : '—';
+
+    var attackUrl = x.attack_url || (id ? ("https://www.torn.com/loader.php?sid=attack&user2ID=" + id) : '#');
+    var bountyUrl = x.bounty_url || (id ? ("https://www.torn.com/bounties.php#/p=add&userID=" + id) : '#');
+    var enabled = !!x.enabled_under_license || !!x.member_access_enabled || !!x.enabled;
+    var leader = String(x.position || '').toLowerCase().includes('leader');
+
+    var pill = hosp > 0
+        ? '<span class="warhub-pill hosp">Hosp ' + esc(fmtHosp(hosp, hospText)) + '</span>'
+        : presence === 'online'
+            ? '<span class="warhub-pill online">Online</span>'
+            : presence === 'idle'
+                ? '<span class="warhub-pill idle">Idle</span>'
+                : presence === 'travel'
+                    ? '<span class="warhub-pill travel">Travel</span>'
+                    : presence === 'jail'
+                        ? '<span class="warhub-pill jail">Jail</span>'
+                        : '<span class="warhub-pill offline">Offline</span>';
+
+    return '\
+      <div class="warhub-list-item">\
+        <div class="warhub-row">\
+          <div>\
+            <div class="warhub-name">' + esc(name) + '</div>\
+            <div class="warhub-meta">' + esc([level, x.display_status || last].filter(Boolean).join(' • ')) + '</div>\
+            <div class="warhub-meta">' + esc(['Life ' + lifeText, 'Energy ' + energyText, 'Med CD ' + medText].join(' • ')) + '</div>\
+          </div>\
+          <div class="warhub-actions">\
+            ' + pill + '\
+            ' + (leader ? '<span class="warhub-pill leader">Leader</span>' : '') + '\
+            ' + (!enemy && ((accessState === null || accessState === void 0 ? void 0 : accessState.isFactionLeader) || isOwnerSession()) ? '<span class="warhub-pill ' + (enabled ? 'enabled' : 'disabled') + '">' + (enabled ? 'Enabled' : 'Disabled') + '</span>' : '') + '\
+          </div>\
+        </div>\
+        <div class="warhub-row">\
+          <div class="warhub-meta">ID ' + esc(id || '—') + '</div>\
+          <div class="warhub-actions">\
+            ' + (id ? '<a class="warhub-btn small" href="https://www.torn.com/profiles.php?XID=' + encodeURIComponent(id) + '" target="_blank" rel="noopener noreferrer">Profile</a>' : '') + '\
+            ' + (id ? '<a class="warhub-btn small primary" href="' + esc(attackUrl) + '" target="_blank" rel="noopener noreferrer">Attack</a>' : '') + '\
+            ' + (!enemy && id ? '<a class="warhub-btn small warn" href="' + esc(bountyUrl) + '" target="_blank" rel="noopener noreferrer">Bounty</a>' : '') + '\
+          </div>\
+        </div>\
+      </div>';
+}
+    function rosterCard(title, items) {
+        var opts = arguments.length > 2 && arguments[2] !== undefined ? arguments[2] : {};
+        var extraClass = opts.extraClass || '';
+        var content = arr(items).length ? arr(items).map(function (x) {
+            return memberRow(x, !!opts.enemy);
+        }).join('') : "<div class=\"warhub-empty\">No ".concat(esc(title.toLowerCase()), ".</div>");
+        return "\n      <div class=\"warhub-card warhub-roster-card ".concat(esc(extraClass), "\">\n        <div class=\"warhub-section-title\">\n          <h3>").concat(esc(title), "</h3>\n          <span class=\"warhub-count\">").concat(arr(items).length, "</span>\n        </div>\n        <div class=\"warhub-list\">").concat(content, "</div>\n      </div>\n    ");
+    }
+    function rosterDropdown(title, items) {
+        var opts = arguments.length > 2 && arguments[2] !== undefined ? arguments[2] : {};
+        var extraClass = opts.extraClass || '';
+        var openAttr = opts.open ? 'open' : '';
+        var content = arr(items).length ? arr(items).map(function (x) {
+            return memberRow(x, !!opts.enemy);
+        }).join('') : "<div class=\"warhub-empty\">No ".concat(esc(title.toLowerCase()), ".</div>");
+        return "\n      <details class=\"warhub-dropdown ".concat(esc(extraClass), "\" ").concat(openAttr, ">\n        <summary>\n          <div class=\"warhub-row\">\n            <strong>").concat(esc(title), "</strong>\n            <span class=\"warhub-count\">").concat(arr(items).length, "</span>\n          </div>\n        </summary>\n        <div class=\"warhub-dropdown-body\">\n          <div class=\"warhub-list\">").concat(content, "</div>\n        </div>\n      </details>\n    ");
     }
     function getOverviewBoxPrefs() {
-        var raw = GM_getValue(K_OVERVIEW_BOXES, null);
-        var base = {
-            medDeals: true,
-            dibs: true,
-            terms: true,
-            warOverview: true
-        };
-        if (!raw || _typeof(raw) !== 'object') return base;
-        return {
-            medDeals: raw.medDeals !== false,
-            dibs: raw.dibs !== false,
-            terms: raw.terms !== false,
-            warOverview: raw.warOverview !== false
-        };
+    var saved = GM_getValue(K_OVERVIEW_BOXES, null);
+    var defaults = {
+        meddeals: true,
+        dibs: true,
+        terms: true,
+        war: true
+    };
+    if (!saved || typeof saved !== 'object') return defaults;
+    return {
+        meddeals: saved.meddeals !== false,
+        dibs: saved.dibs !== false,
+        terms: saved.terms !== false,
+        war: saved.war !== false
+    };
+}
+
+function renderOverviewTab() {
+    if (!state) {
+        return renderAccessBanner() + '<div class="warhub-card"><div class="warhub-empty">Loading overview...</div></div>';
     }
-    function saveOverviewBoxPrefs(prefs) {
-        GM_setValue(K_OVERVIEW_BOXES, _objectSpread({}, prefs));
+
+    var prefs = getOverviewBoxPrefs();
+    prefs.war = true;
+
+    var deals = arr((state && (state.medDeals || state.med_deals)) || []);
+    var allDibs = arr((state && state.dibs) || []);
+    var war = (state && state.war) || {};
+    var our = (state && (state.faction || state.our_faction || state.ourFaction)) || {};
+    var enemy = (state && (state.enemyFaction || state.enemy_faction)) || {};
+    var fallbackPair = (typeof whLoadWarPairFallback === 'function' && whLoadWarPairFallback()) || {};
+
+    var ownFactionId = String((our && (our.faction_id || our.id)) || '').trim();
+    var ownFactionName = String((our && our.name) || '').trim().toLowerCase();
+
+    var enemyFactionId = String(
+        (enemy && (enemy.faction_id || enemy.id)) ||
+        state.enemy_faction_id ||
+        war.enemy_faction_id ||
+        war.opponent_faction_id ||
+        fallbackPair.enemy_faction_id ||
+        ''
+    ).trim();
+
+    var enemyFactionName = String(
+        (enemy && enemy.name) ||
+        state.enemy_faction_name ||
+        war.enemy_faction_name ||
+        war.opponent_faction_name ||
+        fallbackPair.enemy_faction_name ||
+        ''
+    ).trim();
+
+    if (enemyFactionId && ownFactionId && enemyFactionId === ownFactionId) {
+        enemyFactionId = '';
     }
-    function buildTopFive(list) {
-        return sortMembersLive(arr(list)).slice(0, 5);
+    if (enemyFactionName && ownFactionName && enemyFactionName.toLowerCase() === ownFactionName) {
+        enemyFactionName = '';
     }
-    function renderTopFiveSelect(label, factionName, list, selectId) {
-        var rows = buildTopFive(list);
-        return '\
-      <div class="warhub-card">\
-        <div class="warhub-section-title">\
-          <h3>' + esc(label) + '</h3>\
-          <span class="warhub-pill neutral">' + esc(factionName || 'Unknown Faction') + '</span>\
-        </div>\
-        ' + (rows.length ? '\
-          <label class="warhub-label">Top 5 Players</label>\
-          <select class="warhub-select" id="' + esc(selectId) + '">\
-            ' + rows.map(function (m) {
-                var uid = String((m && (m.user_id || m.id)) || '');
-                return '<option value="' + esc(uid) + '">' + esc((m && m.name) || 'Unknown') + ' • Lv ' + esc(String((m && m.level) || '—')) + ' • ' + esc((m && m.position) || 'Member') + '</option>';
-            }).join('') + '\
-          </select>\
-        ' : '<div class="warhub-empty">No players available.</div>') + '\
-      </div>';
-    }
-    function renderAnalyticsBox(title, member, emptyText) {
-        if (!member) {
-            return '\
-        <div class="warhub-card">\
-          <h3>' + esc(title) + '</h3>\
-          <div class="warhub-empty">' + esc(emptyText || 'No data yet.') + '</div>\
+    if (!enemyFactionName) enemyFactionName = '—';
+
+    var scoreUs = Number(
+        (state && state.score && state.score.our) ||
+        war.score_us ||
+        war.our_score ||
+        our.score ||
+        0
+    ) || 0;
+
+    var scoreThem = Number(
+        (state && state.score && state.score.enemy) ||
+        war.score_them ||
+        war.enemy_score ||
+        (enemy && enemy.score) ||
+        0
+    ) || 0;
+
+    var target = Number(
+        (state && state.score && state.score.target) ||
+        war.target_score ||
+        war.target ||
+        0
+    ) || 0;
+
+    var ourChain = Number(
+        (our && our.chain) ||
+        war.chain_us ||
+        0
+    ) || 0;
+
+    var enemyChain = Number(
+        (enemy && enemy.chain) ||
+        war.chain_them ||
+        0
+    ) || 0;
+
+    var lead = scoreUs - scoreThem;
+
+    var hasWar = !!(
+        state && (
+            state.has_war ||
+            war.active ||
+            war.registered ||
+            war.war_id ||
+            war.id ||
+            enemyFactionId ||
+            ((state.enemies || []).length)
+        )
+    );
+
+    var termsText = String(
+        (state && state.war_terms && (state.war_terms.terms_text || state.war_terms.terms)) ||
+        (state && state.terms && (state.terms.terms_text || state.terms.terms)) ||
+        ''
+    );
+
+    var medDealsHtml = deals.length ? deals.slice(0, 6).map(function (x) {
+        var maker =
+            x.seller_name ||
+            x.created_by_name ||
+            x.user_name ||
+            x.member_name ||
+            'Unknown user';
+
+        var details = [
+            x.item_name || x.buyer_name || '',
+            x.note || x.notes || ''
+        ].filter(Boolean).join(' • ');
+
+        return '<div class="warhub-list-item">\
+            <div class="warhub-name">' + esc(maker) + '</div>\
+            <div class="warhub-meta">' + esc(details || 'Live shared med deal') + '</div>\
         </div>';
-        }
-        return '\
-      <div class="warhub-card">\
-        <h3>' + esc(title) + '</h3>\
-        <div class="warhub-name">' + esc(member.name || 'Unknown') + '</div>\
-        <div class="warhub-meta">\
-          Respect: ' + esc(fmtNum(member.respect || 0)) + ' • \
-          Hits: ' + esc(fmtNum(member.hits || 0)) + ' • \
-          Attacks: ' + esc(fmtNum(member.attacks || 0)) + ' • \
-          Net: ' + esc(fmtNum(member.net || 0)) + '\
-        </div>\
-      </div>';
-    }
-    function getSummaryLeaders() {
-        var data = analyticsCache && _typeof(analyticsCache) === 'object' ? analyticsCache : {};
-        var leaders = arr(data.members || []);
-        if (!leaders.length) return {
-            top: null,
-            bottom: null
-        };
-        var sorted = leaders.slice().sort(function (a, b) {
-            return (Number(b.net || 0) || 0) - (Number(a.net || 0) || 0);
-        });
-        return {
-            top: sorted[0] || null,
-            bottom: sorted[sorted.length - 1] || null
-        };
-    }
-    function loadAnalytics() {
-        return _loadAnalytics.apply(this, arguments);
-    }
-    function _loadAnalytics() {
-        _loadAnalytics = _asyncToGenerator(function* () {
-            try {
-                analyticsCache = yield req('GET', '/api/war/analytics');
-            } catch (_unused12) {
-                analyticsCache = null;
-            }
-        });
-        return _loadAnalytics.apply(this, arguments);
-    }
-    function loadAdminTopFive() {
-        return _loadAdminTopFive.apply(this, arguments);
-    }
-    function _loadAdminTopFive() {
-        _loadAdminTopFive = _asyncToGenerator(function* () {
-            if (!isOwnerSession()) return null;
-            try {
-                adminTopFiveCache = yield adminReq('GET', '/api/admin/war-top-five');
-            } catch (_unused13) {
-                adminTopFiveCache = null;
-            }
-            return adminTopFiveCache;
-        });
-        return _loadAdminTopFive.apply(this, arguments);
-    }
-    function renderOverviewTab() {
-        var prefs = getOverviewBoxPrefs();
-        var deals = arr(state && (state.medDeals || state.med_deals));
-        var dibs = arr(state && state.dibs);
-        var terms = state && state.terms;
-        var war = state && state.war || {};
-        var faction = state && (state.faction || state.our_faction) || {};
-        var enemy = state && (state.enemy_faction || state.enemyFaction) || {};
-        var html = '';
-        if (prefs.medDeals) {
-            html += '\
-        <div class="warhub-card">\
-          <div class="warhub-section-title">\
-            <h3>Med Deals</h3>\
-            <button class="warhub-btn" data-open-tab="meddeals">Open</button>\
-          </div>\
-          ' + (deals.length ? deals.slice(0, 5).map(function (d) {
-                return '<div class="warhub-row"><div class="warhub-left"><div class="warhub-name">' + esc((d.member_name || 'Member') + ' ↔ ' + (d.enemy_name || 'Enemy')) + '</div><div class="warhub-meta">' + esc(d.note || 'No note') + '</div></div></div>';
-            }).join('') : '<div class="warhub-empty">No med deals yet.</div>') + '\
+    }).join('') : '<div class="warhub-empty">No med deals yet.</div>';
+
+    var dibsHtml = allDibs.length ? allDibs.slice(0, 6).map(function (d) {
+        var name = d.target_name || d.enemy_name || ('ID ' + (d.target_id || d.enemy_id || '—'));
+        var owner = d.assigned_to_name || d.user_name || d.claimed_by_name || 'Unknown';
+        return '<div class="warhub-list-item">\
+            <div class="warhub-name">' + esc(name) + '</div>\
+            <div class="warhub-meta">' + esc('Claimed by ' + owner) + '</div>\
         </div>';
-        }
-        if (prefs.dibs) {
-            html += '\
-        <div class="warhub-card">\
-          <div class="warhub-section-title">\
-            <h3>Dibs</h3>\
-            <button class="warhub-btn" data-open-tab="hospital">Open</button>\
-          </div>\
-          ' + (dibs.length ? dibs.slice(0, 5).map(function (d) {
-                return '<div class="warhub-row"><div class="warhub-left"><div class="warhub-name">' + esc((d.member_name || 'Member') + ' → ' + (d.enemy_name || 'Enemy')) + '</div><div class="warhub-meta">' + esc(d.created_at ? fmtTs(d.created_at) : 'Assigned') + '</div></div></div>';
-            }).join('') : '<div class="warhub-empty">No dibs yet.</div>') + '\
-        </div>';
-        }
-        if (prefs.terms) {
-            html += '\
-        <div class="warhub-card">\
-          <div class="warhub-section-title">\
-            <h3>Terms</h3>\
-            <button class="warhub-btn" data-open-tab="terms">Open</button>\
-          </div>\
-          ' + (terms ? '<div class="warhub-mini" style="white-space:pre-wrap;line-height:1.5;">' + esc(terms.text || terms.body || String(terms)) + '</div>' : '<div class="warhub-empty">No terms posted.</div>') + '\
-        </div>';
-        }
-        if (prefs.warOverview) {
-            html += '\
-        <div class="warhub-card">\
-          <div class="warhub-section-title">\
-            <h3>War Overview</h3>\
-            <button class="warhub-btn" data-open-tab="war">Open</button>\
-          </div>\
-          <div class="warhub-grid two">\
-            <div class="warhub-metric"><div class="k">' + esc((faction && faction.name) || 'Our Faction') + '</div><div class="v">' + esc(fmtNum((state && state.score && state.score.our) || faction.score || 0)) + '</div></div>\
-            <div class="warhub-metric"><div class="k">' + esc((enemy && enemy.name) || 'Enemy Faction') + '</div><div class="v">' + esc(fmtNum((state && state.score && state.score.enemy) || enemy.score || 0)) + '</div></div>\
-            <div class="warhub-metric"><div class="k">Target</div><div class="v">' + esc(fmtNum((state && state.score && state.score.target) || war.target_score || war.target || 0)) + '</div></div>\
-            <div class="warhub-metric"><div class="k">Status</div><div class="v" style="font-size:14px;">' + esc(war.status || 'Unknown') + '</div></div>\
-          </div>\
-        </div>';
-        }
-        return html || '<div class="warhub-empty">Nothing enabled in overview.</div>';
-    }
-    function renderFactionTab() {
-        if (!canViewTab('faction')) {
-            return renderAccessBanner() + '<div class="warhub-card"><div class="warhub-empty">Faction tab is leader/admin only.</div></div>';
-        }
-        var members = sortMembersLive(arr(state && state.members));
-        return '\
-      <div class="warhub-card">\
-        <div class="warhub-section-title">\
-          <h3>Faction Members</h3>\
-          <span class="warhub-count">' + fmtNum(members.length) + '</span>\
-        </div>\
-        <div class="warhub-section-scroll">' + (members.length ? members.map(renderMemberRow).join('') : '<div class="warhub-empty">No faction members loaded.</div>') + '</div>\
-      </div>';
-    }
-    function renderWarTab() {
-        var war = state && state.war || {};
-        var our = state && (state.faction || state.our_faction) || {};
-        var enemy = state && (state.enemy_faction || state.enemyFaction) || {};
-        return '\
-      <div class="warhub-card">\
-        <div class="warhub-section-title">\
-          <h3>War</h3>\
-          <span class="warhub-pill neutral">' + esc(war.phase || 'unknown') + '</span>\
-        </div>\
+    }).join('') : '<div class="warhub-empty">No dibs claimed.</div>';
+
+    var warHtml = hasWar ? '\
         <div class="warhub-grid two">\
-          <div class="warhub-metric"><div class="k">' + esc(our.name || 'Our Faction') + '</div><div class="v">' + esc(fmtNum((state && state.score && state.score.our) || our.score || 0)) + '</div></div>\
-          <div class="warhub-metric"><div class="k">' + esc(enemy.name || 'Enemy Faction') + '</div><div class="v">' + esc(fmtNum((state && state.score && state.score.enemy) || enemy.score || 0)) + '</div></div>\
-          <div class="warhub-metric"><div class="k">Target Score</div><div class="v">' + esc(fmtNum((state && state.score && state.score.target) || war.target_score || war.target || 0)) + '</div></div>\
-          <div class="warhub-metric"><div class="k">Status</div><div class="v" style="font-size:14px;">' + esc(war.status || 'Currently not in war') + '</div></div>\
-          <div class="warhub-metric"><div class="k">Start</div><div class="v" style="font-size:13px;">' + esc(war.start ? fmtTs(new Date(Number(war.start) * 1000).toISOString()) : '—') + '</div></div>\
-          <div class="warhub-metric"><div class="k">End</div><div class="v" style="font-size:13px;">' + esc(war.end ? fmtTs(new Date(Number(war.end) * 1000).toISOString()) : '—') + '</div></div>\
+            <div class="warhub-metric warhub-score-us">\
+                <div class="k">Our Score</div>\
+                <div class="v">' + fmtNum(scoreUs) + '</div>\
+            </div>\
+            <div class="warhub-metric warhub-score-them">\
+                <div class="k">Enemy Score</div>\
+                <div class="v">' + fmtNum(scoreThem) + '</div>\
+            </div>\
+            <div class="warhub-metric">\
+                <div class="k">' + (lead >= 0 ? 'Lead' : 'Behind') + '</div>\
+                <div class="v">' + fmtNum(Math.abs(lead)) + '</div>\
+            </div>\
+            <div class="warhub-metric">\
+                <div class="k">Target</div>\
+                <div class="v">' + fmtNum(target) + '</div>\
+            </div>\
+            <div class="warhub-metric">\
+                <div class="k">Our Chain</div>\
+                <div class="v">' + fmtNum(ourChain) + '</div>\
+            </div>\
+            <div class="warhub-metric">\
+                <div class="k">Enemy Chain</div>\
+                <div class="v">' + fmtNum(enemyChain) + '</div>\
+            </div>\
         </div>\
-      </div>';
+        <div class="warhub-divider"></div>\
+        <div class="warhub-mini" style="line-height:1.6;">\
+            <strong>Our Faction:</strong> ' + esc(our.name || '—') + '<br>\
+            <strong>Enemy Faction:</strong> ' + esc(enemyFactionName) + '<br>\
+            <strong>Status:</strong> ' + esc(war.status || (war.active ? 'Active' : war.registered ? 'Registered' : 'Active')) + '\
+        </div>' : '<div class="warhub-empty">Currently not in a war.</div>';
+
+    var cards = [];
+
+    if (prefs.meddeals) {
+        cards.push('\
+        <div class="warhub-card">\
+            <div class="warhub-section-title">\
+                <h3>Med Deals Made by Members</h3>\
+                <span class="warhub-count">' + fmtNum(deals.length) + '</span>\
+            </div>\
+            <div class="warhub-actions" style="margin-bottom:8px;">\
+                <button class="warhub-btn small" data-overview-go="meddeals">Open Med Deals</button>\
+            </div>\
+            <div class="warhub-list">' + medDealsHtml + '</div>\
+        </div>');
     }
-    function renderSummaryTab() {
-        var leaders = getSummaryLeaders();
-        return '\
-      <div class="warhub-grid">\
-        ' + renderAnalyticsBox('Carrying the War', leaders.top, 'No war summary data yet.') + '\
-        ' + renderAnalyticsBox('Member Losing Ground', leaders.bottom, 'No war summary data yet.') + '\
-      </div>';
+
+    if (prefs.dibs) {
+        cards.push('\
+        <div class="warhub-card">\
+            <div class="warhub-section-title">\
+                <h3>Dibs</h3>\
+                <span class="warhub-count">' + fmtNum(allDibs.length) + '</span>\
+            </div>\
+            <div class="warhub-actions" style="margin-bottom:8px;">\
+                <button class="warhub-btn small" data-overview-go="hospital">Open Dibs</button>\
+            </div>\
+            <div class="warhub-list">' + dibsHtml + '</div>\
+        </div>');
     }
-    function renderChainTab() {
-        var members = sortMembersLive(arr(state && state.members)).filter(function (m) {
-            return !!m.available;
-        });
-        return '\
-      <div class="warhub-card">\
-        <div class="warhub-section-title">\
-          <h3>Available Members</h3>\
-          <span class="warhub-count">' + fmtNum(members.length) + '</span>\
-        </div>\
-        <div class="warhub-section-scroll">' + (members.length ? members.map(renderMemberRow).join('') : '<div class="warhub-empty">No available members yet. Click Available to show up here.</div>') + '</div>\
-      </div>';
+
+    if (prefs.terms) {
+        cards.push('\
+        <div class="warhub-card">\
+            <div class="warhub-section-title">\
+                <h3>Terms</h3>\
+                <span class="warhub-count">Live</span>\
+            </div>\
+            <div class="warhub-actions" style="margin-bottom:8px;">\
+                <button class="warhub-btn small" data-overview-go="terms">Open Terms</button>\
+            </div>\
+            <div class="warhub-mini" style="white-space:pre-wrap; line-height:1.5;">' + esc(termsText || 'No terms posted yet.') + '</div>\
+        </div>');
+    }
+
+    if (prefs.war) {
+        cards.push('\
+        <div class="warhub-card">\
+            <div class="warhub-section-title">\
+                <h3>War Overview</h3>\
+                <span class="warhub-count">' + (hasWar ? 'Live' : 'Idle') + '</span>\
+            </div>\
+            <div class="warhub-actions" style="margin-bottom:8px;">\
+                <button class="warhub-btn small" data-overview-go="war">Open War</button>\
+            </div>\
+            ' + warHtml + '\
+        </div>');
+    }
+
+    if (!cards.length) {
+        cards.push('\
+        <div class="warhub-card">\
+            <h3>Overview</h3>\
+            <div class="warhub-empty">No quick boxes selected. Turn them on in Settings.</div>\
+        </div>');
+    }
+
+    return renderAccessBanner() + '<div class="warhub-grid two">' + cards.join('') + '</div>';
+}
+    function renderInstructionsTab() {
+        var banner = accessSummaryMessage() ? "<div class=\"warhub-banner ".concat((accessState !== null && accessState !== void 0 && accessState.paymentRequired) || (accessState !== null && accessState !== void 0 && accessState.blocked) || (accessState !== null && accessState !== void 0 && accessState.trialExpired) ? 'payment' : (accessState !== null && accessState !== void 0 && accessState.trialActive) ? 'trial' : 'good', "\">\n          <div><strong>Faction Access</strong></div>\n          <div class=\"warhub-mini\" style=\"margin-top:6px;\">").concat(esc(accessSummaryMessage()), "</div>\n        </div>") : '';
+        return "\n      ".concat(banner, "\n      <div class=\"warhub-card\">\n        <h3>Getting Started</h3>\n        <div class=\"warhub-list\">\n          <div class=\"warhub-list-item\">\n            <div class=\"warhub-name\">1. Save your API key</div>\n            <div class=\"warhub-meta\">Open Settings, paste your personal Torn API key, then press Save Keys.</div>\n          </div>\n          <div class=\"warhub-list-item\">\n            <div class=\"warhub-name\">2. Login to War Hub</div>\n            <div class=\"warhub-meta\">Press Login in Settings. War Hub will load your faction, war state, members, and enemies.</div>\n          </div>\n          <div class=\"warhub-list-item\">\n            <div class=\"warhub-name\">3. Set your war status</div>\n            <div class=\"warhub-meta\">Use the Chain tab to mark yourself Available or Unavailable and to switch Chain Sitter on or off.</div>\n          </div>\n          <div class=\"warhub-list-item\">\n            <div class=\"warhub-name\">4. Use the faction tabs</div>\n            <div class=\"warhub-meta\">Members, Enemies, Hospital, Med Deals, Targets, and War Summary all pull from the backend once your access is enabled.</div>\n          </div>\n        </div>\n      </div>\n\n      <div class=\"warhub-card\">\n        <h3>Terms of Service</h3>\n        <div class=\"warhub-list\">\n          <div class=\"warhub-list-item\">\n            <div class=\"warhub-name\">Use at your own risk</div>\n            <div class=\"warhub-meta\">War Hub is a private Torn utility. You are responsible for how you use the data, links, and shared tools.</div>\n          </div>\n          <div class=\"warhub-list-item\">\n            <div class=\"warhub-name\">Access is role-based</div>\n            <div class=\"warhub-meta\">Leader-only and admin-only tabs stay locked unless your role allows them. Exempt players still do not get Admin or leader tabs.</div>\n          </div>\n          <div class=\"warhub-list-item\">\n            <div class=\"warhub-name\">Service can change</div>\n            <div class=\"warhub-meta\">Torn API limits, browser caching, PDA behavior, or backend restarts can affect refresh speed and available features.</div>\n          </div>\n        </div>\n      </div>\n\n      <div class=\"warhub-card\">\n        <h3>API Key Storage</h3>\n        <div class=\"warhub-list\">\n          <div class=\"warhub-list-item\">\n            <div class=\"warhub-name\">Saved in local userscript storage</div>\n            <div class=\"warhub-meta\">Your API key is stored on your device in Tampermonkey/PDA script storage so the overlay can log you in.</div>\n          </div>\n          <div class=\"warhub-list-item\">\n            <div class=\"warhub-name\">Used by your backend only</div>\n            <div class=\"warhub-meta\">The script sends the key to your War Hub backend for login and Torn API requests. Do not share your key with anyone you do not trust.</div>\n          </div>\n          <div class=\"warhub-list-item\">\n            <div class=\"warhub-name\">You can change it anytime</div>\n            <div class=\"warhub-meta\">Open Settings to save a new key, or use Logout to clear the active session.</div>\n          </div>\n        </div>\n      </div>\n    ");
     }
     function renderTermsTab() {
-        var terms = state && state.terms;
-        var canEdit = canDeleteTerms();
-        var text = terms && (terms.text || terms.body || String(terms)) || '';
-        return '\
-      <div class="warhub-card">\
-        <h3>Faction Terms</h3>\
-        <label class="warhub-label">Terms</label>\
-        <textarea class="warhub-textarea" id="wh-terms-box" placeholder="Enter terms for this war...">' + esc(text) + '</textarea>\
-        <div class="warhub-actions" style="margin-top:8px;">\
-          ' + (canEdit ? '<button class="warhub-btn primary" id="wh-save-terms">Save</button><button class="warhub-btn warn" id="wh-delete-terms">Delete</button>' : '') + '\
-        </div>\
-      </div>';
+        var warId = (state === null || state === void 0 ? void 0 : state.war) && state.war.war_id || (state === null || state === void 0 ? void 0 : state.war) && state.war.id || '';
+        var termsText = (state === null || state === void 0 ? void 0 : state.warTerms) && state.warTerms.terms_text || (state === null || state === void 0 ? void 0 : state.warTerms) && state.warTerms.terms || (state === null || state === void 0 ? void 0 : state.terms) && state.terms.terms_text || (state === null || state === void 0 ? void 0 : state.terms) && state.terms.terms || '';
+        var locked = !((accessState === null || accessState === void 0 ? void 0 : accessState.isFactionLeader) || isOwnerSession());
+        return "\n      <div class=\"warhub-card\">\n        <div class=\"warhub-section-title\">\n          <h3>War Terms</h3>\n          ".concat(locked ? '<span class="warhub-pill disabled">Leader Only</span>' : '', "\n        </div>\n        <label class=\"warhub-label\">War ID</label>\n        <input class=\"warhub-input\" id=\"warhub-terms-warid\" value=\"").concat(esc(warId), "\" readonly />\n        <div style=\"height:8px;\"></div>\n        <label class=\"warhub-label\">Terms</label>\n        <textarea class=\"warhub-textarea\" id=\"warhub-terms-text\" ").concat(locked ? 'readonly' : '', ">").concat(esc(termsText), "</textarea>\n        <div class=\"warhub-actions\" style=\"margin-top:8px;\">\n          <button class=\"warhub-btn primary\" id=\"warhub-terms-save\" ").concat(locked ? 'disabled' : '', ">Save Terms</button>\n          <button class=\"warhub-btn warn\" id=\"warhub-terms-delete\" ").concat(locked ? 'disabled' : '', ">Delete Terms</button>\n        </div>\n      </div>\n    ");
     }
     function renderMembersTab() {
-        var members = sortMembersLive(arr(state && state.members));
-        return '\
-      <div class="warhub-card">\
-        <div class="warhub-section-title">\
-          <h3>Members</h3>\
-          <span class="warhub-count">' + fmtNum(members.length) + '</span>\
+    var allMembers = arr((state && state.members) || []);
+    var rawQ = String((state && state.membersSearch) || '').trim();
+    var q = rawQ.toLowerCase();
+
+    var filtered = !q ? allMembers : allMembers.filter(function (x) {
+        var id = String(x.user_id || x.id || x.player_id || x.member_user_id || '').toLowerCase();
+        var name = String(x.name || x.player_name || x.member_name || '').toLowerCase();
+        var status = String(x.display_status || x.status || x.status_detail || x.last_action || '').toLowerCase();
+        var position = String(x.position || '').toLowerCase();
+        return (
+            name.indexOf(q) >= 0 ||
+            id.indexOf(q) >= 0 ||
+            status.indexOf(q) >= 0 ||
+            position.indexOf(q) >= 0
+        );
+    });
+
+    var groups = splitRosterGroups(filtered);
+    var total =
+        groups.online.length +
+        groups.idle.length +
+        groups.travel.length +
+        groups.hospital.length +
+        groups.jail.length +
+        groups.offline.length;
+
+    return "\
+      <div class=\"warhub-card\">\
+        <div class=\"warhub-section-title\">\
+          <h3>Members Overview</h3>\
+          <span class=\"warhub-count\">" + fmtNum(total) + "</span>\
         </div>\
-        <div class="warhub-section-scroll">' + (members.length ? members.map(renderMemberRow).join('') : '<div class="warhub-empty">No members loaded.</div>') + '</div>\
-      </div>';
-    }
+        <div class=\"warhub-row\" style=\"margin-top:8px; gap:8px; align-items:center;\">\
+          <input class=\"warhub-input\" id=\"warhub-members-search\" placeholder=\"Search member, ID, status, position...\" value=\"" + esc(rawQ) + "\" />\
+          " + (q ? "<button class=\"warhub-btn small\" id=\"warhub-members-search-clear\">Clear</button>" : "") + "\
+        </div>\
+        <div class=\"warhub-grid three\" style=\"margin-top:10px;\">\
+          <div class=\"warhub-metric\">\
+            <div class=\"k\">Online</div>\
+            <div class=\"v\">" + fmtNum(groups.online.length) + "</div>\
+          </div>\
+          <div class=\"warhub-metric\">\
+            <div class=\"k\">Idle</div>\
+            <div class=\"v\">" + fmtNum(groups.idle.length) + "</div>\
+          </div>\
+          <div class=\"warhub-metric\">\
+            <div class=\"k\">Hospital</div>\
+            <div class=\"v\">" + fmtNum(groups.hospital.length) + "</div>\
+          </div>\
+          <div class=\"warhub-metric\">\
+            <div class=\"k\">Travel</div>\
+            <div class=\"v\">" + fmtNum(groups.travel.length) + "</div>\
+          </div>\
+          <div class=\"warhub-metric\">\
+            <div class=\"k\">Jail</div>\
+            <div class=\"v\">" + fmtNum(groups.jail.length) + "</div>\
+          </div>\
+          <div class=\"warhub-metric\">\
+            <div class=\"k\">Offline</div>\
+            <div class=\"v\">" + fmtNum(groups.offline.length) + "</div>\
+          </div>\
+        </div>\
+      </div>\
+      " + rosterCard('Online Members', groups.online, { extraClass: 'online-box' }) + "\
+      " + rosterCard('Idle Members', groups.idle, { extraClass: 'idle-box' }) + "\
+      " + rosterCard('Hospital Members', groups.hospital, { extraClass: 'hospital-box' }) + "\
+      " + rosterCard('Travel Members', groups.travel, { extraClass: 'travel-box' }) + "\
+      " + rosterCard('Jailed Members', groups.jail, { extraClass: 'jail-box' }) + "\
+      " + rosterDropdown('Offline Members', groups.offline, { extraClass: 'offline-box' }) + "\
+    ";
+}
+    
     function renderEnemiesTab() {
-        var enemyMeta = getEnemyFactionMeta();
-        var enemies = sortMembersLive(arr(enemyMeta.members));
+    try {
+        var enemies = arr((state && state.enemies) || []);
+        var enemyFaction =
+            (state && state.enemy_faction) ||
+            (state && state.enemyFaction) ||
+            {};
+        var war = (state && state.war) || {};
+        var fallbackPair = whLoadWarPairFallback() || {};
+
+        var ownFaction =
+            (state && state.faction) ||
+            (state && state.ourFaction) ||
+            {};
+
+        var ownFactionId = String((ownFaction && (ownFaction.faction_id || ownFaction.id)) || ((state && state.user) && state.user.faction_id) || '').trim();
+        var ownFactionName = String((ownFaction && ownFaction.name) || ((state && state.user) && state.user.faction_name) || '').trim().toLowerCase();
+        var enemyFactionId = String((enemyFaction && (enemyFaction.faction_id || enemyFaction.id)) || (state && state.enemy_faction_id) || (war && war.enemy_faction_id) || fallbackPair.enemy_faction_id || '').trim();
+        var enemyFactionName = String((enemyFaction && enemyFaction.name) || (state && state.enemy_faction_name) || (war && war.enemy_faction_name) || fallbackPair.enemy_faction_name || 'Unknown Enemy').trim();
+
+        if (enemyFactionId && ownFactionId && enemyFactionId === ownFactionId) {
+            enemyFactionId = '';
+            enemyFactionName = '—';
+        }
+        if (enemyFactionName && ownFactionName && enemyFactionName.toLowerCase() === ownFactionName) {
+            enemyFactionId = '';
+            enemyFactionName = '—';
+        }
+
+        var scoreThem = Number(((state && state.score) && state.score.enemy) || (enemyFaction && enemyFaction.score) || 0) || 0;
+        var chainThem = Number((enemyFaction && enemyFaction.chain) || 0) || 0;
+        var groups = splitRosterGroups(enemies || []);
+        var total = groups.online.length + groups.idle.length + groups.travel.length + groups.hospital.length + groups.jail.length + groups.offline.length;
+        var hasWar = !!((state && state.has_war) || (war && war.active) || (war && war.registered) || (war && war.war_id) || enemyFactionId || enemies.length);
+
         return '\
-      <div class="warhub-card">\
-        <div class="warhub-section-title">\
-          <h3>Enemy Members</h3>\
-          <span class="warhub-pill neutral">' + esc(enemyMeta.name || 'Unknown Enemy') + '</span>\
-        </div>\
-        <div class="warhub-section-scroll">' + (enemies.length ? enemies.map(renderEnemyRow).join('') : '<div class="warhub-empty">No enemy members loaded.</div>') + '</div>\
-      </div>';
+          <div class="warhub-card">\
+            <div class="warhub-section-title">\
+              <h3>Enemies Overview</h3>\
+              <span class="warhub-count">' + fmtNum(total) + '</span>\
+            </div>\
+            <div class="warhub-grid two">\
+              <div class="warhub-metric">\
+                <div class="k">Enemy Faction</div>\
+                <div class="v">' + esc(enemyFactionName || '—') + '</div>\
+              </div>\
+              <div class="warhub-metric">\
+                <div class="k">War Status</div>\
+                <div class="v">' + esc(String(war.status || war.phase || (hasWar ? 'Active' : 'No War'))) + '</div>\
+              </div>\
+              <div class="warhub-metric">\
+                <div class="k">Enemy Score</div>\
+                <div class="v">' + fmtNum(scoreThem) + '</div>\
+              </div>\
+              <div class="warhub-metric">\
+                <div class="k">Enemy Chain</div>\
+                <div class="v">' + fmtNum(chainThem) + '</div>\
+              </div>\
+            </div>\
+            ' + (enemyFactionId ? '<div class="warhub-actions" style="margin-top:8px;"><a class="warhub-btn" href="https://www.torn.com/factions.php?step=profile&ID=' + encodeURIComponent(enemyFactionId) + '" target="_blank" rel="noopener noreferrer">Open Enemy Faction</a></div>' : '') + '\
+          </div>\
+          ' + rosterCard('Online Enemies', groups.online, { extraClass: 'online-box', enemy: true }) + '\
+          ' + rosterCard('Idle Enemies', groups.idle, { extraClass: 'idle-box', enemy: true }) + '\
+          ' + rosterCard('Hospital Enemies', groups.hospital, { extraClass: 'hospital-box', enemy: true }) + '\
+          ' + rosterCard('Travel Enemies', groups.travel, { extraClass: 'travel-box', enemy: true }) + '\
+          ' + rosterCard('Jailed Enemies', groups.jail, { extraClass: 'jail-box', enemy: true }) + '\
+          ' + rosterDropdown('Offline Enemies', groups.offline, { extraClass: 'offline-box', enemy: true }) + '';
+    } catch (e) {
+        return '<div class="warhub-card"><div class="warhub-empty">Enemy tab crashed.</div></div>';
     }
-    function filterHospitalEnemiesForTab(enemyHospRaw) {
-        return arr(enemyHospRaw);
-    }
-    function renderHospitalTab() {
-        var ours = sortHosp(arr(state && state.members).filter(function (x) {
-            return Number((x && x.hospital_seconds) || 0) > 0;
-        }));
-        var enemyHospRaw = sortHosp(arr(state && state.enemies).filter(function (x) {
-            return Number((x && x.hospital_seconds) || 0) > 0;
-        }));
-        var theirs = filterHospitalEnemiesForTab(enemyHospRaw);
-        var total = ours.length + theirs.length;
-        return '\
+}
+function renderHospitalTab() {
+    var ours = sortHosp(arr((state === null || state === void 0 ? void 0 : state.members) || []).filter(function (x) {
+        return getHospSeconds(x) > 0;
+    }));
+
+    var enemyHospRaw = sortHosp(arr((state === null || state === void 0 ? void 0 : state.enemies) || []).filter(function (x) {
+        return getHospSeconds(x) > 0;
+    }));
+
+    var theirs = filterHospitalEnemiesForTab(enemyHospRaw);
+    var total = ours.length + theirs.length;
+
+    return '\
       <div class="warhub-card">\
         <div class="warhub-section-title">\
           <h3>Hospital Overview</h3>\
           <span class="warhub-count">' + fmtNum(total) + '</span>\
         </div>\
         <div class="warhub-grid two">\
-          <div class="warhub-metric"><div class="k">Our Hospital</div><div class="v">' + fmtNum(ours.length) + '</div></div>\
-          <div class="warhub-metric"><div class="k">Enemy Hospital</div><div class="v">' + fmtNum(theirs.length) + '</div></div>\
+          <div class="warhub-metric">\
+            <div class="k">Our Hospital</div>\
+            <div class="v">' + fmtNum(ours.length) + '</div>\
+          </div>\
+          <div class="warhub-metric">\
+            <div class="k">Enemy Hospital</div>\
+            <div class="v">' + fmtNum(theirs.length) + '</div>\
+          </div>\
+        </div>\
+      </div>\
+      ' + renderDibsOverviewCard() + '\
+      <div class="warhub-card warhub-roster-card hospital-box">\
+        <div class="warhub-section-title">\
+          <h3>Our Hospital</h3>\
+          <span class="warhub-count">' + fmtNum(ours.length) + '</span>\
+        </div>\
+        <div class="warhub-list">' +
+          (ours.length ? ours.map(function (x) { return hospitalMemberRow(x, false); }).join('') : '<div class="warhub-empty">No one in our hospital.</div>') +
+        '</div>\
+      </div>\
+      <div class="warhub-card warhub-roster-card hospital-box">\
+        <div class="warhub-section-title">\
+          <h3>Enemy Hospital</h3>\
+          <span class="warhub-count">' + fmtNum(theirs.length) + '</span>\
+        </div>\
+        <div class="warhub-list">' +
+          (theirs.length ? theirs.map(function (x) { return hospitalMemberRow(x, true); }).join('') : '<div class="warhub-empty">No enemy in hospital.</div>') +
+        '</div>\
+      </div>';
+}
+function renderChainTab() {
+    var members = arr((state && state.members) || []);
+    var sitters = members.filter(function (x) { return !!x.chain_sitter; });
+    var avail = members.filter(function (x) { return !!x.available; });
+    var war = (state && state.war) || {};
+    var chainCount = Number((state && state.chain && state.chain.current) || (state && state.chain_count) || (war && war.chain_count) || (war && war.chain) || 0) || 0;
+    var chainTimeout = (state && state.chain && state.chain.timeout_text) || (state && state.chain_timeout_text) || (war && war.chain_timeout_text) || (state && state.chain && state.chain.timeout) || (war && war.chain_timeout) || '—';
+    var myUserId = String((state && state.me && (state.me.user_id || state.me.id || state.me.player_id)) || (state && state.user && (state.user.user_id || state.user.id || state.user.player_id)) || '');
+    var myMember = members.find(function (x) { return String(x.user_id || x.id || x.player_id || x.member_user_id || '') === myUserId; }) || {};
+    var myAvailable = !!myMember.available;
+    var myChainSitter = !!myMember.chain_sitter;
+    var visibleAvail = myAvailable ? avail : [];
+
+    var availabilityButtons = '<button class="warhub-btn ' + (myAvailable ? '' : 'warn') + '" id="warhub-set-unavailable">Unavailable</button>' + '<button class="warhub-btn ' + (myAvailable ? 'good' : '') + '" id="warhub-set-available">Available</button>';
+    var sitterButtons = '<button class="warhub-btn ' + (myChainSitter ? '' : 'warn') + '" id="warhub-set-chain-off">Off</button>' + '<button class="warhub-btn ' + (myChainSitter ? 'good' : '') + '" id="warhub-set-chain-on">On</button>';
+
+    return '\
+      <div class="warhub-card">\
+        <div class="warhub-section-title">\
+          <h3>Chain Overview</h3>\
+        </div>\
+        <div class="warhub-grid two">\
+          <div class="warhub-metric"><div class="k">Current Chain</div><div class="v">' + fmtNum(chainCount) + '</div></div>\
+          <div class="warhub-metric"><div class="k">Timeout</div><div class="v">' + esc(String(chainTimeout || '—')) + '</div></div>\
+          <div class="warhub-metric"><div class="k">Available Members</div><div class="v">' + fmtNum(visibleAvail.length) + '</div></div>\
+          <div class="warhub-metric"><div class="k">Chain Sitters</div><div class="v">' + fmtNum(sitters.length) + '</div></div>\
         </div>\
       </div>\
       <div class="warhub-card">\
-        <h3>Our Members</h3>\
-        <div class="warhub-section-scroll">' + (ours.length ? ours.map(renderMemberRow).join('') : '<div class="warhub-empty">Nobody is in hospital.</div>') + '</div>\
+        <h3>My Controls</h3>\
+        <div class="warhub-grid two">\
+          <div class="warhub-list-item"><div class="warhub-row"><div><div class="warhub-name">Availability</div><div class="warhub-meta">Switch between unavailable and available</div></div><div class="warhub-actions">' + availabilityButtons + '</div></div></div>\
+          <div class="warhub-list-item"><div class="warhub-row"><div><div class="warhub-name">Chain Sitter</div><div class="warhub-meta">Switch chain sitter mode on or off</div></div><div class="warhub-actions">' + sitterButtons + '</div></div></div>\
+        </div>\
       </div>\
       <div class="warhub-card">\
-        <h3>Enemies</h3>\
-        <div class="warhub-section-scroll">' + (theirs.length ? theirs.map(renderEnemyRow).join('') : '<div class="warhub-empty">No enemies in hospital.</div>') + '</div>\
+        <div class="warhub-section-title"><h3>Available Members</h3><span class="warhub-count">' + visibleAvail.length + '</span></div>\
+        <div class="warhub-list">' + (visibleAvail.length ? visibleAvail.map(function (x) { return memberRow(x, false); }).join('') : '<div class="warhub-empty">No available members flagged.</div>') + '</div>\
+      </div>\
+      <div class="warhub-card">\
+        <div class="warhub-section-title"><h3>Chain Sitters</h3><span class="warhub-count">' + sitters.length + '</span></div>\
+        <div class="warhub-list">' + (sitters.length ? sitters.map(function (x) { return memberRow(x, false); }).join('') : '<div class="warhub-empty">No chain sitters enabled.</div>') + '</div>\
       </div>';
-    }
-    function memberOptionsHtml(list) {
-        return sortByName(list).map(function (m) {
-            var id = String((m && (m.user_id || m.id)) || '');
-            return '<option value="' + esc(id) + '">' + esc((m && m.name) || 'Unknown') + '</option>';
-        }).join('');
-    }
+}
     function renderMedDealsTab() {
-        var members = sortByName(arr(state && state.members));
-        var enemies = sortByName(arr(state && state.enemies));
-        var deals = arr(state && (state.medDeals || state.med_deals));
-        return '\
-      <div class="warhub-card">\
-        <h3>Add Med Deal</h3>\
-        <label class="warhub-label">Faction Member</label>\
-        <select class="warhub-select" id="wh-med-member"><option value="">Select member</option>' + memberOptionsHtml(members) + '</select>\
-        <label class="warhub-label" style="margin-top:8px;">Enemy Member</label>\
-        <select class="warhub-select" id="wh-med-enemy"><option value="">Select enemy</option>' + memberOptionsHtml(enemies) + '</select>\
-        <label class="warhub-label" style="margin-top:8px;">Note</label>\
-        <input class="warhub-input" id="wh-med-note" placeholder="Optional note">\
-        <div class="warhub-actions" style="margin-top:8px;">\
-          <button class="warhub-btn primary" id="wh-add-med">Add Deal</button>\
-        </div>\
-      </div>\
-      <div class="warhub-card">\
-        <div class="warhub-section-title">\
-          <h3>Med Deals</h3>\
-          <span class="warhub-count">' + fmtNum(deals.length) + '</span>\
-        </div>\
-        <div class="warhub-section-scroll">' + (deals.length ? deals.map(function (d) {
-            return '\
-            <div class="warhub-row">\
-              <div class="warhub-left">\
-                <div class="warhub-name">' + esc((d.member_name || 'Member') + ' ↔ ' + (d.enemy_name || 'Enemy')) + '</div>\
-                <div class="warhub-meta">' + esc(d.note || 'No note') + '</div>\
-              </div>\
-              <div class="warhub-right">\
-                <button class="warhub-btn warn" data-med-delete="' + esc(String(d.id || '')) + '">Delete</button>\
-              </div>\
-            </div>';
-        }).join('') : '<div class="warhub-empty">No med deals yet.</div>') + '</div>\
-      </div>';
-    }
+    var deals = arr((state && state.medDeals) || (state && state.med_deals) || []);
+    var enemies = sortAlphabetical(arr((state && state.enemies) || []));
+    var sellerName = cleanInputValue((state && state.me && (state.me.name || state.me.player_name)) || (state && state.user && (state.user.name || state.user.player_name)) || '');
+    var hasWar = !!((state && state.has_war) || (state && state.war && state.war.active) || (state && state.war && state.war.war_id) || (state && state.enemy_faction_id) || (state && state.enemyFaction && state.enemyFaction.id) || enemies.length);
+
+    return "\
+      <div class=\"warhub-card\">\n\
+        <h3>Add Med Deal</h3>\n\
+        <div>\n\
+          <label class=\"warhub-label\">Enemy</label>\n\
+          <select class=\"warhub-select\" id=\"warhub-med-item\"".concat(hasWar ? '' : ' disabled', ">\n\
+            <option value=\"\">").concat(hasWar ? 'Select enemy member' : 'Currently not in a war', "</option>\n\
+            ").concat(enemies.map(function (x) {
+                var id = x.user_id || x.id || x.player_id || '';
+                var name = x.name || x.player_name || "ID ".concat(id);
+                var duo = [sellerName, name].filter(Boolean).join(' ↔ ');
+                return "<option value=\"".concat(esc(String(id)), "\" data-name=\"").concat(esc(name), "\">").concat(esc(duo || name), " [").concat(esc(String(id)), "]</option>");
+            }).join(''), "\n\
+          </select>\n\
+        </div>\n\
+        <div style=\"height:8px;\"></div>\n\
+        <div>\n\
+          <label class=\"warhub-label\">Note</label>\n\
+          <input class=\"warhub-input\" id=\"warhub-med-note\" placeholder=\"Optional note\" />\n\
+        </div>\n\
+        <div class=\"warhub-actions\" style=\"margin-top:8px;\">\n\
+          <button class=\"warhub-btn primary\" id=\"warhub-med-add\"").concat(hasWar ? '' : ' disabled', ">Add Med Deal</button>\n\
+        </div>\n\
+      </div>\n\
+\n\
+      <div class=\"warhub-card\">\n\
+        <div class=\"warhub-section-title\">\n\
+          <h3>Med Deals</h3>\n\
+          <span class=\"warhub-count\">").concat(deals.length, "</span>\n\
+        </div>\n\
+        <div class=\"warhub-list\">\n\
+          ").concat(deals.length ? deals.map(function (x) {
+                var dealId = String(x.id || x.deal_id || x.row_id || '');
+                var seller = x.seller_name || x.created_by_name || sellerName || 'Unknown user';
+                var enemyName = x.item_name || x.buyer_name || x.enemy_name || x.target_name || '';
+                var noteText = x.note || '';
+                var heading = [seller, enemyName].filter(Boolean).join(' ↔ ');
+                var meta = [noteText].filter(Boolean).join(' • ');
+                return "\
+            <div class=\"warhub-list-item\">\n\
+              <div class=\"warhub-row\">\n\
+                <div>\n\
+                  <div class=\"warhub-name\">".concat(esc(heading || seller), "</div>\n\
+                  <div class=\"warhub-meta\">").concat(esc(meta || 'No details'), "</div>\n\
+                </div>\n\
+                <div class=\"warhub-actions\">\n\
+                  <button class=\"warhub-btn small warn warhub-del-med\" data-id=\"").concat(esc(dealId), "\">Delete</button>\n\
+                </div>\n\
+              </div>\n\
+            </div>\n\
+          ");
+            }).join('') : '<div class="warhub-empty">No med deals yet.</div>', "\n\
+        </div>\n\
+      </div>\n\
+    ");
+}
     function renderTargetsTab() {
-        var enemies = sortByName(arr(state && state.enemies));
-        var targets = arr(state && state.targets);
+    var targets = arr((state && state.targets) || []);
+    var enemies = sortAlphabetical(arr((state && state.enemies) || []));
+    var hasWar = !!(
+        (state && state.has_war) ||
+        ((state && state.war) && state.war.active) ||
+        ((state && state.war) && state.war.war_id) ||
+        (state && state.enemy_faction_id) ||
+        ((state && state.enemyFaction) && state.enemyFaction.id) ||
+        enemies.length
+    );
+
+    var enemyOptions = enemies.map(function (x) {
+        var id = x.user_id || x.id || x.player_id || '';
+        var name = x.name || x.player_name || ("ID " + id);
+        return '<option value="' + esc(String(id)) + '" data-name="' + esc(name) + '">' +
+            esc(name) + ' [' + esc(String(id)) + ']</option>';
+    }).join('');
+
+    var targetRows = targets.length ? targets.map(function (x) {
+        var id = x.target_id || x.user_id || x.id || '';
+        var name = x.target_name || x.name || ("ID " + id);
+        var rowId = x.id || x.target_row_id || '';
+        var meta = [('ID ' + id), x.notes || x.reason || ''].filter(Boolean).join(' • ');
+
+        return '' +
+            '<div class="warhub-list-item">' +
+                '<div class="warhub-row">' +
+                    '<div>' +
+                        '<div class="warhub-name">' + esc(name) + '</div>' +
+                        '<div class="warhub-meta">' + esc(meta) + '</div>' +
+                    '</div>' +
+                    '<div class="warhub-actions">' +
+                        (id
+                            ? '<a class="warhub-btn small primary" href="https://www.torn.com/loader.php?sid=attack&user2ID=' + encodeURIComponent(id) + '" target="_blank" rel="noopener noreferrer">Attack</a>'
+                            : '') +
+                        '<button class="warhub-btn small warn warhub-del-target" data-id="' + esc(String(rowId)) + '">Delete</button>' +
+                    '</div>' +
+                '</div>' +
+            '</div>';
+    }).join('') : '<div class="warhub-empty">No targets saved.</div>';
+
+    return '' +
+        '<div class="warhub-card">' +
+            '<h3>Add Target</h3>' +
+            '<div class="warhub-grid two">' +
+                '<div>' +
+                    '<label class="warhub-label">Enemy</label>' +
+                    '<select class="warhub-select" id="warhub-target-enemy"' + (hasWar ? '' : ' disabled') + '>' +
+                        '<option value="">' + (hasWar ? 'Select enemy' : 'Currently not in a war') + '</option>' +
+                        enemyOptions +
+                    '</select>' +
+                '</div>' +
+                '<div>' +
+                    '<label class="warhub-label">Target ID</label>' +
+                    '<input class="warhub-input" id="warhub-target-id" placeholder="Target ID"' + (hasWar ? '' : ' disabled') + ' />' +
+                '</div>' +
+            '</div>' +
+            '<div style="height:8px;"></div>' +
+            '<label class="warhub-label">Notes / Reason</label>' +
+            '<input class="warhub-input" id="warhub-target-notes" placeholder="Optional notes"' + (hasWar ? '' : ' disabled') + ' />' +
+            '<div class="warhub-actions" style="margin-top:8px;">' +
+                '<button class="warhub-btn primary" id="warhub-target-add"' + (hasWar ? '' : ' disabled') + '>Add Target</button>' +
+            '</div>' +
+        '</div>' +
+
+        '<div class="warhub-card">' +
+            '<div class="warhub-section-title">' +
+                '<h3>Targets</h3>' +
+                '<span class="warhub-count">' + targets.length + '</span>' +
+            '</div>' +
+            '<div class="warhub-list">' +
+                targetRows +
+            '</div>' +
+        '</div>';
+}
+    
+    function renderAnalyticsTab() {
+    var canSee = !!((accessState && accessState.isFactionLeader) || isOwnerSession());
+    if (!canSee) {
         return '\
+          <div class="warhub-card">\
+            <h3>War Summary</h3>\
+            <div class="warhub-empty">Only faction leaders and admin can access this tab.</div>\
+          </div>';
+    }
+    if (analyticsCache === null) {
+        return '\
+          <div class="warhub-card">\
+            <div class="warhub-section-title"><h3>War Summary</h3><span class="warhub-count">…</span></div>\
+            <div class="warhub-empty">Loading war summary...</div>\
+            <div class="warhub-actions" style="margin-top:8px;"><button class="warhub-btn" id="wh-refresh-summary">Refresh Summary</button></div>\
+          </div>';
+    }
+    if (analyticsCache && analyticsCache.ok === false) {
+        return '\
+          <div class="warhub-card">\
+            <div class="warhub-section-title"><h3>War Summary</h3><span class="warhub-count">0</span></div>\
+            <div class="warhub-empty">' + esc(analyticsCache.error || 'Could not load war summary.') + '</div>\
+            <div class="warhub-actions" style="margin-top:8px;"><button class="warhub-btn" id="wh-refresh-summary">Refresh Summary</button></div>\
+          </div>';
+    }
+
+    var sum = analyticsCache || {};
+    var totals = sum.totals || {};
+    var members = arr(sum.members || []);
+    var liveMembers = arr((state && state.members) || []);
+    var liveMap = {};
+    liveMembers.forEach(function (x) {
+        var id = String(x.user_id || x.id || x.player_id || x.member_user_id || '');
+        if (id) liveMap[id] = x;
+    });
+
+    var mergedMembers = members.map(function (m) {
+        var uid = String(m.user_id || m.id || '');
+        var live = liveMap[uid] || {};
+        var hits = Number(m.hits || m.attacks || 0);
+        var gained = Number(m.respect_gained || 0);
+        var lost = Number(m.respect_lost || 0);
+        var wins = Number(m.wins || 0);
+        var losses = Number(m.losses || 0);
+        var fights = wins + losses;
+        var net = Number(m.net_respect != null ? m.net_respect : (gained - lost));
+        return {
+            user_id: uid,
+            name: m.name || m.member_name || live.name || live.player_name || ('ID ' + uid),
+            hits: hits,
+            gained: gained,
+            lost: lost,
+            wins: wins,
+            losses: losses,
+            fights: fights,
+            net: net,
+            carryScore: (hits * 2) + (wins * 3) + net,
+            position: live.position || '',
+            presence: getPresenceState(live),
+            statusText: String(live.display_status || live.last_action || live.status || live.status_detail || '—')
+        };
+    });
+
+    function pillForPresence(presence) {
+        if (presence === 'hospital') return '<span class="warhub-pill hosp">Hosp</span>';
+        if (presence === 'online') return '<span class="warhub-pill online">Online</span>';
+        if (presence === 'idle') return '<span class="warhub-pill idle">Idle</span>';
+        if (presence === 'travel') return '<span class="warhub-pill travel">Travel</span>';
+        if (presence === 'jail') return '<span class="warhub-pill jail">Jail</span>';
+        return '<span class="warhub-pill offline">Offline</span>';
+    }
+
+    function pickTop(sorter) {
+        var list = [].concat(_toConsumableArray(mergedMembers));
+        list.sort(sorter);
+        return list[0] || null;
+    }
+
+    function singleCard(title, member, lines) {
+        return '\
+          <div class="warhub-card">\
+            <div class="warhub-section-title"><h3>' + esc(title) + '</h3><span class="warhub-count">Top</span></div>\
+            ' + (!member ? '<div class="warhub-empty">No data.</div>' : '\
+              <div class="warhub-list-item">\
+                <div class="warhub-row">\
+                  <div>\
+                    <div class="warhub-name">' + esc(member.name) + '</div>\
+                    <div class="warhub-meta">ID ' + esc(String(member.user_id || '—')) + (member.position ? ' • ' + esc(member.position) : '') + '</div>\
+                    <div class="warhub-meta">' + esc(lines.join(' • ')) + '</div>\
+                  </div>\
+                  <div class="warhub-actions">' + pillForPresence(member.presence) + '</div>\
+                </div>\
+              </div>') + '\
+          </div>';
+    }
+
+    var topRespect = pickTop(function (a, b) { if (b.net !== a.net) return b.net - a.net; return b.hits - a.hits; });
+    var topHits = pickTop(function (a, b) { if (b.hits !== a.hits) return b.hits - a.hits; return b.net - a.net; });
+    var topAttacks = pickTop(function (a, b) { if (b.fights !== a.fights) return b.fights - a.fights; return b.wins - a.wins; });
+    var carryingWar = pickTop(function (a, b) { if (b.carryScore !== a.carryScore) return b.carryScore - a.carryScore; return b.net - a.net; });
+    var losingGround = pickTop(function (a, b) { if (a.net !== b.net) return a.net - b.net; if (b.losses !== a.losses) return b.losses - a.losses; return a.hits - b.hits; });
+
+    var totalHits = Number(totals.hits || 0);
+    var totalWins = Number(totals.wins || 0);
+    var totalLosses = Number(totals.losses || 0);
+    var totalNet = Number(totals.net_respect != null ? totals.net_respect : ((totals.respect_gained || 0) - (totals.respect_lost || 0)));
+
+    return '\
       <div class="warhub-card">\
-        <h3>Add Target</h3>\
-        <label class="warhub-label">Enemy Member</label>\
-        <select class="warhub-select" id="wh-target-enemy"><option value="">Select enemy</option>' + memberOptionsHtml(enemies) + '</select>\
-        <label class="warhub-label" style="margin-top:8px;">Note</label>\
-        <input class="warhub-input" id="wh-target-note" placeholder="Optional note">\
-        <div class="warhub-actions" style="margin-top:8px;">\
-          <button class="warhub-btn primary" id="wh-add-target">Add Target</button>\
+        <div class="warhub-section-title"><h3>War Summary</h3><span class="warhub-count">' + fmtNum(mergedMembers.length) + '</span></div>\
+        <div class="warhub-grid three">\
+          <div class="warhub-metric"><div class="k">Hits</div><div class="v">' + fmtNum(totalHits) + '</div></div>\
+          <div class="warhub-metric"><div class="k">Respect</div><div class="v">' + fmtNum(Math.round(totalNet)) + '</div></div>\
+          <div class="warhub-metric"><div class="k">Wins / Losses</div><div class="v">' + fmtNum(totalWins) + ' / ' + fmtNum(totalLosses) + '</div></div>\
         </div>\
+        <div class="warhub-actions" style="margin-top:8px;"><button class="warhub-btn" id="wh-refresh-summary">Refresh Summary</button></div>\
       </div>\
-      <div class="warhub-card">\
-        <div class="warhub-section-title">\
-          <h3>Targets</h3>\
-          <span class="warhub-count">' + fmtNum(targets.length) + '</span>\
-        </div>\
-        <div class="warhub-section-scroll">' + (targets.length ? targets.map(function (t) {
+      <div class="warhub-grid two">\
+        ' + singleCard('Top Respect', topRespect, ['Net ' + fmtNum(Math.round((topRespect && topRespect.net) || 0)), 'Hits ' + fmtNum((topRespect && topRespect.hits) || 0), (topRespect && topRespect.statusText) || '—']) + '\
+        ' + singleCard('Top Hits', topHits, ['Hits ' + fmtNum((topHits && topHits.hits) || 0), 'Net ' + fmtNum(Math.round((topHits && topHits.net) || 0)), (topHits && topHits.statusText) || '—']) + '\
+        ' + singleCard('Top Attacks', topAttacks, ['Fights ' + fmtNum((topAttacks && topAttacks.fights) || 0), 'Wins ' + fmtNum((topAttacks && topAttacks.wins) || 0), (topAttacks && topAttacks.statusText) || '—']) + '\
+        ' + singleCard('Carrying the War', carryingWar, ['Hits ' + fmtNum((carryingWar && carryingWar.hits) || 0), 'Respect ' + fmtNum(Math.round((carryingWar && carryingWar.net) || 0)), 'Wins ' + fmtNum((carryingWar && carryingWar.wins) || 0)]) + '\
+        ' + singleCard('Member Losing Ground', losingGround, ['Net ' + fmtNum(Math.round((losingGround && losingGround.net) || 0)), 'Losses ' + fmtNum((losingGround && losingGround.losses) || 0), (losingGround && losingGround.statusText) || '—']) + '\
+      </div>';
+}
+        function renderAdminTab() {
+        if (!isOwnerSession()) {
             return '\
-            <div class="warhub-row" data-target-row="' + esc(String(t.id || '')) + '">\
-              <div class="warhub-left">\
-                <div class="warhub-name">' + esc(t.enemy_name || 'Enemy') + '</div>\
-                <div class="warhub-meta">' + esc(t.note || 'No note') + '</div>\
+        <div class="warhub-card">\
+          <h3>Fries91 [3679030]</h3>\
+          <div class="warhub-empty">Fries91 [3679030] access required.</div>\
+        </div>\
+      ';
+        }
+
+        var dash = (state && state.adminDashboard) || {};
+        var items = arr(dash.items || dash.factions || []);
+        var summary = dash.summary || {};
+        var factionExemptions = arr(dash.faction_exemptions || dash.factionExemptions || []);
+        var userExemptions = arr(dash.user_exemptions || dash.userExemptions || []);
+
+        var factionExemptHtml = factionExemptions.length ? factionExemptions.map(function (x) {
+            var factionId = x.faction_id || '';
+            var factionName = x.faction_name || ('Faction ' + factionId);
+            return '\
+              <div class="warhub-list-item">\
+                <div class="warhub-row">\
+                  <div>\
+                    <div class="warhub-name">' + esc(factionName) + '</div>\
+                    <div class="warhub-meta">' + esc(['ID ' + factionId, x.note || '', x.added_by_name || ''].filter(Boolean).join(' • ')) + '</div>\
+                  </div>\
+                  <div class="warhub-actions">\
+                    <button class="warhub-btn small warn" data-admin-delete-faction-exempt="' + esc(String(factionId)) + '">Remove</button>\
+                  </div>\
+                </div>\
               </div>\
-              <div class="warhub-right">\
-                <button class="warhub-btn warn" data-target-delete="' + esc(String(t.id || '')) + '">Delete</button>\
+            ';
+        }).join('') : '<div class="warhub-empty">No faction exemptions saved.</div>';
+
+        var userExemptHtml = userExemptions.length ? userExemptions.map(function (x) {
+            var userId = x.user_id || '';
+            var userName = x.user_name || ('Player ' + userId);
+            return '\
+              <div class="warhub-list-item">\
+                <div class="warhub-row">\
+                  <div>\
+                    <div class="warhub-name">' + esc(userName) + '</div>\
+                    <div class="warhub-meta">' + esc(['ID ' + userId, x.faction_id ? 'Faction ' + x.faction_id : '', x.note || ''].filter(Boolean).join(' • ')) + '</div>\
+                  </div>\
+                  <div class="warhub-actions">\
+                    <button class="warhub-btn small warn" data-admin-delete-user-exempt="' + esc(String(userId)) + '">Remove</button>\
+                  </div>\
+                </div>\
               </div>\
-            </div>';
-        }).join('') : '<div class="warhub-empty">No targets yet.</div>') + '</div>\
-      </div>';
-    }
-    function renderInstructionsTab() {
+            ';
+        }).join('') : '<div class="warhub-empty">No player exemptions saved.</div>';
+
+        var licenseHtml = items.length ? items.map(function (x) {
+            var factionId = x.faction_id || x.id || '';
+            var factionName = x.faction_name || x.name || ('Faction ' + factionId);
+            var isExempt = !!(x.license && x.license.faction_exempt);
+            var metaBits = ['ID ' + factionId, x.status || ''];
+            if (isExempt) metaBits.push('Exempt');
+            if (x.leader_name) metaBits.push(x.leader_name);
+            if (x.expires_at) metaBits.push(fmtTs(x.expires_at));
+            return '\
+              <div class="warhub-list-item">\
+                <div class="warhub-row">\
+                  <div>\
+                    <div class="warhub-name">' + esc(factionName) + '</div>\
+                    <div class="warhub-meta">' + esc(metaBits.filter(Boolean).join(' • ')) + '</div>\
+                  </div>\
+                  <div class="warhub-actions">\
+                    <button class="warhub-btn small" data-admin-history="' + esc(String(factionId)) + '">History</button>\
+                    <button class="warhub-btn small good" data-admin-renew="' + esc(String(factionId)) + '">Renew</button>\
+                    <button class="warhub-btn small warn" data-admin-expire="' + esc(String(factionId)) + '">Expire</button>\
+                  </div>\
+                </div>\
+              </div>\
+            ';
+        }).join('') : '<div class="warhub-empty">No faction licenses found.</div>';
+
         return '\
       <div class="warhub-card">\
-        <h3>Getting Started</h3>\
-        <div class="warhub-mini" style="line-height:1.6;">\
-          1. Paste your Torn API key in Settings and press Save Keys.<br>\
-          2. Press Login once to create your session.<br>\
-          3. Move the icon and overlay where you want them.<br>\
-          4. Use Available in Chain when you want to be shown there.<br>\
-          5. Leaders and admin get extra tabs automatically.\
+        <h3>Fries91 [3679030] Dashboard</h3>\
+        <div class="warhub-grid two">\
+          <div class="warhub-metric"><div class="k">Factions</div><div class="v">' + fmtNum(summary.faction_licenses_total || items.length || 0) + '</div></div>\
+          <div class="warhub-metric"><div class="k">Trials</div><div class="v">' + fmtNum(summary.trials_total || 0) + '</div></div>\
+          <div class="warhub-metric"><div class="k">Paid</div><div class="v">' + fmtNum(summary.paid_total || 0) + '</div></div>\
+          <div class="warhub-metric"><div class="k">Payment Required</div><div class="v">' + fmtNum(summary.payment_required_total || 0) + '</div></div>\
+          <div class="warhub-metric"><div class="k">Faction Exemptions</div><div class="v">' + fmtNum(summary.faction_exemptions_total || factionExemptions.length || 0) + '</div></div>\
+          <div class="warhub-metric"><div class="k">Player Exemptions</div><div class="v">' + fmtNum(summary.user_exemptions_total || userExemptions.length || 0) + '</div></div>\
         </div>\
       </div>\
+\
       <div class="warhub-card">\
-        <h3>Terms of Service</h3>\
-        <div class="warhub-mini" style="line-height:1.6;">\
-          War Hub is a faction coordination overlay. Your leader/admin controls faction access and enabled members. Exempt factions and exempt users do not need payment or renewal.\
+        <h3>Faction Exemption</h3>\
+        <label class="warhub-label">Faction ID</label>\
+        <input class="warhub-input" id="wh-admin-faction-exempt-id" placeholder="Enter faction ID">\
+        <label class="warhub-label" style="margin-top:8px;">Faction Name (optional)</label>\
+        <input class="warhub-input" id="wh-admin-faction-exempt-name" placeholder="Faction name">\
+        <label class="warhub-label" style="margin-top:8px;">Note (optional)</label>\
+        <input class="warhub-input" id="wh-admin-faction-exempt-note" placeholder="Why exempt?">\
+        <div class="warhub-actions" style="margin-top:10px;">\
+          <button class="warhub-btn primary" id="wh-admin-save-faction-exempt">Save Faction Exemption</button>\
         </div>\
       </div>\
+\
       <div class="warhub-card">\
-        <h3>API Key Storage</h3>\
-        <div class="warhub-mini" style="line-height:1.6;">\
-          Your saved API key is stored in your userscript storage on your device so login can restore on return. Logout clears the session and saved key when requested.\
+        <h3>Player Exemption</h3>\
+        <label class="warhub-label">Player ID</label>\
+        <input class="warhub-input" id="wh-admin-user-exempt-id" placeholder="Enter player ID">\
+        <label class="warhub-label" style="margin-top:8px;">Player Name (optional)</label>\
+        <input class="warhub-input" id="wh-admin-user-exempt-name" placeholder="Player name">\
+        <label class="warhub-label" style="margin-top:8px;">Faction ID (optional)</label>\
+        <input class="warhub-input" id="wh-admin-user-exempt-faction-id" placeholder="Faction ID">\
+        <label class="warhub-label" style="margin-top:8px;">Faction Name (optional)</label>\
+        <input class="warhub-input" id="wh-admin-user-exempt-faction-name" placeholder="Faction name">\
+        <label class="warhub-label" style="margin-top:8px;">Note (optional)</label>\
+        <input class="warhub-input" id="wh-admin-user-exempt-note" placeholder="Why exempt?">\
+        <div class="warhub-actions" style="margin-top:10px;">\
+          <button class="warhub-btn primary" id="wh-admin-save-user-exempt">Save Player Exemption</button>\
         </div>\
+        <div class="warhub-mini" style="margin-top:8px;">Player exemptions unlock full script use except Admin and leader-only tabs.</div>\
+      </div>\
+\
+      <div class="warhub-card">\
+        <h3>Faction Exemption List</h3>\
+        <div class="warhub-list">' + factionExemptHtml + '</div>\
+      </div>\
+\
+      <div class="warhub-card">\
+        <h3>Player Exemption List</h3>\
+        <div class="warhub-list">' + userExemptHtml + '</div>\
+      </div>\
+\
+      <div class="warhub-card">\
+        <h3>Faction Licenses</h3>\
+        <div class="warhub-list">' + licenseHtml + '</div>\
+      </div>\
+    ';
+    }
+    function renderAdminTopFiveTab() {
+    if (!isOwnerSession()) {
+        return '\
+      <div class="warhub-card">\
+        <h3>Fries91 [3679030]</h3>\
+        <div class="warhub-empty">Fries91 [3679030] access required.</div>\
       </div>';
     }
+
+    var payload = adminTopFiveCache;
+    if (payload === null) {
+        return '\
+      <div class="warhub-card">\
+        <h3>War Top 5</h3>\
+        <div class="warhub-empty">Loading faction top 5…</div>\
+      </div>';
+    }
+
+    if (payload && payload.ok === false) {
+        return '\
+      <div class="warhub-card">\
+        <h3>War Top 5</h3>\
+        <div class="warhub-empty">' + esc(payload.error || 'Could not load faction top 5.') + '</div>\
+        <div class="warhub-actions" style="margin-top:8px;"><button class="warhub-btn" id="wh-refresh-war-top5">Refresh</button></div>\
+      </div>';
+    }
+
+    var factions = arr((payload && payload.factions) || []);
+    var war = (payload && payload.war) || {};
+    var cards = factions.length ? factions.map(function (faction, idx) {
+        var players = arr(faction.players || []);
+        var rows = players.length ? players.map(function (p) {
+            return '\
+              <div class="warhub-list-item">\
+                <div class="warhub-row">\
+                  <div>\
+                    <div class="warhub-name">#' + esc(String(p.rank || 0)) + ' ' + esc(p.name || ('Player ' + (p.user_id || ''))) + '</div>\
+                    <div class="warhub-meta">' + esc([p.user_id ? 'ID ' + p.user_id : '', p.position || '', p.level ? 'Lvl ' + p.level : '', p.status || ''].filter(Boolean).join(' • ')) + '</div>\
+                  </div>\
+                  <div class="warhub-actions">' + pillForStatusClass(p.online_state || 'offline') + '</div>\
+                </div>\
+              </div>';
+        }).join('') : '<div class="warhub-empty">No players found.</div>';
+
+        return '\
+          <details class="warhub-dropdown" ' + (idx === 0 ? 'open' : '') + '>\
+            <summary>\
+              <div class="warhub-row">\
+                <div>\
+                  <div class="warhub-name">' + esc(faction.faction_name || ('Faction ' + (faction.faction_id || ''))) + '</div>\
+                  <div class="warhub-meta">' + esc([faction.faction_id ? 'ID ' + faction.faction_id : '', (faction.count || players.length) + ' players'].filter(Boolean).join(' • ')) + '</div>\
+                </div>\
+                <div class="warhub-actions"><span class="warhub-pill neutral">Top 5</span></div>\
+              </div>\
+            </summary>\
+            <div class="warhub-dropdown-body"><div class="warhub-list">' + rows + '</div></div>\
+          </details>';
+    }).join('') : '<div class="warhub-empty">No faction top 5 available.</div>';
+
+    return '\
+      <div class="warhub-card">\
+        <h3>War Top 5</h3>\
+        <div class="warhub-mini">' + esc((war.status || 'Currently not in war') + (war.phase ? ' • ' + war.phase : '')) + '</div>\
+        <div class="warhub-actions" style="margin-top:8px;"><button class="warhub-btn" id="wh-refresh-war-top5">Refresh</button></div>\
+      </div>\
+      <div class="warhub-card">' + cards + '</div>';
+}
+
     function renderSettingsTab() {
-        var apiKey = cleanInputValue(GM_getValue(K_API_KEY, ''));
-        var enabledCount = arr(state && state.members).filter(function (m) {
-            return !!m.live_stats_enabled;
-        }).length;
-        var totalPayment = enabledCount * 3;
-        return '\
+    var apiKey = cleanInputValue(GM_getValue(K_API_KEY, ''));
+    var enabledCount = arr((factionMembersCache === null || factionMembersCache === void 0 ? void 0 : factionMembersCache.members) || []).filter(function (x) {
+        return !!x.enabled;
+    }).length;
+    var totalPayment = enabledCount * 3;
+
+    return '\
       <div class="warhub-card">\
         <h3>Keys</h3>\
         <label class="warhub-label">Your Torn API Key</label>\
@@ -1407,386 +2292,987 @@ if (!silent) {
         </div>\
       </div>';
 }
-   function renderAccessBanner() {
-    var msg = accessSummaryMessage();
-    if (!msg) return '';
-    return '\
-      <div class="warhub-banner">\
-        <div class="warhub-name">Access</div>\
-        <div class="warhub-mini" style="line-height:1.5;">' + esc(msg) + '</div>\
-      </div>';
-}
-function renderAdminTab() {
-    if (!isOwnerSession()) {
-        return renderAccessBanner() + '<div class="warhub-card"><div class="warhub-empty">Admin access is restricted to ' + esc(OWNER_NAME) + ' [' + esc(OWNER_USER_ID) + '].</div></div>';
+    function renderAccessBanner() {
+        var msg = accessSummaryMessage();
+        if (!msg) return '';
+        var cls = (accessState && (accessState.paymentRequired || accessState.blocked || accessState.trialExpired)) ? 'payment' : (accessState && accessState.trialActive) ? 'trial' : 'good';
+        var extra = '';
+
+        if (accessState && accessState.isFactionExempt) {
+            extra = 'This faction is exempt from payment and renewal, so members can use War Hub without billing.';
+        } else if (accessState && accessState.isUserExempt) {
+            extra = 'This player ID is exempt. Shared tabs are unlocked, but Admin and leader-only tabs still stay locked.';
+        } else if (accessState && accessState.trialActive && (accessState.isFactionLeader || isOwnerSession())) {
+            extra = 'Trial starts automatically when the faction leader logs in. Members can see the script right away, but only enabled members can use shared tools.';
+        } else if (accessState && accessState.loggedIn && !accessState.isFactionLeader && !isOwnerSession() && !accessState.memberEnabled) {
+            extra = 'You can view the overlay, but your leader must enable you before you can use the faction tools.';
+        } else if (accessState && accessState.memberEnabled && !accessState.paymentRequired && !accessState.trialExpired) {
+            extra = 'Once your leader enables you for the current faction cycle, your access stays on until the next renewal/payment cycle.';
+        }
+
+        return "\n      <div class=\"warhub-banner ".concat(cls, "\">\n        <div><strong>Faction Access</strong></div>\n        <div class=\"warhub-mini\" style=\"margin-top:6px;\">").concat(esc(msg), "</div>\n        ").concat(extra ? '<div class=\"warhub-mini\" style=\"margin-top:6px;\">' + esc(extra) + '</div>' : '', "\n      </div>\n    ");
     }
-
-    var adminData = state && state.admin ? state.admin : {};
-    var factionExemptions = arr(adminData.faction_exemptions);
-    var userExemptions = arr(adminData.user_exemptions);
-    var debugJson = '';
-    try {
-        debugJson = JSON.stringify(state || {}, null, 2);
-    } catch (_unused14) {
-        debugJson = '{}';
+        function tabLocked(key) {
+        if (isOwnerSession()) return false;
+        if (key === 'admin' || key === 'wartop5') return !isOwnerSession();
+        if (key === 'terms' || key === 'faction') return !(accessState !== null && accessState !== void 0 && accessState.isFactionLeader);
+        return false;
     }
-
-    return '\
-      <div class="warhub-card">\
-        <h3>Admin Dashboard</h3>\
-        <div class="warhub-mini" style="line-height:1.6;">\
-          Admin: <strong>' + esc(OWNER_NAME) + ' [' + esc(OWNER_USER_ID) + ']</strong><br>\
-          Use this tab to manage exemptions and inspect API state.\
-        </div>\
-      </div>\
-\
-      <div class="warhub-card">\
-        <h3>Faction Exemptions</h3>\
-        <label class="warhub-label">Faction ID</label>\
-        <input class="warhub-input" id="wh-exempt-faction-id" placeholder="Enter faction ID">\
-        <label class="warhub-label" style="margin-top:8px;">Faction Name (optional)</label>\
-        <input class="warhub-input" id="wh-exempt-faction-name" placeholder="Optional faction name">\
-        <div class="warhub-actions" style="margin-top:8px;">\
-          <button class="warhub-btn primary" id="wh-add-faction-exempt">Add Faction Exemption</button>\
-        </div>\
-        <div class="warhub-divider"></div>\
-        <div class="warhub-section-scroll">' + (factionExemptions.length ? factionExemptions.map(function (x) {
-            return '\
-            <div class="warhub-row">\
-              <div class="warhub-left">\
-                <div class="warhub-name">' + esc(x.faction_name || ('Faction ' + (x.faction_id || ''))) + '</div>\
-                <div class="warhub-meta">Faction ID: ' + esc(String(x.faction_id || '')) + '</div>\
-              </div>\
-              <div class="warhub-right">\
-                <button class="warhub-btn warn" data-remove-faction-exempt="' + esc(String(x.faction_id || '')) + '">Remove</button>\
-              </div>\
-            </div>';
-        }).join('') : '<div class="warhub-empty">No faction exemptions.</div>') + '</div>\
-      </div>\
-\
-      <div class="warhub-card">\
-        <h3>Player Exemptions</h3>\
-        <label class="warhub-label">Player ID</label>\
-        <input class="warhub-input" id="wh-exempt-user-id" placeholder="Enter player ID">\
-        <label class="warhub-label" style="margin-top:8px;">Player Name (optional)</label>\
-        <input class="warhub-input" id="wh-exempt-user-name" placeholder="Optional player name">\
-        <div class="warhub-actions" style="margin-top:8px;">\
-          <button class="warhub-btn primary" id="wh-add-user-exempt">Add Player Exemption</button>\
-        </div>\
-        <div class="warhub-divider"></div>\
-        <div class="warhub-section-scroll">' + (userExemptions.length ? userExemptions.map(function (x) {
-            return '\
-            <div class="warhub-row">\
-              <div class="warhub-left">\
-                <div class="warhub-name">' + esc(x.user_name || ('Player ' + (x.user_id || ''))) + '</div>\
-                <div class="warhub-meta">Player ID: ' + esc(String(x.user_id || '')) + '</div>\
-              </div>\
-              <div class="warhub-right">\
-                <button class="warhub-btn warn" data-remove-user-exempt="' + esc(String(x.user_id || '')) + '">Remove</button>\
-              </div>\
-            </div>';
-        }).join('') : '<div class="warhub-empty">No player exemptions.</div>') + '</div>\
-      </div>\
-\
-      <div class="warhub-card">\
-        <h3>API State Debug</h3>\
-        <div class="warhub-actions" style="margin-bottom:8px;">\
-          <button class="warhub-btn" id="wh-refresh-api-state">Refresh</button>\
-        </div>\
-        <textarea class="warhub-textarea" id="wh-api-state-box" readonly style="min-height:260px;">' + esc(debugJson) + '</textarea>\
-      </div>';
-}
-function renderWarTop5Tab() {
-    if (!isOwnerSession()) {
-        return '<div class="warhub-card"><div class="warhub-empty">Admin only.</div></div>';
+    function tabBtn(key, label) {
+        var active = currentTab === key ? 'active' : '';
+        var locked = tabLocked(key) ? 'locked' : '';
+        return "<button class=\"warhub-tab ".concat(active, " ").concat(locked, "\" data-tab=\"").concat(esc(key), "\">").concat(esc(label), "</button>");
     }
-
-    var cache = adminTopFiveCache && _typeof(adminTopFiveCache) === 'object' ? adminTopFiveCache : null;
-    var factions = arr(cache && cache.factions);
-
-    if (!factions.length) {
-        var ourFaction = state && (state.faction || state.our_faction) || {};
-        var enemyFaction = getEnemyFactionMeta();
-
-        factions = [{
-            faction_id: String(ourFaction.faction_id || activeFactionId() || ''),
-            faction_name: String(ourFaction.name || activeFactionName() || 'Our Faction'),
-            players: buildTopFive(arr(state && state.members))
-        }, {
-            faction_id: String(enemyFaction.id || ''),
-            faction_name: String(enemyFaction.name || 'Enemy Faction'),
-            players: buildTopFive(arr(enemyFaction.members))
-        }].filter(function (f) {
-            return arr(f.players).length > 0;
-        });
+    function renderTabContent() {
+    switch (currentTab) {
+        case 'overview': return renderOverviewTab();
+case 'faction': return "".concat(renderAccessBanner()).concat(renderFactionTab());
+case 'war': return "".concat(renderAccessBanner()).concat(renderWarTab());
+case 'summary': return "".concat(renderAccessBanner()).concat(renderAnalyticsTab());
+case 'chain': return "".concat(renderAccessBanner()).concat(renderChainTab());
+case 'terms': return renderTermsTab();
+case 'members': return "".concat(renderAccessBanner()).concat(renderMembersTab());
+case 'enemies': return "".concat(renderAccessBanner()).concat(renderEnemiesTab());
+case 'hospital': return "".concat(renderAccessBanner()).concat(renderHospitalTab());
+case 'meddeals': return "".concat(renderAccessBanner()).concat(renderMedDealsTab());
+case 'targets': return "".concat(renderAccessBanner()).concat(renderTargetsTab());
+case 'instructions': return renderInstructionsTab();
+case 'settings': return renderSettingsTab();
+case 'admin': return renderAdminTab();
+case 'wartop5': return renderAdminTopFiveTab();
+default: return renderOverviewTab();
     }
-
-    return '\
-      <div class="warhub-grid">' + (factions.length ? factions.map(function (f, idx) {
-        return renderTopFiveSelect('Faction Top 5', f.faction_name || ('Faction ' + (f.faction_id || '')), arr(f.players), 'wh-top5-' + idx);
-    }).join('') : '<div class="warhub-card"><div class="warhub-empty">No top five data loaded yet.</div></div>') + '\
-      </div>';
 }
-function renderBody() {
-    if (!overlay) return;
-    ensureVisibleTab();
-
-    var body = overlay.querySelector('.warhub-body');
-    if (!body) return;
-
-    var banner = renderAccessBanner();
-    var html = '';
-
-    if (currentTab === 'overview') html = renderOverviewTab();
-    else if (currentTab === 'faction') html = renderFactionTab();
-    else if (currentTab === 'war') html = renderWarTab();
-    else if (currentTab === 'summary') html = renderSummaryTab();
-    else if (currentTab === 'chain') html = renderChainTab();
-    else if (currentTab === 'terms') html = renderTermsTab();
-    else if (currentTab === 'members') html = renderMembersTab();
-    else if (currentTab === 'enemies') html = renderEnemiesTab();
-    else if (currentTab === 'hospital') html = renderHospitalTab();
-    else if (currentTab === 'meddeals') html = renderMedDealsTab();
-    else if (currentTab === 'targets') html = renderTargetsTab();
-    else if (currentTab === 'instructions') html = renderInstructionsTab();
-    else if (currentTab === 'settings') html = renderSettingsTab();
-    else if (currentTab === 'admin') html = renderAdminTab();
-    else if (currentTab === 'wartop5') html = renderWarTop5Tab();
-    else html = '<div class="warhub-card"><div class="warhub-empty">Tab not found.</div></div>';
-
-    var savedScrollTop = body.scrollTop || 0;
-    var tabsEl = overlay.querySelector('.warhub-tabs');
-    var savedTabsLeft = tabsEl ? tabsEl.scrollLeft : 0;
-    var pageX = window.scrollX || window.pageXOffset || 0;
-    var pageY = window.scrollY || window.pageYOffset || 0;
-
-    body.innerHTML = '\
-      <div id="warhub-status" class="warhub-status"></div>\
-      ' + banner + '\
-      ' + html;
-
-    restoreStatus();
-
-    if (tabsEl) {
-        requestAnimationFrame(function () {
-            tabsEl.scrollLeft = savedTabsLeft || Number(GM_getValue(K_TABS_SCROLL_LEFT, 0)) || 0;
-        });
+    function isTypingInOverlay() {
+        if (!overlay) return false;
+        var active = document.activeElement;
+        if (!active || !overlay.contains(active)) return false;
+        if (active.matches && active.matches('input, textarea, select')) return true;
+        if (active.isContentEditable) return true;
+        return false;
     }
-
-    requestAnimationFrame(function () {
-        body.scrollTop = savedScrollTop || Number(GM_getValue(K_OVERLAY_SCROLL, 0)) || 0;
-        try {
-            window.scrollTo(pageX, pageY);
-        } catch (_unused15) {}
-    });
-}
-function updateTabs() {
-    if (!overlay) return;
-    ensureVisibleTab();
-    var tabs = overlay.querySelector('.warhub-tabs');
-    if (!tabs) return;
-
-    var scrollLeft = tabs.scrollLeft || 0;
-    tabs.innerHTML = visibleTabs().map(function (row) {
-        var tab = row[0];
-        var label = row[1];
-        var extra = tab === currentTab ? ' active' : '';
-        return '<button class="warhub-tab' + extra + '" data-tab="' + esc(tab) + '">' + esc(label) + '</button>';
-    }).join('');
-
-    requestAnimationFrame(function () {
-        tabs.scrollLeft = scrollLeft || Number(GM_getValue(K_TABS_SCROLL_LEFT, 0)) || 0;
-    });
-}
-function updateBadge() {
-    if (!badge || !shield) return;
-    var count = unreadCount();
-    if (!count) {
-        badge.style.display = 'none';
-        return;
+    function getTabsScrollLeft() {
+        var tabs = overlay ? overlay.querySelector('.warhub-tabs') : null;
+        return tabs ? (tabs.scrollLeft || 0) : Number(GM_getValue(K_TABS_SCROLL_LEFT, 0)) || 0;
     }
-    badge.textContent = count > 99 ? '99+' : String(count);
-    var r = shield.getBoundingClientRect();
-    badge.style.left = (r.left + r.width - 10) + 'px';
-    badge.style.top = (r.top - 6) + 'px';
-    badge.style.display = 'block';
-}
-function openOverlay() {
-    isOpen = true;
-    GM_setValue(K_OPEN, true);
-    if (!overlay) mount();
-    overlay.classList.add('open');
-    updateTabs();
-    renderBody();
-    updateBadge();
-}
-function closeOverlay() {
-    isOpen = false;
-    GM_setValue(K_OPEN, false);
-    if (overlay) overlay.classList.remove('open');
-}
-function toggleOverlay() {
-    if (isOpen) closeOverlay(); else openOverlay();
-}
-function clampToViewport(el) {
-    if (!el) return;
-    var rect = el.getBoundingClientRect();
-    var maxLeft = Math.max(0, window.innerWidth - rect.width);
-    var maxTop = Math.max(0, window.innerHeight - rect.height);
-    var left = rect.left;
-    var top = rect.top;
-    if (left < 0) left = 0;
-    if (top < 0) top = 0;
-    if (left > maxLeft) left = maxLeft;
-    if (top > maxTop) top = maxTop;
-    el.style.left = left + 'px';
-    el.style.top = top + 'px';
-    el.style.right = 'auto';
-    el.style.bottom = 'auto';
-}
-function saveShieldPos() {
+    function restoreTabsScrollLeft() {
+        var tabs = overlay ? overlay.querySelector('.warhub-tabs') : null;
+        if (!tabs) return;
+        tabs.scrollLeft = Number(GM_getValue(K_TABS_SCROLL_LEFT, 0)) || 0;
+        tabs.addEventListener('scroll', function () {
+            GM_setValue(K_TABS_SCROLL_LEFT, tabs.scrollLeft || 0);
+        }, { passive: true });
+    }
+    function renderBody() {
+        if (!overlay) return;
+        var prevLeft = overlay.style.left || '';
+        var prevTop = overlay.style.top || '';
+        var prevRight = overlay.style.right || '';
+        var prevBottom = overlay.style.bottom || '';
+        var prevBody = overlay.querySelector('.warhub-body');
+        var prevScrollTop = prevBody ? prevBody.scrollTop : Number(GM_getValue(K_OVERLAY_SCROLL, 0)) || 0;
+        var prevTabsScroll = getTabsScrollLeft();
+        var prevPageScrollY = window.scrollY || window.pageYOffset || 0;
+        if (tabLocked(currentTab)) {
+            currentTab = 'overview';
+            GM_setValue(K_TAB, currentTab);
+        }
+        overlay.innerHTML = "\n      <div class=\"warhub-head\" id=\"warhub-drag-handle\">\n        <div class=\"warhub-toprow\">\n          <div>\n            <div class=\"warhub-title\">War Hub</div>\n            <div class=\"warhub-sub\">Fries91 • Torn overlay</div>\n          </div>\n          <button class=\"warhub-close\" id=\"warhub-close-btn\" type=\"button\">Close</button>\n        </div>\n      </div>\n      <div class=\"warhub-tabs\">\n        ".concat(TAB_ORDER.map(function (_ref) {
+            var key = _ref[0], label = _ref[1];
+            return tabBtn(key, label);
+        }).join(''), "\n      </div>\n      <div class=\"warhub-body\">\n        <div id=\"warhub-status\" class=\"warhub-status\"></div>\n        ").concat(renderTabContent(), "\n      </div>\n    ");
+        bindOverlayEvents();
+        bindOverlayDrag();
+        restoreStatus();
+        if (prevLeft || prevTop || prevRight || prevBottom) {
+            overlay.style.left = prevLeft;
+            overlay.style.top = prevTop;
+            overlay.style.right = prevRight;
+            overlay.style.bottom = prevBottom;
+        }
+        var nextBody = overlay.querySelector('.warhub-body');
+        if (nextBody) {
+            nextBody.scrollTop = prevScrollTop;
+            nextBody.addEventListener('scroll', function () {
+                GM_setValue(K_OVERLAY_SCROLL, nextBody.scrollTop || 0);
+            }, { passive: true });
+        }
+        restoreTabsScrollLeft();
+        var tabsEl = overlay.querySelector('.warhub-tabs');
+        if (tabsEl) tabsEl.scrollLeft = prevTabsScroll;
+        window.scrollTo(window.scrollX || 0, prevPageScrollY);
+    }
+    function clampElementPosition(el, left, top) {
+        var rect = el.getBoundingClientRect();
+        var w = rect.width || parseInt(getComputedStyle(el).width, 10) || 320;
+        var h = rect.height || parseInt(getComputedStyle(el).height, 10) || 320;
+        var maxLeft = Math.max(4, window.innerWidth - w - 4);
+        var maxTop = Math.max(4, window.innerHeight - h - 4);
+        var clampedLeft = Math.min(Math.max(4, left), maxLeft);
+        var clampedTop = Math.min(Math.max(4, top), maxTop);
+        el.style.left = "".concat(clampedLeft, "px");
+        el.style.top = "".concat(clampedTop, "px");
+        el.style.right = 'auto';
+        el.style.bottom = 'auto';
+    }
+    function clampToViewport(el) {
+        if (!el) return;
+        var rect = el.getBoundingClientRect();
+        clampElementPosition(el, rect.left, rect.top);
+    }
+    function updateBadge() {
+        if (!shield || !badge) return;
+        var n = unreadCount();
+        if (!n) {
+            badge.style.display = 'none';
+            return;
+        }
+        var r = shield.getBoundingClientRect();
+        badge.style.display = 'block';
+        badge.textContent = String(n > 99 ? '99+' : n);
+        badge.style.left = "".concat(r.right - 10, "px");
+        badge.style.top = "".concat(r.top - 6, "px");
+        badge.style.right = 'auto';
+        badge.style.bottom = 'auto';
+    }
+    function resetShieldPosition() {
     if (!shield) return;
-    var rect = shield.getBoundingClientRect();
-    GM_setValue(K_SHIELD_POS, {
-        left: rect.left,
-        top: rect.top
-    });
-    updateBadge();
-}
-function saveOverlayPos() {
-    if (!overlay) return;
-    var rect = overlay.getBoundingClientRect();
-    GM_setValue(K_OVERLAY_POS, {
-        left: rect.left,
-        top: rect.top
-    });
-}
-function saveOverlayScroll() {
-    if (!overlay) return;
-    var body = overlay.querySelector('.warhub-body');
-    if (body) GM_setValue(K_OVERLAY_SCROLL, body.scrollTop || 0);
-}
-function resetShieldPosition() {
-    GM_deleteValue(K_SHIELD_POS);
-    if (!shield) return;
-    shield.style.top = '120px';
-    shield.style.right = '14px';
+
     shield.style.left = 'auto';
     shield.style.bottom = 'auto';
-}
-function resetOverlayPosition() {
-    GM_deleteValue(K_OVERLAY_POS);
-    if (!overlay) return;
-    overlay.style.top = '170px';
-    overlay.style.right = '12px';
-    overlay.style.left = 'auto';
-    overlay.style.bottom = 'auto';
-}
-var isDraggingShield = false;
-var isDraggingOverlay = false;
-function enableDrag(el, handle, onSave, isShield) {
-    if (!el || !handle) return;
 
+    if (window.innerWidth <= 700) {
+        shield.style.right = '8px';
+        shield.style.top = '92px';
+    } else {
+        shield.style.right = '14px';
+        shield.style.top = '120px';
+    }
+}
+    function positionOverlayNearShield() {
+    if (!shield || !overlay) return;
+
+    var saved = GM_getValue(K_OVERLAY_POS, null);
+    if (saved && typeof saved.left === 'number' && typeof saved.top === 'number') {
+        overlay.style.left = saved.left + 'px';
+        overlay.style.top = saved.top + 'px';
+        overlay.style.right = 'auto';
+        overlay.style.bottom = 'auto';
+        clampElementPosition(overlay, saved.left, saved.top);
+        return;
+    }
+
+    var sr = shield.getBoundingClientRect();
+    var overlayWidth = Math.min(window.innerWidth - 16, 520);
+    var left = sr.right - overlayWidth;
+    var top = sr.bottom + 8;
+
+    if (window.innerWidth <= 700) {
+        left = 6;
+        top = 54;
+    }
+
+    overlay.style.right = 'auto';
+    overlay.style.bottom = 'auto';
+    clampElementPosition(overlay, left, top);
+}
+    function openOverlay() {
+    if (!overlay) return;
+
+    isOpen = true;
+    GM_setValue(K_OPEN, true);
+    overlay.classList.add('open');
+
+    var saved = GM_getValue(K_OVERLAY_POS, null);
+
+    renderBody();
+
+    if (saved && typeof saved.left === 'number' && typeof saved.top === 'number') {
+        overlay.style.left = saved.left + 'px';
+        overlay.style.top = saved.top + 'px';
+        overlay.style.right = 'auto';
+        overlay.style.bottom = 'auto';
+        clampElementPosition(overlay, saved.left, saved.top);
+    } else {
+        positionOverlayNearShield();
+    }
+}
+    function closeOverlay() {
+        if (!overlay) return;
+        isOpen = false;
+        GM_setValue(K_OPEN, false);
+        overlay.classList.remove('open');
+    }
+    function toggleOverlay() {
+        if (isOpen) closeOverlay(); else openOverlay();
+    }
+    function saveOverlayPos() {
+    if (!overlay) return;
+    var left = parseInt(overlay.style.left || '0', 10);
+    var top = parseInt(overlay.style.top || '0', 10);
+    GM_setValue(K_OVERLAY_POS, { left: left, top: top });
+}
+    function saveShieldPos() {
+        if (!shield) return;
+        GM_setValue(K_SHIELD_POS, {
+            left: shield.style.left || '',
+            top: shield.style.top || '',
+            right: shield.style.right || '',
+            bottom: shield.style.bottom || ''
+        });
+    }
+    function makeDraggable(handleEl, moveEl, saveFn, extra) {
+    var active = null;
     var startX = 0;
     var startY = 0;
     var startLeft = 0;
     var startTop = 0;
+    var moved = false;
+    var dragReady = false;
     var holdTimer = null;
-    var activePointerId = null;
-    var dragStarted = false;
+    var THRESHOLD = 6;
+    var TOUCH_HOLD_MS = 180;
 
-    function clearHold() {
+    function clearHoldTimer() {
         if (holdTimer) {
             clearTimeout(holdTimer);
             holdTimer = null;
         }
     }
 
-    function beginDrag(clientX, clientY) {
-        var rect = el.getBoundingClientRect();
-        startLeft = rect.left;
-        startTop = rect.top;
-        startX = clientX;
-        startY = clientY;
-        dragStarted = true;
+    function cleanup() {
+        clearHoldTimer();
+        document.removeEventListener('pointermove', onMove, true);
+        document.removeEventListener('pointerup', onUp, true);
+        document.removeEventListener('pointercancel', onUp, true);
+        handleEl.classList.remove('dragging');
+        moveEl.classList.remove('dragging');
+        moveEl.dataset.dragging = '0';
+        active = null;
+        dragReady = false;
+    }
+
+    function onMove(e) {
+        if (active !== e.pointerId) return;
+
+        var dx = e.clientX - startX;
+        var dy = e.clientY - startY;
+        var passedThreshold = Math.abs(dx) >= THRESHOLD || Math.abs(dy) >= THRESHOLD;
+
+        if (!dragReady) {
+            if (e.pointerType !== 'touch' && passedThreshold) {
+                dragReady = true;
+            }
+        }
+
+        if (!dragReady || !passedThreshold) return;
+
+        moved = true;
+        e.preventDefault();
         dragMoved = true;
-        if (isShield) {
-            isDraggingShield = true;
-            shield.classList.add('dragging');
-        } else {
-            isDraggingOverlay = true;
-            handle.classList.add('dragging');
-        }
+        clearHoldTimer();
+        handleEl.classList.add('dragging');
+        moveEl.classList.add('dragging');
+        moveEl.dataset.dragging = '1';
+        moveEl.style.right = 'auto';
+        moveEl.style.bottom = 'auto';
+        clampElementPosition(moveEl, startLeft + dx, startTop + dy);
+        if (typeof extra === 'function') extra();
     }
 
-    function moveTo(clientX, clientY) {
-        if (!dragStarted) return;
-        var dx = clientX - startX;
-        var dy = clientY - startY;
-        el.style.left = (startLeft + dx) + 'px';
-        el.style.top = (startTop + dy) + 'px';
-        el.style.right = 'auto';
-        el.style.bottom = 'auto';
-        clampToViewport(el);
-        updateBadge();
+    function onUp(e) {
+        if (active !== e.pointerId) return;
+        if (moved && typeof saveFn === 'function') saveFn();
+        if (typeof extra === 'function') extra();
+        cleanup();
+        setTimeout(function () { dragMoved = false; }, 120);
     }
 
-    function endDrag() {
-        clearHold();
-        if (dragStarted) {
-            clampToViewport(el);
-            if (typeof onSave === 'function') onSave();
-        }
-        if (isShield) {
-            isDraggingShield = false;
-            if (shield) shield.classList.remove('dragging');
-        } else {
-            isDraggingOverlay = false;
-            if (handle) handle.classList.remove('dragging');
-        }
-        activePointerId = null;
-        dragStarted = false;
-        setTimeout(function () {
-            dragMoved = false;
-        }, 120);
-    }
-
-    handle.addEventListener('pointerdown', function (e) {
-        if (e.button != null && e.button !== 0) return;
-        activePointerId = e.pointerId;
-        clearHold();
-        holdTimer = setTimeout(function () {
-            beginDrag(e.clientX, e.clientY);
-        }, 150);
-    }, {
-        passive: true
-    });
-
-    handle.addEventListener('pointermove', function (e) {
-        if (activePointerId !== e.pointerId) return;
-        if (dragStarted) {
-            e.preventDefault();
-            moveTo(e.clientX, e.clientY);
+    handleEl.addEventListener('pointerdown', function (e) {
+        var t = e.target;
+        if (t && (t.closest('button') || t.closest('a') || t.closest('input') || t.closest('textarea') || t.closest('select') || t.closest('summary'))) {
             return;
         }
-        if (Math.abs(e.movementX || 0) > 4 || Math.abs(e.movementY || 0) > 4) {
-            clearHold();
-            beginDrag(e.clientX, e.clientY);
-        }
-    }, {
-        passive: false
-    });
 
-    handle.addEventListener('pointerup', function (e) {
-        if (activePointerId !== e.pointerId) return;
-        endDrag();
-    });
-    handle.addEventListener('pointercancel', function (e) {
-        if (activePointerId !== e.pointerId) return;
-        endDrag();
+        active = e.pointerId;
+        moved = false;
+        dragMoved = false;
+        dragReady = e.pointerType !== 'touch';
+
+        var rect = moveEl.getBoundingClientRect();
+        startX = e.clientX;
+        startY = e.clientY;
+        startLeft = rect.left;
+        startTop = rect.top;
+
+        moveEl.style.left = "".concat(rect.left, "px");
+        moveEl.style.top = "".concat(rect.top, "px");
+        moveEl.style.right = 'auto';
+        moveEl.style.bottom = 'auto';
+
+        clearHoldTimer();
+        if (e.pointerType === 'touch') {
+            holdTimer = setTimeout(function () {
+                dragReady = true;
+                holdTimer = null;
+            }, TOUCH_HOLD_MS);
+        }
+
+        if (handleEl.setPointerCapture) {
+            handleEl.setPointerCapture(e.pointerId);
+        }
+
+        document.addEventListener('pointermove', onMove, true);
+        document.addEventListener('pointerup', onUp, true);
+        document.addEventListener('pointercancel', onUp, true);
     });
 }
-function mount() {
+    function bindOverlayDrag() {
+        var handle = overlay ? overlay.querySelector('#warhub-drag-handle') : null;
+        if (!handle || !overlay) return;
+        makeDraggable(handle, overlay, saveOverlayPos, updateBadge);
+    }
+    function loadAdminDashboard() {
+        return _loadAdminDashboard.apply(this, arguments);
+    }
+    function _loadAdminDashboard() {
+        _loadAdminDashboard = _asyncToGenerator(function* () {
+            if (!isOwnerSession()) return null;
+            var res = yield adminReq('GET', '/api/admin/faction-licenses');
+            if (!res.ok) {
+                setStatus(res.error || 'Could not load Fries91 dashboard.', true);
+                return null;
+            }
+            state = state || {};
+            state.adminDashboard = _objectSpread(_objectSpread({}, res.data || {}), {}, {
+                items: arr((res.data === null || res.data === void 0 ? void 0 : res.data.items) || (res.data === null || res.data === void 0 ? void 0 : res.data.factions) || []),
+                summary: (res.data === null || res.data === void 0 ? void 0 : res.data.summary) || {},
+                faction_exemptions: arr((res.data === null || res.data === void 0 ? void 0 : res.data.faction_exemptions) || []),
+                user_exemptions: arr((res.data === null || res.data === void 0 ? void 0 : res.data.user_exemptions) || [])
+            });
+            if (overlay && isOpen && currentTab === 'admin') renderBody();
+            return state.adminDashboard;
+        });
+        return _loadAdminDashboard.apply(this, arguments);
+    }
+    function loadAdminTopFive() {
+        return _loadAdminTopFive.apply(this, arguments);
+    }
+    function _loadAdminTopFive() {
+        _loadAdminTopFive = _asyncToGenerator(function* () {
+            if (!isOwnerSession()) return null;
+            var res = yield adminReq('GET', '/api/admin/war-top-five');
+            if (!res.ok) {
+                adminTopFiveCache = { ok: false, error: res.error || 'Could not load faction top 5.' };
+                if (overlay && isOpen && currentTab === 'wartop5') renderBody();
+                return adminTopFiveCache;
+            }
+            adminTopFiveCache = _objectSpread({ ok: true }, res.data || {});
+            if (overlay && isOpen && currentTab === 'wartop5') renderBody();
+            return adminTopFiveCache;
+        });
+        return _loadAdminTopFive.apply(this, arguments);
+    }
+
+    function bindOverlayEvents() {
+    if (overlay) overlay.querySelectorAll('[data-tab]').forEach(function (btn) {
+        btn.addEventListener('click', _asyncToGenerator(function* () {
+            var tab = btn.getAttribute('data-tab') || 'war';
+            if (tabLocked(tab)) {
+                setStatus(tab === 'admin' ? 'Admin tab is locked to Fries91 [3679030].' : 'Leader access required for that tab.', true);
+                renderBody();
+                return;
+            }
+            currentTab = tab;
+            GM_setValue(K_TAB, currentTab);
+
+            if (tab === 'faction' && ((accessState === null || accessState === void 0 ? void 0 : accessState.isFactionLeader) || isOwnerSession())) {
+                yield loadFactionMembers(true);
+            }
+
+            if (tab === 'summary' && ((accessState === null || accessState === void 0 ? void 0 : accessState.isFactionLeader) || isOwnerSession())) {
+                yield loadAnalytics().catch(function () { return null; });
+            }
+
+            if (tab === 'admin' && isOwnerSession()) {
+                yield loadAdminDashboard();
+            }
+
+            renderBody();
+        }));
+    });
+
+    var closeBtn = overlay ? overlay.querySelector('#warhub-close-btn') : null;
+    if (closeBtn) closeBtn.addEventListener('click', function () { closeOverlay(); });
+
+    var avOn = overlay ? overlay.querySelector('#warhub-set-available') : null;
+    if (avOn) avOn.addEventListener('click', _asyncToGenerator(function* () {
+        var res = yield doAction('POST', '/api/availability', { available: true }, 'Availability set to available.', false);
+        if (res) {
+            yield loadState(true);
+            renderBody();
+        }
+    }));
+
+    var avOff = overlay ? overlay.querySelector('#warhub-set-unavailable') : null;
+    if (avOff) avOff.addEventListener('click', _asyncToGenerator(function* () {
+        var res = yield doAction('POST', '/api/availability', { available: false }, 'Availability set to unavailable.', false);
+        if (res) {
+            yield loadState(true);
+            renderBody();
+        }
+    }));
+
+    var chOn = overlay ? overlay.querySelector('#warhub-set-chain-on') : null;
+    if (chOn) chOn.addEventListener('click', _asyncToGenerator(function* () {
+        var res = yield doAction('POST', '/api/chain-sitter', { enabled: true }, 'Chain sitter enabled.', false);
+        if (res) {
+            yield loadState(true);
+            renderBody();
+        }
+    }));
+
+    var chOff = overlay ? overlay.querySelector('#warhub-set-chain-off') : null;
+    if (chOff) chOff.addEventListener('click', _asyncToGenerator(function* () {
+        var res = yield doAction('POST', '/api/chain-sitter', { enabled: false }, 'Chain sitter disabled.', false);
+        if (res) {
+            yield loadState(true);
+            renderBody();
+        }
+    }));
+
+    var medAdd = overlay ? overlay.querySelector('#warhub-med-add') : null;
+    if (medAdd) medAdd.addEventListener('click', _asyncToGenerator(function* () {
+        var itemField = overlay ? overlay.querySelector('#warhub-med-item') : null;
+        var noteField = overlay ? overlay.querySelector('#warhub-med-note') : null;
+
+        var seller_name = cleanInputValue(
+            (state && state.me && (state.me.name || state.me.player_name)) ||
+            (state && state.user && (state.user.name || state.user.player_name)) ||
+            ''
+        );
+
+        var item_name = cleanInputValue((itemField ? itemField.value : '') || '');
+        var note = cleanInputValue((noteField ? noteField.value : '') || '');
+
+        if (!seller_name || !item_name) {
+            setStatus('Enemy is required.', true);
+            return;
+        }
+
+        var res = yield doAction('POST', '/api/med-deals', {
+            seller_name: seller_name,
+            item_name: item_name,
+            price: '',
+            note: note
+        }, 'Med deal added.', false);
+
+        if (res) {
+            yield loadState(true);
+            renderBody();
+        }
+    }));
+
+    if (overlay) overlay.querySelectorAll('.warhub-del-med').forEach(function (btn) {
+        btn.addEventListener('click', _asyncToGenerator(function* () {
+            var id = cleanInputValue(btn.getAttribute('data-id') || '');
+            if (!id) return;
+
+            var res = yield req('DELETE', "/api/med-deals/".concat(encodeURIComponent(id)));
+            if (!res.ok) {
+                setStatus(res.error || 'Could not delete med deal.', true);
+                return;
+            }
+            setStatus('Med deal deleted.');
+
+            var remainingDeals = arr((state && (state.medDeals || state.med_deals)) || []).filter(function (x) {
+                return String(x.id || x.deal_id || '') !== id;
+            });
+
+            state = state || {};
+            state.medDeals = remainingDeals;
+            state.med_deals = remainingDeals;
+
+            yield loadState(true);
+            renderBody();
+        }));
+    });
+
+    if (overlay) overlay.querySelectorAll('.warhub-dibs-btn').forEach(function (btn) {
+        btn.addEventListener('click', _asyncToGenerator(function* () {
+            var targetId = cleanInputValue(btn.getAttribute('data-target-id') || '');
+            var targetName = cleanInputValue(btn.getAttribute('data-target-name') || '');
+
+            if (!targetId) return;
+
+            var res = yield doAction('POST', '/api/dibs', {
+                target_id: targetId,
+                target_name: targetName
+            }, 'Dibs claimed.', false);
+
+            if (res) {
+                yield loadState(true);
+                renderBody();
+            }
+        }));
+    });
+
+    var targetSel = overlay ? overlay.querySelector('#warhub-target-enemy') : null;
+    if (targetSel) targetSel.addEventListener('change', function () {
+        var opt = targetSel.selectedOptions ? targetSel.selectedOptions[0] : null;
+        var id = cleanInputValue((opt === null || opt === void 0 ? void 0 : opt.value) || '');
+        var targetIdField = overlay ? overlay.querySelector('#warhub-target-id') : null;
+        if (targetIdField) targetIdField.value = id;
+    });
+
+    var targetAdd = overlay ? overlay.querySelector('#warhub-target-add') : null;
+    if (targetAdd) targetAdd.addEventListener('click', _asyncToGenerator(function* () {
+        var sel = overlay ? overlay.querySelector('#warhub-target-enemy') : null;
+        var opt = sel && sel.selectedOptions ? sel.selectedOptions[0] : null;
+        var targetIdField = overlay ? overlay.querySelector('#warhub-target-id') : null;
+        var targetNotesField = overlay ? overlay.querySelector('#warhub-target-notes') : null;
+
+        var target_id = cleanInputValue(((targetIdField && targetIdField.value) || ((opt === null || opt === void 0 ? void 0 : opt.value) || '')));
+        var target_name = cleanInputValue((opt === null || opt === void 0 ? void 0 : opt.dataset.name) || '');
+        var notes = cleanInputValue(((targetNotesField && targetNotesField.value) || ''));
+
+        if (!target_id) {
+            setStatus('Target ID is required.', true);
+            return;
+        }
+
+        var res = yield doAction('POST', '/api/targets', {
+            target_id: target_id,
+            target_name: target_name,
+            notes: notes
+        }, 'Target added.', false);
+
+        if (res) {
+            yield loadState(true);
+            renderBody();
+        }
+    }));
+
+    if (overlay) overlay.querySelectorAll('.warhub-del-target').forEach(function (btn) {
+        btn.addEventListener('click', _asyncToGenerator(function* () {
+            var id = cleanInputValue(btn.getAttribute('data-id') || '');
+            if (!id) return;
+
+            var res = yield req('DELETE', "/api/targets/".concat(encodeURIComponent(id)));
+            if (!res.ok) {
+                setStatus(res.error || 'Could not delete target.', true);
+                return;
+            }
+            setStatus('Target deleted.');
+
+            var remainingTargets = arr((state && state.targets) || []).filter(function (x) {
+                return String(x.id || x.target_row_id || x.target_id || '') !== id;
+            });
+
+            state = state || {};
+            state.targets = remainingTargets;
+
+            yield loadState(true);
+            renderBody();
+        }));
+    });
+
+    var saveTerms = overlay ? overlay.querySelector('#warhub-terms-save') : null;
+    if (saveTerms) saveTerms.addEventListener('click', _asyncToGenerator(function* () {
+        var war_id = cleanInputValue(((state === null || state === void 0 ? void 0 : state.war) && state.war.war_id) || ((state === null || state === void 0 ? void 0 : state.war) && state.war.id) || '');
+        var terms = cleanInputValue((overlay.querySelector('#warhub-terms-text') || {}).value || '');
+
+        if (!war_id) {
+            setStatus('No active war detected.', true);
+            return;
+        }
+
+        var res = yield doAction('POST', '/api/war-terms', { war_id: war_id, terms: terms }, 'War terms saved.');
+        if (res) renderBody();
+    }));
+
+    var delTerms = overlay ? overlay.querySelector('#warhub-terms-delete') : null;
+    if (delTerms) delTerms.addEventListener('click', _asyncToGenerator(function* () {
+        var war_id = cleanInputValue(((state === null || state === void 0 ? void 0 : state.war) && state.war.war_id) || ((state === null || state === void 0 ? void 0 : state.war) && state.war.id) || '');
+
+        if (!war_id) {
+            setStatus('No active war detected.', true);
+            return;
+        }
+
+        var box = overlay ? overlay.querySelector('#warhub-terms-text') : null;
+        if (box) box.value = '';
+
+        var saveRes = yield doAction('POST', '/api/war-terms', { war_id: war_id, terms: '' }, 'War terms cleared.');
+        if (saveRes) {
+            if (state) {
+                state.terms = state.terms || {};
+                state.terms.terms = '';
+                state.terms.terms_text = '';
+                state.warTerms = state.warTerms || {};
+                state.warTerms.terms = '';
+                state.warTerms.terms_text = '';
+            }
+            renderBody();
+        }
+    }));
+
+    var refreshSummary = overlay ? overlay.querySelector('#wh-refresh-summary') : null;
+    if (refreshSummary) refreshSummary.addEventListener('click', _asyncToGenerator(function* () {
+        analyticsCache = null;
+        yield loadAnalytics().catch(function () { return null; });
+        renderBody();
+        setStatus('War summary refreshed.');
+    }));
+
+    var refreshAlerts = overlay ? overlay.querySelector('#wh-mark-alerts-seen') : null;
+    if (refreshAlerts) refreshAlerts.addEventListener('click', _asyncToGenerator(function* () {
+        var res = yield req('GET', '/api/notifications');
+        if (!res.ok) {
+            setStatus(res.error || 'Could not refresh notifications.', true);
+            return;
+        }
+        setStatus('Notifications refreshed.');
+        yield loadState(true);
+        renderBody();
+    }));
+
+    var clearAlerts = overlay ? overlay.querySelector('#wh-clear-alerts') : null;
+    if (clearAlerts) clearAlerts.addEventListener('click', function () {
+        setLocalNotifications([]);
+        updateBadge();
+        renderBody();
+        setStatus('Local notifications cleared.');
+    });
+
+    var saveFactionMember = overlay ? overlay.querySelector('#wh-fm-save') : null;
+    if (saveFactionMember) saveFactionMember.addEventListener('click', _asyncToGenerator(function* () {
+        var member_user_id = cleanInputValue((overlay.querySelector('#wh-fm-userid') || {}).value || '');
+        if (!member_user_id) {
+            setStatus('Select a faction member first.', true);
+            return;
+        }
+
+        var picked = arr((state && state.members) || []).find(function (m) {
+            return String(m.user_id || m.id || '').trim() === member_user_id;
+        }) || {};
+
+        var member_name = cleanInputValue(
+            picked.name ||
+            picked.member_name ||
+            ''
+        );
+
+        var position = cleanInputValue(
+            picked.position ||
+            picked.faction_position ||
+            picked.role ||
+            ''
+        );
+
+        var res = yield doAction('POST', '/api/faction/members', {
+            member_user_id: member_user_id,
+            member_name: member_name,
+            enabled: true,
+            position: position
+        }, 'Member enabled for this faction cycle.', false);
+
+        if (res) {
+            yield refreshLeaderFactionData();
+            setStatus('Faction member access saved.');
+        }
+    }));
+
+    if (overlay) overlay.querySelectorAll('[data-toggle-member]').forEach(function (btn) {
+        btn.addEventListener('click', _asyncToGenerator(function* () {
+            var memberId = cleanInputValue(btn.getAttribute('data-toggle-member') || '');
+            var enabled = cleanInputValue(btn.getAttribute('data-enabled') || '') === '1';
+            var cycleLocked = cleanInputValue(btn.getAttribute('data-cycle-locked') || '') === '1';
+            if (!memberId) return;
+            if (cycleLocked) {
+                setStatus('Enabled member access is locked until the next renewal/payment cycle.', true);
+                return;
+            }
+            var res = yield doAction('POST', "/api/faction/members/".concat(encodeURIComponent(memberId), "/enable"), { enabled: enabled }, enabled ? 'Member enabled.' : 'Member disabled.', false);
+            if (res) yield refreshLeaderFactionData();
+        }));
+    });
+
+    if (overlay) overlay.querySelectorAll('[data-del-member]').forEach(function (btn) {
+        btn.addEventListener('click', _asyncToGenerator(function* () {
+            var memberId = cleanInputValue(btn.getAttribute('data-del-member') || '');
+            var cycleLocked = cleanInputValue(btn.getAttribute('data-cycle-locked') || '') === '1';
+            if (!memberId) return;
+            if (cycleLocked) {
+                setStatus('Enabled member access is locked until the next renewal/payment cycle.', true);
+                return;
+            }
+            var res = yield doAction('DELETE', "/api/faction/members/".concat(encodeURIComponent(memberId)), null, 'Faction member removed.', false);
+            if (res) yield refreshLeaderFactionData();
+        }));
+    });
+
+    if (overlay) overlay.querySelectorAll('[data-admin-history]').forEach(function (btn) {
+        btn.addEventListener('click', _asyncToGenerator(function* () {
+            var factionId = cleanInputValue(btn.getAttribute('data-admin-history') || '');
+            if (!factionId) return;
+            var res = yield adminReq('GET', "/api/admin/faction-licenses/".concat(encodeURIComponent(factionId), "/history"));
+            if (!res.ok) {
+                setStatus(res.error || 'Could not load payment history.', true);
+                return;
+            }
+            var items = arr((res.data === null || res.data === void 0 ? void 0 : res.data.items) || []);
+            var lines = items.length ? items.map(function (x) {
+                var amount = x.amount != null ? fmtMoney(x.amount) : '—';
+                var when = fmtTs(x.created_at || x.ts || x.time || '');
+                var by = x.renewed_by || x.created_by || x.payment_player || '';
+                return "".concat(when, " • ").concat(amount).concat(by ? " • ".concat(by) : '');
+            }).join('\n') : 'No payment history found.';
+            alert(lines);
+        }));
+    });
+
+    if (overlay) overlay.querySelectorAll('[data-admin-renew]').forEach(function (btn) {
+        btn.addEventListener('click', _asyncToGenerator(function* () {
+            var factionId = cleanInputValue(btn.getAttribute('data-admin-renew') || '');
+            if (!factionId) return;
+            var amountText = prompt('Renew faction for how much?', '3');
+            if (amountText == null) return;
+            var amount = Number(String(amountText).replace(/[^\d.-]/g, ''));
+            if (!Number.isFinite(amount) || amount <= 0) {
+                setStatus('Invalid renewal amount.', true);
+                return;
+            }
+            var note = prompt('Optional note for renewal:', '') || '';
+            var res = yield adminReq('POST', "/api/admin/faction-licenses/".concat(encodeURIComponent(factionId), "/renew"), { amount: amount, note: note });
+            if (!res.ok) {
+                setStatus(res.error || 'Renew failed.', true);
+                return;
+            }
+            setStatus('Faction renewed.');
+            yield loadAdminDashboard();
+        }));
+    });
+
+    if (overlay) overlay.querySelectorAll('[data-admin-expire]').forEach(function (btn) {
+        btn.addEventListener('click', _asyncToGenerator(function* () {
+            var factionId = cleanInputValue(btn.getAttribute('data-admin-expire') || '');
+            if (!factionId) return;
+            if (!confirm("Expire faction ".concat(factionId, "?"))) return;
+            var res = yield adminReq('POST', "/api/admin/faction-licenses/".concat(encodeURIComponent(factionId), "/expire"), {});
+            if (!res.ok) {
+                setStatus(res.error || 'Expire failed.', true);
+                return;
+            }
+            setStatus('Faction expired.');
+            yield loadAdminDashboard();
+        }));
+    });
+
+
+    var saveFactionExempt = overlay ? overlay.querySelector('#wh-admin-save-faction-exempt') : null;
+    if (saveFactionExempt) saveFactionExempt.addEventListener('click', _asyncToGenerator(function* () {
+        var factionId = cleanInputValue((overlay.querySelector('#wh-admin-faction-exempt-id') || {}).value || '');
+        var factionName = cleanInputValue((overlay.querySelector('#wh-admin-faction-exempt-name') || {}).value || '');
+        var note = cleanInputValue((overlay.querySelector('#wh-admin-faction-exempt-note') || {}).value || '');
+        if (!factionId) {
+            setStatus('Faction ID is required.', true);
+            return;
+        }
+        var res = yield adminReq('POST', '/api/admin/exemptions/factions', {
+            faction_id: factionId,
+            faction_name: factionName,
+            note: note
+        });
+        if (!res.ok) {
+            setStatus(res.error || 'Could not save faction exemption.', true);
+            return;
+        }
+        setStatus('Faction exemption saved.');
+        yield loadAdminDashboard();
+    }));
+
+    var saveUserExempt = overlay ? overlay.querySelector('#wh-admin-save-user-exempt') : null;
+    if (saveUserExempt) saveUserExempt.addEventListener('click', _asyncToGenerator(function* () {
+        var userId = cleanInputValue((overlay.querySelector('#wh-admin-user-exempt-id') || {}).value || '');
+        var userName = cleanInputValue((overlay.querySelector('#wh-admin-user-exempt-name') || {}).value || '');
+        var factionId = cleanInputValue((overlay.querySelector('#wh-admin-user-exempt-faction-id') || {}).value || '');
+        var factionName = cleanInputValue((overlay.querySelector('#wh-admin-user-exempt-faction-name') || {}).value || '');
+        var note = cleanInputValue((overlay.querySelector('#wh-admin-user-exempt-note') || {}).value || '');
+        if (!userId) {
+            setStatus('Player ID is required.', true);
+            return;
+        }
+        var res = yield adminReq('POST', '/api/admin/exemptions/users', {
+            user_id: userId,
+            user_name: userName,
+            faction_id: factionId,
+            faction_name: factionName,
+            note: note
+        });
+        if (!res.ok) {
+            setStatus(res.error || 'Could not save player exemption.', true);
+            return;
+        }
+        setStatus('Player exemption saved.');
+        yield loadAdminDashboard();
+    }));
+
+    if (overlay) overlay.querySelectorAll('[data-admin-delete-faction-exempt]').forEach(function (btn) {
+        btn.addEventListener('click', _asyncToGenerator(function* () {
+            var factionId = cleanInputValue(btn.getAttribute('data-admin-delete-faction-exempt') || '');
+            if (!factionId) return;
+            if (!confirm('Remove faction exemption ' + factionId + '?')) return;
+            var res = yield adminReq('DELETE', '/api/admin/exemptions/factions/' + encodeURIComponent(factionId));
+            if (!res.ok) {
+                setStatus(res.error || 'Could not remove faction exemption.', true);
+                return;
+            }
+            setStatus('Faction exemption removed.');
+            yield loadAdminDashboard();
+        }));
+    });
+
+    if (overlay) overlay.querySelectorAll('[data-admin-delete-user-exempt]').forEach(function (btn) {
+        btn.addEventListener('click', _asyncToGenerator(function* () {
+            var userId = cleanInputValue(btn.getAttribute('data-admin-delete-user-exempt') || '');
+            if (!userId) return;
+            if (!confirm('Remove player exemption ' + userId + '?')) return;
+            var res = yield adminReq('DELETE', '/api/admin/exemptions/users/' + encodeURIComponent(userId));
+            if (!res.ok) {
+                setStatus(res.error || 'Could not remove player exemption.', true);
+                return;
+            }
+            setStatus('Player exemption removed.');
+            yield loadAdminDashboard();
+        }));
+    });
+
+    var saveKeys = overlay ? overlay.querySelector('#wh-save-keys') : null;
+    if (saveKeys) saveKeys.addEventListener('click', function () {
+        return _asyncToGenerator(function* () {
+            var apiKey = cleanInputValue((overlay.querySelector('#wh-api-key') || {}).value || '');
+            GM_setValue(K_API_KEY, apiKey);
+            if (!apiKey) {
+                setStatus('API key cleared locally.');
+                return;
+            }
+            var okLogin = yield login(false);
+            if (okLogin) {
+                setStatus('API key saved locally. Login will persist on return.');
+                yield loadState(true);
+                renderBody();
+            } else {
+                setStatus('API key saved locally. Login did not complete yet.', true);
+            }
+        })();
+    });
+
+    var loginBtn = overlay ? overlay.querySelector('#wh-login-btn') : null;
+    if (loginBtn) loginBtn.addEventListener('click', _asyncToGenerator(function* () {
+        var apiKey = cleanInputValue((overlay.querySelector('#wh-api-key') || {}).value || '');
+        if (apiKey) GM_setValue(K_API_KEY, apiKey);
+        var okLogin = yield login(true);
+        if (!okLogin) return;
+        setStatus('Login successful.');
+        yield loadState(true);
+        renderBody();
+    }));
+
+    var logoutBtn = overlay ? overlay.querySelector('#wh-logout-btn') : null;
+    if (logoutBtn) logoutBtn.addEventListener('click', _asyncToGenerator(function* () {
+        yield req('POST', '/api/logout', {});
+        clearSavedKeys();
+        state = null;
+        analyticsCache = null;
+        factionMembersCache = null;
+        accessState = normalizeAccessCache({});
+        saveAccessCache();
+        renderBody();
+        updateBadge();
+        setStatus('Logged out.');
+    }));
+
+    var membersSearch = overlay ? overlay.querySelector('#warhub-members-search') : null;
+    if (membersSearch) membersSearch.addEventListener('input', function () {
+        state = state || {};
+        state.membersSearch = String(membersSearch.value || '');
+        renderBody();
+    });
+
+    var membersSearchClear = overlay ? overlay.querySelector('#warhub-members-search-clear') : null;
+    if (membersSearchClear) membersSearchClear.addEventListener('click', function () {
+        state = state || {};
+        state.membersSearch = '';
+        renderBody();
+    });
+
+    var saveRefresh = overlay ? overlay.querySelector('#wh-save-refresh') : null;
+    if (saveRefresh) saveRefresh.addEventListener('click', function () {
+        var raw = cleanInputValue((overlay.querySelector('#wh-refresh-ms') || {}).value || '30000');
+        var ms = Math.max(10000, Number(raw) || 30000);
+        GM_setValue(K_REFRESH, ms);
+        startPolling();
+        setStatus("Refresh saved: ".concat(ms, "ms"));
+    });
+
+    var resetPositions = overlay ? overlay.querySelector('#wh-reset-positions') : null;
+    if (resetPositions) resetPositions.addEventListener('click', function () {
+        GM_deleteValue(K_SHIELD_POS);
+        GM_deleteValue(K_OVERLAY_POS);
+        resetShieldPosition();
+        positionOverlayNearShield();
+        saveShieldPos();
+        saveOverlayPos();
+        updateBadge();
+        setStatus('Positions reset.');
+    });
+
+    var refreshWarTop5 = overlay ? overlay.querySelector('#wh-refresh-war-top5') : null;
+    if (refreshWarTop5) refreshWarTop5.addEventListener('click', _asyncToGenerator(function* () {
+        adminTopFiveCache = null;
+        renderBody();
+        yield loadAdminTopFive();
+    }));
+
+    var saveOverviewBoxes = overlay ? overlay.querySelector('#wh-save-overview-boxes') : null;
+    if (saveOverviewBoxes) saveOverviewBoxes.addEventListener('click', function () {
+        var prefs = {
+            meddeals: !!(overlay.querySelector('#wh-overview-meddeals') && overlay.querySelector('#wh-overview-meddeals').checked),
+            dibs: !!(overlay.querySelector('#wh-overview-dibs') && overlay.querySelector('#wh-overview-dibs').checked),
+            terms: !!(overlay.querySelector('#wh-overview-terms') && overlay.querySelector('#wh-overview-terms').checked),
+            war: !!(overlay.querySelector('#wh-overview-war') && overlay.querySelector('#wh-overview-war').checked)
+        };
+        GM_setValue(K_OVERVIEW_BOXES, prefs);
+        setStatus('Overview boxes saved.');
+        renderBody();
+    });
+
+    if (overlay) overlay.querySelectorAll('[data-overview-go]').forEach(function (btn) {
+        btn.addEventListener('click', _asyncToGenerator(function* () {
+            var nextTab = cleanInputValue(btn.getAttribute('data-overview-go') || '');
+            if (!nextTab) return;
+
+            currentTab = nextTab;
+            GM_setValue(K_TAB, currentTab);
+
+            if (nextTab === 'faction' && ((accessState === null || accessState === void 0 ? void 0 : accessState.isFactionLeader) || isOwnerSession())) {
+                yield loadFactionMembers(true);
+            }
+
+            if (nextTab === 'summary' && ((accessState === null || accessState === void 0 ? void 0 : accessState.isFactionLeader) || isOwnerSession())) {
+                yield loadAnalytics().catch(function () { return null; });
+            }
+
+            if (nextTab === 'admin' && isOwnerSession()) {
+                yield loadAdminDashboard();
+            }
+
+            renderBody();
+        }));
+    });
+}
+    function mount() {
     if (mounted) return;
     mounted = true;
 
@@ -1799,410 +3285,52 @@ function mount() {
 
     overlay = document.createElement('div');
     overlay.id = 'warhub-overlay';
-    overlay.innerHTML = '\
-      <div class="warhub-head">\
-        <div class="warhub-toprow">\
-          <div>\
-            <div class="warhub-title">War Hub ⚔️</div>\
-            <div class="warhub-sub">By ' + esc(OWNER_NAME) + '</div>\
-          </div>\
-          <button class="warhub-close" id="warhub-close-btn">Close</button>\
-        </div>\
-      </div>\
-      <div class="warhub-tabs"></div>\
-      <div class="warhub-body"></div>';
 
     document.body.appendChild(shield);
     document.body.appendChild(badge);
     document.body.appendChild(overlay);
 
     var savedShield = GM_getValue(K_SHIELD_POS, null);
-    if (savedShield && _typeof(savedShield) === 'object' && typeof savedShield.left === 'number' && typeof savedShield.top === 'number') {
-        shield.style.left = savedShield.left + 'px';
-        shield.style.top = savedShield.top + 'px';
-        shield.style.right = 'auto';
-        shield.style.bottom = 'auto';
+    if (
+        savedShield &&
+        typeof savedShield === 'object'
+    ) {
+        shield.style.left = savedShield.left || 'auto';
+        shield.style.top = savedShield.top || '';
+        shield.style.right = savedShield.right || '14px';
+        shield.style.bottom = savedShield.bottom || 'auto';
+    } else {
+        resetShieldPosition();
     }
+
     clampToViewport(shield);
     saveShieldPos();
 
-    var savedOverlay = GM_getValue(K_OVERLAY_POS, null);
-    if (savedOverlay && _typeof(savedOverlay) === 'object' && typeof savedOverlay.left === 'number' && typeof savedOverlay.top === 'number') {
-        overlay.style.left = savedOverlay.left + 'px';
-        overlay.style.top = savedOverlay.top + 'px';
-        overlay.style.right = 'auto';
-        overlay.style.bottom = 'auto';
+    var rect = shield.getBoundingClientRect();
+    if (
+        rect.width < 20 ||
+        rect.height < 20 ||
+        rect.right < 0 ||
+        rect.bottom < 0 ||
+        rect.left > window.innerWidth ||
+        rect.top > window.innerHeight
+    ) {
+        resetShieldPosition();
+        clampToViewport(shield);
+        saveShieldPos();
     }
-    clampToViewport(overlay);
-    saveOverlayPos();
 
-    updateTabs();
-    renderBody();
-    bindOverlayEvents();
-
-    enableDrag(shield, shield, saveShieldPos, true);
-    enableDrag(overlay, overlay.querySelector('.warhub-head'), saveOverlayPos, false);
-
-    if (isOpen) overlay.classList.add('open');
-    updateBadge();
-}
-    function bindOverlayEvents() {
-    if (!overlay) return;
-
-    overlay.addEventListener('click', function (e) {
-        var tabBtn = e.target.closest('[data-tab]');
-        if (tabBtn) {
-            var tab = tabBtn.getAttribute('data-tab') || 'overview';
-            currentTab = tab;
-            GM_setValue(K_TAB, currentTab);
-            var tabs = overlay.querySelector('.warhub-tabs');
-            if (tabs) GM_setValue(K_TABS_SCROLL_LEFT, tabs.scrollLeft || 0);
-            renderBody();
-            return;
-        }
-
-        var openTabBtn = e.target.closest('[data-open-tab]');
-        if (openTabBtn) {
-            var targetTab = openTabBtn.getAttribute('data-open-tab') || 'overview';
-            currentTab = targetTab;
-            GM_setValue(K_TAB, currentTab);
-            renderBody();
-            return;
-        }
-
-        if (e.target.id === 'warhub-close-btn') {
-            closeOverlay();
-            return;
-        }
-
-        if (e.target.id === 'wh-login-btn') {
-            _asyncToGenerator(function* () {
-                try {
-                    setStatus('Logging in...');
-                    yield login();
-                    yield loadState(false);
-                    setStatus('Logged in. Auto-login is now active.');
-                } catch (err) {
-                    setStatus((err && err.message) || 'Login failed.', true);
-                }
-            })();
-            return;
-        }
-
-        if (e.target.id === 'wh-save-keys') {
-            _asyncToGenerator(function* () {
-                try {
-                    var keyInput = overlay.querySelector('#wh-api-key');
-                    var apiKey = cleanInputValue(keyInput ? keyInput.value : '');
-                    saveApiKey(apiKey);
-                    setStatus(apiKey ? 'API key saved. Logging in...' : 'API key cleared.');
-                    if (apiKey) {
-                        yield login();
-                        yield loadState(false);
-                        setStatus('API key saved and login restored.');
-                    }
-                } catch (err) {
-                    setStatus((err && err.message) || 'Could not save API key.', true);
-                }
-            })();
-            return;
-        }
-
-        if (e.target.id === 'wh-logout-btn') {
-            _asyncToGenerator(function* () {
-                try {
-                    saveSessionId('');
-                    clearSavedKeys();
-                    accessState = normalizeAccessCache({});
-                    saveAccessCache();
-                    state = null;
-                    setStatus('Logged out.');
-                    renderBody();
-                } catch (err) {
-                    setStatus((err && err.message) || 'Logout failed.', true);
-                }
-            })();
-            return;
-        }
-
-        if (e.target.id === 'wh-reset-positions') {
-            resetShieldPosition();
-            resetOverlayPosition();
-            clampToViewport(shield);
-            clampToViewport(overlay);
-            saveShieldPos();
-            saveOverlayPos();
-            setStatus('Overlay and icon positions reset.');
-            return;
-        }
-
-        if (e.target.id === 'wh-save-terms') {
-            _asyncToGenerator(function* () {
-                try {
-                    var box = overlay.querySelector('#wh-terms-box');
-                    var text = box ? box.value : '';
-                    yield req('POST', '/api/terms', {
-                        text: text
-                    });
-                    if (state) state.terms = text ? {
-                        text: text
-                    } : null;
-                    renderBody();
-                    setStatus('Terms saved.');
-                } catch (err) {
-                    setStatus((err && err.message) || 'Could not save terms.', true);
-                }
-            })();
-            return;
-        }
-
-        if (e.target.id === 'wh-delete-terms') {
-            _asyncToGenerator(function* () {
-                try {
-                    yield req('DELETE', '/api/terms');
-                    if (state) state.terms = null;
-                    renderBody();
-                    var box = overlay.querySelector('#wh-terms-box');
-                    if (box) box.value = '';
-                    setStatus('Terms deleted.');
-                } catch (err) {
-                    try {
-                        yield req('POST', '/api/terms', {
-                            text: ''
-                        });
-                        if (state) state.terms = null;
-                        renderBody();
-                        var box2 = overlay.querySelector('#wh-terms-box');
-                        if (box2) box2.value = '';
-                        setStatus('Terms cleared.');
-                    } catch (err2) {
-                        setStatus((err2 && err2.message) || (err && err.message) || 'Could not delete terms.', true);
-                    }
-                }
-            })();
-            return;
-        }
-
-        if (e.target.id === 'wh-add-med') {
-            _asyncToGenerator(function* () {
-                try {
-                    var memberSel = overlay.querySelector('#wh-med-member');
-                    var enemySel = overlay.querySelector('#wh-med-enemy');
-                    var noteInput = overlay.querySelector('#wh-med-note');
-                    var memberId = cleanInputValue(memberSel ? memberSel.value : '');
-                    var enemyId = cleanInputValue(enemySel ? enemySel.value : '');
-                    var note = cleanInputValue(noteInput ? noteInput.value : '');
-
-                    if (!memberId || !enemyId) throw new Error('Select both member and enemy.');
-
-                    var memberObj = arr(state && state.members).find(function (m) {
-                        return String((m && (m.user_id || m.id)) || '') === memberId;
-                    });
-                    var enemyObj = arr(state && state.enemies).find(function (m) {
-                        return String((m && (m.user_id || m.id)) || '') === enemyId;
-                    });
-
-                    yield req('POST', '/api/med-deals', {
-                        member_id: memberId,
-                        member_name: memberObj ? memberObj.name : '',
-                        enemy_id: enemyId,
-                        enemy_name: enemyObj ? enemyObj.name : '',
-                        note: note
-                    });
-
-                    yield loadState(false);
-                    setStatus('Med deal added.');
-                } catch (err) {
-                    setStatus((err && err.message) || 'Could not add med deal.', true);
-                }
-            })();
-            return;
-        }
-
-        var medDeleteBtn = e.target.closest('[data-med-delete]');
-        if (medDeleteBtn) {
-            _asyncToGenerator(function* () {
-                try {
-                    var id = cleanInputValue(medDeleteBtn.getAttribute('data-med-delete') || '');
-                    if (!id) throw new Error('Missing med deal id.');
-                    yield req('DELETE', '/api/med-deals/' + encodeURIComponent(id));
-                    yield loadState(false);
-                    setStatus('Med deal deleted.');
-                } catch (err) {
-                    setStatus((err && err.message) || 'Could not delete med deal.', true);
-                }
-            })();
-            return;
-        }
-
-        if (e.target.id === 'wh-add-target') {
-            _asyncToGenerator(function* () {
-                try {
-                    var enemySelect = overlay.querySelector('#wh-target-enemy');
-                    var targetNote = overlay.querySelector('#wh-target-note');
-                    var targetEnemyId = cleanInputValue(enemySelect ? enemySelect.value : '');
-                    var targetNoteText = cleanInputValue(targetNote ? targetNote.value : '');
-
-                    if (!targetEnemyId) throw new Error('Select an enemy.');
-
-                    var targetEnemyObj = arr(state && state.enemies).find(function (m) {
-                        return String((m && (m.user_id || m.id)) || '') === targetEnemyId;
-                    });
-
-                    yield req('POST', '/api/targets', {
-                        enemy_id: targetEnemyId,
-                        enemy_name: targetEnemyObj ? targetEnemyObj.name : '',
-                        note: targetNoteText
-                    });
-
-                    yield loadState(false);
-                    setStatus('Target added.');
-                } catch (err) {
-                    setStatus((err && err.message) || 'Could not add target.', true);
-                }
-            })();
-            return;
-        }
-
-        var targetDeleteBtn = e.target.closest('[data-target-delete]');
-        if (targetDeleteBtn) {
-            _asyncToGenerator(function* () {
-                try {
-                    var targetId = cleanInputValue(targetDeleteBtn.getAttribute('data-target-delete') || '');
-                    if (!targetId) throw new Error('Missing target id.');
-
-                    var row = overlay.querySelector('[data-target-row="' + cssEscape(targetId) + '"]');
-                    if (row) row.remove();
-
-                    yield req('DELETE', '/api/targets/' + encodeURIComponent(targetId));
-                    yield loadState(false);
-                    setStatus('Target deleted.');
-                } catch (err) {
-                    setStatus((err && err.message) || 'Could not delete target.', true);
-                }
-            })();
-            return;
-        }
-
-        if (e.target.id === 'wh-refresh-api-state') {
-            _asyncToGenerator(function* () {
-                try {
-                    yield loadState(false);
-                    var box = overlay.querySelector('#wh-api-state-box');
-                    if (box) {
-                        try {
-                            box.value = JSON.stringify(state || {}, null, 2);
-                        } catch (_unused16) {
-                            box.value = '{}';
-                        }
-                    }
-                    setStatus('API state refreshed.');
-                } catch (err) {
-                    setStatus((err && err.message) || 'Could not refresh API state.', true);
-                }
-            })();
-            return;
-        }
-
-        if (e.target.id === 'wh-add-faction-exempt') {
-            _asyncToGenerator(function* () {
-                try {
-                    var fid = cleanInputValue((overlay.querySelector('#wh-exempt-faction-id') || {}).value || '');
-                    var fname = cleanInputValue((overlay.querySelector('#wh-exempt-faction-name') || {}).value || '');
-                    if (!fid) throw new Error('Enter a faction ID.');
-                    yield adminReq('POST', '/api/admin/exempt/faction', {
-                        faction_id: fid,
-                        faction_name: fname
-                    });
-                    yield loadState(false);
-                    setStatus('Faction exemption added.');
-                } catch (err) {
-                    setStatus((err && err.message) || 'Could not add faction exemption.', true);
-                }
-            })();
-            return;
-        }
-
-        if (e.target.id === 'wh-add-user-exempt') {
-            _asyncToGenerator(function* () {
-                try {
-                    var uid = cleanInputValue((overlay.querySelector('#wh-exempt-user-id') || {}).value || '');
-                    var uname = cleanInputValue((overlay.querySelector('#wh-exempt-user-name') || {}).value || '');
-                    if (!uid) throw new Error('Enter a player ID.');
-                    yield adminReq('POST', '/api/admin/exempt/user', {
-                        user_id: uid,
-                        user_name: uname
-                    });
-                    yield loadState(false);
-                    setStatus('Player exemption added.');
-                } catch (err) {
-                    setStatus((err && err.message) || 'Could not add player exemption.', true);
-                }
-            })();
-            return;
-        }
-
-        var remFactionBtn = e.target.closest('[data-remove-faction-exempt]');
-        if (remFactionBtn) {
-            _asyncToGenerator(function* () {
-                try {
-                    var remFid = cleanInputValue(remFactionBtn.getAttribute('data-remove-faction-exempt') || '');
-                    if (!remFid) throw new Error('Missing faction id.');
-                    yield adminReq('DELETE', '/api/admin/exempt/faction/' + encodeURIComponent(remFid));
-                    yield loadState(false);
-                    setStatus('Faction exemption removed.');
-                } catch (err) {
-                    setStatus((err && err.message) || 'Could not remove faction exemption.', true);
-                }
-            })();
-            return;
-        }
-
-        var remUserBtn = e.target.closest('[data-remove-user-exempt]');
-        if (remUserBtn) {
-            _asyncToGenerator(function* () {
-                try {
-                    var remUid = cleanInputValue(remUserBtn.getAttribute('data-remove-user-exempt') || '');
-                    if (!remUid) throw new Error('Missing user id.');
-                    yield adminReq('DELETE', '/api/admin/exempt/user/' + encodeURIComponent(remUid));
-                    yield loadState(false);
-                    setStatus('Player exemption removed.');
-                } catch (err) {
-                    setStatus((err && err.message) || 'Could not remove player exemption.', true);
-                }
-            })();
-            return;
+    makeDraggable(shield, shield, saveShieldPos, function () {
+        updateBadge();
+        if (!GM_getValue(K_OVERLAY_POS, null) && !isOpen) {
+            positionOverlayNearShield();
         }
     });
 
-    overlay.addEventListener('input', function (e) {
-        var tabs = overlay.querySelector('.warhub-tabs');
-        if (tabs) GM_setValue(K_TABS_SCROLL_LEFT, tabs.scrollLeft || 0);
-        saveOverlayScroll();
-
-        if (e.target && e.target.id === 'wh-api-state-box') return;
-    });
-
-    var tabsEl = overlay.querySelector('.warhub-tabs');
-    if (tabsEl) {
-        tabsEl.addEventListener('scroll', function () {
-            GM_setValue(K_TABS_SCROLL_LEFT, tabsEl.scrollLeft || 0);
-        }, {
-            passive: true
-        });
-    }
-
-    var bodyEl = overlay.querySelector('.warhub-body');
-    if (bodyEl) {
-        bodyEl.addEventListener('scroll', function () {
-            saveOverlayScroll();
-        }, {
-            passive: true
-        });
-    }
-
-    shield.addEventListener('click', function () {
-        if (dragMoved) return;
+    shield.addEventListener('click', function (e) {
+        if (dragMoved || (shield && shield.dataset.dragging === '1')) return;
+        e.preventDefault();
+        e.stopPropagation();
         toggleOverlay();
     });
 
@@ -2211,147 +3339,148 @@ function mount() {
         clampToViewport(overlay);
         saveShieldPos();
         saveOverlayPos();
-    });
-}
-function ensureMounted() {
-    if (!document.body) return;
-    if (!shield || !document.body.contains(shield) || !overlay || !document.body.contains(overlay)) {
-        mounted = false;
-        mount();
-    }
-}
-function scheduleRemountWatcher() {
-    if (remountTimer) clearInterval(remountTimer);
-    remountTimer = setInterval(function () {
-        ensureMounted();
         updateBadge();
-    }, 1500);
-}
-function tryAutoLogin() {
-    return _tryAutoLogin.apply(this, arguments);
-}
-function _tryAutoLogin() {
-    _tryAutoLogin = _asyncToGenerator(function* () {
-        var apiKey = getSavedApiKey();
-        if (!apiKey) return false;
-
-        var sid = getSessionId();
-        if (sid) {
-            try {
-                yield loadState(true);
-                return true;
-            } catch (_unused17) {}
-        }
-
-        try {
-            yield login();
-            yield loadState(true);
-            return true;
-        } catch (_unused18) {
-            return false;
-        }
     });
-    return _tryAutoLogin.apply(this, arguments);
-}
-   function boot() {
-    return _boot.apply(this, arguments);
-}
-function _boot() {
-    _boot = _asyncToGenerator(function* () {
-        try {
-            mount();
-            updateBadge();
-            schedulePoll();
-            scheduleRemountWatcher();
 
-            var ok = yield healthCheck();
-            if (!ok) {
-                setStatus('Backend offline or unreachable.', true);
-            }
+    renderBody();
 
-            yield tryAutoLogin();
-
-            if (isOwnerSession()) {
-                yield loadAdminTopFive();
-            }
-            yield loadAnalytics();
-            yield loadState(true);
-
-            if (isOpen) {
-                openOverlay();
-            } else {
-                closeOverlay();
-            }
-        } catch (err) {
-            setStatus((err && err.message) || 'Boot failed.', true);
-        }
-    });
-    return _boot.apply(this, arguments);
-}
-
-function onReady(fn) {
-    if (document.readyState === 'complete' || document.readyState === 'interactive') {
-        setTimeout(fn, 0);
+    var savedOverlay = GM_getValue(K_OVERLAY_POS, null);
+    if (
+        savedOverlay &&
+        typeof savedOverlay === 'object' &&
+        typeof savedOverlay.left === 'number' &&
+        typeof savedOverlay.top === 'number'
+    ) {
+        overlay.style.left = savedOverlay.left + 'px';
+        overlay.style.top = savedOverlay.top + 'px';
+        overlay.style.right = 'auto';
+        overlay.style.bottom = 'auto';
+        clampElementPosition(overlay, savedOverlay.left, savedOverlay.top);
     } else {
-        document.addEventListener('DOMContentLoaded', fn, {
-            once: true
-        });
+        positionOverlayNearShield();
     }
+
+    if (isOpen) overlay.classList.add('open');
+    else overlay.classList.remove('open');
+
+    updateBadge();
 }
-
-function shouldRunHere() {
-    try {
-        if (window.top !== window.self) return false;
-    } catch (_unused19) {
-        return false;
-    }
-    return /torn\.com$/i.test(location.hostname);
-}
-
-function watchSpaNavigation() {
-    var lastHref = location.href;
-
-    function handleMaybeChanged() {
-        if (location.href === lastHref) return;
-        lastHref = location.href;
-
-        ensureMounted();
-        updateTabs();
-        if (isOpen) {
-            renderBody();
-            updateBadge();
+    function keepMounted() {
+        if (!document.body) return;
+        if (!document.getElementById('warhub-shield') || !document.getElementById('warhub-overlay')) {
+            mounted = false;
+            shield = null;
+            overlay = null;
+            badge = null;
+            mount();
         }
     }
-
-    var pushState = history.pushState;
-    var replaceState = history.replaceState;
-
-    if (typeof pushState === 'function') {
-        history.pushState = function () {
-            var result = pushState.apply(this, arguments);
-            setTimeout(handleMaybeChanged, 50);
-            return result;
-        };
+    function startMountWatcher() {
+        if (remountTimer) clearInterval(remountTimer);
+        remountTimer = setInterval(keepMounted, 2000);
+    }
+    function startPolling() {
+        if (pollTimer) clearInterval(pollTimer);
+        var ms = Math.max(10000, Number(GM_getValue(K_REFRESH, 30000)) || 30000);
+        pollTimer = setInterval(function () {
+            return _asyncToGenerator(function* () {
+                if (!cleanInputValue(GM_getValue(K_SESSION, ''))) return;
+                if (dragMoved || (overlay && overlay.dataset.dragging === '1') || isTypingInOverlay()) {
+                    updateBadge();
+                    return;
+                }
+                var pageY = window.scrollY || window.pageYOffset || 0;
+                var tabsScroll = getTabsScrollLeft();
+                yield loadState(true);
+                if (overlay && isOpen) {
+                    var tabsEl = overlay.querySelector('.warhub-tabs');
+                    if (tabsEl) tabsEl.scrollLeft = tabsScroll;
+                }
+                window.scrollTo(window.scrollX || 0, pageY);
+                updateBadge();
+            })();
+        }, ms);
+    }
+    function boot() {
+        return _boot.apply(this, arguments);
+    }
+    function _boot() {
+        _boot = _asyncToGenerator(function* () {
+            mount();
+            startMountWatcher();
+            startPolling();
+            var health = yield healthCheck();
+            if (!health.ok) {
+                setStatus('Server offline or unreachable.', true);
+                return;
+            }
+            var hasApiKey = !!cleanInputValue(GM_getValue(K_API_KEY, ''));
+            var hasSession = !!cleanInputValue(GM_getValue(K_SESSION, ''));
+            if (hasApiKey && !hasSession) yield login(false);
+            if (cleanInputValue(GM_getValue(K_SESSION, '')) && canUseProtectedFeatures()) {
+                yield loadState(true);
+                yield loadAnalytics().catch(function () { return null; });
+                updateBadge();
+                if (isOpen) renderBody();
+            } else {
+                renderBody();
+            }
+        });
+        return _boot.apply(this, arguments);
+    }
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', boot, { once: true });
+    } else {
+        boot();
     }
 
-    if (typeof replaceState === 'function') {
-        history.replaceState = function () {
-            var result = replaceState.apply(this, arguments);
-            setTimeout(handleMaybeChanged, 50);
-            return result;
+    function _toConsumableArray(arr) {
+        if (Array.isArray(arr)) return arr.slice();
+        return Array.from(arr || []);
+    }
+    function _defineProperty(obj, key, value) {
+        if (key in obj) {
+            Object.defineProperty(obj, key, { value: value, enumerable: true, configurable: true, writable: true });
+        } else {
+            obj[key] = value;
+        }
+        return obj;
+    }
+    function _objectSpread(target) {
+        for (var i = 1; i < arguments.length; i++) {
+            var source = arguments[i] != null ? arguments[i] : {};
+            var ownKeys = Object.keys(source);
+            if (typeof Object.getOwnPropertySymbols === 'function') {
+                ownKeys = ownKeys.concat(Object.getOwnPropertySymbols(source).filter(function (sym) {
+                    return Object.getOwnPropertyDescriptor(source, sym).enumerable;
+                }));
+            }
+            ownKeys.forEach(function (key) {
+                _defineProperty(target, key, source[key]);
+            });
+        }
+        return target;
+    }
+    function _typeof(obj) {
+        return typeof obj;
+    }
+    function _asyncToGenerator(fn) {
+        return function () {
+            var self = this, args = arguments;
+            return new Promise(function (resolve, reject) {
+                var gen = fn.apply(self, args);
+                function step(key, arg) {
+                    var info;
+                    try { info = gen[key](arg); } catch (error) { reject(error); return; }
+                    var value = info.value;
+                    if (info.done) {
+                        resolve(value);
+                    } else {
+                        Promise.resolve(value).then(function (val) { step('next', val); }, function (err) { step('throw', err); });
+                    }
+                }
+                step('next');
+            });
         };
     }
-
-    window.addEventListener('popstate', function () {
-        setTimeout(handleMaybeChanged, 50);
-    });
-
-    setInterval(handleMaybeChanged, 1200);
-}
-
-if (!shouldRunHere()) return;
-onReady(function () {
-    watchSpaNavigation();
-    boot();
-});
-})(); 
+})();
