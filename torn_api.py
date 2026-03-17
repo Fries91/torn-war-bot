@@ -436,20 +436,10 @@ def faction_basic(api_key: str, faction_id: str = "") -> Dict[str, Any]:
             )
             built = _build_result(res, faction_id)
 
-            built_faction_id = str(built.get("faction_id") or "").strip()
-            built_ok = bool(built.get("ok"))
-            built_matches_requested = not built_faction_id or built_faction_id == faction_id
-
-            # When querying another faction by ID, Torn may still return the key owner's
-            # own faction on some request shapes. Reject mismatched faction payloads so we
-            # do not overwrite the enemy faction name/roster with our own faction.
-            if built_ok and not built_matches_requested:
-                continue
-
-            if built_ok and built.get("members"):
+            if built.get("ok") and built.get("members"):
                 return built
 
-            if built_ok:
+            if built.get("ok"):
                 if best is None:
                     best = built
                 else:
