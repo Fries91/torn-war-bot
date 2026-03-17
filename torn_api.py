@@ -1352,11 +1352,11 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
                 enemy_name = str(fallback_enemy.get("faction_name") or "").strip()
 
     enemy_members: List[Dict[str, Any]] = []
-    if is_registered and enemy_id:
+    if enemy_id:
         enemy_faction = faction_basic(api_key, faction_id=enemy_id)
         if enemy_faction.get("ok"):
             fetched_enemy_name = str(enemy_faction.get("faction_name") or "").strip()
-            if fetched_enemy_name:
+            if fetched_enemy_name and fetched_enemy_name.lower() != my_name.lower():
                 enemy_name = fetched_enemy_name
             enemy_members = enemy_faction.get("members") or []
 
