@@ -1259,7 +1259,6 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
                 continue
             if my_side_local and _same_side(side, my_side_local):
                 continue
-
             if _fid(side) or _fname(side):
                 enemy_candidates.append(side)
 
@@ -1343,9 +1342,12 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
         other_sides = [x for x in candidate_sides if not _same_side(x, my_side)]
         if other_sides:
             fallback_enemy = other_sides[0]
-            enemy_id = str(fallback_enemy.get("faction_id") or "").strip()
-            if not enemy_name:
-                enemy_name = str(fallback_enemy.get("faction_name") or "").strip()
+            fallback_enemy_id = str(fallback_enemy.get("faction_id") or "").strip()
+            fallback_enemy_name = str(fallback_enemy.get("faction_name") or "").strip()
+            if fallback_enemy_id and not enemy_id:
+                enemy_id = fallback_enemy_id
+            if fallback_enemy_name and not enemy_name:
+                enemy_name = fallback_enemy_name
 
     enemy_members: List[Dict[str, Any]] = []
     if is_registered and enemy_id:
