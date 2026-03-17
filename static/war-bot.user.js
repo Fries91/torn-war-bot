@@ -53,10 +53,12 @@ var K_OVERLAY_SCROLL = 'warhub_overlay_scroll_v3';
     ['targets', 'Targets'],
     ['instructions', 'Instructions'],
     ['settings', 'Settings'],
-    ['admin', 'Admin']
+    ['admin', 'Admin'],
+    ['wartop5', 'War Top 5']
 ];
     var state = null;
     var analyticsCache = null;
+    var adminTopFiveCache = null;
     var overlay = null;
     var shield = null;
     var badge = null;
@@ -2188,6 +2190,74 @@ function renderChainTab() {
       </div>\
     ';
     }
+    function renderAdminTopFiveTab() {
+    if (!isOwnerSession()) {
+        return '\
+      <div class="warhub-card">\
+        <h3>Fries91 [3679030]</h3>\
+        <div class="warhub-empty">Fries91 [3679030] access required.</div>\
+      </div>';
+    }
+
+    var payload = adminTopFiveCache;
+    if (payload === null) {
+        return '\
+      <div class="warhub-card">\
+        <h3>War Top 5</h3>\
+        <div class="warhub-empty">Loading faction top 5…</div>\
+      </div>';
+    }
+
+    if (payload && payload.ok === false) {
+        return '\
+      <div class="warhub-card">\
+        <h3>War Top 5</h3>\
+        <div class="warhub-empty">' + esc(payload.error || 'Could not load faction top 5.') + '</div>\
+        <div class="warhub-actions" style="margin-top:8px;"><button class="warhub-btn" id="wh-refresh-war-top5">Refresh</button></div>\
+      </div>';
+    }
+
+    var factions = arr((payload && payload.factions) || []);
+    var war = (payload && payload.war) || {};
+    var cards = factions.length ? factions.map(function (faction, idx) {
+        var players = arr(faction.players || []);
+        var rows = players.length ? players.map(function (p) {
+            return '\
+              <div class="warhub-list-item">\
+                <div class="warhub-row">\
+                  <div>\
+                    <div class="warhub-name">#' + esc(String(p.rank || 0)) + ' ' + esc(p.name || ('Player ' + (p.user_id || ''))) + '</div>\
+                    <div class="warhub-meta">' + esc([p.user_id ? 'ID ' + p.user_id : '', p.position || '', p.level ? 'Lvl ' + p.level : '', p.status || ''].filter(Boolean).join(' • ')) + '</div>\
+                  </div>\
+                  <div class="warhub-actions">' + pillForStatusClass(p.online_state || 'offline') + '</div>\
+                </div>\
+              </div>';
+        }).join('') : '<div class="warhub-empty">No players found.</div>';
+
+        return '\
+          <details class="warhub-dropdown" ' + (idx === 0 ? 'open' : '') + '>\
+            <summary>\
+              <div class="warhub-row">\
+                <div>\
+                  <div class="warhub-name">' + esc(faction.faction_name || ('Faction ' + (faction.faction_id || ''))) + '</div>\
+                  <div class="warhub-meta">' + esc([faction.faction_id ? 'ID ' + faction.faction_id : '', (faction.count || players.length) + ' players'].filter(Boolean).join(' • ')) + '</div>\
+                </div>\
+                <div class="warhub-actions"><span class="warhub-pill neutral">Top 5</span></div>\
+              </div>\
+            </summary>\
+            <div class="warhub-dropdown-body"><div class="warhub-list">' + rows + '</div></div>\
+          </details>';
+    }).join('') : '<div class="warhub-empty">No faction top 5 available.</div>';
+
+    return '\
+      <div class="warhub-card">\
+        <h3>War Top 5</h3>\
+        <div class="warhub-mini">' + esc((war.status || 'Currently not in war') + (war.phase ? ' • ' + war.phase : '')) + '</div>\
+        <div class="warhub-actions" style="margin-top:8px;"><button class="warhub-btn" id="wh-refresh-war-top5">Refresh</button></div>\
+      </div>\
+      <div class="warhub-card">' + cards + '</div>';
+}
+
     function renderSettingsTab() {
     var apiKey = cleanInputValue(GM_getValue(K_API_KEY, ''));
     var enabledCount = arr((factionMembersCache === null || factionMembersCache === void 0 ? void 0 : factionMembersCache.members) || []).filter(function (x) {
@@ -2241,7 +2311,7 @@ function renderChainTab() {
     }
         function tabLocked(key) {
         if (isOwnerSession()) return false;
-        if (key === 'admin') return !isOwnerSession();
+        if (key === 'admin' || key === 'wartop5') return !isOwnerSession();
         if (key === 'terms' || key === 'faction') return !(accessState !== null && accessState !== void 0 && accessState.isFactionLeader);
         return false;
     }
@@ -2266,6 +2336,7 @@ case 'targets': return "".concat(renderAccessBanner()).concat(renderTargetsTab()
 case 'instructions': return renderInstructionsTab();
 case 'settings': return renderSettingsTab();
 case 'admin': return renderAdminTab();
+case 'wartop5': return renderAdminTopFiveTab();
 default: return renderOverviewTab();
     }
 }
@@ -2555,6 +2626,25 @@ default: return renderOverviewTab();
         });
         return _loadAdminDashboard.apply(this, arguments);
     }
+    function loadAdminTopFive() {
+        return _loadAdminTopFive.apply(this, arguments);
+    }
+    function _loadAdminTopFive() {
+        _loadAdminTopFive = _asyncToGenerator(function* () {
+            if (!isOwnerSession()) return null;
+            var res = yield adminReq('GET', '/api/admin/war-top-five');
+            if (!res.ok) {
+                adminTopFiveCache = { ok: false, error: res.error || 'Could not load faction top 5.' };
+                if (overlay && isOpen && currentTab === 'wartop5') renderBody();
+                return adminTopFiveCache;
+            }
+            adminTopFiveCache = _objectSpread({ ok: true }, res.data || {});
+            if (overlay && isOpen && currentTab === 'wartop5') renderBody();
+            return adminTopFiveCache;
+        });
+        return _loadAdminTopFive.apply(this, arguments);
+    }
+
     function bindOverlayEvents() {
     if (overlay) overlay.querySelectorAll('[data-tab]').forEach(function (btn) {
         btn.addEventListener('click', _asyncToGenerator(function* () {
@@ -3095,6 +3185,13 @@ default: return renderOverviewTab();
         updateBadge();
         setStatus('Positions reset.');
     });
+
+    var refreshWarTop5 = overlay ? overlay.querySelector('#wh-refresh-war-top5') : null;
+    if (refreshWarTop5) refreshWarTop5.addEventListener('click', _asyncToGenerator(function* () {
+        adminTopFiveCache = null;
+        renderBody();
+        yield loadAdminTopFive();
+    }));
 
     var saveOverviewBoxes = overlay ? overlay.querySelector('#wh-save-overview-boxes') : null;
     if (saveOverviewBoxes) saveOverviewBoxes.addEventListener('click', function () {
