@@ -391,7 +391,11 @@ def _feature_access_for_user(user: Dict[str, Any]) -> Dict[str, Any]:
 
     return {
         "is_owner": is_owner,
+        "is_admin": is_owner,
         "is_faction_leader": is_leader,
+        "can_manage_faction": (is_owner or is_leader),
+        "show_admin": is_owner,
+        "show_all_tabs": is_owner,
         "member_enabled": member_enabled,
         "payment_required": payment_required,
         "expired": expired,
@@ -1013,6 +1017,7 @@ def api_auth():
                 "faction_id": faction_id,
                 "faction_name": faction_name,
                 "is_owner": is_owner,
+                "is_admin": is_owner,
                 "is_leader": access["is_faction_leader"],
             },
             access={
@@ -1341,11 +1346,17 @@ def api_state():
             "faction_id": faction_id,
             "faction_name": faction_name,
             "is_owner": _session_is_owner(user),
+            "is_admin": bool(access.get("is_owner")),
             "is_leader": bool(access.get("is_faction_leader")),
         },
         access={
-            "member_enabled": bool(access.get("member_enabled")),
+            "is_owner": bool(access.get("is_owner")),
+            "is_admin": bool(access.get("is_admin")),
             "is_faction_leader": bool(access.get("is_faction_leader")),
+            "can_manage_faction": bool(access.get("can_manage_faction")),
+            "show_admin": bool(access.get("show_admin")),
+            "show_all_tabs": bool(access.get("show_all_tabs")),
+            "member_enabled": bool(access.get("member_enabled")),
             "payment_required": bool(access.get("payment_required")),
             "expired": bool(access.get("expired")),
             "trial_active": bool(access.get("trial_active")),
@@ -1439,6 +1450,8 @@ def api_war_summary():
         war_api_key_source=war_api_key_source,
     )
     payload["my_user_id"] = user_id
+    payload["is_owner"] = _session_is_owner(user)
+    payload["is_admin"] = _session_is_owner(user)
 
     faction_fetch_key = war_api_key or viewer_war_api_key
     faction_info = faction_basic(faction_fetch_key, faction_id=faction_id) if (faction_fetch_key and faction_id) else {"ok": False, "members": []}
