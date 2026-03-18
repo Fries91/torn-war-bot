@@ -1,3 +1,7 @@
+# ============================================================
+# 01. IMPORTS
+# ============================================================
+
 import inspect
 import os
 from datetime import datetime, timezone
@@ -95,6 +99,10 @@ from torn_api import (
 
 load_dotenv()
 
+# ============================================================
+# 02. ENV / APP CONFIG
+# ============================================================
+
 APP_NAME = "War Hub"
 PAYMENT_PLAYER = str(os.getenv("PAYMENT_PLAYER", "Fries91")).strip() or "Fries91"
 FACTION_MEMBER_PRICE = int(os.getenv("PAYMENT_XANAX_PER_MEMBER", os.getenv("PAYMENT_PER_MEMBER", "3")))
@@ -108,6 +116,11 @@ ALLOWED_SCRIPT_ORIGINS = {
 
 app = Flask(__name__, static_folder="static")
 
+
+# ============================================================
+# 03. GENERIC RESPONSE HELPERS
+# BASE_URL(), utc_now(), ok(), err()
+# ============================================================
 
 def BASE_URL() -> str:
     return str(os.getenv("PUBLIC_BASE_URL", "")).strip()
@@ -130,6 +143,12 @@ def err(message: str, status: int = 400, **kwargs):
     payload.update(kwargs)
     return jsonify(payload), status
 
+
+# ============================================================
+# 04. GENERIC PARSERS / REQUEST HELPERS
+# _to_int(), _safe_bool(), _require_json(), _check_request_origin(),
+# _require_license_admin()
+# ============================================================
 
 def _to_int(value: Any, default: int = 0) -> int:
     try:
@@ -204,6 +223,12 @@ def _require_license_admin():
     return True, None
 
 
+# ============================================================
+# 05. AUTH / SESSION / CORS HELPERS
+# with_cors(), _after(), api_options(), _session_user(),
+# require_session()
+# ============================================================
+
 def with_cors(resp):
     resp.headers["Access-Control-Allow-Origin"] = request.headers.get("Origin", "*") or "*"
     resp.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-License-Admin, X-Session-Token"
@@ -262,6 +287,15 @@ def require_session(fn):
 
     return wrapper
 
+
+# ============================================================
+# 06. OWNER / LEADER / ACCESS CONTROL
+# _owner_ids(), _owner_names(), _session_is_owner(),
+# _build_license_status_payload(), _get_exemption_payload(),
+# _is_faction_leader(), _can_manage_faction(),
+# _feature_access_for_user(), _require_feature_access(),
+# require_owner(), require_leader_session()
+# ============================================================
 
 def _owner_ids() -> set:
     raw = str(os.getenv("OWNER_USER_IDS", "")).strip()
@@ -459,6 +493,14 @@ def require_leader_session(fn):
 
     return wrapper
 
+
+# ============================================================
+# 07. WAR / MEMBER NORMALIZATION HELPERS
+# _seconds_to_text(), _faction_basic_by_id(), _ranked_war_payload_for_user(),
+# _parse_minutes_from_member(), _member_activity_bucket(), _clean_member(),
+# _bucket_sort_key(), _normalize_assignment(), _normalize_note(),
+# _normalize_dib(), _merge_enemy_state()
+# ============================================================
 
 def _seconds_to_text(seconds: int) -> str:
     sec = max(0, int(seconds or 0))
@@ -812,6 +854,12 @@ def _merge_enemy_state(enemies: List[Dict[str, Any]], war_id: str) -> List[Dict[
     return merged
 
 
+# ============================================================
+# 08. PAYMENT / BILLING HELPERS
+# _normalize_member_access_row(), _normalize_payment_cycle(),
+# _normalize_payment_intent(), _payment_payload_for_faction()
+# ============================================================
+
 def _normalize_member_access_row(row: Dict[str, Any]) -> Dict[str, Any]:
     r = dict(row or {})
     r["faction_id"] = str(r.get("faction_id") or "")
@@ -872,6 +920,12 @@ def _payment_payload_for_faction(faction_id: str, viewer_user_id: str = "") -> D
         "payment_player": PAYMENT_PLAYER,
         "payment_per_member": FACTION_MEMBER_PRICE,
     }
+# ============================================================
+# 09. COMPAT WRAPPERS
+# _add_med_deal_compat(), _delete_med_deal_compat(),
+# _add_dib_compat(), _delete_dib_compat()
+# ============================================================
+
 def _add_med_deal_compat(
     *,
     user: Dict[str, Any],
@@ -951,6 +1005,11 @@ def _delete_dib_compat(faction_id: str, dib_id: int):
         return delete_dib(faction_id, int(dib_id))
 
 
+# ============================================================
+# 10. BASIC / STATIC ROUTES
+# /health, /, /static/<path>, /favicon.ico, /api/ping, /api/config
+# ============================================================
+
 @app.route("/health", methods=["GET"])
 def health():
     return ok(app=APP_NAME, now=utc_now(), base_url=BASE_URL())
@@ -993,6 +1052,11 @@ def api_config():
         base_url=BASE_URL(),
     )
 
+
+# ============================================================
+# 11. AUTH ROUTES
+# /api/auth, /api/logout
+# ============================================================
 
 @app.route("/api/auth", methods=["POST"])
 def api_auth():
@@ -1157,6 +1221,11 @@ def _enrich_members_with_saved_keys(
 
     return out
 
+
+# ============================================================
+# 12. STATE / WAR ROUTES
+# /api/state, /api/war/*, /api/faction/basic, /api/enemies, etc.
+# ============================================================
 
 @app.route("/api/state", methods=["GET"])
 @require_session
@@ -1607,6 +1676,11 @@ def api_war_summary():
     return ok(**payload)
 
 
+# ============================================================
+# 13. PLAYER ACTION ROUTES
+# availability, chain-sitter, settings, notifications
+# ============================================================
+
 @app.route("/api/availability", methods=["POST"])
 @require_session
 def api_set_availability():
@@ -1665,6 +1739,11 @@ def api_settings():
 
     return ok(message="Settings saved.")
 
+
+# ============================================================
+# 14. SHARED WAR TOOL ROUTES
+# med-deals, dibs, targets, bounties, assignments, notes, terms
+# ============================================================
 
 @app.route("/api/med-deals", methods=["GET"])
 @require_session
@@ -2143,6 +2222,12 @@ def api_faction_license():
     return ok(item=_build_license_status_payload(faction_id, viewer_user_id=str(user.get("user_id") or "")))
 
 
+# ============================================================
+# 15. FACTION MEMBER ACCESS / BILLING ROUTES
+# /api/faction/members, /api/faction/members/<member_user_id>/enable,
+# /api/faction/members/<member_user_id>
+# ============================================================
+
 @app.route("/api/faction/members", methods=["GET"])
 @require_leader_session
 def api_faction_members():
@@ -2242,6 +2327,12 @@ def api_faction_member_delete(member_user_id: str):
     return ok(message="Faction member removed.", member_user_id=str(member_user_id))
 
 
+# ============================================================
+# 16. FACTION PAYMENT ROUTES
+# /api/faction/payment/status, /api/faction/payment/current-cycle,
+# /api/faction/payment/history, /api/faction/payment/request-renewal
+# ============================================================
+
 @app.route("/api/faction/payment/status", methods=["GET"])
 @require_session
 def api_faction_payment_status():
@@ -2306,6 +2397,12 @@ def api_faction_payment_request_renewal():
         payment=_payment_payload_for_faction(faction_id, viewer_user_id=str(user.get("user_id") or "")),
     )
 
+
+# ============================================================
+# 17. ADMIN PAYMENT / LICENSE ROUTES
+# /api/admin/faction-payments/*, /api/admin/faction-licenses/*,
+# /api/admin/exemptions/*
+# ============================================================
 
 @app.route("/api/admin/faction-payments/due", methods=["GET"])
 @require_owner
@@ -2404,6 +2501,12 @@ def api_admin_faction_payments_run_auto_match():
         items=[],
     )
 
+
+# ============================================================
+# 18. INTERNAL PAYMENT AUTOMATION ROUTES
+# /internal/payments/run-due-scan, /internal/payments/run-warning-scan,
+# /internal/payments/run-auto-match
+# ============================================================
 
 @app.route("/internal/payments/run-due-scan", methods=["POST"])
 def api_internal_payments_run_due_scan():
@@ -2630,6 +2733,11 @@ def not_allowed(e):
 def handle_error(e):
     return err("Unhandled error.", 500, details=str(e))
 
+
+# ============================================================
+# 19. APP FACTORY / STARTUP
+# init_db(), create_app(), __main__
+# ============================================================
 
 def create_app():
     init_db()
