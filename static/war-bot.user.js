@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         War Hub ⚔️
 // @namespace    fries91-war-hub
-// @version      3.0.9
+// @version      3.1.0
 // @description  War Hub by Fries91. Faction-license aware overlay with draggable icon, draggable overlay, PDA friendly, shared war tools, faction member management, and payment lock handling.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -300,6 +300,24 @@
       margin-bottom: 10px !important;\n\
       background: rgba(255,255,255,.035) !important;\n\
     }\n\
+    .warhub-hero-card {\n\
+      border: 1px solid rgba(210,51,51,.45) !important;\n\
+      background: linear-gradient(180deg, rgba(210,51,51,.16), rgba(255,255,255,.04)) !important;\n\
+      box-shadow: 0 10px 30px rgba(0,0,0,.22) !important;\n\
+    }\n\
+\n\
+    .warhub-hero-vs {\n\
+      font-size: 14px !important;\n\
+      font-weight: 800 !important;\n\
+      color: #fff !important;\n\
+      margin-bottom: 10px !important;\n\
+      line-height: 1.35 !important;\n\
+    }\n\
+    .warhub-hero-vs span {\n\
+      opacity: .7 !important;\n\
+      font-weight: 600 !important;\n\
+      margin: 0 4px !important;\n\
+    }\n\
 \n\
     .warhub-grid {\n\
       display: grid !important;\n\
@@ -337,6 +355,13 @@
       border-radius: 10px !important;\n\
       padding: 8px !important;\n\
       background: rgba(255,255,255,.03) !important;\n\
+    }\n\
+    .warhub-list-item {\n\
+      transition: transform .15s ease, border-color .15s ease !important;\n\
+    }\n\
+    .warhub-list-item:hover {\n\
+      transform: translateY(-1px) !important;\n\
+      border-color: rgba(210,51,51,.35) !important;\n\
     }\n\
 \n\
     .warhub-name {\n\
@@ -417,6 +442,12 @@
       margin: 0 !important;\n\
       font-size: 14px !important;\n\
       color: #fff !important;\n\
+    }\n\
+    .warhub-mini {\n\
+      font-size: 12px !important;\n\
+      line-height: 1.45 !important;\n\
+      color: #fff !important;\n\
+      opacity: .88 !important;\n\
     }\n\
     .warhub-count {\n\
       opacity: .75 !important;\n\
@@ -1333,71 +1364,7 @@
         return '<div class="warhub-tabs">' + html + '</div>';
     }
 
-    function renderOverviewTab() {
-        var war = getWar();
-        var faction = getFaction();
-        var enemy = getEnemyFaction();
-        var notices = getNotifications();
-        var overviewPrefs = getOverviewBoxPrefs();
-        var lic = accessState && accessState.license ? accessState.license : {};
-        var paymentBox = '';
 
-        if (overviewPrefs.payments) {
-            var due = lic && lic.renewal_cost != null ? lic.renewal_cost : 0;
-            var expiresAt = lic && lic.expires_at ? lic.expires_at : '';
-            var daysLeft = fmtDaysLeftFromIso(expiresAt);
-            var cycle = currentBillingCycleCache || {};
-            paymentBox = '\
-              <div class="warhub-card">\
-                <div class="warhub-section-title">\
-                  <h3>Billing</h3>\
-                  <span class="warhub-count">' + licenseStatusPill(lic) + '</span>\
-                </div>\
-                <div class="warhub-grid two">\
-                  <div class="warhub-metric"><div class="k">Faction</div><div class="v">' + esc((lic && lic.faction_name) || faction.name || '—') + '</div></div>\
-                  <div class="warhub-metric"><div class="k">Renewal Cost</div><div class="v">' + fmtNum(due) + '</div></div>\
-                  <div class="warhub-metric"><div class="k">Expires</div><div class="v">' + esc(expiresAt ? fmtTs(expiresAt) : '—') + '</div></div>\
-                  <div class="warhub-metric"><div class="k">Days Left</div><div class="v">' + esc(daysLeft == null ? '—' : String(daysLeft)) + '</div></div>\
-                </div>\
-                ' + ((accessState && accessState.is_faction_exempt) ? '<div class="warhub-payment-line">Faction exemption active.</div>' : '') + '\
-                ' + ((accessState && accessState.is_user_exempt) ? '<div class="warhub-payment-line">Player exemption active.</div>' : '') + '\
-                ' + ((cycle && Object.keys(cycle).length) ? '<div class="warhub-mini" style="margin-top:8px;">Current cycle loaded.</div>' : '') + '\
-              </div>';
-        }
-
-        var warBox = overviewPrefs.war ? '\
-          <div class="warhub-card">\
-            <div class="warhub-section-title"><h3>War Snapshot</h3></div>\
-            <div class="warhub-grid two">\
-              <div class="warhub-metric"><div class="k">Our Faction</div><div class="v">' + esc(faction.name || war.my_faction_name || '—') + '</div></div>\
-              <div class="warhub-metric"><div class="k">Enemy</div><div class="v">' + esc(enemy.name || war.enemy_faction_name || '—') + '</div></div>\
-              <div class="warhub-metric"><div class="k">Score Us</div><div class="v">' + fmtNum(war.score_us || 0) + '</div></div>\
-              <div class="warhub-metric"><div class="k">Score Them</div><div class="v">' + fmtNum(war.score_them || 0) + '</div></div>\
-              <div class="warhub-metric"><div class="k">Chain Us</div><div class="v">' + fmtNum(war.chain_us || 0) + '</div></div>\
-              <div class="warhub-metric"><div class="k">Chain Them</div><div class="v">' + fmtNum(war.chain_them || 0) + '</div></div>\
-            </div>\
-          </div>' : '';
-
-        var membersBox = overviewPrefs.members ? '\
-          <div class="warhub-card">\
-            <div class="warhub-section-title"><h3>Members</h3></div>\
-            <div class="warhub-grid three">\
-              <div class="warhub-metric"><div class="k">Our Members</div><div class="v">' + fmtNum(getMembers().length) + '</div></div>\
-              <div class="warhub-metric"><div class="k">Enemy Members</div><div class="v">' + fmtNum(getEnemyMembers().length) + '</div></div>\
-              <div class="warhub-metric"><div class="k">Notifications</div><div class="v">' + fmtNum(notices.length) + '</div></div>\
-            </div>\
-          </div>' : '';
-
-        var notificationsBox = overviewPrefs.notifications ? '\
-          <div class="warhub-card">\
-            <div class="warhub-section-title"><h3>Recent Notifications</h3></div>\
-            <div class="warhub-list">' + (notices.length ? notices.slice(0, 5).map(function (n) {
-                return '<div class="warhub-list-item"><div class="warhub-name">' + esc(n.title || n.kind || 'Notice') + '</div><div class="warhub-meta">' + esc(n.text || n.message || '') + '</div></div>';
-            }).join('') : '<div class="warhub-empty">No notifications.</div>') + '</div>\
-          </div>' : '';
-
-        return paymentBox + warBox + membersBox + notificationsBox;
-    }
 
     function renderFactionTab() {
         var faction = getFaction();
@@ -1416,7 +1383,141 @@
             </div>\
           </div>';
     }
+function renderOverviewTab() {
+    var war = getWar();
+    var faction = getFaction();
+    var enemy = getEnemyFaction();
+    var notices = getNotifications();
+    var overviewPrefs = getOverviewBoxPrefs();
+    var lic = accessState && accessState.license ? accessState.license : {};
+    var terms = getWarTerms();
+    var medDeals = getMedDeals();
+    var dibs = getAssignments();
 
+    var ourFactionName = faction.name || war.my_faction_name || '—';
+    var enemyFactionName = enemy.name || war.enemy_faction_name || '—';
+
+    var scoreUs = Number(war.score_us || 0);
+    var scoreThem = Number(war.score_them || 0);
+    var chainUs = Number(war.chain_us || 0);
+    var chainThem = Number(war.chain_them || 0);
+
+    var scoreDiff = scoreUs - scoreThem;
+    var chainDiff = chainUs - chainThem;
+
+    var scoreStatus = scoreDiff > 0
+        ? '<span class="warhub-pill ok">+' + fmtNum(scoreDiff) + ' lead</span>'
+        : scoreDiff < 0
+            ? '<span class="warhub-pill warn">' + fmtNum(Math.abs(scoreDiff)) + ' behind</span>'
+            : '<span class="warhub-pill">Even</span>';
+
+    var chainStatus = chainDiff > 0
+        ? '<span class="warhub-pill ok">+' + fmtNum(chainDiff) + ' chain</span>'
+        : chainDiff < 0
+            ? '<span class="warhub-pill warn">' + fmtNum(Math.abs(chainDiff)) + ' behind</span>'
+            : '<span class="warhub-pill">Even chain</span>';
+
+    var paymentBox = '';
+
+    if (overviewPrefs.payments) {
+        var due = lic && lic.renewal_cost != null ? lic.renewal_cost : 0;
+        var expiresAt = lic && lic.expires_at ? lic.expires_at : '';
+        var daysLeft = fmtDaysLeftFromIso(expiresAt);
+        var cycle = currentBillingCycleCache || {};
+
+        paymentBox = '\
+          <div class="warhub-card">\
+            <div class="warhub-section-title">\
+              <h3>💰 Billing</h3>\
+              <span class="warhub-count">' + licenseStatusPill(lic) + '</span>\
+            </div>\
+            <div class="warhub-grid two">\
+              <div class="warhub-metric"><div class="k">Faction</div><div class="v">' + esc((lic && lic.faction_name) || ourFactionName) + '</div></div>\
+              <div class="warhub-metric"><div class="k">Renewal Cost</div><div class="v">' + fmtNum(due) + '</div></div>\
+              <div class="warhub-metric"><div class="k">Expires</div><div class="v">' + esc(expiresAt ? fmtTs(expiresAt) : '—') + '</div></div>\
+              <div class="warhub-metric"><div class="k">Days Left</div><div class="v">' + esc(daysLeft == null ? '—' : String(daysLeft)) + '</div></div>\
+            </div>\
+            ' + ((accessState && accessState.is_faction_exempt) ? '<div class="warhub-payment-line">Faction exemption active.</div>' : '') + '\
+            ' + ((accessState && accessState.is_user_exempt) ? '<div class="warhub-payment-line">Player exemption active.</div>' : '') + '\
+            ' + ((cycle && Object.keys(cycle).length) ? '<div class="warhub-mini" style="margin-top:8px;">Current cycle loaded.</div>' : '') + '\
+          </div>';
+    }
+
+    var heroBox = overviewPrefs.war ? '\
+      <div class="warhub-card warhub-hero-card">\
+        <div class="warhub-section-title">\
+          <h3>⚔️ War Overview</h3>\
+          <span class="warhub-count">' + scoreStatus + '</span>\
+        </div>\
+        <div class="warhub-hero-vs">' + esc(ourFactionName) + ' <span>vs</span> ' + esc(enemyFactionName) + '</div>\
+        <div class="warhub-grid two">\
+          <div class="warhub-metric"><div class="k">🏆 Score Us</div><div class="v">' + fmtNum(scoreUs) + '</div></div>\
+          <div class="warhub-metric"><div class="k">🏆 Score Them</div><div class="v">' + fmtNum(scoreThem) + '</div></div>\
+          <div class="warhub-metric"><div class="k">⛓️ Chain Us</div><div class="v">' + fmtNum(chainUs) + '</div></div>\
+          <div class="warhub-metric"><div class="k">⛓️ Chain Them</div><div class="v">' + fmtNum(chainThem) + '</div></div>\
+        </div>\
+        <div class="warhub-actions" style="margin-top:10px;">\
+          ' + scoreStatus + '\
+          ' + chainStatus + '\
+        </div>\
+      </div>' : '';
+
+    var termsBox = '\
+      <div class="warhub-card">\
+        <div class="warhub-section-title"><h3>📜 War Terms</h3></div>\
+        <div class="warhub-mini">' + esc(terms.text || terms.terms || 'No terms set.') + '</div>\
+      </div>';
+
+    var middleBox = '\
+      <div class="warhub-grid two">\
+        <div class="warhub-card">\
+          <div class="warhub-section-title">\
+            <h3>💊 Med Deals</h3>\
+            <span class="warhub-count">' + fmtNum(medDeals.length) + '</span>\
+          </div>\
+          <div class="warhub-list">' + (medDeals.length ? medDeals.slice(0, 5).map(function (d) {
+                return '\
+                  <div class="warhub-list-item">\
+                    <div class="warhub-name">' + esc(d.player_name || d.user_name || 'Unknown') + '</div>\
+                    <div class="warhub-meta">' + esc(d.text || d.note || '') + '</div>\
+                  </div>';
+            }).join('') : '<div class="warhub-empty">No med deals.</div>') + '</div>\
+        </div>\
+        <div class="warhub-card">\
+          <div class="warhub-section-title">\
+            <h3>🎯 Dibs</h3>\
+            <span class="warhub-count">' + fmtNum(dibs.length) + '</span>\
+          </div>\
+          <div class="warhub-list">' + (dibs.length ? dibs.slice(0, 5).map(function (a) {
+                return '\
+                  <div class="warhub-list-item">\
+                    <div class="warhub-name">' + esc(a.target_name || a.name || a.enemy_name || 'Unknown') + '</div>\
+                    <div class="warhub-meta">' + esc((a.assigned_to_name || a.claimed_by_name || a.user_name || 'Claimed') + ((a.target_id || a.enemy_id || a.user_id) ? ' • ID: ' + String(a.target_id || a.enemy_id || a.user_id) : '')) + '</div>\
+                  </div>';
+            }).join('') : '<div class="warhub-empty">No dibs claimed.</div>') + '</div>\
+        </div>\
+      </div>';
+
+    var membersBox = overviewPrefs.members ? '\
+      <div class="warhub-card">\
+        <div class="warhub-section-title"><h3>👥 Overview Counts</h3></div>\
+        <div class="warhub-grid three">\
+          <div class="warhub-metric"><div class="k">Our Members</div><div class="v">' + fmtNum(getMembers().length) + '</div></div>\
+          <div class="warhub-metric"><div class="k">Enemy Members</div><div class="v">' + fmtNum(getEnemyMembers().length) + '</div></div>\
+          <div class="warhub-metric"><div class="k">Notifications</div><div class="v">' + fmtNum(notices.length) + '</div></div>\
+        </div>\
+      </div>' : '';
+
+    var notificationsBox = overviewPrefs.notifications ? '\
+      <div class="warhub-card">\
+        <div class="warhub-section-title"><h3>🔔 Recent Notifications</h3></div>\
+        <div class="warhub-list">' + (notices.length ? notices.slice(0, 5).map(function (n) {
+            return '<div class="warhub-list-item"><div class="warhub-name">' + esc(n.title || n.kind || 'Notice') + '</div><div class="warhub-meta">' + esc(n.text || n.message || '') + '</div></div>';
+        }).join('') : '<div class="warhub-empty">No notifications.</div>') + '</div>\
+      </div>' : '';
+
+    return heroBox + termsBox + middleBox + paymentBox + membersBox + notificationsBox;
+}
     function renderWarTab() {
         var war = getWar();
         return '\
