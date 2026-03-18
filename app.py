@@ -1443,6 +1443,7 @@ def api_war_summary():
         war_api_key = leader_war_api_key
         war_api_key_source = "leader_user_key"
 
+    faction_fetch_key = war_api_key or viewer_war_api_key
     payload = _ranked_war_payload_for_user(
         war_api_key,
         my_faction_id=faction_id,
@@ -1453,9 +1454,97 @@ def api_war_summary():
     payload["is_owner"] = _session_is_owner(user)
     payload["is_admin"] = _session_is_owner(user)
 
-    faction_fetch_key = war_api_key or viewer_war_api_key
     faction_info = faction_basic(faction_fetch_key, faction_id=faction_id) if (faction_fetch_key and faction_id) else {"ok": False, "members": []}
     payload["members_count"] = len((faction_info or {}).get("members") or [])
+
+    raw_enemy_members = list((payload.get("enemies") or []))
+    enemy_faction_id = str(payload.get("enemy_faction_id") or "").strip()
+    enemy_faction_name = str(payload.get("enemy_faction_name") or "").strip()
+    debug_enemy_fetch = payload.get("debug_enemy_fetch") or {}
+    our_faction_id = str(payload.get("our_faction_id") or faction_id or "").strip()
+    our_faction_name = str(payload.get("our_faction_name") or faction_name or "").strip().lower()
+    war_id = str(payload.get("war_id") or "")
+
+    if enemy_faction_id and our_faction_id and enemy_faction_id == our_faction_id:
+        enemy_faction_id = ""
+        enemy_faction_name = ""
+        raw_enemy_members = []
+
+    if (
+        enemy_faction_name
+        and our_faction_name
+        and enemy_faction_name.strip().lower() == our_faction_name
+        and not enemy_faction_id
+        and not raw_enemy_members
+    ):
+        enemy_faction_name = ""
+
+    fallback_sides = [x for x in (payload.get("debug_factions") or []) if isinstance(x, dict)]
+    if not enemy_faction_id or not enemy_faction_name:
+        for side in fallback_sides:
+            side_id = str(side.get("faction_id") or "").strip()
+            side_name = str(side.get("faction_name") or "").strip()
+            if side_id and our_faction_id and side_id == our_faction_id:
+                continue
+            if side_name and our_faction_name and side_name.lower() == our_faction_name:
+                continue
+            if not enemy_faction_id and side_id:
+                enemy_faction_id = side_id
+            if not enemy_faction_name and side_name:
+                enemy_faction_name = side_name
+            if enemy_faction_id and enemy_faction_name:
+                break
+
+    if ((not raw_enemy_members) or (not enemy_faction_name)) and enemy_faction_id and faction_fetch_key:
+        enemy_faction_info = _faction_basic_by_id(faction_fetch_key, enemy_faction_id)
+        if enemy_faction_info.get("ok"):
+            fetched_enemy_id = str(enemy_faction_info.get("faction_id") or enemy_faction_id or "").strip()
+            fetched_enemy_name = str(
+                enemy_faction_info.get("faction_name")
+                or enemy_faction_name
+                or debug_enemy_fetch.get("enemy_name")
+                or ""
+            ).strip()
+            if not our_faction_id or fetched_enemy_id != our_faction_id:
+                enemy_faction_id = fetched_enemy_id or enemy_faction_id
+                enemy_faction_name = fetched_enemy_name or enemy_faction_name
+                raw_enemy_members = enemy_faction_info.get("members") or raw_enemy_members
+
+    members_raw = list((faction_info or {}).get("members") or [])
+    our_member_ids = {
+        str(m.get("user_id") or m.get("id") or "").strip()
+        for m in members_raw
+        if str(m.get("user_id") or m.get("id") or "").strip()
+    }
+    filtered_enemy_members = []
+    seen_enemy_ids = set()
+    for enemy in raw_enemy_members:
+        enemy_user_id = str(enemy.get("user_id") or enemy.get("id") or "").strip()
+        if enemy_user_id and enemy_user_id in our_member_ids:
+            continue
+        if enemy_user_id and enemy_user_id in seen_enemy_ids:
+            continue
+        if enemy_user_id:
+            seen_enemy_ids.add(enemy_user_id)
+        filtered_enemy_members.append(enemy)
+
+    enemies = _merge_enemy_state(filtered_enemy_members, war_id) if filtered_enemy_members else []
+
+    payload["enemy_faction_id"] = enemy_faction_id
+    payload["enemy_faction_name"] = str(
+        enemy_faction_name
+        or debug_enemy_fetch.get("enemy_fetch_faction_name")
+        or debug_enemy_fetch.get("enemy_name")
+        or ""
+    ).strip()
+    payload["enemy_faction"] = {
+        **dict(payload.get("enemy_faction") or {}),
+        "faction_id": enemy_faction_id,
+        "name": payload["enemy_faction_name"],
+    }
+    payload["enemyFaction"] = payload["enemy_faction"]
+    payload["enemies"] = enemies
+    payload["enemy_members_count"] = len(filtered_enemy_members)
     return ok(**payload)
 
 
