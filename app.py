@@ -1376,6 +1376,8 @@ def api_state():
         enemy_faction_id=enemy_faction_id,
         enemy_faction_name=enemy_faction_name,
         enemy_members_count=len(raw_enemy_members or []),
+        enemy_members=enemies,
+        enemyMembers=enemies,
         members_count=len(members or []),
         members=members,
         enemies=enemies,
@@ -1544,7 +1546,12 @@ def api_war_summary():
     }
     payload["enemyFaction"] = payload["enemy_faction"]
     payload["enemies"] = enemies
+    payload["enemy_members"] = enemies
+    payload["enemyMembers"] = enemies
     payload["enemy_members_count"] = len(filtered_enemy_members)
+    if isinstance(payload.get("war"), dict):
+        payload["war"]["enemy_members"] = enemies
+        payload["war"]["enemy_members_count"] = len(filtered_enemy_members)
     return ok(**payload)
 
 
