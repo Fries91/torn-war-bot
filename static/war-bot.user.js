@@ -73,7 +73,7 @@ var K_OVERLAY_SCROLL = 'warhub_overlay_scroll_v3';
     var lastStatusMsg = '';
     var lastStatusErr = false;
     var accessState = normalizeAccessCache(GM_getValue(K_ACCESS_CACHE, null));
-    var css = "\n    #warhub-shield {\n      position: fixed !important;\n      z-index: 2147483647 !important;\n      width: 42px !important;\n      height: 42px !important;\n      border-radius: 12px !important;\n      display: flex !important;\n      align-items: center !important;\n      justify-content: center !important;\n      font-size: 22px !important;\n      line-height: 1 !important;\n      cursor: grab !important;\n      user-select: none !important;\n      -webkit-user-select: none !important;\n      -webkit-touch-callout: none !important;\n      touch-action: none !important;\n      box-shadow: 0 8px 24px rgba(0,0,0,.45) !important;\n      border: 1px solid rgba(255,255,255,.10) !important;\n      background: radial-gradient(circle at 30% 20%, rgba(220,75,75,.98), rgba(110,12,12,.98) 55%, rgba(48,6,6,.98)) !important;\n      color: #fff !important;\n      top: 120px !important;\n      right: 14px !important;\n      left: auto !important;\n      bottom: auto !important;\n      opacity: 1 !important;\n      visibility: visible !important;\n      pointer-events: auto !important;\n    }\n    #warhub-shield.dragging { cursor: grabbing !important; }\n\n    #warhub-badge {\n      position: fixed !important;\n      z-index: 2147483647 !important;\n      min-width: 16px !important;\n      height: 16px !important;\n      padding: 0 4px !important;\n      border-radius: 999px !important;\n      background: #ffd54a !important;\n      color: #111 !important;\n      font-size: 10px !important;\n      line-height: 16px !important;\n      text-align: center !important;\n      font-weight: 800 !important;\n      box-shadow: 0 3px 12px rgba(0,0,0,.45) !important;\n      display: none !important;\n      pointer-events: none !important;\n    }\n\n    #warhub-overlay {\n      position: fixed !important;\n      z-index: 2147483646 !important;\n      right: 12px !important;\n      top: 170px !important;\n      width: min(96vw, 520px) !important;\n      height: min(88vh, 900px) !important;\n      max-height: 88vh !important;\n      min-height: 420px !important;\n      overflow: hidden !important;\n      border-radius: 14px !important;\n      background: linear-gradient(180deg, #171717, #0c0c0c) !important;\n      color: #f2f2f2 !important;\n      border: 1px solid rgba(255,255,255,.08) !important;\n      box-shadow: 0 16px 38px rgba(0,0,0,.54) !important;\n      display: none !important;\n      font-family: -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif !important;\n      left: auto !important;\n      bottom: auto !important;\n      flex-direction: column !important;\n      box-sizing: border-box !important;\n      opacity: 1 !important;\n      visibility: visible !important;\n    }\n    #warhub-overlay.open { display: flex !important; }\n\n    #warhub-overlay *,\n    #warhub-overlay *::before,\n    #warhub-overlay *::after {\n      box-sizing: border-box !important;\n    }\n\n    .warhub-head {\n      padding: 10px 12px 9px !important;\n      border-bottom: 1px solid rgba(255,255,255,.08) !important;\n      background: linear-gradient(180deg, rgba(170,18,18,.30), rgba(20,20,20,.20)) !important;\n      cursor: grab !important;\n      user-select: none !important;\n      -webkit-user-select: none !important;\n      -webkit-touch-callout: none !important;\n      touch-action: none !important;\n      flex: 0 0 auto !important;\n      display: block !important;\n      width: 100% !important;\n      min-height: 54px !important;\n    }\n    .warhub-head.dragging { cursor: grabbing !important; }\n\n    .warhub-toprow {\n      display: flex !important;\n      align-items: center !important;\n      justify-content: space-between !important;\n      gap: 10px !important;\n      width: 100% !important;\n    }\n\n    .warhub-title {\n      font-weight: 800 !important;\n      font-size: 16px !important;\n      letter-spacing: .2px !important;\n      color: #fff !important;\n    }\n    .warhub-sub {\n      opacity: .72 !important;\n      font-size: 11px !important;\n      margin-top: 2px !important;\n      color: #fff !important;\n    }\n\n    .warhub-close {\n      appearance: none !important;\n      -webkit-appearance: none !important;\n      border: 0 !important;\n      border-radius: 9px !important;\n      background: rgba(255,255,255,.08) !important;\n      color: #fff !important;\n      padding: 5px 9px !important;\n      font-weight: 700 !important;\n      cursor: pointer !important;\n      font-size: 12px !important;\n      flex: 0 0 auto !important;\n      display: inline-flex !important;\n      align-items: center !important;\n      justify-content: center !important;\n      min-height: 30px !important;\n    }\n\n    .warhub-tabs {\n      display: flex !important;\n      flex: 0 0 auto !important;\n      flex-wrap: nowrap !important;\n      align-items: center !important;\n      gap: 6px !important;\n      padding: 8px !important;\n      overflow-x: auto !important;\n      overflow-y: hidden !important;\n      border-bottom: 1px solid rgba(255,255,255,.08) !important;\n      background: rgba(255,255,255,.02) !important;\n      scrollbar-width: thin !important;\n      -webkit-overflow-scrolling: touch !important;\n      width: 100% !important;\n      min-height: 48px !important;\n      max-height: 48px !important;\n      white-space: nowrap !important;\n    }\n\n    .warhub-tab {\n      appearance: none !important;\n      -webkit-appearance: none !important;\n      border: 0 !important;\n      border-radius: 999px !important;\n      background: rgba(255,255,255,.07) !important;\n      color: #fff !important;\n      padding: 6px 10px !important;\n      font-size: 11px !important;\n      font-weight: 700 !important;\n      white-space: nowrap !important;\n      cursor: pointer !important;\n      flex: 0 0 auto !important;\n      display: inline-flex !important;\n      align-items: center !important;\n      justify-content: center !important;\n      min-height: 30px !important;\n      line-height: 1.1 !important;\n      opacity: 1 !important;\n      visibility: visible !important;\n      gap: 6px !important;\n    }\n    .warhub-tab.active {\n      background: linear-gradient(180deg, #d23333, #831515) !important;\n      color: #fff !important;\n    }\n    .warhub-tab.locked {\n      opacity: .55 !important;\n    }\n\n    .warhub-body {\n      padding: 8px !important;\n      overflow-y: auto !important;\n      overflow-x: hidden !important;\n      -webkit-overflow-scrolling: touch !important;\n      flex: 1 1 auto !important;\n      min-height: 0 !important;\n      width: 100% !important;\n      display: block !important;\n    }\n\n    .warhub-status {\n      display: none !important;\n      margin-bottom: 8px !important;\n      padding: 8px 10px !important;\n      border-radius: 10px !important;\n      font-size: 12px !important;\n      background: rgba(255,255,255,.06) !important;\n      color: #fff !important;\n    }\n    .warhub-status.show { display: block !important; }\n    .warhub-status.err {\n      background: rgba(185,52,52,.22) !important;\n      color: #ffdcdc !important;\n    }\n\n    .warhub-banner {\n      margin-bottom: 8px !important;\n      padding: 10px 12px !important;\n      border-radius: 12px !important;\n      border: 1px solid rgba(255,255,255,.10) !important;\n      background: rgba(255,255,255,.05) !important;\n      color: #fff !important;\n    }\n    .warhub-banner.payment {\n      background: linear-gradient(180deg, rgba(150,43,43,.38), rgba(72,19,19,.26)) !important;\n      border-color: rgba(255,130,130,.22) !important;\n    }\n    .warhub-banner.trial {\n      background: linear-gradient(180deg, rgba(164,116,25,.34), rgba(83,59,12,.22)) !important;\n      border-color: rgba(255,215,118,.22) !important;\n    }\n    .warhub-banner.good {\n      background: linear-gradient(180deg, rgba(35,140,82,.30), rgba(21,96,58,.20)) !important;\n      border-color: rgba(109,214,143,.18) !important;\n    }\n\n    .warhub-grid { display: grid !important; gap: 8px !important; }\n    .warhub-grid.two { grid-template-columns: repeat(2, minmax(0,1fr)) !important; }\n    .warhub-grid.three { grid-template-columns: repeat(3, minmax(0,1fr)) !important; }\n\n    .warhub-card {\n      border: 1px solid rgba(255,255,255,.07) !important;\n      background: rgba(255,255,255,.03) !important;\n      border-radius: 12px !important;\n      padding: 10px !important;\n      margin-bottom: 8px !important;\n      overflow: hidden !important;\n      color: #fff !important;\n    }\n\n    .warhub-card h3 {\n      margin: 0 0 8px !important;\n      font-size: 13px !important;\n      font-weight: 800 !important;\n      letter-spacing: .2px !important;\n      color: #fff !important;\n    }\n\n    .warhub-section-title {\n      display: flex !important;\n      align-items: center !important;\n      justify-content: space-between !important;\n      gap: 8px !important;\n      margin-bottom: 8px !important;\n    }\n\n    .warhub-count {\n      padding: 4px 8px !important;\n      border-radius: 999px !important;\n      background: rgba(255,255,255,.08) !important;\n      font-size: 11px !important;\n      font-weight: 800 !important;\n      color: #fff !important;\n    }\n\n    .warhub-roster-card.hospital-box {\n      border-color: rgba(255,130,130,.16) !important;\n      background: linear-gradient(180deg, rgba(145,37,37,.18), rgba(255,255,255,.03)) !important;\n    }\n\n    .warhub-roster-card.online-box {\n      border-color: rgba(109,214,143,.16) !important;\n      background: linear-gradient(180deg, rgba(31,120,63,.18), rgba(255,255,255,.03)) !important;\n    }\n\n    .warhub-roster-card.idle-box {\n      border-color: rgba(255,215,118,.16) !important;\n      background: linear-gradient(180deg, rgba(145,114,27,.18), rgba(255,255,255,.03)) !important;\n    }\n\n  .warhub-roster-card.travel-box {border-color: rgba(90,160,255,.16) !important;background: linear-gradient(180deg, rgba(36,87,155,.18), rgba(255,255,255,.03)) !important} .warhub-roster-card.jail-box {border-color: rgba(183,120,255,.16) !important;background: linear-gradient(180deg, rgba(98,53,145,.18), rgba(255,255,255,.03)) !important;}  .warhub-roster-card.offline-box {\n      border-color: rgba(180,180,180,.12) !important;\n      background: linear-gradient(180deg, rgba(70,70,70,.18), rgba(255,255,255,.03)) !important;\n    }\n\n    .warhub-dropdown {\n      border: 1px solid rgba(255,255,255,.07) !important;\n      border-radius: 12px !important;\n      background: rgba(255,255,255,.03) !important;\n      margin-bottom: 8px !important;\n      overflow: hidden !important;\n    }\n\n    .warhub-dropdown summary {\n      list-style: none !important;\n      cursor: pointer !important;\n      padding: 10px !important;\n      user-select: none !important;\n      outline: none !important;\n    }\n\n    .warhub-dropdown summary::-webkit-details-marker {\n      display: none !important;\n    }\n\n    .warhub-dropdown-body {\n      padding: 0 10px 10px 10px !important;\n    }\n\n    .warhub-metric {\n      border-radius: 10px !important;\n      background: rgba(255,255,255,.05) !important;\n      padding: 8px !important;\n      min-height: 54px !important;\n    }\n    .warhub-metric .k {\n      opacity: .7 !important;\n      font-size: 10px !important;\n      text-transform: uppercase !important;\n      letter-spacing: .45px !important;\n      color: #fff !important;\n    }\n    .warhub-metric .v {\n      font-size: 16px !important;\n      font-weight: 800 !important;\n      margin-top: 4px !important;\n      word-break: break-word !important;\n      color: #fff !important;\n    }\n\n    .warhub-score-us {\n      background: linear-gradient(180deg, rgba(31,120,63,.40), rgba(17,67,35,.28)) !important;\n      border: 1px solid rgba(109,214,143,.18) !important;\n    }\n    .warhub-score-them {\n      background: linear-gradient(180deg, rgba(145,37,37,.40), rgba(88,18,18,.28)) !important;\n      border: 1px solid rgba(255,130,130,.18) !important;\n    }\n    .warhub-score-lead {\n      background: linear-gradient(180deg, rgba(145,114,27,.38), rgba(97,72,13,.26)) !important;\n      border: 1px solid rgba(255,215,118,.18) !important;\n    }\n\n    .warhub-list { display: grid !important; gap: 6px !important; }\n\n    .warhub-list-item {\n      border-radius: 10px !important;\n      background: rgba(255,255,255,.04) !important;\n      padding: 8px !important;\n      display: grid !important;\n      gap: 4px !important;\n      color: #fff !important;\n    }\n\n    .warhub-row {\n      display: flex !important;\n      align-items: center !important;\n      justify-content: space-between !important;\n      gap: 8px !important;\n      flex-wrap: wrap !important;\n    }\n\n    .warhub-name { font-weight: 700 !important; color: #fff !important; }\n    .warhub-meta { opacity: .76 !important; font-size: 11px !important; color: #fff !important; }\n    .warhub-empty { opacity: .75 !important; font-size: 12px !important; color: #fff !important; }\n    .warhub-actions { display: flex !important; gap: 6px !important; flex-wrap: wrap !important; }\n\n    .warhub-btn, .warhub-input, .warhub-select, .warhub-textarea {\n      font: inherit !important;\n      border-radius: 10px !important;\n      border: 1px solid rgba(255,255,255,.10) !important;\n      background: rgba(255,255,255,.05) !important;\n      color: #fff !important;\n    }\n\n    .warhub-btn {\n      appearance: none !important;\n      -webkit-appearance: none !important;\n      padding: 7px 10px !important;\n      cursor: pointer !important;\n      font-size: 12px !important;\n      font-weight: 700 !important;\n      text-decoration: none !important;\n      display: inline-flex !important;\n      align-items: center !important;\n      justify-content: center !important;\n    }\n\n    .warhub-btn.primary { background: linear-gradient(180deg, #cc3737, #821616) !important; border-color: rgba(255,255,255,.12) !important; }\n    .warhub-btn.good { background: linear-gradient(180deg, #238c52, #15603a) !important; }\n    .warhub-btn.warn { background: linear-gradient(180deg, #af7b22, #775114) !important; }\n    .warhub-btn.small { padding: 5px 8px !important; font-size: 11px !important; }\n    .warhub-btn[disabled] { opacity: .45 !important; cursor: not-allowed !important; }\n\n    .warhub-input, .warhub-select, .warhub-textarea {\n      width: 100% !important;\n      padding: 8px 10px !important;\n      font-size: 12px !important;\n    }\n\n    .warhub-input[readonly] {\n      opacity: .9 !important;\n      background: rgba(255,255,255,.035) !important;\n    }\n\n    .warhub-textarea { min-height: 94px !important; resize: vertical !important; }\n\n    .warhub-label {\n      font-size: 11px !important;\n      opacity: .74 !important;\n      margin-bottom: 4px !important;\n      display: block !important;\n      color: #fff !important;\n    }\n\n   .warhub-pill {\n      display: inline-flex !important;\n      align-items: center !important;\n      gap: 6px !important;\n      padding: 4px 8px !important;\n      border-radius: 999px !important;\n      background: rgba(255,255,255,.07) !important;\n      border: 1px solid rgba(255,255,255,.08) !important;\n      font-size: 11px !important;\n      font-weight: 700 !important;\n    }\n\n    .warhub-pill.online {\n      background: rgba(40,140,90,.20) !important;\n      color: #b7ffd5 !important;\n    }\n\n    .warhub-pill.idle {\n      background: rgba(197,141,46,.22) !important;\n      color: #ffe3a5 !important;\n    }\n\n    .warhub-pill.offline {\n      background: rgba(113,113,113,.20) !important;\n      color: #dadada !important;\n    }\n\n    .warhub-pill.hosp {\n      background: rgba(181,62,62,.24) !important;\n      color: #ffd0d0 !important;\n    }\n\n    .warhub-pill.travel {\n      background: rgba(53,110,190,.24) !important;\n      color: #d5e7ff !important;\n    }\n\n    .warhub-pill.jail {\n      background: rgba(110,68,175,.24) !important;\n      color: #e5d8ff !important;\n    }\n\n    .warhub-pill.leader {\n      background: rgba(66,110,185,.24) !important;\n      color: #d3e3ff !important;\n    }\n\n    .warhub-pill.enabled {\n      background: rgba(35,140,82,.22) !important;\n      color: #b7ffd5 !important;\n    }\n\n    .warhub-pill.disabled {\n      background: rgba(145,37,37,.24) !important;\n      color: #ffd0d0 !important;\n    }\n\n    .warhub-pill.good {\n      background: rgba(34,197,94,.18) !important;\n      border-color: rgba(34,197,94,.45) !important;\n      color: #bbf7d0 !important;\n    }\n\n    .warhub-pill.bad {\n      background: rgba(239,68,68,.18) !important;\n      border-color: rgba(239,68,68,.45) !important;\n      color: #fecaca !important;\n    }\n\n    .warhub-pill.neutral {\n      background: rgba(148,163,184,.16) !important;\n      border-color: rgba(148,163,184,.35) !important;\n      color: #e2e8f0 !important;\n    }\n\n    .warhub-pos {\n      color: #86efac !important;\n    }\n\n    .warhub-neg {\n      color: #fca5a5 !important;\n    }\n\n    .warhub-divider {\n      height: 1px !important;\n      background: rgba(255,255,255,.07) !important;\n      margin: 8px 0 !important;\n    }\n    .warhub-mini { font-size: 11px !important; opacity: .78 !important; color: #fff !important; }\n    .warhub-link { color: #fff !important; text-decoration: none !important; }\n\n    .warhub-section-scroll {\n      max-height: 52vh !important;\n      overflow-y: auto !important;\n      overflow-x: hidden !important;\n      -webkit-overflow-scrolling: touch !important;\n      padding-right: 2px !important;\n    }\n\n    .warhub-payment-line {\n      padding: 8px 10px !important;\n      border-radius: 10px !important;\n      background: rgba(255,255,255,.06) !important;\n      font-weight: 800 !important;\n      text-align: center !important;\n      margin-top: 8px !important;\n    }\n\n    @media (max-width: 700px) {\n      #warhub-overlay {\n        width: 98vw !important;\n        height: 88vh !important;\n        min-height: 360px !important;\n        top: 56px !important;\n        left: 1vw !important;\n        right: 1vw !important;\n        border-radius: 12px !important;\n      }\n      .warhub-grid.two, .warhub-grid.three { grid-template-columns: 1fr !important; }\n      .warhub-body { padding-bottom: 18px !important; }\n      #warhub-shield {\n        width: 40px !important;\n        height: 40px !important;\n        font-size: 21px !important;\n      }\n      .warhub-section-scroll { max-height: 34vh !important; }\n      .warhub-tabs {\n        min-height: 44px !important;\n        max-height: 44px !important;\n      }\n    }\n  ";
+    var css = "\n    #warhub-shield {\n      position: fixed !important;\n      z-index: 2147483647 !important;\n      width: 42px !important;\n      height: 42px !important;\n      border-radius: 12px !important;\n      display: flex !important;\n      align-items: center !important;\n      justify-content: center !important;\n      font-size: 22px !important;\n      line-height: 1 !important;\n      cursor: grab !important;\n      user-select: none !important;\n      -webkit-user-select: none !important;\n      -webkit-touch-callout: none !important;\n      touch-action: none !important;\n      box-shadow: 0 8px 24px rgba(0,0,0,.45) !important;\n      border: 1px solid rgba(255,255,255,.10) !important;\n      background: radial-gradient(circle at 30% 20%, rgba(220,75,75,.98), rgba(110,12,12,.98) 55%, rgba(48,6,6,.98)) !important;\n      color: #fff !important;\n      top: 120px !important;\n      right: 14px !important;\n      left: auto !important;\n      bottom: auto !important;\n      opacity: 1 !important;\n      visibility: visible !important;\n      pointer-events: auto !important;\n    }\n    #warhub-shield.dragging { cursor: grabbing !important; }\n\n    #warhub-badge {\n      position: fixed !important;\n      z-index: 2147483647 !important;\n      min-width: 16px !important;\n      height: 16px !important;\n      padding: 0 4px !important;\n      border-radius: 999px !important;\n      background: #ffd54a !important;\n      color: #111 !important;\n      font-size: 10px !important;\n      line-height: 16px !important;\n      text-align: center !important;\n      font-weight: 800 !important;\n      box-shadow: 0 3px 12px rgba(0,0,0,.45) !important;\n      display: none !important;\n      pointer-events: none !important;\n    }\n\n    #warhub-overlay {\n      position: fixed !important;\n      z-index: 2147483646 !important;\n      right: 12px !important;\n      top: 170px !important;\n      width: min(96vw, 520px) !important;\n      height: min(88vh, 900px) !important;\n      max-height: 88vh !important;\n      min-height: 420px !important;\n      overflow: hidden !important;\n      border-radius: 14px !important;\n      background: linear-gradient(180deg, #171717, #0c0c0c) !important;\n      color: #f2f2f2 !important;\n      border: 1px solid rgba(255,255,255,.08) !important;\n      box-shadow: 0 16px 38px rgba(0,0,0,.54) !important;\n      display: none !important;\n      font-family: -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif !important;\n      left: auto !important;\n      bottom: auto !important;\n      flex-direction: column !important;\n      box-sizing: border-box !important;\n      opacity: 1 !important;\n      visibility: visible !important;\n    }\n    #warhub-overlay.open { display: flex !important; }\n\n    #warhub-overlay *,\n    #warhub-overlay *::before,\n    #warhub-overlay *::after {\n      box-sizing: border-box !important;\n    }\n\n    .warhub-head {\n      padding: 10px 12px 9px !important;\n      border-bottom: 1px solid rgba(255,255,255,.08) !important;\n      background: linear-gradient(180deg, rgba(170,18,18,.30), rgba(20,20,20,.20)) !important;\n      cursor: grab !important;\n      user-select: none !important;\n      -webkit-user-select: none !important;\n      -webkit-touch-callout: none !important;\n      touch-action: none !important;\n      flex: 0 0 auto !important;\n      display: block !important;\n      width: 100% !important;\n      min-height: 54px !important;\n    }\n    .warhub-head.dragging { cursor: grabbing !important; }\n\n    .warhub-toprow {\n      display: flex !important;\n      align-items: center !important;\n      justify-content: space-between !important;\n      gap: 10px !important;\n      width: 100% !important;\n    }\n\n    .warhub-title {\n      font-weight: 800 !important;\n      font-size: 16px !important;\n      letter-spacing: .2px !important;\n      color: #fff !important;\n    }\n    .warhub-sub {\n      opacity: .72 !important;\n      font-size: 11px !important;\n      margin-top: 2px !important;\n      color: #fff !important;\n    }\n\n    .warhub-close {\n      appearance: none !important;\n      -webkit-appearance: none !important;\n      border: 0 !important;\n      border-radius: 9px !important;\n      background: rgba(255,255,255,.08) !important;\n      color: #fff !important;\n      padding: 5px 9px !important;\n      font-weight: 700 !important;\n      cursor: pointer !important;\n      font-size: 12px !important;\n      flex: 0 0 auto !important;\n      display: inline-flex !important;\n      align-items: center !important;\n      justify-content: center !important;\n      min-height: 30px !important;\n    }\n\n    .warhub-tabs {\n      display: flex !important;\n      flex: 0 0 auto !important;\n      flex-wrap: nowrap !important;\n      align-items: center !important;\n      gap: 6px !important;\n      padding: 8px !important;\n      overflow-x: auto !important;\n      overflow-y: hidden !important;\n      border-bottom: 1px solid rgba(255,255,255,.08) !important;\n      background: rgba(255,255,255,.02) !important;\n      scrollbar-width: thin !important;\n      -webkit-overflow-scrolling: touch !important;\n      width: 100% !important;\n      min-height: 48px !important;\n      max-height: 48px !important;\n      white-space: nowrap !important;\n    }\n\n    .warhub-tab {\n      appearance: none !important;\n      -webkit-appearance: none !important;\n      border: 0 !important;\n      border-radius: 999px !important;\n      background: rgba(255,255,255,.07) !important;\n      color: #fff !important;\n      padding: 6px 10px !important;\n      font-size: 11px !important;\n      font-weight: 700 !important;\n      white-space: nowrap !important;\n      cursor: pointer !important;\n      flex: 0 0 auto !important;\n      display: inline-flex !important;\n      align-items: center !important;\n      justify-content: center !important;\n      min-height: 30px !important;\n      line-height: 1.1 !important;\n      opacity: 1 !important;\n      visibility: visible !important;\n      gap: 6px !important;\n    }\n    .warhub-tab.active {\n      background: linear-gradient(180deg, #d23333, #831515) !important;\n      color: #fff !important;\n    }\n    .warhub-tab.locked {\n      opacity: .55 !important;\n    }\n\n    .warhub-body {\n      padding: 8px !important;\n      overflow-y: auto !important;\n      overflow-x: hidden !important;\n      -webkit-overflow-scrolling: touch !important;\n      flex: 1 1 auto !important;\n      min-height: 0 !important;\n      width: 100% !important;\n      display: block !important;\n    }\n\n    .warhub-status {\n      display: none !important;\n      margin-bottom: 8px !important;\n      padding: 8px 10px !important;\n      border-radius: 10px !important;\n      font-size: 12px !important;\n      background: rgba(255,255,255,.06) !important;\n      color: #fff !important;\n    }\n    .warhub-status.show { display: block !important; }\n    .warhub-status.err {\n      background: rgba(185,52,52,.22) !important;\n      color: #ffdcdc !important;\n    }\n\n    .warhub-banner {\n      margin-bottom: 8px !important;\n      padding: 10px 12px !important;\n      border-radius: 12px !important;\n      border: 1px solid rgba(255,255,255,.10) !important;\n      background: rgba(255,255,255,.05) !important;\n      color: #fff !important;\n    }\n    .warhub-banner.payment {\n      background: linear-gradient(180deg, rgba(150,43,43,.38), rgba(72,19,19,.26)) !important;\n      border-color: rgba(255,130,130,.22) !important;\n    }\n    .warhub-banner.trial {\n      background: linear-gradient(180deg, rgba(164,116,25,.34), rgba(83,59,12,.22)) !important;\n      border-color: rgba(255,215,118,.22) !important;\n    }\n    .warhub-banner.good {\n      background: linear-gradient(180deg, rgba(35,140,82,.30), rgba(21,96,58,.20)) !important;\n      border-color: rgba(109,214,143,.18) !important;\n    }\n\n    .warhub-grid { display: grid !important; gap: 8px !important; }\n    .warhub-grid.two { grid-template-columns: repeat(2, minmax(0,1fr)) !important; }\n    .warhub-grid.three { grid-template-columns: repeat(3, minmax(0,1fr)) !important; }\n\n    .warhub-card {\n      border: 1px solid rgba(255,255,255,.07) !important;\n      background: rgba(255,255,255,.03) !important;\n      border-radius: 12px !important;\n      padding: 10px !important;\n      margin-bottom: 8px !important;\n      overflow: hidden !important;\n      color: #fff !important;\n    }\n\n    .warhub-card h3 {\n      margin: 0 0 8px !important;\n      font-size: 13px !important;\n      font-weight: 800 !important;\n      letter-spacing: .2px !important;\n      color: #fff !important;\n    }\n\n    .warhub-section-title {\n      display: flex !important;\n      align-items: center !important;\n      justify-content: space-between !important;\n      gap: 8px !important;\n      margin-bottom: 8px !important;\n    }\n\n    .warhub-count {\n      padding: 4px 8px !important;\n      border-radius: 999px !important;\n      background: rgba(255,255,255,.08) !important;\n      font-size: 11px !important;\n      font-weight: 800 !important;\n      color: #fff !important;\n    }\n\n    .warhub-roster-card.hospital-box {\n      border-color: rgba(255,130,130,.16) !important;\n      background: linear-gradient(180deg, rgba(145,37,37,.18), rgba(255,255,255,.03)) !important;\n    }\n\n    .warhub-roster-card.online-box {\n      border-color: rgba(109,214,143,.16) !important;\n      background: linear-gradient(180deg, rgba(31,120,63,.18), rgba(255,255,255,.03)) !important;\n    }\n\n    .warhub-roster-card.idle-box {\n      border-color: rgba(255,215,118,.16) !important;\n      background: linear-gradient(180deg, rgba(145,114,27,.18), rgba(255,255,255,.03)) !important;\n    }\n\n  .warhub-roster-card.travel-box {border-color: rgba(90,160,255,.16) !important;background: linear-gradient(180deg, rgba(36,87,155,.18), rgba(255,255,255,.03)) !important} .warhub-roster-card.jail-box {border-color: rgba(183,120,255,.16) !important;background: linear-gradient(180deg, rgba(98,53,145,.18), rgba(255,255,255,.03)) !important;}  .warhub-roster-card.offline-box {\n      border-color: rgba(180,180,180,.12) !important;\n      background: linear-gradient(180deg, rgba(70,70,70,.18), rgba(255,255,255,.03)) !important;\n    }\n\n    .warhub-dropdown {\n      border: 1px solid rgba(255,255,255,.07) !important;\n      border-radius: 12px !important;\n      background: rgba(255,255,255,.03) !important;\n      margin-bottom: 8px !important;\n      overflow: hidden !important;\n    }\n\n    .warhub-dropdown summary {\n      list-style: none !important;\n      cursor: pointer !important;\n      padding: 10px !important;\n      user-select: none !important;\n      outline: none !important;\n    }\n\n    .warhub-dropdown summary::-webkit-details-marker {\n      display: none !important;\n    }\n\n    .warhub-dropdown-body {\n      padding: 0 10px 10px 10px !important;\n    }\n\n    .warhub-metric {\n      border-radius: 10px !important;\n      background: rgba(255,255,255,.05) !important;\n      padding: 8px !important;\n      min-height: 54px !important;\n    }\n    .warhub-metric .k {\n      opacity: .7 !important;\n      font-size: 10px !important;\n      text-transform: uppercase !important;\n      letter-spacing: .45px !important;\n      color: #fff !important;\n    }\n  .warhub-debug-pre { margin: 0 !important; white-space: pre-wrap !important; word-break: break-word !important; overflow-wrap: anywhere !important; max-height: 320px !important; overflow: auto !important; padding: 10px !important border-radius: 10px !important; background: rgba(0,0,0,.28) !important; border: 1px solid rgba(255,255,255,.08) !important; font-size: 12px !important; line-height: 1.35 !important; color: #fff !important;}  .warhub-metric .v {\n      font-size: 16px !important;\n      font-weight: 800 !important;\n      margin-top: 4px !important;\n      word-break: break-word !important;\n      color: #fff !important;\n    }\n\n    .warhub-score-us {\n      background: linear-gradient(180deg, rgba(31,120,63,.40), rgba(17,67,35,.28)) !important;\n      border: 1px solid rgba(109,214,143,.18) !important;\n    }\n    .warhub-score-them {\n      background: linear-gradient(180deg, rgba(145,37,37,.40), rgba(88,18,18,.28)) !important;\n      border: 1px solid rgba(255,130,130,.18) !important;\n    }\n    .warhub-score-lead {\n      background: linear-gradient(180deg, rgba(145,114,27,.38), rgba(97,72,13,.26)) !important;\n      border: 1px solid rgba(255,215,118,.18) !important;\n    }\n\n    .warhub-list { display: grid !important; gap: 6px !important; }\n\n    .warhub-list-item {\n      border-radius: 10px !important;\n      background: rgba(255,255,255,.04) !important;\n      padding: 8px !important;\n      display: grid !important;\n      gap: 4px !important;\n      color: #fff !important;\n    }\n\n    .warhub-row {\n      display: flex !important;\n      align-items: center !important;\n      justify-content: space-between !important;\n      gap: 8px !important;\n      flex-wrap: wrap !important;\n    }\n\n    .warhub-name { font-weight: 700 !important; color: #fff !important; }\n    .warhub-meta { opacity: .76 !important; font-size: 11px !important; color: #fff !important; }\n    .warhub-empty { opacity: .75 !important; font-size: 12px !important; color: #fff !important; }\n    .warhub-actions { display: flex !important; gap: 6px !important; flex-wrap: wrap !important; }\n\n    .warhub-btn, .warhub-input, .warhub-select, .warhub-textarea {\n      font: inherit !important;\n      border-radius: 10px !important;\n      border: 1px solid rgba(255,255,255,.10) !important;\n      background: rgba(255,255,255,.05) !important;\n      color: #fff !important;\n    }\n\n    .warhub-btn {\n      appearance: none !important;\n      -webkit-appearance: none !important;\n      padding: 7px 10px !important;\n      cursor: pointer !important;\n      font-size: 12px !important;\n      font-weight: 700 !important;\n      text-decoration: none !important;\n      display: inline-flex !important;\n      align-items: center !important;\n      justify-content: center !important;\n    }\n\n    .warhub-btn.primary { background: linear-gradient(180deg, #cc3737, #821616) !important; border-color: rgba(255,255,255,.12) !important; }\n    .warhub-btn.good { background: linear-gradient(180deg, #238c52, #15603a) !important; }\n    .warhub-btn.warn { background: linear-gradient(180deg, #af7b22, #775114) !important; }\n    .warhub-btn.small { padding: 5px 8px !important; font-size: 11px !important; }\n    .warhub-btn[disabled] { opacity: .45 !important; cursor: not-allowed !important; }\n\n    .warhub-input, .warhub-select, .warhub-textarea {\n      width: 100% !important;\n      padding: 8px 10px !important;\n      font-size: 12px !important;\n    }\n\n    .warhub-input[readonly] {\n      opacity: .9 !important;\n      background: rgba(255,255,255,.035) !important;\n    }\n\n    .warhub-textarea { min-height: 94px !important; resize: vertical !important; }\n\n    .warhub-label {\n      font-size: 11px !important;\n      opacity: .74 !important;\n      margin-bottom: 4px !important;\n      display: block !important;\n      color: #fff !important;\n    }\n\n   .warhub-pill {\n      display: inline-flex !important;\n      align-items: center !important;\n      gap: 6px !important;\n      padding: 4px 8px !important;\n      border-radius: 999px !important;\n      background: rgba(255,255,255,.07) !important;\n      border: 1px solid rgba(255,255,255,.08) !important;\n      font-size: 11px !important;\n      font-weight: 700 !important;\n    }\n\n    .warhub-pill.online {\n      background: rgba(40,140,90,.20) !important;\n      color: #b7ffd5 !important;\n    }\n\n    .warhub-pill.idle {\n      background: rgba(197,141,46,.22) !important;\n      color: #ffe3a5 !important;\n    }\n\n    .warhub-pill.offline {\n      background: rgba(113,113,113,.20) !important;\n      color: #dadada !important;\n    }\n\n    .warhub-pill.hosp {\n      background: rgba(181,62,62,.24) !important;\n      color: #ffd0d0 !important;\n    }\n\n    .warhub-pill.travel {\n      background: rgba(53,110,190,.24) !important;\n      color: #d5e7ff !important;\n    }\n\n    .warhub-pill.jail {\n      background: rgba(110,68,175,.24) !important;\n      color: #e5d8ff !important;\n    }\n\n    .warhub-pill.leader {\n      background: rgba(66,110,185,.24) !important;\n      color: #d3e3ff !important;\n    }\n\n    .warhub-pill.enabled {\n      background: rgba(35,140,82,.22) !important;\n      color: #b7ffd5 !important;\n    }\n\n    .warhub-pill.disabled {\n      background: rgba(145,37,37,.24) !important;\n      color: #ffd0d0 !important;\n    }\n\n    .warhub-pill.good {\n      background: rgba(34,197,94,.18) !important;\n      border-color: rgba(34,197,94,.45) !important;\n      color: #bbf7d0 !important;\n    }\n\n    .warhub-pill.bad {\n      background: rgba(239,68,68,.18) !important;\n      border-color: rgba(239,68,68,.45) !important;\n      color: #fecaca !important;\n    }\n\n    .warhub-pill.neutral {\n      background: rgba(148,163,184,.16) !important;\n      border-color: rgba(148,163,184,.35) !important;\n      color: #e2e8f0 !important;\n    }\n\n    .warhub-pos {\n      color: #86efac !important;\n    }\n\n    .warhub-neg {\n      color: #fca5a5 !important;\n    }\n\n    .warhub-divider {\n      height: 1px !important;\n      background: rgba(255,255,255,.07) !important;\n      margin: 8px 0 !important;\n    }\n    .warhub-mini { font-size: 11px !important; opacity: .78 !important; color: #fff !important; }\n    .warhub-link { color: #fff !important; text-decoration: none !important; }\n\n    .warhub-section-scroll {\n      max-height: 52vh !important;\n      overflow-y: auto !important;\n      overflow-x: hidden !important;\n      -webkit-overflow-scrolling: touch !important;\n      padding-right: 2px !important;\n    }\n\n    .warhub-payment-line {\n      padding: 8px 10px !important;\n      border-radius: 10px !important;\n      background: rgba(255,255,255,.06) !important;\n      font-weight: 800 !important;\n      text-align: center !important;\n      margin-top: 8px !important;\n    }\n\n    @media (max-width: 700px) {\n      #warhub-overlay {\n        width: 98vw !important;\n        height: 88vh !important;\n        min-height: 360px !important;\n        top: 56px !important;\n        left: 1vw !important;\n        right: 1vw !important;\n        border-radius: 12px !important;\n      }\n      .warhub-grid.two, .warhub-grid.three { grid-template-columns: 1fr !important; }\n      .warhub-body { padding-bottom: 18px !important; }\n      #warhub-shield {\n        width: 40px !important;\n        height: 40px !important;\n        font-size: 21px !important;\n      }\n      .warhub-section-scroll { max-height: 34vh !important; }\n      .warhub-tabs {\n        min-height: 44px !important;\n        max-height: 44px !important;\n      }\n    }\n  ";
     GM_addStyle(css);
     function esc(v) {
         return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
@@ -649,20 +649,40 @@ function parseEnemyRosterFromHtml(html, enemyFactionName) {
     function adminReq(method, path, body) {
         return _adminReq.apply(this, arguments);
     }
-    function _adminReq() {
-        _adminReq = _asyncToGenerator(function* (method, path, body) {
-            if (!isOwnerSession()) {
-                return {
-                    ok: false,
-                    status: 403,
-                    data: null,
-                    error: 'Admin access required.'
-                };
-            }
-            return req(method, path, body);
-        });
-        return _adminReq.apply(this, arguments);
-    }
+function adminReq(method, path, body) {
+    return _adminReq.apply(this, arguments);
+}
+function _adminReq() {
+    _adminReq = _asyncToGenerator(function* (method, path, body) {
+        if (!isOwnerSession()) {
+            return {
+                ok: false,
+                status: 403,
+                data: null,
+                error: 'Admin access required.'
+            };
+        }
+
+        var res = yield req(method, path, body);
+
+        if (!res.ok) {
+            var backendMsg =
+                (res.data && (res.data.error || res.data.details || res.data.message)) ||
+                res.error ||
+                ("Admin request failed: " + method + " " + path);
+
+            return {
+                ok: false,
+                status: res.status || 0,
+                data: res.data || null,
+                error: backendMsg
+            };
+        }
+
+        return res;
+    });
+    return _adminReq.apply(this, arguments);
+}
     function normalizeState(data) {
     var s = data || {};
     var me = s.me || s.user || {};
@@ -2053,84 +2073,122 @@ function renderChainTab() {
         ' + singleCard('Member Losing Ground', losingGround, ['Net ' + fmtNum(Math.round((losingGround && losingGround.net) || 0)), 'Losses ' + fmtNum((losingGround && losingGround.losses) || 0), (losingGround && losingGround.statusText) || '—']) + '\
       </div>';
 }
-        function renderAdminTab() {
-        if (!isOwnerSession()) {
-            return '\
-        <div class="warhub-card">\
-          <h3>Fries91 [3679030]</h3>\
-          <div class="warhub-empty">Fries91 [3679030] access required.</div>\
+        function renderDebugBlock() {
+    var dbg = (state && state.debug) || {};
+    var war = (state && state.war) || {};
+    var enemyFaction = (state && (state.enemyFaction || state.enemy_faction)) || {};
+    var ownFaction = (state && (state.faction || state.ourFaction || state.our_faction)) || {};
+
+    var pretty = {
+        war_api_key_source: dbg.war_api_key_source || '',
+        my_user_id: dbg.my_user_id || getMyUserId() || '',
+        my_faction_id: dbg.my_faction_id || '',
+        my_faction_name: dbg.my_faction_name || '',
+        our_faction_id: dbg.our_faction_id || String((ownFaction && (ownFaction.faction_id || ownFaction.id)) || '').trim(),
+        our_faction_name: dbg.our_faction_name || String((ownFaction && ownFaction.name) || '').trim(),
+        enemy_faction_id: dbg.enemy_faction_id || String((enemyFaction && (enemyFaction.faction_id || enemyFaction.id)) || (state && state.enemy_faction_id) || '').trim(),
+        enemy_faction_name: dbg.enemy_faction_name || String((enemyFaction && enemyFaction.name) || (state && state.enemy_faction_name) || '').trim(),
+        enemy_members_count: Number(dbg.enemy_members_count || arr((state && state.enemies) || []).length || 0),
+        members_count: Number(dbg.members_count || arr((state && state.members) || []).length || 0),
+        score_us: Number(dbg.score_us || (war && war.score_us) || ((state && state.score) && state.score.our) || 0),
+        score_them: Number(dbg.score_them || (war && war.score_them) || ((state && state.score) && state.score.enemy) || 0),
+        chain_us: Number(dbg.chain_us || (war && war.chain_us) || 0),
+        chain_them: Number(dbg.chain_them || (war && war.chain_them) || 0),
+        war_phase: (war && war.phase) || '',
+        war_id: (war && (war.war_id || war.id)) || '',
+        war_type: (war && war.war_type) || '',
+        source_note: dbg.source_note || (war && war.source_note) || '',
+        debug_factions: dbg.debug_factions || (war && war.debug_factions) || [],
+        debug_raw_keys: dbg.debug_raw_keys || (war && war.debug_raw_keys) || []
+    };
+
+    return '\
+      <div class="warhub-card">\
+        <div class="warhub-section-title">\
+          <h3>War Debug</h3>\
+          <span class="warhub-count">Live</span>\
         </div>\
-      ';
-        }
-
-        var dash = (state && state.adminDashboard) || {};
-        var items = arr(dash.items || dash.factions || []);
-        var summary = dash.summary || {};
-        var factionExemptions = arr(dash.faction_exemptions || dash.factionExemptions || []);
-        var userExemptions = arr(dash.user_exemptions || dash.userExemptions || []);
-
-        var factionExemptHtml = factionExemptions.length ? factionExemptions.map(function (x) {
-            var factionId = x.faction_id || '';
-            var factionName = x.faction_name || ('Faction ' + factionId);
-            return '\
-              <div class="warhub-list-item">\
-                <div class="warhub-row">\
-                  <div>\
-                    <div class="warhub-name">' + esc(factionName) + '</div>\
-                    <div class="warhub-meta">' + esc(['ID ' + factionId, x.note || '', x.added_by_name || ''].filter(Boolean).join(' • ')) + '</div>\
-                  </div>\
-                  <div class="warhub-actions">\
-                    <button class="warhub-btn small warn" data-admin-delete-faction-exempt="' + esc(String(factionId)) + '">Remove</button>\
-                  </div>\
-                </div>\
-              </div>\
-            ';
-        }).join('') : '<div class="warhub-empty">No faction exemptions saved.</div>';
-
-        var userExemptHtml = userExemptions.length ? userExemptions.map(function (x) {
-            var userId = x.user_id || '';
-            var userName = x.user_name || ('Player ' + userId);
-            return '\
-              <div class="warhub-list-item">\
-                <div class="warhub-row">\
-                  <div>\
-                    <div class="warhub-name">' + esc(userName) + '</div>\
-                    <div class="warhub-meta">' + esc(['ID ' + userId, x.faction_id ? 'Faction ' + x.faction_id : '', x.note || ''].filter(Boolean).join(' • ')) + '</div>\
-                  </div>\
-                  <div class="warhub-actions">\
-                    <button class="warhub-btn small warn" data-admin-delete-user-exempt="' + esc(String(userId)) + '">Remove</button>\
-                  </div>\
-                </div>\
-              </div>\
-            ';
-        }).join('') : '<div class="warhub-empty">No player exemptions saved.</div>';
-
-        var licenseHtml = items.length ? items.map(function (x) {
-            var factionId = x.faction_id || x.id || '';
-            var factionName = x.faction_name || x.name || ('Faction ' + factionId);
-            var isExempt = !!(x.license && x.license.faction_exempt);
-            var metaBits = ['ID ' + factionId, x.status || ''];
-            if (isExempt) metaBits.push('Exempt');
-            if (x.leader_name) metaBits.push(x.leader_name);
-            if (x.expires_at) metaBits.push(fmtTs(x.expires_at));
-            return '\
-              <div class="warhub-list-item">\
-                <div class="warhub-row">\
-                  <div>\
-                    <div class="warhub-name">' + esc(factionName) + '</div>\
-                    <div class="warhub-meta">' + esc(metaBits.filter(Boolean).join(' • ')) + '</div>\
-                  </div>\
-                  <div class="warhub-actions">\
-                    <button class="warhub-btn small" data-admin-history="' + esc(String(factionId)) + '">History</button>\
-                    <button class="warhub-btn small good" data-admin-renew="' + esc(String(factionId)) + '">Renew</button>\
-                    <button class="warhub-btn small warn" data-admin-expire="' + esc(String(factionId)) + '">Expire</button>\
-                  </div>\
-                </div>\
-              </div>\
-            ';
-        }).join('') : '<div class="warhub-empty">No faction licenses found.</div>';
-
+        <pre class="warhub-debug-pre">' + esc(JSON.stringify(pretty, null, 2)) + '</pre>\
+      </div>';
+}
+function renderAdminTab() {
+    if (!isOwnerSession()) {
         return '\
+      <div class="warhub-card">\
+        <h3>Fries91 [3679030]</h3>\
+        <div class="warhub-empty">Fries91 [3679030] access required.</div>\
+      </div>\
+    ';
+    }
+
+    var dash = (state && state.adminDashboard) || {};
+    var items = arr(dash.items || dash.factions || []);
+    var summary = dash.summary || {};
+    var factionExemptions = arr(dash.faction_exemptions || dash.factionExemptions || []);
+    var userExemptions = arr(dash.user_exemptions || dash.userExemptions || []);
+
+    var factionExemptHtml = factionExemptions.length ? factionExemptions.map(function (x) {
+        var factionId = x.faction_id || '';
+        var factionName = x.faction_name || ('Faction ' + factionId);
+        return '\
+          <div class="warhub-list-item">\
+            <div class="warhub-row">\
+              <div>\
+                <div class="warhub-name">' + esc(factionName) + '</div>\
+                <div class="warhub-meta">' + esc(['ID ' + factionId, x.note || '', x.added_by_name || ''].filter(Boolean).join(' • ')) + '</div>\
+              </div>\
+              <div class="warhub-actions">\
+                <button class="warhub-btn small warn" data-admin-delete-faction-exempt="' + esc(String(factionId)) + '">Remove</button>\
+              </div>\
+            </div>\
+          </div>\
+        ';
+    }).join('') : '<div class="warhub-empty">No faction exemptions saved.</div>';
+
+    var userExemptHtml = userExemptions.length ? userExemptions.map(function (x) {
+        var userId = x.user_id || '';
+        var userName = x.user_name || ('Player ' + userId);
+        return '\
+          <div class="warhub-list-item">\
+            <div class="warhub-row">\
+              <div>\
+                <div class="warhub-name">' + esc(userName) + '</div>\
+                <div class="warhub-meta">' + esc(['ID ' + userId, x.faction_id ? 'Faction ' + x.faction_id : '', x.note || ''].filter(Boolean).join(' • ')) + '</div>\
+              </div>\
+              <div class="warhub-actions">\
+                <button class="warhub-btn small warn" data-admin-delete-user-exempt="' + esc(String(userId)) + '">Remove</button>\
+              </div>\
+            </div>\
+          </div>\
+        ';
+    }).join('') : '<div class="warhub-empty">No player exemptions saved.</div>';
+
+    var licenseHtml = items.length ? items.map(function (x) {
+        var factionId = x.faction_id || x.id || '';
+        var factionName = x.faction_name || x.name || ('Faction ' + factionId);
+        var isExempt = !!(x.license && x.license.faction_exempt);
+        var metaBits = ['ID ' + factionId, x.status || ''];
+        if (isExempt) metaBits.push('Exempt');
+        if (x.leader_name) metaBits.push(x.leader_name);
+        if (x.expires_at) metaBits.push(fmtTs(x.expires_at));
+        return '\
+          <div class="warhub-list-item">\
+            <div class="warhub-row">\
+              <div>\
+                <div class="warhub-name">' + esc(factionName) + '</div>\
+                <div class="warhub-meta">' + esc(metaBits.filter(Boolean).join(' • ')) + '</div>\
+              </div>\
+              <div class="warhub-actions">\
+                <button class="warhub-btn small" data-admin-history="' + esc(String(factionId)) + '">History</button>\
+                <button class="warhub-btn small good" data-admin-renew="' + esc(String(factionId)) + '">Renew</button>\
+                <button class="warhub-btn small warn" data-admin-expire="' + esc(String(factionId)) + '">Expire</button>\
+              </div>\
+            </div>\
+          </div>\
+        ';
+    }).join('') : '<div class="warhub-empty">No faction licenses found.</div>';
+
+    return '\
       <div class="warhub-card">\
         <h3>Fries91 [3679030] Dashboard</h3>\
         <div class="warhub-grid two">\
@@ -2142,6 +2200,8 @@ function renderChainTab() {
           <div class="warhub-metric"><div class="k">Player Exemptions</div><div class="v">' + fmtNum(summary.user_exemptions_total || userExemptions.length || 0) + '</div></div>\
         </div>\
       </div>\
+\
+      ' + renderDebugBlock() + '\
 \
       <div class="warhub-card">\
         <h3>Faction Exemption</h3>\
@@ -2189,7 +2249,7 @@ function renderChainTab() {
         <div class="warhub-list">' + licenseHtml + '</div>\
       </div>\
     ';
-    }
+}
     function renderAdminTopFiveTab() {
     if (!isOwnerSession()) {
         return '\
@@ -2604,28 +2664,50 @@ default: return renderOverviewTab();
         makeDraggable(handle, overlay, saveOverlayPos, updateBadge);
     }
     function loadAdminDashboard() {
-        return _loadAdminDashboard.apply(this, arguments);
-    }
-    function _loadAdminDashboard() {
-        _loadAdminDashboard = _asyncToGenerator(function* () {
-            if (!isOwnerSession()) return null;
-            var res = yield adminReq('GET', '/api/admin/faction-licenses');
-            if (!res.ok) {
-                setStatus(res.error || 'Could not load Fries91 dashboard.', true);
-                return null;
-            }
-            state = state || {};
-            state.adminDashboard = _objectSpread(_objectSpread({}, res.data || {}), {}, {
-                items: arr((res.data === null || res.data === void 0 ? void 0 : res.data.items) || (res.data === null || res.data === void 0 ? void 0 : res.data.factions) || []),
-                summary: (res.data === null || res.data === void 0 ? void 0 : res.data.summary) || {},
-                faction_exemptions: arr((res.data === null || res.data === void 0 ? void 0 : res.data.faction_exemptions) || []),
-                user_exemptions: arr((res.data === null || res.data === void 0 ? void 0 : res.data.user_exemptions) || [])
+    return _loadAdminDashboard.apply(this, arguments);
+}
+function _loadAdminDashboard() {
+    _loadAdminDashboard = _asyncToGenerator(function* () {
+        if (!isOwnerSession()) return null;
+
+        var res = yield adminReq('GET', '/api/admin/faction-licenses');
+
+        state = state || {};
+        state.adminDashboard = state.adminDashboard || {
+            items: [],
+            summary: {},
+            faction_exemptions: [],
+            user_exemptions: []
+        };
+
+        if (!res.ok) {
+            state.adminDashboard = _objectSpread(_objectSpread({}, state.adminDashboard), {}, {
+                ok: false,
+                error: res.error || 'Could not load Fries91 dashboard.',
+                items: arr((state.adminDashboard && state.adminDashboard.items) || []),
+                summary: (state.adminDashboard && state.adminDashboard.summary) || {},
+                faction_exemptions: arr((state.adminDashboard && state.adminDashboard.faction_exemptions) || []),
+                user_exemptions: arr((state.adminDashboard && state.adminDashboard.user_exemptions) || [])
             });
+            setStatus(res.error || 'Could not load Fries91 dashboard.', true);
             if (overlay && isOpen && currentTab === 'admin') renderBody();
             return state.adminDashboard;
+        }
+
+        state.adminDashboard = _objectSpread(_objectSpread({}, res.data || {}), {}, {
+            ok: true,
+            error: '',
+            items: arr((res.data === null || res.data === void 0 ? void 0 : res.data.items) || (res.data === null || res.data === void 0 ? void 0 : res.data.factions) || []),
+            summary: (res.data === null || res.data === void 0 ? void 0 : res.data.summary) || {},
+            faction_exemptions: arr((res.data === null || res.data === void 0 ? void 0 : res.data.faction_exemptions) || []),
+            user_exemptions: arr((res.data === null || res.data === void 0 ? void 0 : res.data.user_exemptions) || [])
         });
-        return _loadAdminDashboard.apply(this, arguments);
-    }
+
+        if (overlay && isOpen && currentTab === 'admin') renderBody();
+        return state.adminDashboard;
+    });
+    return _loadAdminDashboard.apply(this, arguments);
+}
     function loadAdminTopFive() {
         return _loadAdminTopFive.apply(this, arguments);
     }
