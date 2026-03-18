@@ -2099,7 +2099,8 @@ function renderChainTab() {
         war_type: (war && war.war_type) || '',
         source_note: dbg.source_note || (war && war.source_note) || '',
         debug_factions: dbg.debug_factions || (war && war.debug_factions) || [],
-        debug_raw_keys: dbg.debug_raw_keys || (war && war.debug_raw_keys) || []
+        debug_raw_keys: dbg.debug_raw_keys || (war && war.debug_raw_keys) || [],
+        debug_enemy_fetch: dbg.debug_enemy_fetch || {}
     };
 
     return '\
