@@ -587,6 +587,52 @@ def init_db():
     """)
 
     cur.execute("""
+        CREATE TABLE IF NOT EXISTS faction_billing_cycles (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            faction_id TEXT NOT NULL,
+            faction_name TEXT DEFAULT '',
+            cycle_start_at TEXT DEFAULT '',
+            cycle_end_at TEXT DEFAULT '',
+            cycle_status TEXT DEFAULT 'open',
+            enabled_member_count INTEGER DEFAULT 0,
+            payment_per_member INTEGER DEFAULT 0,
+            amount_due INTEGER DEFAULT 0,
+            amount_paid INTEGER DEFAULT 0,
+            payment_confirmed_at TEXT DEFAULT '',
+            payment_source TEXT DEFAULT '',
+            note TEXT DEFAULT '',
+            confirmed_by_user_id TEXT DEFAULT '',
+            confirmed_by_name TEXT DEFAULT '',
+            created_at TEXT DEFAULT '',
+            updated_at TEXT DEFAULT ''
+        )
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS faction_payment_intents (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            faction_id TEXT NOT NULL,
+            faction_name TEXT DEFAULT '',
+            cycle_id INTEGER DEFAULT 0,
+            amount_due INTEGER DEFAULT 0,
+            payment_kind TEXT DEFAULT 'xanax',
+            pay_to_user_id TEXT DEFAULT '',
+            pay_to_name TEXT DEFAULT '',
+            status TEXT DEFAULT 'pending',
+            note TEXT DEFAULT '',
+            created_by_user_id TEXT DEFAULT '',
+            created_by_name TEXT DEFAULT '',
+            matched_at TEXT DEFAULT '',
+            confirmed_at TEXT DEFAULT '',
+            confirmed_by_user_id TEXT DEFAULT '',
+            confirmed_by_name TEXT DEFAULT '',
+            cancelled_at TEXT DEFAULT '',
+            created_at TEXT DEFAULT '',
+            updated_at TEXT DEFAULT ''
+        )
+    """)
+
+    cur.execute("""
         CREATE TABLE IF NOT EXISTS faction_exemptions (
             faction_id TEXT PRIMARY KEY,
             faction_name TEXT DEFAULT '',
@@ -630,6 +676,15 @@ def init_db():
     _ensure_column(cur, "faction_members", "faction_name", "faction_name TEXT DEFAULT ''")
     _ensure_column(cur, "faction_members", "leader_name", "leader_name TEXT DEFAULT ''")
     _ensure_column(cur, "faction_members", "position", "position TEXT DEFAULT ''")
+    _ensure_column(cur, "faction_members", "xanax_owed", "xanax_owed INTEGER DEFAULT 0")
+    _ensure_column(cur, "faction_members", "activated_at", "activated_at TEXT DEFAULT ''")
+    _ensure_column(cur, "faction_members", "last_renewed_at", "last_renewed_at TEXT DEFAULT ''")
+    _ensure_column(cur, "faction_members", "cycle_locked", "cycle_locked INTEGER DEFAULT 0")
+
+    _ensure_column(cur, "faction_billing_cycles", "payment_source", "payment_source TEXT DEFAULT ''")
+    _ensure_column(cur, "faction_billing_cycles", "note", "note TEXT DEFAULT ''")
+    _ensure_column(cur, "faction_payment_intents", "cycle_id", "cycle_id INTEGER DEFAULT 0")
+    _ensure_column(cur, "faction_payment_intents", "matched_at", "matched_at TEXT DEFAULT ''")
 
     _ensure_column(cur, "users", "name", "name TEXT DEFAULT ''")
     _ensure_column(cur, "users", "api_key", "api_key TEXT DEFAULT ''")
@@ -653,6 +708,9 @@ def init_db():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_users_faction_id ON users(faction_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON notifications(user_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_billing_cycles_faction_id ON faction_billing_cycles(faction_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_payment_intents_faction_id ON faction_payment_intents(faction_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_payment_intents_status ON faction_payment_intents(status)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_war_snapshots_war_id ON war_snapshots(war_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_enemy_states_war_id ON enemy_states(war_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_target_assignments_war_id ON target_assignments(war_id)")
@@ -2870,6 +2928,309 @@ def process_faction_payment_warnings(faction_id: str) -> Dict[str, Any]:
     return compute_faction_license_status(faction_id)
 
 
+def get_current_faction_billing_cycle(faction_id: str) -> Optional[Dict[str, Any]]:
+    if not faction_id:
+        return None
+
+    con = _con()
+    cur = con.cursor()
+    cur.execute("""
+        SELECT *
+        FROM faction_billing_cycles
+        WHERE faction_id = ?
+        ORDER BY
+            CASE cycle_status WHEN 'open' THEN 0 WHEN 'due' THEN 1 WHEN 'paid' THEN 2 ELSE 3 END,
+            id DESC
+        LIMIT 1
+    """, (str(faction_id),))
+    row = cur.fetchone()
+    con.close()
+    return _row_to_dict(row)
+
+
+def list_faction_billing_cycles(faction_id: str = "", limit: int = 25) -> List[Dict[str, Any]]:
+    con = _con()
+    cur = con.cursor()
+    if faction_id:
+        cur.execute("""
+            SELECT * FROM faction_billing_cycles
+            WHERE faction_id = ?
+            ORDER BY id DESC
+            LIMIT ?
+        """, (str(faction_id), int(limit)))
+    else:
+        cur.execute("""
+            SELECT * FROM faction_billing_cycles
+            ORDER BY id DESC
+            LIMIT ?
+        """, (int(limit),))
+    rows = [dict(r) for r in cur.fetchall()]
+    con.close()
+    return rows
+
+
+def ensure_faction_billing_cycle(faction_id: str) -> Dict[str, Any]:
+    row = recalc_faction_license(faction_id)
+    status = compute_faction_license_status(faction_id)
+    existing = get_current_faction_billing_cycle(faction_id)
+    cycle_start_at = str(status.get("last_payment_at") or row.get("trial_started_at") or _utc_now())
+    cycle_end_at = str(status.get("expires_at") or row.get("paid_until_at") or row.get("trial_expires_at") or _future_iso(DEFAULT_PAID_DAYS))
+    cycle_status = "due" if bool(status.get("payment_required")) else ("paid" if bool(status.get("paid_active")) else "open")
+    amount_due = int(status.get("next_payment_amount") or row.get("renewal_cost") or 0)
+    enabled_member_count = int(row.get("enabled_member_count") or 0)
+    faction_name = str(row.get("faction_name") or "")
+    now = _utc_now()
+
+    if existing and str(existing.get("cycle_status") or "") in {"open", "due"}:
+        con = _con()
+        cur = con.cursor()
+        cur.execute("""
+            UPDATE faction_billing_cycles
+            SET
+                faction_name = ?,
+                cycle_start_at = CASE WHEN cycle_start_at = '' THEN ? ELSE cycle_start_at END,
+                cycle_end_at = ?,
+                cycle_status = ?,
+                enabled_member_count = ?,
+                payment_per_member = ?,
+                amount_due = ?,
+                updated_at = ?
+            WHERE id = ?
+        """, (
+            faction_name,
+            cycle_start_at,
+            cycle_end_at,
+            cycle_status,
+            enabled_member_count,
+            int(PAYMENT_XANAX_PER_MEMBER),
+            amount_due,
+            now,
+            int(existing.get("id") or 0),
+        ))
+        con.commit()
+        con.close()
+        return get_current_faction_billing_cycle(faction_id) or existing
+
+    con = _con()
+    cur = con.cursor()
+    cur.execute("""
+        INSERT INTO faction_billing_cycles (
+            faction_id, faction_name, cycle_start_at, cycle_end_at, cycle_status,
+            enabled_member_count, payment_per_member, amount_due, amount_paid,
+            payment_confirmed_at, payment_source, note, confirmed_by_user_id, confirmed_by_name, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, '', '', '', '', '', ?, ?)
+    """, (
+        str(faction_id),
+        faction_name,
+        cycle_start_at,
+        cycle_end_at,
+        cycle_status,
+        enabled_member_count,
+        int(PAYMENT_XANAX_PER_MEMBER),
+        amount_due,
+        now,
+        now,
+    ))
+    con.commit()
+    con.close()
+    return get_current_faction_billing_cycle(faction_id) or {}
+
+
+def list_faction_payment_intents(faction_id: str = "", status: str = "", limit: int = 25) -> List[Dict[str, Any]]:
+    con = _con()
+    cur = con.cursor()
+    if faction_id and status:
+        cur.execute("""
+            SELECT * FROM faction_payment_intents
+            WHERE faction_id = ? AND status = ?
+            ORDER BY id DESC
+            LIMIT ?
+        """, (str(faction_id), str(status), int(limit)))
+    elif faction_id:
+        cur.execute("""
+            SELECT * FROM faction_payment_intents
+            WHERE faction_id = ?
+            ORDER BY id DESC
+            LIMIT ?
+        """, (str(faction_id), int(limit)))
+    elif status:
+        cur.execute("""
+            SELECT * FROM faction_payment_intents
+            WHERE status = ?
+            ORDER BY id DESC
+            LIMIT ?
+        """, (str(status), int(limit)))
+    else:
+        cur.execute("""
+            SELECT * FROM faction_payment_intents
+            ORDER BY id DESC
+            LIMIT ?
+        """, (int(limit),))
+    rows = [dict(r) for r in cur.fetchall()]
+    con.close()
+    return rows
+
+
+def get_faction_payment_intent(intent_id: int) -> Optional[Dict[str, Any]]:
+    con = _con()
+    cur = con.cursor()
+    cur.execute("SELECT * FROM faction_payment_intents WHERE id = ? LIMIT 1", (int(intent_id),))
+    row = cur.fetchone()
+    con.close()
+    return _row_to_dict(row)
+
+
+def create_faction_payment_intent(
+    faction_id: str,
+    created_by_user_id: str = "",
+    created_by_name: str = "",
+    amount_due: int = 0,
+    note: str = "",
+) -> Dict[str, Any]:
+    row = recalc_faction_license(faction_id)
+    cycle = ensure_faction_billing_cycle(faction_id)
+    final_amount = int(amount_due or row.get("renewal_cost") or 0)
+    now = _utc_now()
+
+    con = _con()
+    cur = con.cursor()
+    cur.execute("""
+        INSERT INTO faction_payment_intents (
+            faction_id, faction_name, cycle_id, amount_due, payment_kind, pay_to_user_id, pay_to_name,
+            status, note, created_by_user_id, created_by_name, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?)
+    """, (
+        str(faction_id),
+        str(row.get("faction_name") or ""),
+        int(cycle.get("id") or 0),
+        final_amount,
+        str(PAYMENT_KIND),
+        str(PAYMENT_NOTIFY_USER_ID),
+        str(PAYMENT_PLAYER),
+        str(note or _faction_payment_text(int(row.get("enabled_member_count") or 0))),
+        str(created_by_user_id or ""),
+        str(created_by_name or ""),
+        now,
+        now,
+    ))
+    intent_id = cur.lastrowid
+    con.commit()
+    con.close()
+
+    add_audit_log(
+        actor_user_id=str(created_by_user_id or ""),
+        actor_name=str(created_by_name or ""),
+        action="faction_payment_intent_created",
+        meta_json=f"faction_id={faction_id} amount_due={final_amount} intent_id={intent_id}",
+    )
+
+    leader_user_id = str(row.get("leader_user_id") or "").strip()
+    if leader_user_id:
+        add_notification(leader_user_id, "payment_request_created", f"Renewal request created. {_faction_payment_text(int(row.get('enabled_member_count') or 0))}")
+
+    return get_faction_payment_intent(intent_id) or {}
+
+
+def cancel_faction_payment_intent(
+    intent_id: int,
+    cancelled_by_user_id: str = "",
+    cancelled_by_name: str = "",
+    note: str = "",
+) -> Dict[str, Any]:
+    row = get_faction_payment_intent(intent_id) or {}
+    if not row:
+        return {}
+    now = _utc_now()
+    con = _con()
+    cur = con.cursor()
+    final_note = str(note or row.get("note") or "")
+    cur.execute("""
+        UPDATE faction_payment_intents
+        SET status = 'cancelled', cancelled_at = ?, note = ?, confirmed_by_user_id = ?, confirmed_by_name = ?, updated_at = ?
+        WHERE id = ?
+    """, (now, final_note, str(cancelled_by_user_id or ""), str(cancelled_by_name or ""), now, int(intent_id)))
+    con.commit()
+    con.close()
+    return get_faction_payment_intent(intent_id) or row
+
+
+def confirm_faction_payment_intent(
+    intent_id: int,
+    confirmed_by_user_id: str = "",
+    confirmed_by_name: str = "",
+    note: str = "",
+    amount_paid: int = 0,
+) -> Dict[str, Any]:
+    row = get_faction_payment_intent(intent_id) or {}
+    if not row:
+        return {}
+
+    faction_id = str(row.get("faction_id") or "")
+    final_amount = int(amount_paid or row.get("amount_due") or 0)
+    final_note = str(note or row.get("note") or "")
+    renewed = renew_faction_after_payment(
+        faction_id=faction_id,
+        amount=final_amount,
+        payment_player=PAYMENT_PLAYER,
+        renewed_by=str(confirmed_by_name or PAYMENT_PLAYER),
+        note=final_note,
+        received_by=str(confirmed_by_name or PAYMENT_PLAYER),
+    )
+
+    now = _utc_now()
+    con = _con()
+    cur = con.cursor()
+    cur.execute("""
+        UPDATE faction_payment_intents
+        SET status = 'confirmed', matched_at = ?, confirmed_at = ?, confirmed_by_user_id = ?, confirmed_by_name = ?, note = ?, updated_at = ?
+        WHERE id = ?
+    """, (now, now, str(confirmed_by_user_id or ""), str(confirmed_by_name or ""), final_note, now, int(intent_id)))
+
+    cur.execute("""
+        UPDATE faction_payment_intents
+        SET status = CASE WHEN status = 'pending' THEN 'matched' ELSE status END, updated_at = ?
+        WHERE faction_id = ? AND id != ? AND status = 'pending'
+    """, (now, faction_id, int(intent_id)))
+
+    cycle = get_current_faction_billing_cycle(faction_id) or {}
+    cycle_id = int(row.get("cycle_id") or cycle.get("id") or 0)
+    if cycle_id:
+        cur.execute("""
+            UPDATE faction_billing_cycles
+            SET cycle_status = 'paid', amount_paid = ?, payment_confirmed_at = ?, payment_source = ?, note = ?, confirmed_by_user_id = ?, confirmed_by_name = ?, updated_at = ?
+            WHERE id = ?
+        """, (final_amount, now, str(PAYMENT_PLAYER), final_note, str(confirmed_by_user_id or ""), str(confirmed_by_name or ""), now, cycle_id))
+    con.commit()
+    con.close()
+
+    recalc_faction_license(faction_id)
+    ensure_faction_billing_cycle(faction_id)
+    return get_faction_payment_intent(intent_id) or row
+
+
+def list_due_faction_licenses(limit: int = 250) -> List[Dict[str, Any]]:
+    rows = list_all_faction_licenses(limit=limit) or []
+    out = []
+    for row in rows:
+        lic = dict(row.get("license") or {})
+        if bool(lic.get("payment_required")) or str(lic.get("status") or "") == "expired":
+            out.append({**row, "current_cycle": ensure_faction_billing_cycle(str(row.get("faction_id") or ""))})
+    return out
+
+
+def process_all_faction_payment_warnings(limit: int = 250) -> List[Dict[str, Any]]:
+    rows = list_all_faction_licenses(limit=limit) or []
+    out = []
+    for row in rows:
+        faction_id = str(row.get("faction_id") or "").strip()
+        if not faction_id:
+            continue
+        status = process_faction_payment_warnings(faction_id)
+        ensure_faction_billing_cycle(faction_id)
+        out.append(status)
+    return out
+
+
 def renew_faction_after_payment(
     faction_id: str,
     amount: int,
@@ -2962,6 +3323,44 @@ def renew_faction_after_payment(
         str(faction_id),
     ))
 
+    cur.execute("""
+        UPDATE faction_billing_cycles
+        SET
+            cycle_status = CASE WHEN cycle_status IN ('open', 'due') THEN 'paid' ELSE cycle_status END,
+            amount_paid = CASE WHEN amount_paid <= 0 THEN ? ELSE amount_paid END,
+            payment_confirmed_at = CASE WHEN payment_confirmed_at = '' THEN ? ELSE payment_confirmed_at END,
+            payment_source = CASE WHEN payment_source = '' THEN ? ELSE payment_source END,
+            note = CASE WHEN note = '' THEN ? ELSE note END,
+            confirmed_by_name = CASE WHEN confirmed_by_name = '' THEN ? ELSE confirmed_by_name END,
+            updated_at = ?
+        WHERE faction_id = ? AND cycle_status IN ('open', 'due')
+    """, (
+        int(amount or 0),
+        now,
+        final_received_by,
+        str(note or ""),
+        str(renewed_by or ""),
+        now,
+        str(faction_id),
+    ))
+
+    cur.execute("""
+        UPDATE faction_payment_intents
+        SET
+            status = CASE WHEN status = 'pending' THEN 'confirmed' ELSE status END,
+            matched_at = CASE WHEN matched_at = '' THEN ? ELSE matched_at END,
+            confirmed_at = CASE WHEN confirmed_at = '' THEN ? ELSE confirmed_at END,
+            confirmed_by_name = CASE WHEN confirmed_by_name = '' THEN ? ELSE confirmed_by_name END,
+            updated_at = ?
+        WHERE faction_id = ? AND status = 'pending'
+    """, (
+        now,
+        now,
+        str(renewed_by or final_received_by),
+        now,
+        str(faction_id),
+    ))
+
     con.commit()
     con.close()
 
@@ -2971,6 +3370,7 @@ def renew_faction_after_payment(
         action="faction_payment_received",
         meta_json=f"faction_id={faction_id} amount={int(amount or 0)} renewed_by={final_received_by}",
     )
+    ensure_faction_billing_cycle(faction_id)
     return compute_faction_license_status(faction_id)
 
 
