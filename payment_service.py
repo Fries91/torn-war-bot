@@ -1,5 +1,5 @@
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from db import (
     PAYMENT_KIND,
@@ -10,27 +10,36 @@ from db import (
     add_notification,
     calc_faction_renewal_cost,
     compute_faction_license_status,
+    delete_faction_member_access,
+    get_faction_license_for_member,
     get_faction_member_access,
     get_faction_payment_history,
-    get_faction_license_for_member,
     get_member_access_record,
     get_owner_faction_dashboard,
-    get_user,
     list_all_faction_licenses,
     list_faction_members,
     recalc_faction_license,
     renew_faction_after_payment,
     set_faction_member_enabled,
     upsert_faction_member_access,
-    delete_faction_member_access,
 )
+
+# ============================================================
+# 01. STATIC PAYMENT CONFIG
+# ============================================================
 
 OWNER_USER_ID = str(os.getenv("OWNER_USER_ID", "3679030")).strip() or "3679030"
 OWNER_NAME = str(os.getenv("OWNER_NAME", "Fries91")).strip() or "Fries91"
 
 
+# ============================================================
+# 02. INTERNAL HELPERS
+# ============================================================
+
+
 def _clean_text(value: Any) -> str:
     return str(value or "").strip()
+
 
 
 def _to_int(value: Any, default: int = 0) -> int:
@@ -42,11 +51,42 @@ def _to_int(value: Any, default: int = 0) -> int:
         return int(default)
 
 
+
 def _safe_bool(value: Any) -> bool:
     if isinstance(value, bool):
         return value
     s = str(value or "").strip().lower()
     return s in {"1", "true", "yes", "y", "on", "enabled"}
+
+
+
+def _license_enabled_member_count(license_status: Dict[str, Any], faction_id: str) -> int:
+    count = _to_int((license_status or {}).get("enabled_member_count"), -1)
+    if count >= 0:
+        return count
+
+    try:
+        members = list_faction_members(faction_id) or []
+        return len([m for m in members if _safe_bool(m.get("enabled"))])
+    except Exception:
+        return 0
+
+
+
+def _license_renewal_cost(license_status: Dict[str, Any], faction_id: str) -> int:
+    renewal_cost = _to_int((license_status or {}).get("renewal_cost"), -1)
+    if renewal_cost >= 0:
+        return renewal_cost
+
+    try:
+        return _to_int(calc_faction_renewal_cost(faction_id), 0)
+    except Exception:
+        return 0
+
+
+# ============================================================
+# 03. PUBLIC CONFIG / DISPLAY HELPERS
+# ============================================================
 
 
 def payment_config() -> Dict[str, Any]:
@@ -60,9 +100,15 @@ def payment_config() -> Dict[str, Any]:
     }
 
 
+
 def build_payment_instruction(enabled_member_count: int) -> str:
     total_amount = int(enabled_member_count or 0) * int(PAYMENT_XANAX_PER_MEMBER)
     return f"Send {total_amount} {PAYMENT_KIND} to {PAYMENT_PLAYER} [{PAYMENT_NOTIFY_USER_ID}]."
+
+
+# ============================================================
+# 04. FACTION PAYMENT STATUS
+# ============================================================
 
 
 def get_faction_payment_status(faction_id: str, viewer_user_id: str = "") -> Dict[str, Any]:
@@ -77,11 +123,8 @@ def get_faction_payment_status(faction_id: str, viewer_user_id: str = "") -> Dic
         }
 
     license_status = compute_faction_license_status(faction_id, viewer_user_id=viewer_user_id) or {}
-    enabled_member_count = _to_int(license_status.get("enabled_member_count"), 0)
-    renewal_cost = _to_int(
-        license_status.get("renewal_cost"),
-        calc_faction_renewal_cost(faction_id),
-    )
+    enabled_member_count = _license_enabled_member_count(license_status, faction_id)
+    renewal_cost = _license_renewal_cost(license_status, faction_id)
 
     out = {
         "ok": True,
@@ -94,10 +137,10 @@ def get_faction_payment_status(faction_id: str, viewer_user_id: str = "") -> Dic
     }
 
     if viewer_user_id:
-        member_row = get_faction_member_access(faction_id, viewer_user_id) or {}
-        out["viewer_member_access"] = member_row
+        out["viewer_member_access"] = get_faction_member_access(faction_id, viewer_user_id) or {}
 
     return out
+
 
 
 def get_member_payment_status(member_user_id: str) -> Dict[str, Any]:
@@ -121,6 +164,7 @@ def get_member_payment_status(member_user_id: str) -> Dict[str, Any]:
     }
 
 
+
 def list_faction_payment_history_service(faction_id: str, limit: int = 25) -> Dict[str, Any]:
     faction_id = _clean_text(faction_id)
     if not faction_id:
@@ -140,6 +184,7 @@ def list_faction_payment_history_service(faction_id: str, limit: int = 25) -> Di
     }
 
 
+
 def get_faction_billing_overview(faction_id: str) -> Dict[str, Any]:
     faction_id = _clean_text(faction_id)
     if not faction_id:
@@ -152,7 +197,7 @@ def get_faction_billing_overview(faction_id: str) -> Dict[str, Any]:
     license_status = compute_faction_license_status(faction_id) or {}
     members = list_faction_members(faction_id) or []
     enabled_members = [m for m in members if _safe_bool(m.get("enabled"))]
-    renewal_cost = calc_faction_renewal_cost(faction_id)
+    renewal_cost = _license_renewal_cost(license_status, faction_id)
 
     return {
         "ok": True,
@@ -165,6 +210,11 @@ def get_faction_billing_overview(faction_id: str) -> Dict[str, Any]:
         "payment_instruction": build_payment_instruction(len(enabled_members)),
         **payment_config(),
     }
+
+
+# ============================================================
+# 05. MEMBER BILLING ACTIONS
+# ============================================================
 
 
 def activate_faction_member_for_billing(
@@ -209,13 +259,15 @@ def activate_faction_member_for_billing(
 
     recalc_faction_license(faction_id)
     license_status = compute_faction_license_status(faction_id, viewer_user_id=member_user_id) or {}
+    enabled_member_count = _license_enabled_member_count(license_status, faction_id)
 
     try:
-        add_notification(
-            leader_user_id,
-            "payment_member_activated",
-            f"{member_name or member_user_id} activated. {PAYMENT_XANAX_PER_MEMBER} {PAYMENT_KIND} added to renewal.",
-        )
+        if leader_user_id:
+            add_notification(
+                leader_user_id,
+                "payment_member_activated",
+                f"{member_name or member_user_id} activated. {PAYMENT_XANAX_PER_MEMBER} {PAYMENT_KIND} added to renewal.",
+            )
     except Exception:
         pass
 
@@ -235,9 +287,10 @@ def activate_faction_member_for_billing(
         "item": row or {},
         "license": license_status,
         "payment_added": PAYMENT_XANAX_PER_MEMBER,
-        "payment_instruction": build_payment_instruction(_to_int(license_status.get("enabled_member_count"), 0)),
+        "payment_instruction": build_payment_instruction(enabled_member_count),
         **payment_config(),
     }
+
 
 
 def set_member_billing_enabled(
@@ -271,15 +324,17 @@ def set_member_billing_enabled(
         return {"ok": False, "error": str(e)}
 
     license_status = compute_faction_license_status(faction_id, viewer_user_id=member_user_id) or {}
+    enabled_member_count = _license_enabled_member_count(license_status, faction_id)
     return {
         "ok": True,
         "message": "Faction member billing updated.",
         "item": row or {},
         "enabled": bool(enabled_flag),
         "license": license_status,
-        "payment_instruction": build_payment_instruction(_to_int(license_status.get("enabled_member_count"), 0)),
+        "payment_instruction": build_payment_instruction(enabled_member_count),
         **payment_config(),
     }
+
 
 
 def remove_member_from_billing(
@@ -307,6 +362,7 @@ def remove_member_from_billing(
         return {"ok": False, "error": str(e)}
 
     license_status = compute_faction_license_status(faction_id) or {}
+    enabled_member_count = _license_enabled_member_count(license_status, faction_id)
 
     try:
         add_audit_log(
@@ -324,9 +380,14 @@ def remove_member_from_billing(
         "member_user_id": member_user_id,
         "member_name": member_name,
         "license": license_status,
-        "payment_instruction": build_payment_instruction(_to_int(license_status.get("enabled_member_count"), 0)),
+        "payment_instruction": build_payment_instruction(enabled_member_count),
         **payment_config(),
     }
+
+
+# ============================================================
+# 06. RENEWAL REQUESTS / PAYMENT CONFIRMATION
+# ============================================================
 
 
 def create_manual_renewal_request(
@@ -344,8 +405,8 @@ def create_manual_renewal_request(
         return {"ok": False, "error": "Missing faction_id."}
 
     license_status = compute_faction_license_status(faction_id, viewer_user_id=requested_by_user_id) or {}
-    enabled_member_count = _to_int(license_status.get("enabled_member_count"), 0)
-    renewal_cost = _to_int(license_status.get("renewal_cost"), calc_faction_renewal_cost(faction_id))
+    enabled_member_count = _license_enabled_member_count(license_status, faction_id)
+    renewal_cost = _license_renewal_cost(license_status, faction_id)
     leader_user_id = _clean_text(license_status.get("leader_user_id"))
 
     text = (
@@ -390,6 +451,7 @@ def create_manual_renewal_request(
     }
 
 
+
 def confirm_faction_payment_and_renew(
     faction_id: str,
     amount: Any,
@@ -424,6 +486,11 @@ def confirm_faction_payment_and_renew(
     }
 
 
+# ============================================================
+# 07. ADMIN / OWNER PAYMENT VIEWS
+# ============================================================
+
+
 def get_due_factions(limit: int = 250) -> Dict[str, Any]:
     items = list_all_faction_licenses(limit=int(limit or 250)) or []
     due_items: List[Dict[str, Any]] = []
@@ -441,10 +508,11 @@ def get_due_factions(limit: int = 250) -> Dict[str, Any]:
     }
 
 
+
 def get_payment_dashboard(limit: int = 250) -> Dict[str, Any]:
     dashboard = get_owner_faction_dashboard(limit=int(limit or 250)) or {}
     items = dashboard.get("factions") or []
-    due_items = []
+    due_items: List[Dict[str, Any]] = []
 
     for item in items:
         lic = item.get("license") or item
@@ -460,6 +528,11 @@ def get_payment_dashboard(limit: int = 250) -> Dict[str, Any]:
     }
 
 
+# ============================================================
+# 08. INTERNAL PAYMENT SCANS / FUTURE AUTO-MATCH
+# ============================================================
+
+
 def run_payment_warning_scan(limit: int = 500) -> Dict[str, Any]:
     items = list_all_faction_licenses(limit=int(limit or 500)) or []
     warned: List[Dict[str, Any]] = []
@@ -471,8 +544,8 @@ def run_payment_warning_scan(limit: int = 500) -> Dict[str, Any]:
         leader_user_id = _clean_text(lic.get("leader_user_id") or item.get("leader_user_id"))
         payment_required = bool(lic.get("payment_required"))
         status = _clean_text(lic.get("status")).lower()
-        renewal_cost = _to_int(lic.get("renewal_cost"), 0)
-        enabled_member_count = _to_int(lic.get("enabled_member_count"), 0)
+        renewal_cost = _license_renewal_cost(lic, faction_id)
+        enabled_member_count = _license_enabled_member_count(lic, faction_id)
 
         if not faction_id:
             continue
@@ -511,6 +584,7 @@ def run_payment_warning_scan(limit: int = 500) -> Dict[str, Any]:
     }
 
 
+
 def run_payment_due_scan(limit: int = 500) -> Dict[str, Any]:
     items = list_all_faction_licenses(limit=int(limit or 500)) or []
     due_items: List[Dict[str, Any]] = []
@@ -527,6 +601,7 @@ def run_payment_due_scan(limit: int = 500) -> Dict[str, Any]:
         "count": len(due_items),
         **payment_config(),
     }
+
 
 
 def run_payment_auto_match() -> Dict[str, Any]:
