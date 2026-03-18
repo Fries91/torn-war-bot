@@ -1372,6 +1372,21 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
 
     enemy_members: List[Dict[str, Any]] = []
 
+    if not enemy_id:
+        for side in candidate_sides:
+            if not isinstance(side, dict):
+                continue
+            if _is_me(side):
+                continue
+            side_id = str(side.get("faction_id") or "").strip()
+            side_name = str(side.get("faction_name") or "").strip()
+            if side_id and not enemy_id:
+                enemy_id = side_id
+            if side_name and not enemy_name:
+                enemy_name = side_name
+            if enemy_id:
+                break
+
     if not enemy_id and len(candidate_sides) == 2 and my_side:
         other_sides = [x for x in candidate_sides if not _same_side(x, my_side)]
         if other_sides:
