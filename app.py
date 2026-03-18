@@ -1186,7 +1186,7 @@ def api_state():
     ):
         enemy_faction_name = ""
 
-        has_war = bool(war_info.get("has_war"))
+    has_war = bool(war_info.get("has_war"))
 
     if has_war or enemy_faction_id or enemy_faction_name or raw_enemy_members:
         fallback_sides = [x for x in (war_info.get("debug_factions") or []) if isinstance(x, dict)]
