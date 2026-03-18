@@ -1106,6 +1106,12 @@ def api_state():
     if leader_war_api_key:
         war_api_key = leader_war_api_key
         war_api_key_source = "leader_user_key"
+    elif viewer_war_api_key:
+        war_api_key = viewer_war_api_key
+        war_api_key_source = "session_user_key"
+    else:
+        war_api_key = ""
+        war_api_key_source = "missing"
 
     faction_fetch_key = war_api_key or viewer_war_api_key
     faction_info = faction_basic(faction_fetch_key, faction_id=faction_id) if faction_fetch_key else {"ok": False, "members": []}
@@ -1148,8 +1154,15 @@ def api_state():
     members.sort(key=_bucket_sort_key)
 
     war_id = str(war_info.get("war_id") or "")
+    debug_enemy_fetch = war_info.get("debug_enemy_fetch") or {}
     enemy_faction_id = str(war_info.get("enemy_faction_id") or "").strip()
     enemy_faction_name = str(war_info.get("enemy_faction_name") or "").strip()
+    if not enemy_faction_name:
+        enemy_faction_name = str(
+            debug_enemy_fetch.get("enemy_fetch_faction_name")
+            or debug_enemy_fetch.get("enemy_name")
+            or ""
+        ).strip()
 
     raw_enemy_members = war_info.get("enemy_members") or []
     enemies: List[Dict[str, Any]] = []
@@ -1194,7 +1207,7 @@ def api_state():
                 if enemy_faction_id and enemy_faction_name:
                     break
 
-        if not raw_enemy_members and enemy_faction_id and faction_fetch_key:
+        if (not raw_enemy_members or not enemy_faction_name) and enemy_faction_id and faction_fetch_key:
             enemy_faction_info = _faction_basic_by_id(faction_fetch_key, enemy_faction_id)
             if enemy_faction_info.get("ok"):
                 fetched_enemy_id = str(enemy_faction_info.get("faction_id") or enemy_faction_id or "").strip()
@@ -1203,7 +1216,8 @@ def api_state():
                 if not our_faction_id or fetched_enemy_id != our_faction_id:
                     enemy_faction_id = fetched_enemy_id or enemy_faction_id
                     enemy_faction_name = fetched_enemy_name or enemy_faction_name
-                    raw_enemy_members = enemy_faction_info.get("members") or []
+                    if not raw_enemy_members:
+                        raw_enemy_members = enemy_faction_info.get("members") or []
 
         if raw_enemy_members:
             our_member_ids = {
@@ -1317,6 +1331,8 @@ def api_state():
         enemyFaction=enemy_faction_payload,
         enemy_faction_id=enemy_faction_id,
         enemy_faction_name=enemy_faction_name,
+        enemy_members_count=len(raw_enemy_members or []),
+        members_count=len(members or []),
         members=members,
         enemies=enemies,
         assignments=assignments,
@@ -1332,7 +1348,7 @@ def api_state():
         has_war=has_war,
         is_ranked_war=has_war,
         debug={
-            "debug_enemy_fetch": war_info.get("debug_enemy_fetch") or {},
+            "debug_enemy_fetch": debug_enemy_fetch,
             "source_note": str(war_info.get("source_note") or ""),
             "my_user_id": user_id,
             "my_faction_id": str(war_info.get("my_faction_id") or ""),
