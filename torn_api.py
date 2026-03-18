@@ -381,41 +381,41 @@ def faction_basic(api_key: str, faction_id: str = "") -> Dict[str, Any]:
         }
 
     if faction_id:
-    attempts = [
-        (
-            f"{API_BASE}/faction/{faction_id}",
-            {"selections": "members", "key": api_key, "striptags": "true"},
-            "faction_members_direct",
-        ),
-        (
-            f"{API_BASE}/faction/",
-            {"selections": "members", "ID": faction_id, "key": api_key, "striptags": "true"},
-            "faction_members_id_upper",
-        ),
-        (
-            f"{API_BASE}/faction/",
-            {"selections": "members", "id": faction_id, "key": api_key, "striptags": "true"},
-            "faction_members_id_lower",
-        ),
-        (
-            f"{API_BASE}/faction/{faction_id}",
-            {"selections": "basic,members", "key": api_key, "striptags": "true"},
-            "faction_basic_members_direct",
-        ),
-        (
-            f"{API_BASE}/faction/",
-            {"selections": "basic,members", "ID": faction_id, "key": api_key, "striptags": "true"},
-            "faction_basic_members_id_upper",
-        ),
-        (
-            f"{API_BASE}/faction/",
-            {"selections": "basic,members", "id": faction_id, "key": api_key, "striptags": "true"},
-            "faction_basic_members_id_lower",
-        ),
-    ]
+        attempts = [
+            (
+                f"{API_BASE}/faction/{faction_id}",
+                {"selections": "members", "key": api_key, "striptags": "true"},
+                "faction_members_direct",
+            ),
+            (
+                f"{API_BASE}/faction/",
+                {"selections": "members", "ID": faction_id, "key": api_key, "striptags": "true"},
+                "faction_members_id_upper",
+            ),
+            (
+                f"{API_BASE}/faction/",
+                {"selections": "members", "id": faction_id, "key": api_key, "striptags": "true"},
+                "faction_members_id_lower",
+            ),
+            (
+                f"{API_BASE}/faction/{faction_id}",
+                {"selections": "basic,members", "key": api_key, "striptags": "true"},
+                "faction_basic_members_direct",
+            ),
+            (
+                f"{API_BASE}/faction/",
+                {"selections": "basic,members", "ID": faction_id, "key": api_key, "striptags": "true"},
+                "faction_basic_members_id_upper",
+            ),
+            (
+                f"{API_BASE}/faction/",
+                {"selections": "basic,members", "id": faction_id, "key": api_key, "striptags": "true"},
+                "faction_basic_members_id_lower",
+            ),
+        ]
 
-    best: Optional[Dict[str, Any]] = None
-    mismatch_notes: List[str] = []
+        best: Optional[Dict[str, Any]] = None
+        mismatch_notes: List[str] = []
 
         for url, params, prefix in attempts:
             res = _safe_get(
@@ -431,14 +431,13 @@ def faction_basic(api_key: str, faction_id: str = "") -> Dict[str, Any]:
 
             built_faction_id = str(built.get("faction_id") or "").strip()
 
-            # Critical fix: reject "successful" responses for the wrong faction
             if built_faction_id and built_faction_id != faction_id:
                 mismatch_notes.append(
                     f"{prefix} returned faction_id={built_faction_id} instead of requested {faction_id}"
                 )
                 continue
 
-            if built.get("ok") and built.get("members"):
+            if built.get("members"):
                 return built
 
             if best is None:
