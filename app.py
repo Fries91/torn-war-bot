@@ -1096,35 +1096,6 @@ def api_state():
     leader_war_api_key = ""
     viewer_war_api_key = ""
 
-    if faction_map:
-        for _, row in faction_map.items():
-            if not isinstance(row, dict):
-                continue
-
-            row_user_id = str(
-                row.get("member_user_id")
-                or row.get("user_id")
-                or ""
-            ).strip()
-            row_api_key = str(
-                row.get("member_api_key")
-                or row.get("api_key")
-                or ""
-            ).strip()
-            row_position = str(row.get("position") or "").strip().lower()
-            row_enabled = _safe_bool(row.get("enabled", True))
-
-            if row_api_key and row_user_id == user_id and row_enabled:
-                viewer_war_api_key = row_api_key
-
-            if row_api_key and ("leader" in row_position or "co-leader" in row_position):
-                leader_war_api_key = row_api_key
-
-    if leader_war_api_key:
-        war_api_key = leader_war_api_key
-    elif viewer_war_api_key:
-        war_api_key = viewer_war_api_key
-
     war_info = ranked_war_summary(
         war_api_key,
         my_faction_id=live_faction_id,
