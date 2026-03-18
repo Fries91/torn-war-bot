@@ -1180,6 +1180,17 @@ def api_state():
                 if enemy_faction_id and enemy_faction_name:
                     break
 
+        if not raw_enemy_members and enemy_faction_id and war_api_key:
+            enemy_faction_info = _faction_basic_by_id(war_api_key, enemy_faction_id)
+            if enemy_faction_info.get("ok"):
+                fetched_enemy_id = str(enemy_faction_info.get("faction_id") or enemy_faction_id or "").strip()
+                fetched_enemy_name = str(enemy_faction_info.get("faction_name") or enemy_faction_name or "").strip()
+
+                if not our_faction_id or fetched_enemy_id != our_faction_id:
+                    enemy_faction_id = fetched_enemy_id or enemy_faction_id
+                    enemy_faction_name = fetched_enemy_name or enemy_faction_name
+                    raw_enemy_members = enemy_faction_info.get("members") or []
+
         if raw_enemy_members:
             our_member_ids = {
                 str(m.get("user_id") or m.get("id") or "").strip()
@@ -1234,6 +1245,10 @@ def api_state():
         "start": _to_int(war_info.get("start")),
         "end": _to_int(war_info.get("end")),
         "target_score": _to_int(war_info.get("target_score")),
+        "debug_factions": war_info.get("debug_factions") or [],
+        "debug_raw_keys": war_info.get("debug_raw_keys") or [],
+        "debug_raw": war_info.get("debug_raw") or {},
+        "source_note": str(war_info.get("source_note") or ""),
     }
 
     our_faction_payload = {
@@ -1304,11 +1319,15 @@ def api_state():
         is_ranked_war=has_war,
         debug={
             "source_note": str(war_info.get("source_note") or ""),
+            "my_user_id": user_id,
             "my_faction_id": str(war_info.get("my_faction_id") or ""),
             "my_faction_name": str(war_info.get("my_faction_name") or ""),
+            "our_faction_id": our_faction_id,
+            "our_faction_name": our_faction_name,
             "enemy_faction_id": enemy_faction_id,
             "enemy_faction_name": enemy_faction_name,
             "enemy_members_count": len(raw_enemy_members or []),
+            "members_count": len(members or []),
             "score_us": _to_int(war_info.get("score_us")),
             "score_them": _to_int(war_info.get("score_them")),
             "chain_us": _to_int(war_info.get("chain_us")),
@@ -1316,17 +1335,10 @@ def api_state():
             "debug_factions": war_info.get("debug_factions") or [],
             "debug_raw_keys": war_info.get("debug_raw_keys") or [],
             "debug_raw": war_info.get("debug_raw") or {},
-            "war_api_key_source": (
-                "leader_saved_key"
-                if leader_war_api_key
-                else "viewer_saved_key"
-                if viewer_war_api_key
-                else "session_user_key"
-                if war_api_key
-                else "none"
-            ),
+            "war_api_key_source": "session_user_key" if war_api_key else "none",
         },
     )
+)
 @app.route("/api/war/summary", methods=["GET"])
 @require_session
 def api_war_summary():
