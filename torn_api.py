@@ -67,7 +67,8 @@ def _safe_get(
                 "data": data,
             }
 
-        if cache_seconds > 0 and cache_prefix and key_name:
+        if cache_seconds > 0 and cache_
+        prefix and key_name:
             try:
                 cache_set(key_name, json.dumps(data), cache_seconds)
             except Exception:
@@ -840,10 +841,12 @@ def faction_wars(api_key: str, faction_id: str = "") -> Dict[str, Any]:
 
         if winner or (end_ts and end_ts < now_ts):
             phase = "finished"
-        elif phase == "unknown":
+                elif phase == "unknown":
             if start_ts and start_ts > now_ts:
                 phase = "registered"
             elif start_ts and (end_ts == 0 or start_ts <= now_ts <= end_ts):
+                phase = "active"
+            elif parsed_factions:
                 phase = "active"
             else:
                 phase = "finished"
@@ -1369,6 +1372,18 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
                 enemy_name = fallback_enemy_name
 
     enemy_members: List[Dict[str, Any]] = []
+
+    if not enemy_id and len(candidate_sides) == 2 and my_side:
+        other_sides = [x for x in candidate_sides if not _same_side(x, my_side)]
+        if other_sides:
+            fallback_enemy = other_sides[0]
+            fallback_enemy_id = str(fallback_enemy.get("faction_id") or "").strip()
+            fallback_enemy_name = str(fallback_enemy.get("faction_name") or "").strip()
+            if fallback_enemy_id and not enemy_id:
+                enemy_id = fallback_enemy_id
+            if fallback_enemy_name and not enemy_name:
+                enemy_name = fallback_enemy_name
+
     if is_registered and enemy_id:
         enemy_faction = faction_basic(api_key, faction_id=enemy_id)
         if enemy_faction.get("ok"):
