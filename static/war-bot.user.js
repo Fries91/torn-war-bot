@@ -89,7 +89,7 @@
     var mounted = false;
     var dragMoved = false;
     var isOpen = !!GM_getValue(K_OPEN, false);
-    var currentTab = GM_getValue(K_TAB, 'overview');
+    var currentTab = GM_getValue(K_TAB, 'settings');
     if (currentTab === 'owner') currentTab = 'admin';
 
     var pollTimer = null;
@@ -1851,13 +1851,13 @@ function renderOverviewTab() {
     }
 
     function renderBodyInner() {
-        if (!isLoggedIn()) {
-            return '\
-              <div class="warhub-card">\
-                <div class="warhub-empty">Not logged in. Save your Torn API key, then tap Login in Settings.</div>\
-              </div>';
-        }
-
+            if (!isLoggedIn()) {
+    return '\
+      <div class="warhub-card">\
+        <div class="warhub-section-title"><h3>Not logged in</h3></div>\
+        <div class="warhub-mini">You can still use Settings below to save your key and log in.</div>\
+      </div>' + renderSettingsTab();
+}
         if (!canUseFeatures() && currentTab !== 'settings' && currentTab !== 'overview' && currentTab !== 'admin') {
             return '\
               <div class="warhub-card">\
