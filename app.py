@@ -810,6 +810,10 @@ def _normalize_member_access_row(row: Dict[str, Any]) -> Dict[str, Any]:
     r["member_user_id"] = str(r.get("member_user_id") or "")
     r["member_name"] = str(r.get("member_name") or "")
     r["position"] = str(r.get("position") or "")
+    r["activated_at"] = str(r.get("activated_at") or "")
+    r["last_renewed_at"] = str(r.get("last_renewed_at") or "")
+    r["xanax_owed"] = _to_int(r.get("xanax_owed"), 0)
+    r["cycle_locked"] = 1 if _safe_bool(r.get("cycle_locked")) else 0
 
     r["member_api_key_masked"] = ""
     api_key = str(r.get("member_api_key") or "")
@@ -817,6 +821,7 @@ def _normalize_member_access_row(row: Dict[str, Any]) -> Dict[str, Any]:
         r["member_api_key_masked"] = ("*" * max(0, len(api_key) - 4)) + api_key[-4:]
 
     r["enabled"] = 1 if _safe_bool(r.get("enabled")) else 0
+    r["can_remove_now"] = 0 if (r["enabled"] and r["cycle_locked"]) else 1
     return r
 
 
@@ -2157,8 +2162,22 @@ def api_faction_member_enable(member_user_id: str):
     if not faction_id:
         return err("No faction found.", 400)
 
-    set_faction_member_enabled(faction_id, str(member_user_id), enabled)
-    return ok(message="Faction member enable updated.", member_user_id=str(member_user_id), enabled=enabled)
+    try:
+        row = set_faction_member_enabled(
+            faction_id,
+            str(member_user_id),
+            enabled,
+            changed_by_user_id=str(user.get("user_id") or ""),
+            changed_by_name=str(user.get("name") or ""),
+        )
+    except ValueError as e:
+        return err(str(e), 400)
+    return ok(
+        message="Faction member enable updated.",
+        member_user_id=str(member_user_id),
+        enabled=enabled,
+        item=_normalize_member_access_row(row or {}),
+    )
 
 
 @app.route("/api/faction/members/<member_user_id>", methods=["DELETE"])
@@ -2169,7 +2188,10 @@ def api_faction_member_delete(member_user_id: str):
     if not faction_id:
         return err("No faction found.", 400)
 
-    delete_faction_member_access(faction_id, str(member_user_id))
+    try:
+        delete_faction_member_access(faction_id, str(member_user_id))
+    except ValueError as e:
+        return err(str(e), 400)
     return ok(message="Faction member removed.", member_user_id=str(member_user_id))
 
 
