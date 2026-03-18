@@ -359,20 +359,24 @@ def faction_basic(api_key: str, faction_id: str = "") -> Dict[str, Any]:
                     uid = member.get("user_id") or member.get("id") or str(idx)
                     members.append(_normalize_member(uid, member))
 
+        resolved_faction_id = str(
+            data.get("ID")
+            or data.get("id")
+            or data.get("faction_id")
+            or fallback_faction_id
+            or ""
+        ).strip()
+
+        resolved_faction_name = str(
+            data.get("name")
+            or data.get("faction_name")
+            or ""
+        ).strip()
+
         return {
             "ok": True,
-            "faction_id": str(
-                data.get("ID")
-                or data.get("id")
-                or data.get("faction_id")
-                or fallback_faction_id
-                or ""
-            ),
-            "faction_name": str(
-                data.get("name")
-                or data.get("faction_name")
-                or ""
-            ),
+            "faction_id": resolved_faction_id,
+            "faction_name": resolved_faction_name,
             "members": members,
         }
 
@@ -382,6 +386,16 @@ def faction_basic(api_key: str, faction_id: str = "") -> Dict[str, Any]:
                 f"{API_BASE}/faction/{faction_id}",
                 {"selections": "members", "key": api_key, "striptags": "true"},
                 "faction_members_direct",
+            ),
+            (
+                f"{API_BASE}/faction/{faction_id}",
+                {"selections": "basic,members", "key": api_key, "striptags": "true"},
+                "faction_basic_members_direct",
+            ),
+            (
+                f"{API_BASE}/faction/{faction_id}",
+                {"selections": "basic", "key": api_key},
+                "faction_basic_direct",
             ),
             (
                 f"{API_BASE}/faction/",
@@ -394,11 +408,6 @@ def faction_basic(api_key: str, faction_id: str = "") -> Dict[str, Any]:
                 "faction_members_id_lower",
             ),
             (
-                f"{API_BASE}/faction/{faction_id}",
-                {"selections": "basic,members", "key": api_key, "striptags": "true"},
-                "faction_basic_members_direct",
-            ),
-            (
                 f"{API_BASE}/faction/",
                 {"selections": "basic,members", "ID": faction_id, "key": api_key, "striptags": "true"},
                 "faction_basic_members_id_upper",
@@ -407,11 +416,6 @@ def faction_basic(api_key: str, faction_id: str = "") -> Dict[str, Any]:
                 f"{API_BASE}/faction/",
                 {"selections": "basic,members", "id": faction_id, "key": api_key, "striptags": "true"},
                 "faction_basic_members_id_lower",
-            ),
-            (
-                f"{API_BASE}/faction/{faction_id}",
-                {"selections": "basic", "key": api_key},
-                "faction_basic_direct",
             ),
             (
                 f"{API_BASE}/faction/",
@@ -426,6 +430,7 @@ def faction_basic(api_key: str, faction_id: str = "") -> Dict[str, Any]:
         ]
 
         best: Optional[Dict[str, Any]] = None
+        mismatch_notes: List[str] = []
 
         for url, params, prefix in attempts:
             res = _safe_get(
@@ -436,19 +441,30 @@ def faction_basic(api_key: str, faction_id: str = "") -> Dict[str, Any]:
             )
             built = _build_result(res, faction_id)
 
+            if not built.get("ok"):
+                continue
+
+            built_faction_id = str(built.get("faction_id") or "").strip()
+
+            # Critical fix: reject "successful" responses for the wrong faction
+            if built_faction_id and built_faction_id != faction_id:
+                mismatch_notes.append(
+                    f"{prefix} returned faction_id={built_faction_id} instead of requested {faction_id}"
+                )
+                continue
+
             if built.get("ok") and built.get("members"):
                 return built
 
-            if built.get("ok"):
-                if best is None:
+            if best is None:
+                best = built
+            else:
+                best_member_count = len(best.get("members") or [])
+                built_member_count = len(built.get("members") or [])
+                if built_member_count > best_member_count:
                     best = built
-                else:
-                    best_member_count = len(best.get("members") or [])
-                    built_member_count = len(built.get("members") or [])
-                    if built_member_count > best_member_count:
-                        best = built
-                    elif not best.get("faction_name") and built.get("faction_name"):
-                        best = built
+                elif not best.get("faction_name") and built.get("faction_name"):
+                    best = built
 
         if best:
             return best
@@ -458,7 +474,7 @@ def faction_basic(api_key: str, faction_id: str = "") -> Dict[str, Any]:
             "faction_id": faction_id,
             "faction_name": "",
             "members": [],
-            "error": "Could not load faction.",
+            "error": "; ".join(mismatch_notes) if mismatch_notes else "Could not load faction.",
         }
 
     me = me_basic(api_key)
