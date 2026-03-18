@@ -1588,12 +1588,10 @@ function renderOverviewTab() {
         (state && (state.faction || state.ourFaction || state.our_faction)) ||
         {};
     var members = arr((state && state.members) || []);
-    var groups = splitRosterGroups(members);
     var factionName = String((faction && faction.name) || ((state && state.user) && state.user.faction_name) || 'Your Faction');
-    var factionId = String((faction && (faction.faction_id || faction.id)) || ((state && state.user) && state.user.faction_id) || '');
     var leaderAccess = !!((accessState && accessState.isFactionLeader) || isOwnerSession());
 
-    var memberAccessRows = arr((factionMembersCache && (factionMembersCache.members || factionMembersCache.items)) || []);
+    var memberAccessRows = arr(((typeof factionMembersCache !== 'undefined' && factionMembersCache) && (factionMembersCache.members || factionMembersCache.items)) || []);
     var accessMap = {};
     memberAccessRows.forEach(function (x) {
         var id = String(x.member_user_id || x.user_id || x.id || '').trim();
@@ -1631,7 +1629,6 @@ function renderOverviewTab() {
                 : '';
 
             var metaBits = [
-                'ID ' + memberId,
                 position || '',
                 'Xanax owed: ' + xanaxOwed
             ];
@@ -1639,22 +1636,26 @@ function renderOverviewTab() {
             if (activatedAt) metaBits.push('Activated: ' + fmtTs(activatedAt));
             if (lastRenewedAt) metaBits.push('Renewed: ' + fmtTs(lastRenewedAt));
 
+            var deleteBtn = '';
+            if (hasSavedRow && !cycleLocked) {
+                deleteBtn = '<button class="warhub-btn warn small" data-del-member="' + esc(memberId) + '" data-cycle-locked="0">Delete</button>';
+            } else if (cycleLocked) {
+                deleteBtn = '<span class="warhub-mini">Delete disabled this cycle</span>';
+            }
+
             var actionHtml = '';
             if (!enabled) {
                 actionHtml += '<button class="warhub-btn primary small" data-add-faction-member="' + esc(memberId) + '" data-member-name="' + esc(liveName) + '" data-member-position="' + esc(position) + '">Activate</button>';
-            }
-
-            if (hasSavedRow && !cycleLocked) {
-                actionHtml += '<button class="warhub-btn warn small" data-del-member="' + esc(memberId) + '" data-cycle-locked="0">Remove</button>';
-            } else if (cycleLocked) {
-                actionHtml += '<span class="warhub-mini">Remove disabled this cycle</span>';
             }
 
             return '\
               <div class="warhub-row">\
                 <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;">\
                   <div style="min-width:0;flex:1;">\
-                    <div style="font-weight:700;">' + esc(liveName) + '</div>\
+                    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">\
+                      <div style="font-weight:700;">' + esc(liveName) + '</div>\
+                      <div style="display:flex;align-items:center;gap:6px;">' + deleteBtn + '</div>\
+                    </div>\
                     <div class="warhub-mini">' + esc(metaBits.filter(Boolean).join(' • ')) + '</div>\
                     ' + lockLine + '\
                   </div>\
@@ -1671,14 +1672,10 @@ function renderOverviewTab() {
           <h3>Faction</h3>\
           <span class="warhub-count">' + fmtNum(members.length) + '</span>\
         </div>\
-        <div class="warhub-grid three">\
+        <div class="warhub-grid two">\
           <div class="warhub-metric">\
             <div class="k">Faction</div>\
             <div class="v">' + esc(factionName || '—') + '</div>\
-          </div>\
-          <div class="warhub-metric">\
-            <div class="k">Faction ID</div>\
-            <div class="v">' + esc(factionId || '—') + '</div>\
           </div>\
           <div class="warhub-metric">\
             <div class="k">Member Access</div>\
@@ -1689,17 +1686,9 @@ function renderOverviewTab() {
             <div class="v">' + fmtNum(totalXanaxOwed) + '</div>\
           </div>\
           <div class="warhub-metric">\
-            <div class="k">Online</div>\
-            <div class="v">' + fmtNum(groups.online.length) + '</div>\
+            <div class="k">Members</div>\
+            <div class="v">' + fmtNum(members.length) + '</div>\
           </div>\
-          <div class="warhub-metric">\
-            <div class="k">Offline</div>\
-            <div class="v">' + fmtNum(groups.offline.length) + '</div>\
-          </div>\
-        </div>\
-        <div class="warhub-actions" style="margin-top:8px;">\
-          <button class="warhub-btn" id="wh-refresh-faction">Refresh Faction</button>\
-          <button class="warhub-btn small" id="wh-open-members">Open Members</button>\
         </div>\
       </div>\
       ' + (leaderAccess ? '\
@@ -1710,18 +1699,11 @@ function renderOverviewTab() {
         </div>\
         <div class="warhub-mini" style="margin-bottom:8px;line-height:1.5;">\
           Activate gives the member access and records Xanax owed for the cycle.\
-          Remove deletes the saved member row, but stays locked once activated until the next paid renewal.\
+          Delete removes the saved member row, but stays locked once activated until the next paid renewal.\
         </div>\
         <div class="warhub-list">' + accessRowsHtml + '</div>\
       </div>\
-      ' : '') + '\
-      ' + rosterCard('Online Members', groups.online, { extraClass: 'online-box' }) + '\
-      ' + rosterCard('Hospital Members', groups.hospital, { extraClass: 'hospital-box' }) + '\
-      ' + rosterCard('Travel Members', groups.travel, { extraClass: 'travel-box' }) + '\
-      ' + rosterCard('Jailed Members', groups.jail, { extraClass: 'jail-box' }) + '\
-      ' + rosterCard('Idle Members', groups.idle, { extraClass: 'idle-box' }) + '\
-      ' + rosterDropdown('Offline Members', groups.offline, { extraClass: 'offline-box' }) + '\
-    ';
+      ' : '');
 }
         function renderWarTab() {
         var war = (state && state.war) || {};
