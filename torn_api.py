@@ -336,15 +336,39 @@ def faction_basic(api_key: str, faction_id: str = "") -> Dict[str, Any]:
     api_key = str(api_key or "").strip()
     faction_id = str(faction_id or "").strip()
 
-    if not api_key:
-        return {
-            "ok": False,
-            "faction_id": faction_id,
-            "faction_name": "",
-            "members": [],
-            "error": "Missing API key.",
-            "debug_attempts": [],
-        }
+    def _extract_data_root(payload: Any) -> Dict[str, Any]:
+        if isinstance(payload, dict):
+            for key in ("faction", "data"):
+                node = payload.get(key)
+                if isinstance(node, dict) and node:
+                    return node
+            return payload
+        return {}
+
+    def _extract_members_root(payload: Any) -> Any:
+        if isinstance(payload, dict):
+            for key in ("members", "member", "data"):
+                node = payload.get(key)
+                if node not in (None, "", [], {}):
+                    return node
+        return payload
+
+    def _normalize_members_any(payload: Any) -> List[Dict[str, Any]]:
+        root = _extract_members_root(payload)
+        members: List[Dict[str, Any]] = []
+
+        if isinstance(root, dict):
+            for uid, member in root.items():
+                if isinstance(member, dict):
+                    member_uid = member.get("user_id") or member.get("player_id") or member.get("id") or uid
+                    members.append(_normalize_member(member_uid, member))
+        elif isinstance(root, list):
+            for idx, member in enumerate(root):
+                if isinstance(member, dict):
+                    member_uid = member.get("user_id") or member.get("player_id") or member.get("id") or str(idx)
+                    members.append(_normalize_member(member_uid, member))
+
+        return members
 
     def _build_result(
         res_obj: Dict[str, Any],
@@ -368,24 +392,14 @@ def faction_basic(api_key: str, faction_id: str = "") -> Dict[str, Any]:
                 "params": {k: v for k, v in params.items() if k != "key"},
             }
 
-        data = res_obj.get("data") or {}
-        members_raw = data.get("members") or {}
-        members: List[Dict[str, Any]] = []
-
-        if isinstance(members_raw, dict):
-            for uid, member in members_raw.items():
-                if isinstance(member, dict):
-                    members.append(_normalize_member(uid, member))
-        elif isinstance(members_raw, list):
-            for idx, member in enumerate(members_raw):
-                if isinstance(member, dict):
-                    uid = member.get("user_id") or member.get("id") or str(idx)
-                    members.append(_normalize_member(uid, member))
+        data = _extract_data_root(res_obj.get("data") or {})
+        members = _normalize_members_any(res_obj.get("data") or {})
 
         resolved_faction_id = str(
             data.get("ID")
             or data.get("id")
             or data.get("faction_id")
+            or data.get("factionID")
             or fallback_faction_id
             or ""
         ).strip()
@@ -393,6 +407,7 @@ def faction_basic(api_key: str, faction_id: str = "") -> Dict[str, Any]:
         resolved_faction_name = str(
             data.get("name")
             or data.get("faction_name")
+            or data.get("factionName")
             or ""
         ).strip()
 
@@ -402,14 +417,34 @@ def faction_basic(api_key: str, faction_id: str = "") -> Dict[str, Any]:
             "faction_name": resolved_faction_name,
             "members": members,
             "error": "",
-            "raw": data,
+            "raw": res_obj.get("data") or {},
             "source": source,
             "url": url,
             "params": {k: v for k, v in params.items() if k != "key"},
         }
 
+    if not api_key:
+        return {
+            "ok": False,
+            "faction_id": faction_id,
+            "faction_name": "",
+            "members": [],
+            "error": "Missing API key.",
+            "debug_attempts": [],
+        }
+
     if faction_id:
         attempts = [
+            (
+                f"{API_BASE}/v2/faction/{faction_id}/members",
+                {"key": api_key, "striptags": "true"},
+                "v2_faction_members_direct",
+            ),
+            (
+                f"{API_BASE}/v2/faction/{faction_id}/basic",
+                {"key": api_key, "striptags": "true"},
+                "v2_faction_basic_direct",
+            ),
             (
                 f"{API_BASE}/faction/{faction_id}",
                 {"selections": "members", "key": api_key, "striptags": "true"},
@@ -453,7 +488,6 @@ def faction_basic(api_key: str, faction_id: str = "") -> Dict[str, Any]:
                 cache_seconds=CACHE_TTL_FACTION_BASIC,
                 cache_prefix=prefix,
             )
-
             built = _build_result(
                 res,
                 fallback_faction_id=faction_id,
@@ -462,40 +496,48 @@ def faction_basic(api_key: str, faction_id: str = "") -> Dict[str, Any]:
                 params=params,
             )
 
+            built_faction_id = str(built.get("faction_id") or "").strip()
+            built_faction_name = str(built.get("faction_name") or "").strip()
+            built_members = built.get("members") or []
+            built_error = str(built.get("error") or "")
+
             debug_attempts.append({
                 "source": prefix,
                 "ok": bool(built.get("ok")),
-                "faction_id": str(built.get("faction_id") or ""),
-                "faction_name": str(built.get("faction_name") or ""),
-                "member_count": len(built.get("members") or []),
-                "error": str(built.get("error") or ""),
+                "faction_id": built_faction_id or faction_id,
+                "faction_name": built_faction_name,
+                "member_count": len(built_members),
+                "error": built_error,
                 "params": built.get("params") or {},
             })
 
             if not built.get("ok"):
-                if built.get("error"):
-                    best_error = str(built.get("error") or best_error)
+                if built_error:
+                    best_error = built_error
                 continue
 
-            built_faction_id = str(built.get("faction_id") or "").strip()
-            if built_faction_id and built_faction_id != faction_id:
+            if built_faction_id and faction_id and built_faction_id != faction_id:
                 best_error = f"{prefix} returned faction_id={built_faction_id} instead of requested {faction_id}"
                 continue
 
-            if built.get("members"):
+            if built_members:
                 built["debug_attempts"] = debug_attempts
                 return built
 
             if best is None:
                 best = built
             else:
-                if len(built.get("members") or []) > len(best.get("members") or []):
+                best_member_count = len(best.get("members") or [])
+                built_member_count = len(built_members)
+                if built_member_count > best_member_count:
                     best = built
-                elif not best.get("faction_name") and built.get("faction_name"):
+                elif not best.get("faction_name") and built_faction_name:
                     best = built
 
         if best is not None:
             best["debug_attempts"] = debug_attempts
+            if not best.get("error") and best_error:
+                best["error"] = best_error
             return best
 
         return {
@@ -529,6 +571,8 @@ def faction_basic(api_key: str, faction_id: str = "") -> Dict[str, Any]:
         }
 
     return faction_basic(api_key, faction_id=my_faction_id)
+
+
 
 def _find_war_container(data: Dict[str, Any]) -> Tuple[str, Any]:
     for key in ("rankedwars", "wars"):
@@ -1423,7 +1467,6 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
         "enemy_fetch_error": "",
         "enemy_fetch_faction_id": "",
         "enemy_fetch_faction_name": "",
-        "enemy_fetch_attempts": [],
     }
 
     if not enemy_id and my_side and len(candidate_sides) == 2:
