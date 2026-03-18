@@ -2233,11 +2233,12 @@ function renderChainTab() {
         ' + singleCard('Member Losing Ground', losingGround, ['Net ' + fmtNum(Math.round((losingGround && losingGround.net) || 0)), 'Losses ' + fmtNum((losingGround && losingGround.losses) || 0), (losingGround && losingGround.statusText) || '—']) + '\
       </div>';
 }
-        function renderDebugBlock() {
+function renderDebugBlock() {
     var dbg = (state && state.debug) || {};
     var war = (state && state.war) || {};
     var enemyFaction = (state && (state.enemyFaction || state.enemy_faction)) || {};
     var ownFaction = (state && (state.faction || state.ourFaction || state.our_faction)) || {};
+    var enemyFetch = (dbg && dbg.debug_enemy_fetch) || {};
 
     var pretty = {
         war_api_key_source: dbg.war_api_key_source || '',
@@ -2247,9 +2248,20 @@ function renderChainTab() {
         our_faction_id: dbg.our_faction_id || String((ownFaction && (ownFaction.faction_id || ownFaction.id)) || '').trim(),
         our_faction_name: dbg.our_faction_name || String((ownFaction && ownFaction.name) || '').trim(),
         enemy_faction_id: dbg.enemy_faction_id || String((enemyFaction && (enemyFaction.faction_id || enemyFaction.id)) || (state && state.enemy_faction_id) || '').trim(),
-        enemy_faction_name: dbg.enemy_faction_name || String((enemyFaction && enemyFaction.name) || (state && state.enemy_faction_name) || '').trim(),
-        enemy_members_count: Number(dbg.enemy_members_count || arr((state && state.enemies) || []).length || 0),
-        members_count: Number(dbg.members_count || arr((state && state.members) || []).length || 0),
+        enemy_faction_name: dbg.enemy_faction_name || String((enemyFaction && enemyFaction.name) || (state && state.enemy_faction_name) || (enemyFetch && enemyFetch.enemy_name) || '').trim(),
+        enemy_members_count: Number(
+            (state && state.enemy_members_count) ||
+            dbg.enemy_members_count ||
+            (enemyFetch && enemyFetch.enemy_fetch_member_count) ||
+            arr((state && state.enemies) || []).length ||
+            0
+        ),
+        members_count: Number(
+            (state && state.members_count) ||
+            dbg.members_count ||
+            arr((state && state.members) || []).length ||
+            0
+        ),
         score_us: Number(dbg.score_us || (war && war.score_us) || ((state && state.score) && state.score.our) || 0),
         score_them: Number(dbg.score_them || (war && war.score_them) || ((state && state.score) && state.score.enemy) || 0),
         chain_us: Number(dbg.chain_us || (war && war.chain_us) || 0),
@@ -2260,7 +2272,7 @@ function renderChainTab() {
         source_note: dbg.source_note || (war && war.source_note) || '',
         debug_factions: dbg.debug_factions || (war && war.debug_factions) || [],
         debug_raw_keys: dbg.debug_raw_keys || (war && war.debug_raw_keys) || [],
-        debug_enemy_fetch: dbg.debug_enemy_fetch || {}
+        debug_enemy_fetch: enemyFetch || {}
     };
 
     return '\
