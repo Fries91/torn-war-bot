@@ -2577,7 +2577,6 @@ function renderAdminTab() {
                 return renderOverviewTab();
         }
     }
-}
     function renderBody() {
         if (!overlay) return;
         var prevLeft = overlay.style.left || '';
