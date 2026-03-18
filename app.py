@@ -1338,7 +1338,6 @@ def api_state():
             "war_api_key_source": "session_user_key" if war_api_key else "none",
         },
     )
-)
 @app.route("/api/war/summary", methods=["GET"])
 @require_session
 def api_war_summary():
