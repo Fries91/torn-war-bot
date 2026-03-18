@@ -1168,8 +1168,13 @@ def api_auth():
                 "is_leader": access["is_faction_leader"],
             },
             access={
+                "is_owner": bool(access.get("is_owner")),
+                "is_admin": bool(access.get("is_admin")),
                 "member_enabled": bool(access.get("member_enabled")),
                 "is_faction_leader": bool(access.get("is_faction_leader")),
+                "can_manage_faction": bool(access.get("can_manage_faction")),
+                "show_admin": bool(access.get("show_admin")),
+                "show_all_tabs": bool(access.get("show_all_tabs")),
                 "payment_required": bool(access.get("payment_required")),
                 "expired": bool(access.get("expired")),
                 "trial_active": bool(access.get("trial_active")),
