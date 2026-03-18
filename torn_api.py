@@ -67,8 +67,7 @@ def _safe_get(
                 "data": data,
             }
 
-        if cache_seconds > 0 and cache_
-        prefix and key_name:
+        if cache_seconds > 0 and cache_prefix and key_name:
             try:
                 cache_set(key_name, json.dumps(data), cache_seconds)
             except Exception:
