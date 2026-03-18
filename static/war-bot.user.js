@@ -779,7 +779,7 @@ function _adminReq() {
         enemies.length
     );
 
-    return {
+       return {
         user: s.user || {},
         me: me,
         war: war,
@@ -810,7 +810,18 @@ function _adminReq() {
         has_war: hasWar,
         is_ranked_war: !!(s.is_ranked_war || hasWar),
         license: s.license || {},
-        debug: s.debug || {}
+        debug: s.debug || {},
+        enemy_members_count: Number(
+            s.enemy_members_count ||
+            ((((s.debug || {}).debug_enemy_fetch || {}).enemy_fetch_member_count) || 0) ||
+            enemies.length ||
+            0
+        ) || 0,
+        members_count: Number(
+            s.members_count ||
+            members.length ||
+            0
+        ) || 0
     };
 }
     function loadState() {
@@ -1571,6 +1582,155 @@ function renderOverviewTab() {
         var termsText = (state === null || state === void 0 ? void 0 : state.warTerms) && state.warTerms.terms_text || (state === null || state === void 0 ? void 0 : state.warTerms) && state.warTerms.terms || (state === null || state === void 0 ? void 0 : state.terms) && state.terms.terms_text || (state === null || state === void 0 ? void 0 : state.terms) && state.terms.terms || '';
         var locked = !((accessState === null || accessState === void 0 ? void 0 : accessState.isFactionLeader) || isOwnerSession());
         return "\n      <div class=\"warhub-card\">\n        <div class=\"warhub-section-title\">\n          <h3>War Terms</h3>\n          ".concat(locked ? '<span class="warhub-pill disabled">Leader Only</span>' : '', "\n        </div>\n        <label class=\"warhub-label\">War ID</label>\n        <input class=\"warhub-input\" id=\"warhub-terms-warid\" value=\"").concat(esc(warId), "\" readonly />\n        <div style=\"height:8px;\"></div>\n        <label class=\"warhub-label\">Terms</label>\n        <textarea class=\"warhub-textarea\" id=\"warhub-terms-text\" ").concat(locked ? 'readonly' : '', ">").concat(esc(termsText), "</textarea>\n        <div class=\"warhub-actions\" style=\"margin-top:8px;\">\n          <button class=\"warhub-btn primary\" id=\"warhub-terms-save\" ").concat(locked ? 'disabled' : '', ">Save Terms</button>\n          <button class=\"warhub-btn warn\" id=\"warhub-terms-delete\" ").concat(locked ? 'disabled' : '', ">Delete Terms</button>\n        </div>\n      </div>\n    ");
+    }
+    function renderFactionTab() {
+        var faction =
+            (state && (state.faction || state.ourFaction || state.our_faction)) ||
+            {};
+        var members = arr((state && state.members) || []);
+        var groups = splitRosterGroups(members);
+        var factionName = String((faction && faction.name) || ((state && state.user) && state.user.faction_name) || 'Your Faction');
+        var factionId = String((faction && (faction.faction_id || faction.id)) || ((state && state.user) && state.user.faction_id) || '');
+        var leaderAccess = !!((accessState && accessState.isFactionLeader) || isOwnerSession());
+        var memberAccessRows = arr((factionMembersCache && (factionMembersCache.members || factionMembersCache.items)) || []);
+        var enabledCount = memberAccessRows.filter(function (x) {
+            return !!(x && (x.member_enabled || x.enabled));
+        }).length;
+
+        return '\
+          <div class="warhub-card">\
+            <div class="warhub-section-title">\
+              <h3>Faction</h3>\
+              <span class="warhub-count">' + fmtNum(members.length) + '</span>\
+            </div>\
+            <div class="warhub-grid three">\
+              <div class="warhub-metric">\
+                <div class="k">Faction</div>\
+                <div class="v">' + esc(factionName || '—') + '</div>\
+              </div>\
+              <div class="warhub-metric">\
+                <div class="k">Faction ID</div>\
+                <div class="v">' + esc(factionId || '—') + '</div>\
+              </div>\
+              <div class="warhub-metric">\
+                <div class="k">Member Access</div>\
+                <div class="v">' + (leaderAccess ? fmtNum(enabledCount) : 'Leader') + '</div>\
+              </div>\
+              <div class="warhub-metric">\
+                <div class="k">Online</div>\
+                <div class="v">' + fmtNum(groups.online.length) + '</div>\
+              </div>\
+              <div class="warhub-metric">\
+                <div class="k">Hospital</div>\
+                <div class="v">' + fmtNum(groups.hospital.length) + '</div>\
+              </div>\
+              <div class="warhub-metric">\
+                <div class="k">Offline</div>\
+                <div class="v">' + fmtNum(groups.offline.length) + '</div>\
+              </div>\
+            </div>\
+            <div class="warhub-actions" style="margin-top:8px;">\
+              <button class="warhub-btn" id="wh-refresh-faction">Refresh Faction</button>\
+              <button class="warhub-btn small" id="wh-open-members">Open Members</button>\
+            </div>\
+          </div>\
+          ' + rosterCard('Online Members', groups.online, { extraClass: 'online-box' }) + '\
+          ' + rosterCard('Hospital Members', groups.hospital, { extraClass: 'hospital-box' }) + '\
+          ' + rosterCard('Travel Members', groups.travel, { extraClass: 'travel-box' }) + '\
+          ' + rosterCard('Jailed Members', groups.jail, { extraClass: 'jail-box' }) + '\
+          ' + rosterCard('Idle Members', groups.idle, { extraClass: 'idle-box' }) + '\
+          ' + rosterDropdown('Offline Members', groups.offline, { extraClass: 'offline-box' }) + '\
+        ';
+    }
+        function renderWarTab() {
+        var war = (state && state.war) || {};
+        var score = (state && state.score) || {};
+        var ourFaction =
+            (state && (state.faction || state.ourFaction || state.our_faction)) ||
+            {};
+        var enemyFaction =
+            (state && (state.enemyFaction || state.enemy_faction)) ||
+            {};
+        var dbg = (state && state.debug) || {};
+        var enemyFetch = (dbg && dbg.debug_enemy_fetch) || {};
+        var enemies = arr((state && state.enemies) || []);
+        var members = arr((state && state.members) || []);
+
+        var ourName = String((ourFaction && ourFaction.name) || (dbg && dbg.our_faction_name) || 'Our Faction');
+        var enemyName = String(
+            (enemyFaction && enemyFaction.name) ||
+            (dbg && dbg.enemy_faction_name) ||
+            (enemyFetch && enemyFetch.enemy_name) ||
+            'Enemy Faction'
+        );
+
+        var scoreUs = Number(score.our || war.score_us || (ourFaction && ourFaction.score) || 0) || 0;
+        var scoreThem = Number(score.enemy || war.score_them || (enemyFaction && enemyFaction.score) || 0) || 0;
+        var target = Number(score.target || war.target_score || war.target || 0) || 0;
+        var lead = scoreUs - scoreThem;
+        var chainUs = Number(war.chain_us || (ourFaction && ourFaction.chain) || 0) || 0;
+        var chainThem = Number(war.chain_them || (enemyFaction && enemyFaction.chain) || 0) || 0;
+        var phase = String(war.phase || 'none');
+        var enemyCount = Number(
+            (state && state.enemy_members_count) ||
+            (dbg && dbg.enemy_members_count) ||
+            (enemyFetch && enemyFetch.enemy_fetch_member_count) ||
+            enemies.length ||
+            0
+        ) || 0;
+
+        return '\
+          <div class="warhub-card">\
+            <div class="warhub-section-title">\
+              <h3>War</h3>\
+              <span class="warhub-count">' + esc(phase || 'none') + '</span>\
+            </div>\
+            <div class="warhub-grid three">\
+              <div class="warhub-metric warhub-score-us">\
+                <div class="k">' + esc(ourName) + '</div>\
+                <div class="v">' + fmtNum(scoreUs) + '</div>\
+              </div>\
+              <div class="warhub-metric warhub-score-them">\
+                <div class="k">' + esc(enemyName) + '</div>\
+                <div class="v">' + fmtNum(scoreThem) + '</div>\
+              </div>\
+              <div class="warhub-metric warhub-score-lead">\
+                <div class="k">Lead</div>\
+                <div class="v">' + fmtNum(lead) + '</div>\
+              </div>\
+              <div class="warhub-metric">\
+                <div class="k">Target</div>\
+                <div class="v">' + fmtNum(target) + '</div>\
+              </div>\
+              <div class="warhub-metric">\
+                <div class="k">Our Chain</div>\
+                <div class="v">' + fmtNum(chainUs) + '</div>\
+              </div>\
+              <div class="warhub-metric">\
+                <div class="k">Enemy Chain</div>\
+                <div class="v">' + fmtNum(chainThem) + '</div>\
+              </div>\
+              <div class="warhub-metric">\
+                <div class="k">Members</div>\
+                <div class="v">' + fmtNum((state && state.members_count) || (dbg && dbg.members_count) || members.length || 0) + '</div>\
+              </div>\
+              <div class="warhub-metric">\
+                <div class="k">Enemies</div>\
+                <div class="v">' + fmtNum(enemyCount) + '</div>\
+              </div>\
+              <div class="warhub-metric">\
+                <div class="k">War ID</div>\
+                <div class="v">' + esc(String(war.war_id || war.id || '—')) + '</div>\
+              </div>\
+            </div>\
+            <div class="warhub-actions" style="margin-top:8px;">\
+              <button class="warhub-btn" id="wh-refresh-war">Refresh War</button>\
+              <button class="warhub-btn small" id="wh-open-enemies">Open Enemies</button>\
+              <button class="warhub-btn small" id="wh-open-members">Open Members</button>\
+            </div>\
+          </div>\
+          ' + renderDebugBlock() + '\
+        ';
     }
     function renderMembersTab() {
     var allMembers = arr((state && state.members) || []);
@@ -2381,24 +2541,41 @@ function renderAdminTab() {
         var locked = tabLocked(key) ? 'locked' : '';
         return "<button class=\"warhub-tab ".concat(active, " ").concat(locked, "\" data-tab=\"").concat(esc(key), "\">").concat(esc(label), "</button>");
     }
-    function renderTabContent() {
-    switch (currentTab) {
-        case 'overview': return renderOverviewTab();
-case 'faction': return "".concat(renderAccessBanner()).concat(renderFactionTab());
-case 'war': return "".concat(renderAccessBanner()).concat(renderWarTab());
-case 'summary': return "".concat(renderAccessBanner()).concat(renderAnalyticsTab());
-case 'chain': return "".concat(renderAccessBanner()).concat(renderChainTab());
-case 'terms': return renderTermsTab();
-case 'members': return "".concat(renderAccessBanner()).concat(renderMembersTab());
-case 'enemies': return "".concat(renderAccessBanner()).concat(renderEnemiesTab());
-case 'hospital': return "".concat(renderAccessBanner()).concat(renderHospitalTab());
-case 'meddeals': return "".concat(renderAccessBanner()).concat(renderMedDealsTab());
-case 'targets': return "".concat(renderAccessBanner()).concat(renderTargetsTab());
-case 'instructions': return renderInstructionsTab();
-case 'settings': return renderSettingsTab();
-case 'admin': return renderAdminTab();
-case 'wartop5': return renderAdminTopFiveTab();
-default: return renderOverviewTab();
+     function renderTabContent() {
+        switch (currentTab) {
+            case 'overview':
+                return renderOverviewTab();
+            case 'faction':
+                return '' + renderAccessBanner() + renderFactionTab();
+            case 'war':
+                return '' + renderAccessBanner() + renderWarTab();
+            case 'summary':
+                return '' + renderAccessBanner() + renderAnalyticsTab();
+            case 'chain':
+                return '' + renderAccessBanner() + renderChainTab();
+            case 'terms':
+                return renderTermsTab();
+            case 'members':
+                return '' + renderAccessBanner() + renderMembersTab();
+            case 'enemies':
+                return '' + renderAccessBanner() + renderEnemiesTab();
+            case 'hospital':
+                return '' + renderAccessBanner() + renderHospitalTab();
+            case 'meddeals':
+                return '' + renderAccessBanner() + renderMedDealsTab();
+            case 'targets':
+                return '' + renderAccessBanner() + renderTargetsTab();
+            case 'instructions':
+                return renderInstructionsTab();
+            case 'settings':
+                return renderSettingsTab();
+            case 'admin':
+                return renderAdminTab();
+            case 'wartop5':
+                return renderAdminTopFiveTab();
+            default:
+                return renderOverviewTab();
+        }
     }
 }
     function renderBody() {
@@ -2978,6 +3155,44 @@ function _loadAdminDashboard() {
         renderBody();
         setStatus('War summary refreshed.');
     }));
+
+        var refreshFaction = overlay ? overlay.querySelector('#wh-refresh-faction') : null;
+    if (refreshFaction) refreshFaction.addEventListener('click', _asyncToGenerator(function* () {
+        yield loadState(true);
+        if ((accessState && accessState.isFactionLeader) || isOwnerSession()) {
+            yield loadFactionMembers(true).catch(function () { return null; });
+        }
+        renderBody();
+        setStatus('Faction refreshed.');
+    }));
+
+    var refreshWar = overlay ? overlay.querySelector('#wh-refresh-war') : null;
+    if (refreshWar) refreshWar.addEventListener('click', _asyncToGenerator(function* () {
+        yield loadState(true);
+        analyticsCache = null;
+        renderBody();
+        setStatus('War refreshed.');
+    }));
+
+    var openEnemies = overlay ? overlay.querySelector('#wh-open-enemies') : null;
+    if (openEnemies) openEnemies.addEventListener('click', function () {
+        currentTab = 'enemies';
+        GM_setValue(K_TAB, currentTab);
+        renderBody();
+    });
+
+    if (overlay) overlay.querySelectorAll('#wh-open-members').forEach(function (btn) {
+        btn.addEventListener('click', _asyncToGenerator(function* () {
+            currentTab = 'members';
+            GM_setValue(K_TAB, currentTab);
+
+            if ((accessState && accessState.isFactionLeader) || isOwnerSession()) {
+                yield loadFactionMembers(true).catch(function () { return null; });
+            }
+
+            renderBody();
+        }));
+    });
 
     var refreshAlerts = overlay ? overlay.querySelector('#wh-mark-alerts-seen') : null;
     if (refreshAlerts) refreshAlerts.addEventListener('click', _asyncToGenerator(function* () {
