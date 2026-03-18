@@ -1090,11 +1090,25 @@ def api_state():
         access = _feature_access_for_user({**user, "faction_id": faction_id, "faction_name": faction_name})
         faction_map = get_user_map_by_faction(faction_id) if faction_id else {}
 
-    faction_info = faction_basic(api_key, faction_id=faction_id) if api_key else {"ok": False, "members": []}
-
-    war_api_key = api_key
+    viewer_war_api_key = api_key or ""
     leader_war_api_key = ""
-    viewer_war_api_key = ""
+    war_api_key = viewer_war_api_key
+    war_api_key_source = "session_user_key" if viewer_war_api_key else "missing"
+
+    leader_user_id = str((license_status or {}).get("leader_user_id") or "").strip()
+    if leader_user_id:
+        try:
+            leader_user = get_user(leader_user_id) or {}
+        except Exception:
+            leader_user = {}
+        leader_war_api_key = str((leader_user or {}).get("api_key") or "").strip()
+
+    if leader_war_api_key:
+        war_api_key = leader_war_api_key
+        war_api_key_source = "leader_user_key"
+
+    faction_fetch_key = war_api_key or viewer_war_api_key
+    faction_info = faction_basic(faction_fetch_key, faction_id=faction_id) if faction_fetch_key else {"ok": False, "members": []}
 
     war_info = ranked_war_summary(
         war_api_key,
@@ -1180,8 +1194,8 @@ def api_state():
                 if enemy_faction_id and enemy_faction_name:
                     break
 
-        if not raw_enemy_members and enemy_faction_id and war_api_key:
-            enemy_faction_info = _faction_basic_by_id(war_api_key, enemy_faction_id)
+        if not raw_enemy_members and enemy_faction_id and faction_fetch_key:
+            enemy_faction_info = _faction_basic_by_id(faction_fetch_key, enemy_faction_id)
             if enemy_faction_info.get("ok"):
                 fetched_enemy_id = str(enemy_faction_info.get("faction_id") or enemy_faction_id or "").strip()
                 fetched_enemy_name = str(enemy_faction_info.get("faction_name") or enemy_faction_name or "").strip()
@@ -1336,7 +1350,7 @@ def api_state():
             "debug_factions": war_info.get("debug_factions") or [],
             "debug_raw_keys": war_info.get("debug_raw_keys") or [],
             "debug_raw": war_info.get("debug_raw") or {},
-            "war_api_key_source": "session_user_key" if war_api_key else "none",
+            "war_api_key_source": war_api_key_source,
         },
     )
 @app.route("/api/war/summary", methods=["GET"])
