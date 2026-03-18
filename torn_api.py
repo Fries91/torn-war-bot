@@ -390,7 +390,7 @@ def faction_basic(api_key: str, faction_id: str = "") -> Dict[str, Any]:
             (
                 f"{API_BASE}/faction/{faction_id}",
                 {"selections": "basic,members", "key": api_key, "striptags": "true"},
-                "faction_basic_members_
+                "faction_basic_members_,
             ),
             (
                 f"{API_BASE}/faction/",
