@@ -333,9 +333,28 @@ def me_basic(api_key: str) -> Dict[str, Any]:
 
 
 def faction_basic(api_key: str, faction_id: str = "") -> Dict[str, Any]:
+    api_key = str(api_key or "").strip()
     faction_id = str(faction_id or "").strip()
 
-    def _build_result(res_obj: Dict[str, Any], fallback_faction_id: str = "") -> Dict[str, Any]:
+    if not api_key:
+        return {
+            "ok": False,
+            "faction_id": faction_id,
+            "faction_name": "",
+            "members": [],
+            "error": "Missing API key.",
+            "debug_attempts": [],
+        }
+
+    def _build_result(
+        res_obj: Dict[str, Any],
+        fallback_faction_id: str = "",
+        source: str = "",
+        url: str = "",
+        params: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        params = params or {}
+
         if not res_obj.get("ok"):
             return {
                 "ok": False,
@@ -343,6 +362,10 @@ def faction_basic(api_key: str, faction_id: str = "") -> Dict[str, Any]:
                 "faction_name": "",
                 "members": [],
                 "error": res_obj.get("error", "Could not load faction."),
+                "raw": res_obj.get("data") or {},
+                "source": source,
+                "url": url,
+                "params": {k: v for k, v in params.items() if k != "key"},
             }
 
         data = res_obj.get("data") or {}
@@ -378,6 +401,11 @@ def faction_basic(api_key: str, faction_id: str = "") -> Dict[str, Any]:
             "faction_id": resolved_faction_id,
             "faction_name": resolved_faction_name,
             "members": members,
+            "error": "",
+            "raw": data,
+            "source": source,
+            "url": url,
+            "params": {k: v for k, v in params.items() if k != "key"},
         }
 
     if faction_id:
@@ -415,7 +443,8 @@ def faction_basic(api_key: str, faction_id: str = "") -> Dict[str, Any]:
         ]
 
         best: Optional[Dict[str, Any]] = None
-        mismatch_notes: List[str] = []
+        best_error = "Could not load faction."
+        debug_attempts: List[Dict[str, Any]] = []
 
         for url, params, prefix in attempts:
             res = _safe_get(
@@ -424,33 +453,49 @@ def faction_basic(api_key: str, faction_id: str = "") -> Dict[str, Any]:
                 cache_seconds=CACHE_TTL_FACTION_BASIC,
                 cache_prefix=prefix,
             )
-            built = _build_result(res, faction_id)
+
+            built = _build_result(
+                res,
+                fallback_faction_id=faction_id,
+                source=prefix,
+                url=url,
+                params=params,
+            )
+
+            debug_attempts.append({
+                "source": prefix,
+                "ok": bool(built.get("ok")),
+                "faction_id": str(built.get("faction_id") or ""),
+                "faction_name": str(built.get("faction_name") or ""),
+                "member_count": len(built.get("members") or []),
+                "error": str(built.get("error") or ""),
+                "params": built.get("params") or {},
+            })
 
             if not built.get("ok"):
+                if built.get("error"):
+                    best_error = str(built.get("error") or best_error)
                 continue
 
             built_faction_id = str(built.get("faction_id") or "").strip()
-
             if built_faction_id and built_faction_id != faction_id:
-                mismatch_notes.append(
-                    f"{prefix} returned faction_id={built_faction_id} instead of requested {faction_id}"
-                )
+                best_error = f"{prefix} returned faction_id={built_faction_id} instead of requested {faction_id}"
                 continue
 
             if built.get("members"):
+                built["debug_attempts"] = debug_attempts
                 return built
 
             if best is None:
                 best = built
             else:
-                best_member_count = len(best.get("members") or [])
-                built_member_count = len(built.get("members") or [])
-                if built_member_count > best_member_count:
+                if len(built.get("members") or []) > len(best.get("members") or []):
                     best = built
                 elif not best.get("faction_name") and built.get("faction_name"):
                     best = built
 
-        if best:
+        if best is not None:
+            best["debug_attempts"] = debug_attempts
             return best
 
         return {
@@ -458,7 +503,8 @@ def faction_basic(api_key: str, faction_id: str = "") -> Dict[str, Any]:
             "faction_id": faction_id,
             "faction_name": "",
             "members": [],
-            "error": "; ".join(mismatch_notes) if mismatch_notes else "Could not load faction.",
+            "error": best_error,
+            "debug_attempts": debug_attempts,
         }
 
     me = me_basic(api_key)
@@ -469,6 +515,7 @@ def faction_basic(api_key: str, faction_id: str = "") -> Dict[str, Any]:
             "faction_name": "",
             "members": [],
             "error": me.get("error", "Could not load player."),
+            "debug_attempts": [],
         }
 
     my_faction_id = str(me.get("faction_id") or "")
@@ -478,10 +525,10 @@ def faction_basic(api_key: str, faction_id: str = "") -> Dict[str, Any]:
             "faction_id": "",
             "faction_name": "",
             "members": [],
+            "debug_attempts": [],
         }
 
     return faction_basic(api_key, faction_id=my_faction_id)
-
 
 def _find_war_container(data: Dict[str, Any]) -> Tuple[str, Any]:
     for key in ("rankedwars", "wars"):
@@ -1376,6 +1423,7 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
         "enemy_fetch_error": "",
         "enemy_fetch_faction_id": "",
         "enemy_fetch_faction_name": "",
+        "enemy_fetch_attempts": [],
     }
 
     if not enemy_id and my_side and len(candidate_sides) == 2:
@@ -1405,6 +1453,7 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
         debug_enemy_fetch["enemy_fetch_member_count"] = len(enemy_faction.get("members") or [])
         debug_enemy_fetch["enemy_fetch_faction_id"] = str(enemy_faction.get("faction_id") or "")
         debug_enemy_fetch["enemy_fetch_faction_name"] = str(enemy_faction.get("faction_name") or "")
+        debug_enemy_fetch["enemy_fetch_attempts"] = enemy_faction.get("debug_attempts") or []
 
         if enemy_faction.get("ok"):
             fetched_enemy_id = str(enemy_faction.get("faction_id") or enemy_id or "").strip()
