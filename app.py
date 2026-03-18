@@ -1318,6 +1318,7 @@ def api_state():
         has_war=has_war,
         is_ranked_war=has_war,
         debug={
+            "debug_enemy_fetch": war_info.get("debug_enemy_fetch") or {},
             "source_note": str(war_info.get("source_note") or ""),
             "my_user_id": user_id,
             "my_faction_id": str(war_info.get("my_faction_id") or ""),
