@@ -2378,6 +2378,9 @@ def add_or_update_faction_member(
     position: str = "",
 ) -> Dict[str, Any]:
     now = _utc_now()
+    enabled_flag = 1 if enabled else 0
+    xanax_owed = int(PAYMENT_XANAX_PER_MEMBER if enabled_flag else 0)
+    cycle_locked = 1 if enabled_flag else 0
 
     con = _con()
     cur = con.cursor()
@@ -2392,10 +2395,13 @@ def add_or_update_faction_member(
             member_api_key,
             position,
             enabled,
+            xanax_owed,
+            activated_at,
+            cycle_locked,
             created_at,
             updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(faction_id, member_user_id) DO UPDATE SET
             faction_name = excluded.faction_name,
             leader_user_id = excluded.leader_user_id,
@@ -2404,6 +2410,15 @@ def add_or_update_faction_member(
             member_api_key = excluded.member_api_key,
             position = excluded.position,
             enabled = excluded.enabled,
+            xanax_owed = excluded.xanax_owed,
+            activated_at = CASE
+                WHEN excluded.enabled = 1 THEN excluded.activated_at
+                ELSE faction_members.activated_at
+            END,
+            cycle_locked = CASE
+                WHEN excluded.enabled = 1 THEN excluded.cycle_locked
+                ELSE faction_members.cycle_locked
+            END,
             updated_at = excluded.updated_at
     """, (
         str(faction_id),
@@ -2414,7 +2429,10 @@ def add_or_update_faction_member(
         str(member_name or ""),
         str(member_api_key or ""),
         str(position or ""),
-        1 if enabled else 0,
+        enabled_flag,
+        xanax_owed,
+        now if enabled_flag else "",
+        cycle_locked,
         now,
         now,
     ))
@@ -2462,15 +2480,36 @@ def set_faction_member_enabled(
     changed_by_user_id: str = "",
     changed_by_name: str = "",
 ):
+    row = get_faction_member(faction_id, member_user_id) or {}
+    if not row:
+        return None
+
+    enabled_flag = 1 if enabled else 0
+    if enabled_flag == 0 and int(row.get("cycle_locked") or 0) == 1 and int(row.get("enabled") or 0) == 1:
+        raise ValueError("Enabled member access is locked until the next renewal/payment cycle.")
+
+    now = _utc_now()
+    xanax_owed = int(PAYMENT_XANAX_PER_MEMBER if enabled_flag else 0)
+    cycle_locked = 1 if enabled_flag else 0
+
     con = _con()
     cur = con.cursor()
     cur.execute("""
         UPDATE faction_members
-        SET enabled = ?, updated_at = ?
+        SET
+            enabled = ?,
+            xanax_owed = ?,
+            activated_at = CASE WHEN ? = 1 THEN ? ELSE activated_at END,
+            cycle_locked = ?,
+            updated_at = ?
         WHERE faction_id = ? AND member_user_id = ?
     """, (
-        1 if enabled else 0,
-        _utc_now(),
+        enabled_flag,
+        xanax_owed,
+        enabled_flag,
+        now,
+        cycle_locked,
+        now,
         str(faction_id),
         str(member_user_id),
     ))
@@ -2484,11 +2523,16 @@ def set_faction_member_enabled(
             actor_user_id=str(changed_by_user_id),
             actor_name=str(changed_by_name or ""),
             action="faction_member_enabled_changed",
-            meta_json=f"faction_id={faction_id} member_user_id={member_user_id} enabled={1 if enabled else 0}",
+            meta_json=f"faction_id={faction_id} member_user_id={member_user_id} enabled={enabled_flag}",
         )
+    return get_faction_member(faction_id, member_user_id) or {}
 
 
 def delete_faction_member(faction_id: str, member_user_id: str):
+    row = get_faction_member(faction_id, member_user_id) or {}
+    if row and int(row.get("cycle_locked") or 0) == 1 and int(row.get("enabled") or 0) == 1:
+        raise ValueError("Enabled member access is locked until the next renewal/payment cycle.")
+
     con = _con()
     cur = con.cursor()
     cur.execute("""
@@ -2899,6 +2943,21 @@ def renew_faction_after_payment(
         str(payment_kind or PAYMENT_KIND),
         str(note or ""),
         now,
+        now,
+        str(faction_id),
+    ))
+
+    cur.execute("""
+        UPDATE faction_members
+        SET
+            last_renewed_at = ?,
+            cycle_locked = 0,
+            xanax_owed = CASE WHEN enabled = 1 THEN ? ELSE 0 END,
+            updated_at = ?
+        WHERE faction_id = ?
+    """, (
+        now,
+        int(PAYMENT_XANAX_PER_MEMBER),
         now,
         str(faction_id),
     ))
