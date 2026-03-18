@@ -18,7 +18,7 @@ except Exception:
     def cache_get(_cache_key: str):
         return None
 
-    def cache_set(_cache_key: str, _payload_text: str, _ttl_seconds: int):
+    def cache_set(_payload_key: str, _payload_text: str, _ttl_seconds: int):
         return None
 
 
@@ -501,14 +501,14 @@ def _extract_factions_from_war(war: Dict[str, Any]) -> Any:
         if isinstance(factions, list) and factions:
             return factions
 
-    nested_war = war.get("war")
-    if isinstance(nested_war, dict):
-        for key in ("factions", "sides", "teams"):
-            factions = nested_war.get(key)
-            if isinstance(factions, dict) and factions:
-                return factions
-            if isinstance(factions, list) and factions:
-                return factions
+        nested_war = war.get("war")
+        if isinstance(nested_war, dict):
+            for nested_key in ("factions", "sides", "teams"):
+                nested_factions = nested_war.get(nested_key)
+                if isinstance(nested_factions, dict) and nested_factions:
+                    return nested_factions
+                if isinstance(nested_factions, list) and nested_factions:
+                    return nested_factions
 
     return {}
 
@@ -840,7 +840,7 @@ def faction_wars(api_key: str, faction_id: str = "") -> Dict[str, Any]:
 
         if winner or (end_ts and end_ts < now_ts):
             phase = "finished"
-                elif phase == "unknown":
+        elif phase == "unknown":
             if start_ts and start_ts > now_ts:
                 phase = "registered"
             elif start_ts and (end_ts == 0 or start_ts <= now_ts <= end_ts):
