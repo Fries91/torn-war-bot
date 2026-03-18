@@ -500,37 +500,28 @@ def _faction_basic_by_id(api_key: str, faction_id: str) -> Dict[str, Any]:
     }
 
 
-def _choose_war_api_key(user: Dict[str, Any], faction_id: str = "") -> Tuple[str, str, str]:
+def _resolve_war_api_key_for_user(user: Dict[str, Any], faction_id: str = "", viewer_user_id: str = "") -> Tuple[str, str, str, Dict[str, Any]]:
     user = user or {}
-    viewer_war_api_key = str(user.get("api_key") or "").strip()
-    resolved_faction_id = str(faction_id or user.get("faction_id") or "").strip()
+    viewer_key = str(user.get("api_key") or "").strip()
+    faction_id = str(faction_id or user.get("faction_id") or "").strip()
+    viewer_user_id = str(viewer_user_id or user.get("user_id") or "").strip()
 
-    war_api_key = viewer_war_api_key
-    war_api_key_source = "session_user_key" if viewer_war_api_key else "missing"
-    leader_war_api_key = ""
+    license_status = _build_license_status_payload(faction_id, viewer_user_id=viewer_user_id) if faction_id else {}
+    leader_user_id = str((license_status or {}).get("leader_user_id") or "").strip()
+    leader_key = ""
 
-    if resolved_faction_id:
+    if leader_user_id:
         try:
-            license_status = _build_license_status_payload(
-                resolved_faction_id,
-                viewer_user_id=str(user.get("user_id") or "").strip(),
-            ) or {}
+            leader_user = get_user(leader_user_id) or {}
         except Exception:
-            license_status = {}
+            leader_user = {}
+        leader_key = str((leader_user or {}).get("api_key") or "").strip()
 
-        leader_user_id = str((license_status or {}).get("leader_user_id") or "").strip()
-        if leader_user_id:
-            try:
-                leader_user = get_user(leader_user_id) or {}
-            except Exception:
-                leader_user = {}
-            leader_war_api_key = str((leader_user or {}).get("api_key") or "").strip()
-
-    if leader_war_api_key:
-        war_api_key = leader_war_api_key
-        war_api_key_source = "leader_user_key"
-
-    return war_api_key, war_api_key_source, leader_war_api_key
+    if leader_key:
+        return leader_key, "leader_user_key", viewer_key, license_status
+    if viewer_key:
+        return viewer_key, "session_user_key", viewer_key, license_status
+    return "", "missing", viewer_key, license_status
 
 
 def _ranked_war_payload_for_user(api_key: str, my_faction_id: str = "", my_faction_name: str = "", war_api_key_source: str = "") -> Dict[str, Any]:
@@ -540,15 +531,14 @@ def _ranked_war_payload_for_user(api_key: str, my_faction_id: str = "", my_facti
         my_faction_name=my_faction_name,
     ) or {}
 
-    war_id = str(summary.get("war_id") or "")
-    enemy_members = summary.get("enemy_members") or []
     enemy_faction_name = str(
         summary.get("enemy_faction_name")
         or ((summary.get("debug_enemy_fetch") or {}).get("enemy_fetch_faction_name"))
         or ((summary.get("debug_enemy_fetch") or {}).get("enemy_name"))
         or ""
-    )
-
+    ).strip()
+    enemy_members = summary.get("enemy_members") or []
+    war_id = str(summary.get("war_id") or "")
     return {
         "war_id": war_id,
         "war": {
@@ -567,7 +557,6 @@ def _ranked_war_payload_for_user(api_key: str, my_faction_id: str = "", my_facti
             "start": _to_int(summary.get("start")),
             "end": _to_int(summary.get("end")),
             "target": _to_int(summary.get("target_score")),
-            "source_note": str(summary.get("source_note") or ""),
         },
         "our_faction": {
             "faction_id": str(summary.get("my_faction_id") or my_faction_id or ""),
@@ -590,7 +579,8 @@ def _ranked_war_payload_for_user(api_key: str, my_faction_id: str = "", my_facti
         "debug_enemy_fetch": summary.get("debug_enemy_fetch") or {},
         "debug_factions": summary.get("debug_factions") or [],
         "debug_raw_keys": summary.get("debug_raw_keys") or [],
-        "war_api_key_source": str(war_api_key_source or "session_user_key" if api_key else "missing"),
+        "source_note": str(summary.get("source_note") or ""),
+        "war_api_key_source": str(war_api_key_source or ("session_user_key" if api_key else "missing")),
         "is_ranked_war": bool(summary.get("has_war")),
         "has_war": bool(summary.get("has_war")),
         "score": {
@@ -1140,8 +1130,23 @@ def api_state():
         access = _feature_access_for_user({**user, "faction_id": faction_id, "faction_name": faction_name})
         faction_map = get_user_map_by_faction(faction_id) if faction_id else {}
 
-    war_api_key, war_api_key_source, leader_war_api_key = _choose_war_api_key(user, faction_id=faction_id)
     viewer_war_api_key = api_key or ""
+    leader_war_api_key = ""
+    war_api_key = viewer_war_api_key
+    war_api_key_source = "session_user_key" if viewer_war_api_key else "missing"
+
+    leader_user_id = str((license_status or {}).get("leader_user_id") or "").strip()
+    if leader_user_id:
+        try:
+            leader_user = get_user(leader_user_id) or {}
+        except Exception:
+            leader_user = {}
+        leader_war_api_key = str((leader_user or {}).get("api_key") or "").strip()
+
+    if leader_war_api_key:
+        war_api_key = leader_war_api_key
+        war_api_key_source = "leader_user_key"
+
     faction_fetch_key = war_api_key or viewer_war_api_key
     faction_info = faction_basic(faction_fetch_key, faction_id=faction_id) if faction_fetch_key else {"ok": False, "members": []}
 
@@ -1406,16 +1411,19 @@ def api_state():
 @require_session
 def api_war_summary():
     user = request.user or {}
-    war_api_key, war_api_key_source, _leader_war_api_key = _choose_war_api_key(
+    faction_id = str(user.get("faction_id") or "").strip()
+    user_id = str(user.get("user_id") or "").strip()
+    war_api_key, war_api_key_source, _viewer_key, _license_status = _resolve_war_api_key_for_user(
         user,
-        faction_id=str(user.get("faction_id") or ""),
+        faction_id=faction_id,
+        viewer_user_id=user_id,
     )
     if not war_api_key:
         return err("Missing API key.", 400)
 
     payload = _ranked_war_payload_for_user(
         war_api_key,
-        my_faction_id=str(user.get("faction_id") or ""),
+        my_faction_id=faction_id,
         my_faction_name=str(user.get("faction_name") or ""),
         war_api_key_source=war_api_key_source,
     )
@@ -1742,16 +1750,19 @@ def api_save_war_snapshot():
         return blocked
 
     user = request.user or {}
-    war_api_key, war_api_key_source, _leader_war_api_key = _choose_war_api_key(
+    faction_id = str(user.get("faction_id") or "").strip()
+    user_id = str(user.get("user_id") or "").strip()
+    war_api_key, war_api_key_source, _viewer_key, _license_status = _resolve_war_api_key_for_user(
         user,
-        faction_id=str(user.get("faction_id") or ""),
+        faction_id=faction_id,
+        viewer_user_id=user_id,
     )
     if not war_api_key:
         return err("Missing API key.", 400)
 
     payload = _ranked_war_payload_for_user(
         war_api_key,
-        my_faction_id=str(user.get("faction_id") or ""),
+        my_faction_id=faction_id,
         my_faction_name=str(user.get("faction_name") or ""),
         war_api_key_source=war_api_key_source,
     )
