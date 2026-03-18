@@ -932,6 +932,7 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
         "debug_raw_keys": [],
         "debug_raw": {},
         "debug_enemy_members_count": 0,
+        "debug_enemy_fetch": {},
     }
 
     wars_res = faction_wars(api_key, faction_id=resolved_my_faction_id)
@@ -1367,6 +1368,15 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
     is_registered = phase in {"registered", "active"}
 
     enemy_members: List[Dict[str, Any]] = []
+    debug_enemy_fetch = {
+        "enemy_id": enemy_id,
+        "enemy_name": enemy_name,
+        "enemy_fetch_ok": False,
+        "enemy_fetch_member_count": 0,
+        "enemy_fetch_error": "",
+        "enemy_fetch_faction_id": "",
+        "enemy_fetch_faction_name": "",
+    }
 
     if not enemy_id and my_side and len(candidate_sides) == 2:
         other_sides = [x for x in candidate_sides if not _same_side(x, my_side)]
@@ -1378,13 +1388,24 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
                 enemy_id = fallback_enemy_id
             if fallback_enemy_name and not enemy_name:
                 enemy_name = fallback_enemy_name
+            debug_enemy_fetch["enemy_id"] = enemy_id
+            debug_enemy_fetch["enemy_name"] = enemy_name
 
     if not enemy_id or (my_id and enemy_id == my_id):
         enemy_id = ""
         enemy_name = ""
         enemy_members = []
+        debug_enemy_fetch["enemy_id"] = enemy_id
+        debug_enemy_fetch["enemy_name"] = enemy_name
+        debug_enemy_fetch["enemy_fetch_error"] = "Enemy faction not resolved or matched own faction."
     elif is_registered:
         enemy_faction = faction_basic(api_key, faction_id=enemy_id)
+        debug_enemy_fetch["enemy_fetch_ok"] = bool(enemy_faction.get("ok"))
+        debug_enemy_fetch["enemy_fetch_error"] = str(enemy_faction.get("error") or "")
+        debug_enemy_fetch["enemy_fetch_member_count"] = len(enemy_faction.get("members") or [])
+        debug_enemy_fetch["enemy_fetch_faction_id"] = str(enemy_faction.get("faction_id") or "")
+        debug_enemy_fetch["enemy_fetch_faction_name"] = str(enemy_faction.get("faction_name") or "")
+
         if enemy_faction.get("ok"):
             fetched_enemy_id = str(enemy_faction.get("faction_id") or enemy_id or "").strip()
             fetched_enemy_name = str(enemy_faction.get("faction_name") or enemy_name or "").strip()
@@ -1393,10 +1414,14 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
                 enemy_id = ""
                 enemy_name = ""
                 enemy_members = []
+                debug_enemy_fetch["enemy_fetch_error"] = "Fetched enemy faction matched own faction."
             else:
                 enemy_id = fetched_enemy_id or enemy_id
                 enemy_name = fetched_enemy_name or enemy_name
                 enemy_members = enemy_faction.get("members") or []
+                debug_enemy_fetch["enemy_id"] = enemy_id
+                debug_enemy_fetch["enemy_name"] = enemy_name
+                debug_enemy_fetch["enemy_fetch_member_count"] = len(enemy_members)
         else:
             enemy_members = []
 
@@ -1433,6 +1458,7 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
         "debug_raw_keys": list(raw.keys()) if isinstance(raw, dict) else [],
         "debug_raw": raw,
         "debug_enemy_members_count": len(enemy_members),
+        "debug_enemy_fetch": debug_enemy_fetch,
     }
 
 
