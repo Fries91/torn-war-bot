@@ -1374,32 +1374,6 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
             fallback_enemy = other_sides[0]
             fallback_enemy_id = str(fallback_enemy.get("faction_id") or "").strip()
             fallback_enemy_name = str(fallback_enemy.get("faction_name") or "").strip()
-            if fallback_enemy_id and not enemy_id:
-                enemy_id = fallback_enemy_id
-            if fallback_enemy_name and not enemy_name:
-                enemy_name = fallback_enemy_name
-
-    if enemy_id and my_id and enemy_id == my_id:
-        enemy_id = ""
-        enemy_name = ""
-
-            side_id = str(side.get("faction_id") or "").strip()
-            side_name = str(side.get("faction_name") or "").strip()
-
-            if side_id and not enemy_id:
-                enemy_id = side_id
-            if side_name and not enemy_name:
-                enemy_name = side_name
-
-            if enemy_id:
-                break
-
-    if not enemy_id and my_side and len(candidate_sides) == 2:
-        other_sides = [x for x in candidate_sides if not _same_side(x, my_side)]
-        if other_sides:
-            fallback_enemy = other_sides[0]
-            fallback_enemy_id = str(fallback_enemy.get("faction_id") or "").strip()
-            fallback_enemy_name = str(fallback_enemy.get("faction_name") or "").strip()
             if fallback_enemy_id:
                 enemy_id = fallback_enemy_id
             if fallback_enemy_name and not enemy_name:
@@ -1409,7 +1383,6 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
         enemy_id = ""
         enemy_name = ""
         enemy_members = []
-
     elif is_registered:
         enemy_faction = faction_basic(api_key, faction_id=enemy_id)
         if enemy_faction.get("ok"):
