@@ -374,6 +374,21 @@ def _get_exemption_payload(user_id: str = "", faction_id: str = "") -> Dict[str,
     }
 
 
+
+def _exemption_admin_payload() -> Dict[str, Any]:
+    faction_items = list_faction_exemptions() or []
+    user_items = list_user_exemptions() or []
+    return {
+        "faction_exemptions": faction_items,
+        "user_exemptions": user_items,
+        "counts": {
+            "faction_exemptions": len(faction_items),
+            "user_exemptions": len(user_items),
+            "total": len(faction_items) + len(user_items),
+        },
+    }
+
+
 def _is_faction_leader(api_key: str, user_id: str, faction_id: str) -> bool:
     api_key = str(api_key or "").strip()
     user_id = str(user_id or "").strip()
@@ -2641,8 +2656,33 @@ def api_admin_faction_licenses():
     return ok(
         items=items,
         summary=summary,
-        faction_exemptions=list_faction_exemptions() or [],
-        user_exemptions=list_user_exemptions() or [],
+        **_exemption_admin_payload(),
+    )
+
+
+@app.route("/api/admin/exemptions", methods=["GET"])
+@require_owner
+def api_admin_exemptions():
+    return ok(**_exemption_admin_payload())
+
+
+@app.route("/api/admin/exemptions/factions", methods=["GET"])
+@require_owner
+def api_admin_list_faction_exemptions():
+    payload = _exemption_admin_payload()
+    return ok(
+        items=payload.get("faction_exemptions") or [],
+        count=int(((payload.get("counts") or {}).get("faction_exemptions") or 0)),
+    )
+
+
+@app.route("/api/admin/exemptions/users", methods=["GET"])
+@require_owner
+def api_admin_list_user_exemptions():
+    payload = _exemption_admin_payload()
+    return ok(
+        items=payload.get("user_exemptions") or [],
+        count=int(((payload.get("counts") or {}).get("user_exemptions") or 0)),
     )
 
 
@@ -2749,8 +2789,7 @@ def api_license_admin_dashboard():
     return ok(
         items=items,
         summary=summary,
-        faction_exemptions=list_faction_exemptions() or [],
-        user_exemptions=list_user_exemptions() or [],
+        **_exemption_admin_payload(),
     )
 
 
@@ -2800,6 +2839,24 @@ def api_owner_factions_alias():
     return api_admin_faction_licenses()
 
 
+@app.route("/api/owner/exemptions", methods=["GET"])
+@require_owner
+def api_owner_exemptions_alias():
+    return api_admin_exemptions()
+
+
+@app.route("/api/owner/exemptions/factions", methods=["GET"])
+@require_owner
+def api_owner_faction_exemptions_alias():
+    return api_admin_list_faction_exemptions()
+
+
+@app.route("/api/owner/exemptions/users", methods=["GET"])
+@require_owner
+def api_owner_user_exemptions_alias():
+    return api_admin_list_user_exemptions()
+
+
 @app.route("/api/owner/factions/<faction_id>/history", methods=["GET"])
 @require_owner
 def api_owner_factions_history_alias(faction_id: str):
@@ -2816,6 +2873,30 @@ def api_owner_factions_renew_alias(faction_id: str):
 @require_owner
 def api_owner_factions_expire_alias(faction_id: str):
     return api_admin_faction_license_expire(faction_id)
+
+
+@app.route("/api/owner/exemptions/factions", methods=["POST"])
+@require_owner
+def api_owner_add_faction_exemption_alias():
+    return api_admin_add_faction_exemption()
+
+
+@app.route("/api/owner/exemptions/factions/<faction_id>", methods=["DELETE"])
+@require_owner
+def api_owner_delete_faction_exemption_alias(faction_id: str):
+    return api_admin_delete_faction_exemption(faction_id)
+
+
+@app.route("/api/owner/exemptions/users", methods=["POST"])
+@require_owner
+def api_owner_add_user_exemption_alias():
+    return api_admin_add_user_exemption()
+
+
+@app.route("/api/owner/exemptions/users/<user_id>", methods=["DELETE"])
+@require_owner
+def api_owner_delete_user_exemption_alias(user_id: str):
+    return api_admin_delete_user_exemption(user_id)
 
 
 @app.errorhandler(404)
