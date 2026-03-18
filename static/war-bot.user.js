@@ -962,7 +962,7 @@
 
     function normalizeExemptionSummary(res) {
         var data = normalizeExemptionPayload(res);
-        var summary = data.summary || data.exemption_summary || {};
+        var summary = data.summary || data.exemption_summary || data.counts || {};
         return {
             faction_count: Number(summary.faction_count || 0) || 0,
             user_count: Number(summary.user_count || 0) || 0,
@@ -1821,7 +1821,7 @@
                 return;
             }
 
-            var res = yield authedReq('POST', '/api/login', {
+            var res = yield authedReq('POST', '/api/auth', {
                 api_key: apiKey
             });
 
@@ -2013,7 +2013,7 @@
                 var res = yield adminReq('POST', '/api/admin/exemptions/factions', {
                     faction_id: factionId,
                     faction_name: factionName,
-                    reason: reason
+                    note: reason
                 });
 
                 if (!res.ok) {
@@ -2053,7 +2053,7 @@
                     user_name: userName,
                     faction_id: factionId,
                     faction_name: factionName,
-                    reason: reason
+                    note: reason
                 });
 
                 if (!res.ok) {
