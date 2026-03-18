@@ -97,6 +97,22 @@ from torn_api import (
     bounty_url,
 )
 
+from payment_service import (
+    activate_faction_member_for_billing,
+    confirm_faction_payment_and_renew,
+    create_manual_renewal_request,
+    get_due_factions,
+    get_faction_billing_overview,
+    get_faction_payment_status,
+    get_payment_dashboard,
+    list_faction_payment_history_service,
+    remove_member_from_billing,
+    run_payment_auto_match,
+    run_payment_due_scan,
+    run_payment_warning_scan,
+    set_member_billing_enabled,
+)
+
 load_dotenv()
 
 # ============================================================
@@ -2254,7 +2270,6 @@ def api_faction_member_upsert():
     member_user_id = str(data.get("member_user_id") or "").strip()
     member_name = str(data.get("member_name") or "").strip()
     member_api_key = str(data.get("member_api_key") or "").strip()
-    enabled = 1 if _safe_bool(data.get("enabled", True)) else 0
     position = str(data.get("position") or "").strip()
 
     if not faction_id:
@@ -2262,7 +2277,7 @@ def api_faction_member_upsert():
     if not member_user_id:
         return err("Missing member_user_id.", 400)
 
-    row = upsert_faction_member_access(
+    result = activate_faction_member_for_billing(
         faction_id=faction_id,
         faction_name=faction_name,
         leader_user_id=leader_user_id,
@@ -2270,18 +2285,21 @@ def api_faction_member_upsert():
         member_user_id=member_user_id,
         member_name=member_name,
         member_api_key=member_api_key,
-        enabled=enabled,
         position=position,
+        actor_user_id=str(user.get("user_id") or ""),
+        actor_name=str(user.get("name") or ""),
     )
 
-    add_notification(
-        leader_user_id,
-        "faction_access",
-        f"{member_name or member_user_id} access updated.",
+    if not result.get("ok"):
+        return err(str(result.get("error") or "Could not activate member."), 400)
+
+    return ok(
+        message=str(result.get("message") or "Faction member activated for billing."),
+        item=_normalize_member_access_row(result.get("item") or {}),
+        payment_added=result.get("payment_added", FACTION_MEMBER_PRICE),
+        payment_instruction=result.get("payment_instruction") or "",
+        license=result.get("license") or {},
     )
-
-    return ok(message="Faction member access saved.", item=_normalize_member_access_row(row))
-
 
 @app.route("/api/faction/members/<member_user_id>/enable", methods=["POST"])
 @require_leader_session
@@ -2294,23 +2312,24 @@ def api_faction_member_enable(member_user_id: str):
     if not faction_id:
         return err("No faction found.", 400)
 
-    try:
-        row = set_faction_member_enabled(
-            faction_id,
-            str(member_user_id),
-            enabled,
-            changed_by_user_id=str(user.get("user_id") or ""),
-            changed_by_name=str(user.get("name") or ""),
-        )
-    except ValueError as e:
-        return err(str(e), 400)
-    return ok(
-        message="Faction member enable updated.",
+    result = set_member_billing_enabled(
+        faction_id=faction_id,
         member_user_id=str(member_user_id),
         enabled=enabled,
-        item=_normalize_member_access_row(row or {}),
+        changed_by_user_id=str(user.get("user_id") or ""),
+        changed_by_name=str(user.get("name") or ""),
     )
+    if not result.get("ok"):
+        return err(str(result.get("error") or "Could not update member billing."), 400)
 
+    return ok(
+        message=str(result.get("message") or "Faction member billing updated."),
+        member_user_id=str(member_user_id),
+        enabled=enabled,
+        item=_normalize_member_access_row(result.get("item") or {}),
+        license=result.get("license") or {},
+        payment_instruction=result.get("payment_instruction") or "",
+    )
 
 @app.route("/api/faction/members/<member_user_id>", methods=["DELETE"])
 @require_leader_session
@@ -2320,12 +2339,22 @@ def api_faction_member_delete(member_user_id: str):
     if not faction_id:
         return err("No faction found.", 400)
 
-    try:
-        delete_faction_member_access(faction_id, str(member_user_id))
-    except ValueError as e:
-        return err(str(e), 400)
-    return ok(message="Faction member removed.", member_user_id=str(member_user_id))
+    result = remove_member_from_billing(
+        faction_id=faction_id,
+        member_user_id=str(member_user_id),
+        actor_user_id=str(user.get("user_id") or ""),
+        actor_name=str(user.get("name") or ""),
+    )
+    if not result.get("ok"):
+        return err(str(result.get("error") or "Could not remove member."), 400)
 
+    return ok(
+        message=str(result.get("message") or "Faction member removed from billing."),
+        member_user_id=str(member_user_id),
+        member_name=str(result.get("member_name") or ""),
+        license=result.get("license") or {},
+        payment_instruction=result.get("payment_instruction") or "",
+    )
 
 # ============================================================
 # 16. FACTION PAYMENT ROUTES
@@ -2340,8 +2369,10 @@ def api_faction_payment_status():
     faction_id = str(user.get("faction_id") or "").strip()
     if not faction_id:
         return err("No faction found.", 400)
-    return ok(**_payment_payload_for_faction(faction_id, viewer_user_id=str(user.get("user_id") or "")))
-
+    result = get_faction_payment_status(faction_id, viewer_user_id=str(user.get("user_id") or ""))
+    if not result.get("ok"):
+        return err(str(result.get("error") or "Could not load faction payment status."), 400)
+    return ok(**result)
 
 @app.route("/api/faction/payment/current-cycle", methods=["GET"])
 @require_session
@@ -2350,9 +2381,14 @@ def api_faction_payment_current_cycle():
     faction_id = str(user.get("faction_id") or "").strip()
     if not faction_id:
         return err("No faction found.", 400)
-    item = get_current_faction_billing_cycle(faction_id) or {}
-    return ok(item=_normalize_payment_cycle(item))
-
+    result = get_faction_billing_overview(faction_id)
+    if not result.get("ok"):
+        return err(str(result.get("error") or "Could not load current billing cycle."), 400)
+    current_cycle = get_current_faction_billing_cycle(faction_id) or {}
+    return ok(
+        item=_normalize_payment_cycle(current_cycle),
+        billing=result,
+    )
 
 @app.route("/api/faction/payment/history", methods=["GET"])
 @require_session
@@ -2362,15 +2398,22 @@ def api_faction_payment_history():
     if not faction_id:
         return err("No faction found.", 400)
     limit = max(1, min(100, _to_int(request.args.get("limit"), 25)))
-    payments = get_faction_payment_history(faction_id, limit=limit) or []
+    result = list_faction_payment_history_service(faction_id, limit=limit)
+    if not result.get("ok"):
+        return err(str(result.get("error") or "Could not load faction payment history."), 400)
     cycles = list_faction_billing_cycles(faction_id, limit=limit) or []
     intents = list_faction_payment_intents(faction_id=faction_id, limit=limit) or []
     return ok(
-        payments=payments,
+        items=result.get("items") or [],
+        payments=result.get("items") or [],
         billing_cycles=[_normalize_payment_cycle(x) for x in cycles],
         intents=[_normalize_payment_intent(x) for x in intents],
+        payment_config={
+            "payment_player": result.get("payment_player"),
+            "payment_kind": result.get("payment_kind"),
+            "payment_per_member": result.get("payment_per_member"),
+        },
     )
-
 
 @app.route("/api/faction/payment/request-renewal", methods=["POST"])
 @require_leader_session
@@ -2382,6 +2425,15 @@ def api_faction_payment_request_renewal():
 
     data = _require_json()
     note = str(data.get("note") or "").strip()
+    result = create_manual_renewal_request(
+        faction_id=faction_id,
+        requested_by_user_id=str(user.get("user_id") or ""),
+        requested_by_name=str(user.get("name") or ""),
+        note=note,
+    )
+    if not result.get("ok"):
+        return err(str(result.get("error") or "Could not create renewal request."), 400)
+
     amount_override = _to_int(data.get("amount"), 0)
     item = create_faction_payment_intent(
         faction_id=faction_id,
@@ -2392,11 +2444,12 @@ def api_faction_payment_request_renewal():
     )
     process_faction_payment_warnings(faction_id)
     return ok(
-        message="Renewal request created.",
+        message=str(result.get("message") or "Renewal request created."),
         item=_normalize_payment_intent(item or {}),
+        renewal_cost=result.get("renewal_cost", 0),
+        payment_instruction=result.get("payment_instruction") or "",
         payment=_payment_payload_for_faction(faction_id, viewer_user_id=str(user.get("user_id") or "")),
     )
-
 
 # ============================================================
 # 17. ADMIN PAYMENT / LICENSE ROUTES
@@ -2408,9 +2461,17 @@ def api_faction_payment_request_renewal():
 @require_owner
 def api_admin_faction_payments_due():
     limit = max(1, min(250, _to_int(request.args.get("limit"), 100)))
-    items = list_due_faction_licenses(limit=limit) or []
-    return ok(items=items, summary=get_faction_admin_dashboard_summary() or {})
-
+    result = get_due_factions(limit=limit)
+    return ok(
+        items=result.get("items") or [],
+        count=result.get("count", 0),
+        summary=get_faction_admin_dashboard_summary() or {},
+        payment_config={
+            "payment_player": result.get("payment_player"),
+            "payment_kind": result.get("payment_kind"),
+            "payment_per_member": result.get("payment_per_member"),
+        },
+    )
 
 @app.route("/api/admin/faction-payments/pending", methods=["GET"])
 @require_owner
@@ -2426,6 +2487,7 @@ def api_admin_faction_payments_pending():
 def api_admin_faction_payments_history():
     faction_id = str(request.args.get("faction_id") or "").strip()
     limit = max(1, min(250, _to_int(request.args.get("limit"), 100)))
+    dashboard = get_payment_dashboard(limit=limit)
     cycles = list_faction_billing_cycles(faction_id=faction_id, limit=limit) if faction_id else []
     intents = list_faction_payment_intents(faction_id=faction_id, limit=limit) if faction_id else []
     payments = get_faction_payment_history(faction_id, limit=limit) if faction_id else []
@@ -2433,8 +2495,10 @@ def api_admin_faction_payments_history():
         billing_cycles=[_normalize_payment_cycle(x) for x in (cycles or [])],
         intents=[_normalize_payment_intent(x) for x in (intents or [])],
         payments=payments,
+        dashboard=dashboard.get("dashboard") or {},
+        due_items=dashboard.get("due_items") or [],
+        due_count=dashboard.get("due_count", 0),
     )
-
 
 @app.route("/api/admin/faction-payments/confirm", methods=["POST"])
 @require_owner
@@ -2455,20 +2519,41 @@ def api_admin_faction_payments_confirm():
             amount_paid=amount,
         )
         faction_id = str((item or {}).get("faction_id") or faction_id)
-        return ok(message="Faction payment confirmed.", item=_normalize_payment_intent(item or {}), payment=_payment_payload_for_faction(faction_id))
+        result = confirm_faction_payment_and_renew(
+            faction_id=faction_id,
+            amount=amount,
+            renewed_by=str(user.get("name") or ""),
+            note=note,
+            payment_player=PAYMENT_PLAYER,
+        )
+        if not result.get("ok"):
+            return err(str(result.get("error") or "Could not renew faction."), 400)
+        return ok(
+            message="Faction payment confirmed.",
+            intent=_normalize_payment_intent(item or {}),
+            item=result.get("item") or {},
+            payment=_payment_payload_for_faction(faction_id),
+            license=result.get("license") or {},
+        )
 
     if not faction_id:
         return err("Missing intent_id or faction_id.", 400)
 
-    row = renew_faction_after_payment(
+    result = confirm_faction_payment_and_renew(
         faction_id=faction_id,
         amount=amount,
-        payment_player=PAYMENT_PLAYER,
         renewed_by=str(user.get("name") or ""),
         note=note,
+        payment_player=PAYMENT_PLAYER,
     )
-    return ok(message="Faction renewed.", item=row, payment=_payment_payload_for_faction(faction_id))
-
+    if not result.get("ok"):
+        return err(str(result.get("error") or "Could not renew faction."), 400)
+    return ok(
+        message=str(result.get("message") or "Faction renewed."),
+        item=result.get("item") or {},
+        payment=_payment_payload_for_faction(faction_id),
+        license=result.get("license") or {},
+    )
 
 @app.route("/api/admin/faction-payments/<int:intent_id>/cancel", methods=["POST"])
 @require_owner
@@ -2488,19 +2573,23 @@ def api_admin_faction_payment_cancel(intent_id: int):
 @app.route("/api/admin/faction-payments/run-warning-scan", methods=["POST"])
 @require_owner
 def api_admin_faction_payments_run_warning_scan():
-    items = process_all_faction_payment_warnings() or []
-    return ok(message="Warning scan complete.", items=items, summary=get_faction_admin_dashboard_summary() or {})
-
+    result = run_payment_warning_scan()
+    return ok(
+        message=str(result.get("message") or "Warning scan complete."),
+        items=result.get("warned") or [],
+        count=result.get("count", 0),
+        summary=get_faction_admin_dashboard_summary() or {},
+    )
 
 @app.route("/api/admin/faction-payments/run-auto-match", methods=["POST"])
 @require_owner
 def api_admin_faction_payments_run_auto_match():
+    result = run_payment_auto_match()
     return ok(
-        message="Auto-match is not connected to a Torn payment feed yet. The backend is ready for payment intents and admin confirmation.",
-        matched=0,
-        items=[],
+        message=str(result.get("message") or "Auto-match is not connected to a Torn payment feed yet."),
+        matched=len(result.get("matched") or []),
+        items=result.get("matched") or [],
     )
-
 
 # ============================================================
 # 18. INTERNAL PAYMENT AUTOMATION ROUTES
@@ -2513,26 +2602,36 @@ def api_internal_payments_run_due_scan():
     allowed, response = _require_license_admin()
     if not allowed:
         return response
-    items = process_all_faction_payment_warnings() or []
-    return ok(message="Due scan complete.", items=items)
-
+    result = run_payment_due_scan()
+    return ok(
+        message=str(result.get("message") or "Due scan complete."),
+        items=result.get("items") or [],
+        count=result.get("count", 0),
+    )
 
 @app.route("/internal/payments/run-warning-scan", methods=["POST"])
 def api_internal_payments_run_warning_scan():
     allowed, response = _require_license_admin()
     if not allowed:
         return response
-    items = process_all_faction_payment_warnings() or []
-    return ok(message="Warning scan complete.", items=items)
-
+    result = run_payment_warning_scan()
+    return ok(
+        message=str(result.get("message") or "Warning scan complete."),
+        items=result.get("warned") or [],
+        count=result.get("count", 0),
+    )
 
 @app.route("/internal/payments/run-auto-match", methods=["POST"])
 def api_internal_payments_run_auto_match():
     allowed, response = _require_license_admin()
     if not allowed:
         return response
-    return ok(message="Auto-match is not configured for an external payment feed yet.", matched=0, items=[])
-
+    result = run_payment_auto_match()
+    return ok(
+        message=str(result.get("message") or "Auto-match is not configured for an external payment feed yet."),
+        matched=len(result.get("matched") or []),
+        items=result.get("matched") or [],
+    )
 
 @app.route("/api/admin/faction-licenses", methods=["GET"])
 @require_owner
