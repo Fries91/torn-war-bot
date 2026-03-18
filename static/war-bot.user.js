@@ -1584,64 +1584,145 @@ function renderOverviewTab() {
         return "\n      <div class=\"warhub-card\">\n        <div class=\"warhub-section-title\">\n          <h3>War Terms</h3>\n          ".concat(locked ? '<span class="warhub-pill disabled">Leader Only</span>' : '', "\n        </div>\n        <label class=\"warhub-label\">War ID</label>\n        <input class=\"warhub-input\" id=\"warhub-terms-warid\" value=\"").concat(esc(warId), "\" readonly />\n        <div style=\"height:8px;\"></div>\n        <label class=\"warhub-label\">Terms</label>\n        <textarea class=\"warhub-textarea\" id=\"warhub-terms-text\" ").concat(locked ? 'readonly' : '', ">").concat(esc(termsText), "</textarea>\n        <div class=\"warhub-actions\" style=\"margin-top:8px;\">\n          <button class=\"warhub-btn primary\" id=\"warhub-terms-save\" ").concat(locked ? 'disabled' : '', ">Save Terms</button>\n          <button class=\"warhub-btn warn\" id=\"warhub-terms-delete\" ").concat(locked ? 'disabled' : '', ">Delete Terms</button>\n        </div>\n      </div>\n    ");
     }
     function renderFactionTab() {
-        var faction =
-            (state && (state.faction || state.ourFaction || state.our_faction)) ||
-            {};
-        var members = arr((state && state.members) || []);
-        var groups = splitRosterGroups(members);
-        var factionName = String((faction && faction.name) || ((state && state.user) && state.user.faction_name) || 'Your Faction');
-        var factionId = String((faction && (faction.faction_id || faction.id)) || ((state && state.user) && state.user.faction_id) || '');
-        var leaderAccess = !!((accessState && accessState.isFactionLeader) || isOwnerSession());
-        var memberAccessRows = arr((factionMembersCache && (factionMembersCache.members || factionMembersCache.items)) || []);
-        var enabledCount = memberAccessRows.filter(function (x) {
-            return !!(x && (x.member_enabled || x.enabled));
-        }).length;
+    var faction =
+        (state && (state.faction || state.ourFaction || state.our_faction)) ||
+        {};
+    var members = arr((state && state.members) || []);
+    var groups = splitRosterGroups(members);
+    var factionName = String((faction && faction.name) || ((state && state.user) && state.user.faction_name) || 'Your Faction');
+    var factionId = String((faction && (faction.faction_id || faction.id)) || ((state && state.user) && state.user.faction_id) || '');
+    var leaderAccess = !!((accessState && accessState.isFactionLeader) || isOwnerSession());
 
-        return '\
-          <div class="warhub-card">\
-            <div class="warhub-section-title">\
-              <h3>Faction</h3>\
-              <span class="warhub-count">' + fmtNum(members.length) + '</span>\
-            </div>\
-            <div class="warhub-grid three">\
-              <div class="warhub-metric">\
-                <div class="k">Faction</div>\
-                <div class="v">' + esc(factionName || '—') + '</div>\
-              </div>\
-              <div class="warhub-metric">\
-                <div class="k">Faction ID</div>\
-                <div class="v">' + esc(factionId || '—') + '</div>\
-              </div>\
-              <div class="warhub-metric">\
-                <div class="k">Member Access</div>\
-                <div class="v">' + (leaderAccess ? fmtNum(enabledCount) : 'Leader') + '</div>\
-              </div>\
-              <div class="warhub-metric">\
-                <div class="k">Online</div>\
-                <div class="v">' + fmtNum(groups.online.length) + '</div>\
-              </div>\
-              <div class="warhub-metric">\
-                <div class="k">Hospital</div>\
-                <div class="v">' + fmtNum(groups.hospital.length) + '</div>\
-              </div>\
-              <div class="warhub-metric">\
-                <div class="k">Offline</div>\
-                <div class="v">' + fmtNum(groups.offline.length) + '</div>\
-              </div>\
-            </div>\
-            <div class="warhub-actions" style="margin-top:8px;">\
-              <button class="warhub-btn" id="wh-refresh-faction">Refresh Faction</button>\
-              <button class="warhub-btn small" id="wh-open-members">Open Members</button>\
-            </div>\
-          </div>\
-          ' + rosterCard('Online Members', groups.online, { extraClass: 'online-box' }) + '\
-          ' + rosterCard('Hospital Members', groups.hospital, { extraClass: 'hospital-box' }) + '\
-          ' + rosterCard('Travel Members', groups.travel, { extraClass: 'travel-box' }) + '\
-          ' + rosterCard('Jailed Members', groups.jail, { extraClass: 'jail-box' }) + '\
-          ' + rosterCard('Idle Members', groups.idle, { extraClass: 'idle-box' }) + '\
-          ' + rosterDropdown('Offline Members', groups.offline, { extraClass: 'offline-box' }) + '\
-        ';
+    var memberAccessRows = arr((factionMembersCache && (factionMembersCache.members || factionMembersCache.items)) || []);
+    var accessMap = {};
+    memberAccessRows.forEach(function (x) {
+        var id = String(x.member_user_id || x.user_id || x.id || '').trim();
+        if (id) accessMap[id] = x || {};
+    });
+
+    var enabledCount = memberAccessRows.filter(function (x) {
+        return !!(x && (x.member_enabled || x.enabled));
+    }).length;
+
+    var totalXanaxOwed = memberAccessRows.reduce(function (sum, x) {
+        return sum + (Number(x && (x.xanax_owed != null ? x.xanax_owed : ((x.member_enabled || x.enabled) ? 3 : 0))) || 0);
+    }, 0);
+
+    var accessRowsHtml = '';
+    if (leaderAccess) {
+        accessRowsHtml = members.length ? members.map(function (m) {
+            var memberId = String(m.user_id || m.id || m.player_id || '').trim();
+            var liveName = String(m.name || m.member_name || ('ID ' + memberId));
+            var position = String(m.position || m.faction_position || m.role || '');
+            var saved = accessMap[memberId] || {};
+            var enabled = !!(saved.member_enabled || saved.enabled);
+            var cycleLocked = !!(saved.cycle_locked || saved.locked_until_renewal);
+            var xanaxOwed = Number(saved.xanax_owed != null ? saved.xanax_owed : (enabled ? 3 : 0)) || 0;
+            var activatedAt = saved.activated_at || '';
+            var lastRenewedAt = saved.last_renewed_at || '';
+            var hasSavedRow = !!Object.keys(saved).length;
+
+            var statusPill = enabled
+                ? '<span class="warhub-pill enabled">Active</span>'
+                : '<span class="warhub-pill disabled">Inactive</span>';
+
+            var lockLine = cycleLocked
+                ? '<div class="warhub-mini" style="margin-top:4px;color:#f6c244;">Locked until next paid renewal.</div>'
+                : '';
+
+            var metaBits = [
+                'ID ' + memberId,
+                position || '',
+                'Xanax owed: ' + xanaxOwed
+            ];
+
+            if (activatedAt) metaBits.push('Activated: ' + fmtTs(activatedAt));
+            if (lastRenewedAt) metaBits.push('Renewed: ' + fmtTs(lastRenewedAt));
+
+            var actionHtml = '';
+            if (!enabled) {
+                actionHtml += '<button class="warhub-btn primary small" data-add-faction-member="' + esc(memberId) + '" data-member-name="' + esc(liveName) + '" data-member-position="' + esc(position) + '">Activate</button>';
+            }
+
+            if (hasSavedRow && !cycleLocked) {
+                actionHtml += '<button class="warhub-btn warn small" data-del-member="' + esc(memberId) + '" data-cycle-locked="0">Remove</button>';
+            } else if (cycleLocked) {
+                actionHtml += '<span class="warhub-mini">Remove disabled this cycle</span>';
+            }
+
+            return '\
+              <div class="warhub-row">\
+                <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;">\
+                  <div style="min-width:0;flex:1;">\
+                    <div style="font-weight:700;">' + esc(liveName) + '</div>\
+                    <div class="warhub-mini">' + esc(metaBits.filter(Boolean).join(' • ')) + '</div>\
+                    ' + lockLine + '\
+                  </div>\
+                  <div>' + statusPill + '</div>\
+                </div>\
+                <div class="warhub-actions" style="margin-top:8px;">' + actionHtml + '</div>\
+              </div>';
+        }).join('') : '<div class="warhub-empty">No faction members found.</div>';
     }
+
+    return '\
+      <div class="warhub-card">\
+        <div class="warhub-section-title">\
+          <h3>Faction</h3>\
+          <span class="warhub-count">' + fmtNum(members.length) + '</span>\
+        </div>\
+        <div class="warhub-grid three">\
+          <div class="warhub-metric">\
+            <div class="k">Faction</div>\
+            <div class="v">' + esc(factionName || '—') + '</div>\
+          </div>\
+          <div class="warhub-metric">\
+            <div class="k">Faction ID</div>\
+            <div class="v">' + esc(factionId || '—') + '</div>\
+          </div>\
+          <div class="warhub-metric">\
+            <div class="k">Member Access</div>\
+            <div class="v">' + (leaderAccess ? fmtNum(enabledCount) : 'Leader') + '</div>\
+          </div>\
+          <div class="warhub-metric">\
+            <div class="k">Xanax Owed</div>\
+            <div class="v">' + fmtNum(totalXanaxOwed) + '</div>\
+          </div>\
+          <div class="warhub-metric">\
+            <div class="k">Online</div>\
+            <div class="v">' + fmtNum(groups.online.length) + '</div>\
+          </div>\
+          <div class="warhub-metric">\
+            <div class="k">Offline</div>\
+            <div class="v">' + fmtNum(groups.offline.length) + '</div>\
+          </div>\
+        </div>\
+        <div class="warhub-actions" style="margin-top:8px;">\
+          <button class="warhub-btn" id="wh-refresh-faction">Refresh Faction</button>\
+          <button class="warhub-btn small" id="wh-open-members">Open Members</button>\
+        </div>\
+      </div>\
+      ' + (leaderAccess ? '\
+      <div class="warhub-card">\
+        <div class="warhub-section-title">\
+          <h3>Member Access Control</h3>\
+          <span class="warhub-count">' + fmtNum(enabledCount) + '</span>\
+        </div>\
+        <div class="warhub-mini" style="margin-bottom:8px;line-height:1.5;">\
+          Activate gives the member access and records Xanax owed for the cycle.\
+          Remove deletes the saved member row, but stays locked once activated until the next paid renewal.\
+        </div>\
+        <div class="warhub-list">' + accessRowsHtml + '</div>\
+      </div>\
+      ' : '') + '\
+      ' + rosterCard('Online Members', groups.online, { extraClass: 'online-box' }) + '\
+      ' + rosterCard('Hospital Members', groups.hospital, { extraClass: 'hospital-box' }) + '\
+      ' + rosterCard('Travel Members', groups.travel, { extraClass: 'travel-box' }) + '\
+      ' + rosterCard('Jailed Members', groups.jail, { extraClass: 'jail-box' }) + '\
+      ' + rosterCard('Idle Members', groups.idle, { extraClass: 'idle-box' }) + '\
+      ' + rosterDropdown('Offline Members', groups.offline, { extraClass: 'offline-box' }) + '\
+    ';
+}
         function renderWarTab() {
         var war = (state && state.war) || {};
         var score = (state && state.score) || {};
@@ -3255,13 +3336,38 @@ function _loadAdminDashboard() {
             member_name: member_name,
             enabled: true,
             position: position
-        }, 'Member enabled for this faction cycle.', false);
+        }, 'Member activated for this faction cycle.', false);
 
         if (res) {
             yield refreshLeaderFactionData();
-            setStatus('Faction member access saved.');
+            setStatus('Member activated and Xanax owed recorded.');
         }
     }));
+
+    if (overlay) overlay.querySelectorAll('[data-add-faction-member]').forEach(function (btn) {
+        btn.addEventListener('click', _asyncToGenerator(function* () {
+            var member_user_id = cleanInputValue(btn.getAttribute('data-add-faction-member') || '');
+            if (!member_user_id) {
+                setStatus('Missing member ID.', true);
+                return;
+            }
+
+            var member_name = cleanInputValue(btn.getAttribute('data-member-name') || '');
+            var position = cleanInputValue(btn.getAttribute('data-member-position') || '');
+
+            var res = yield doAction('POST', '/api/faction/members', {
+                member_user_id: member_user_id,
+                member_name: member_name,
+                enabled: true,
+                position: position
+            }, 'Member activated for this faction cycle.', false);
+
+            if (res) {
+                yield refreshLeaderFactionData();
+                setStatus('Member activated and Xanax owed recorded.');
+            }
+        }));
+    });
 
     if (overlay) overlay.querySelectorAll('[data-toggle-member]').forEach(function (btn) {
         btn.addEventListener('click', _asyncToGenerator(function* () {
