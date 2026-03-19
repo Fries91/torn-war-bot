@@ -2178,19 +2178,41 @@ function renderChainTab() {
 }
 
 function renderEnemiesTab() {
-    var warObj = (state && state.war) ? state.war : {};
-    var enemies = arr(
-        (state && state.enemies) ||
-        (state && state.enemy_members) ||
-        (state && state.enemyMembers) ||
-        (warObj && warObj.enemy_members) ||
-        (warObj && warObj.enemyMembers) ||
-        []
-    );
+    var warObj = (state && state.war && typeof state.war === 'object') ? state.war : {};
+
+    function pickEnemyList() {
+        var candidates = [
+            state && state.enemies,
+            state && state.enemy_members,
+            state && state.enemyMembers,
+            warObj && warObj.enemies,
+            warObj && warObj.enemy_members,
+            warObj && warObj.enemyMembers
+        ];
+
+        for (var i = 0; i < candidates.length; i++) {
+            if (Array.isArray(candidates[i]) && candidates[i].length) {
+                return candidates[i];
+            }
+        }
+
+        for (var j = 0; j < candidates.length; j++) {
+            if (Array.isArray(candidates[j])) {
+                return candidates[j];
+            }
+        }
+
+        return [];
+    }
+
+    var enemies = pickEnemyList();
 
     var enemyFactionName = String(
         (state && state.enemy_faction_name) ||
+        (state && state.enemyFaction && state.enemyFaction.name) ||
+        (state && state.enemy_faction && state.enemy_faction.name) ||
         (warObj && warObj.enemy_faction_name) ||
+        (warObj && warObj.enemyFaction && warObj.enemyFaction.name) ||
         'Enemy Faction'
     );
 
@@ -2205,6 +2227,7 @@ function renderEnemiesTab() {
     function shortTime(secs) {
         var total = Number(secs || 0);
         if (!isFinite(total) || total <= 0) return 'Ready';
+
         total = Math.floor(total);
 
         var days = Math.floor(total / 86400);
@@ -2233,7 +2256,13 @@ function renderEnemiesTab() {
 
         if (combined.indexOf('hospital') >= 0) return 'hospital';
         if (combined.indexOf('jail') >= 0 || combined.indexOf('jailed') >= 0) return 'jail';
-        if (combined.indexOf('travel') >= 0 || combined.indexOf('travelling') >= 0 || combined.indexOf('traveling') >= 0 || combined.indexOf('abroad') >= 0 || combined.indexOf('flying') >= 0) return 'travel';
+        if (
+            combined.indexOf('travel') >= 0 ||
+            combined.indexOf('travelling') >= 0 ||
+            combined.indexOf('traveling') >= 0 ||
+            combined.indexOf('abroad') >= 0 ||
+            combined.indexOf('flying') >= 0
+        ) return 'travel';
         if (combined.indexOf('idle') >= 0) return 'idle';
         if (combined.indexOf('online') >= 0) return 'online';
         return 'offline';
@@ -2269,6 +2298,30 @@ function renderEnemiesTab() {
         var matchesFilter = savedFilter === 'all' || stateName === savedFilter;
 
         return matchesSearch && matchesFilter;
+    }).sort(function (a, b) {
+        var order = {
+            online: 1,
+            idle: 2,
+            travel: 3,
+            jail: 4,
+            hospital: 5,
+            offline: 6
+        };
+
+        var aState = enemyState(a);
+        var bState = enemyState(b);
+
+        var aOrder = order[aState] || 99;
+        var bOrder = order[bState] || 99;
+
+        if (aOrder !== bOrder) return aOrder - bOrder;
+
+        var aName = String(a.name || a.user_name || a.member_name || '').toLowerCase();
+        var bName = String(b.name || b.user_name || b.member_name || '').toLowerCase();
+
+        if (aName < bName) return -1;
+        if (aName > bName) return 1;
+        return 0;
     });
 
     var cardsHtml = filtered.map(function (e) {
@@ -2285,7 +2338,20 @@ function renderEnemiesTab() {
         var medCd = shortTime(e.medical_cooldown);
 
         var statusLine = String(e.display_status || e.status_detail || e.status || e.last_action || '').trim();
-        if (!statusLine) statusLine = pillText;
+        if (stateName === 'hospital') {
+            var hospSecs = toNum(e.hospital_seconds);
+            statusLine = hospSecs > 0 ? ('Hospital for ' + shortTime(hospSecs)) : 'Hospitalized';
+        } else if (stateName === 'jail') {
+            statusLine = statusLine || 'In jail';
+        } else if (stateName === 'travel') {
+            statusLine = statusLine || 'Travelling';
+        } else if (stateName === 'idle') {
+            statusLine = statusLine || 'Idle';
+        } else if (stateName === 'online') {
+            statusLine = statusLine || 'Online';
+        } else {
+            statusLine = statusLine || 'Offline';
+        }
 
         var attackUrl = String(e.attack_url || '').trim();
 
@@ -2336,6 +2402,13 @@ function renderEnemiesTab() {
           <span class="warhub-count">' + fmtNum(filtered.length) + ' / ' + fmtNum(enemies.length) + '</span>\
         </div>\
         <div class="warhub-hero-vs">' + esc(enemyFactionName) + '</div>\
+        <div class="warhub-mini" style="margin-top:6px;">' +
+          'root enemies: ' + esc(String(Array.isArray(state && state.enemies) ? state.enemies.length : 0)) +
+          ' | enemy_members: ' + esc(String(Array.isArray(state && state.enemy_members) ? state.enemy_members.length : 0)) +
+          ' | enemyMembers: ' + esc(String(Array.isArray(state && state.enemyMembers) ? state.enemyMembers.length : 0)) +
+          ' | war.enemies: ' + esc(String(Array.isArray(warObj && warObj.enemies) ? warObj.enemies.length : 0)) +
+          ' | war.enemy_members: ' + esc(String(Array.isArray(warObj && warObj.enemy_members) ? warObj.enemy_members.length : 0)) +
+        '</div>\
 \
         <div class="warhub-grid two" style="margin-top:12px;">\
           <div>\
