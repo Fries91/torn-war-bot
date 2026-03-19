@@ -2199,6 +2199,38 @@ function scrapeEnemyMembersFromPage() {
         return String((el && el.textContent) || '').replace(/\s+/g, ' ').trim();
     }
 
+    function looksLikeEnemyContainer(el) {
+        if (!el) return false;
+
+        var depth = 0;
+        var cur = el;
+        while (cur && depth < 6) {
+            var txt = textOf(cur).toLowerCase();
+            var cls = String(cur.className || '').toLowerCase();
+            var id = String(cur.id || '').toLowerCase();
+
+            if (
+                txt.indexOf('enemy faction') >= 0 ||
+                txt.indexOf('enemies') >= 0 ||
+                txt.indexOf('opponent') >= 0 ||
+                txt.indexOf('ranked war') >= 0 ||
+                cls.indexOf('enemy') >= 0 ||
+                cls.indexOf('opponent') >= 0 ||
+                cls.indexOf('war') >= 0 ||
+                id.indexOf('enemy') >= 0 ||
+                id.indexOf('opponent') >= 0 ||
+                id.indexOf('war') >= 0
+            ) {
+                return true;
+            }
+
+            cur = cur.parentElement;
+            depth += 1;
+        }
+
+        return false;
+    }
+
     var links = Array.prototype.slice.call(document.querySelectorAll(
         'a[href*="profiles.php?XID="], a[href*="/profiles.php?XID="], a[href*="loader.php?sid=attack&user2ID="]'
     ));
@@ -2212,6 +2244,8 @@ function scrapeEnemyMembersFromPage() {
         if (!userId || seen[userId]) return;
 
         var row = a.closest('li, tr, [class*="member"], [class*="enemy"], [class*="user"], div');
+        if (!looksLikeEnemyContainer(row)) return;
+
         var blob = textOf(row).toLowerCase();
         var name = textOf(a);
 
@@ -2249,73 +2283,7 @@ function scrapeEnemyMembersFromPage() {
 
     return out;
 }
- function getEnemyMembersForTab() {
-    function arrify(v) {
-        return Array.isArray(v) ? v : [];
-    }
-
-    function normalizeEnemyRow(e) {
-        if (!e || typeof e !== 'object') return null;
-
-        var userId = String(e.user_id || e.id || e.target_id || '').trim();
-        var name = String(e.name || e.user_name || e.member_name || e.target_name || '').trim();
-
-        if (!userId && !name) return null;
-
-        return {
-            user_id: userId,
-            id: userId,
-            name: name || 'Unknown',
-            level: e.level || e.user_level || '',
-            position: e.position || e.role || e.rank || 'Member',
-            online_state: e.online_state || e.status_class || e.state || '',
-            status: e.status || '',
-            status_detail: e.status_detail || '',
-            display_status: e.display_status || e.last_action || '',
-            hospital_seconds: Number(e.hospital_seconds || e.hospital_time || 0) || 0,
-            attack_url: e.attack_url || (userId ? ('https://www.torn.com/loader.php?sid=attack&user2ID=' + encodeURIComponent(userId)) : ''),
-            profile_url: e.profile_url || (userId ? ('https://www.torn.com/profiles.php?XID=' + encodeURIComponent(userId)) : ''),
-            bounty_url: e.bounty_url || (userId ? ('https://www.torn.com/bounties.php?userID=' + encodeURIComponent(userId)) : '')
-        };
-    }
-
-    function uniqueById(list) {
-        var seen = {};
-        var out = [];
-
-        arrify(list).forEach(function (row) {
-            var enemy = normalizeEnemyRow(row);
-            if (!enemy) return;
-
-            var key = String(enemy.user_id || enemy.name).trim().toLowerCase();
-            if (!key || seen[key]) return;
-
-            seen[key] = true;
-            out.push(enemy);
-        });
-
-        return out;
-    }
-
-    var live = (typeof liveSummaryCache === 'object' && liveSummaryCache) ? liveSummaryCache : {};
-    var liveWar = (live && typeof live.war === 'object' && live.war) ? live.war : {};
-
-    var candidates = [
-        live && live.enemy_members,
-        live && live.enemyMembers,
-        liveWar && liveWar.enemy_members,
-        liveWar && liveWar.enemyMembers
-    ];
-
-    for (var i = 0; i < candidates.length; i++) {
-        var normalized = uniqueById(candidates[i]);
-        if (normalized.length) return normalized;
-    }
-
-    return uniqueById(scrapeEnemyMembersFromPage());
-}
-
-function renderEnemiesTab() {
+ function renderEnemiesTab() {
     var warObj = (state && state.war && typeof state.war === 'object') ? state.war : {};
     var live = (typeof liveSummaryCache === 'object' && liveSummaryCache) ? liveSummaryCache : {};
     var liveWar = (live && typeof live.war === 'object' && live.war) ? live.war : {};
@@ -2403,7 +2371,7 @@ function renderEnemiesTab() {
         return 'warhub-pill';
     }
 
-    var filtered = enemies.filter(function (e) {
+    function matchesEnemy(e) {
         var name = String(e.name || e.user_name || e.member_name || '').toLowerCase();
         var uid = String(e.user_id || e.id || '').toLowerCase();
         var stateName = enemyState(e);
@@ -2412,33 +2380,35 @@ function renderEnemiesTab() {
         var matchesFilter = savedFilter === 'all' || stateName === savedFilter;
 
         return matchesSearch && matchesFilter;
-    }).sort(function (a, b) {
-        var order = {
-            online: 1,
-            idle: 2,
-            travel: 3,
-            jail: 4,
-            hospital: 5,
-            offline: 6
-        };
+    }
 
-        var aState = enemyState(a);
-        var bState = enemyState(b);
-
-        var aOrder = order[aState] || 99;
-        var bOrder = order[bState] || 99;
-
-        if (aOrder !== bOrder) return aOrder - bOrder;
-
+    function sortEnemies(a, b) {
         var aName = String(a.name || a.user_name || a.member_name || '').toLowerCase();
         var bName = String(b.name || b.user_name || b.member_name || '').toLowerCase();
 
         if (aName < bName) return -1;
         if (aName > bName) return 1;
         return 0;
+    }
+
+    var filtered = enemies.filter(matchesEnemy).sort(sortEnemies);
+
+    var groups = {
+        online: [],
+        idle: [],
+        travel: [],
+        jail: [],
+        hospital: [],
+        offline: []
+    };
+
+    filtered.forEach(function (e) {
+        var s = enemyState(e);
+        if (!groups[s]) s = 'offline';
+        groups[s].push(e);
     });
 
-    var cardsHtml = filtered.map(function (e) {
+    function renderEnemyRow(e) {
         var name = String(e.name || e.user_name || e.member_name || 'Unknown');
         var userId = String(e.user_id || e.id || '').trim();
         var level = String(e.level || '').trim();
@@ -2468,34 +2438,50 @@ function renderEnemiesTab() {
         var bountyUrl = String(e.bounty_url || '').trim();
 
         return '\
-          <div class="warhub-card" style="margin-top:12px;">\
+          <div class="warhub-card" style="margin-top:10px;">\
             <div class="warhub-row" style="justify-content:space-between;align-items:center;gap:8px;">\
               <div>\
-                <div class="warhub-name">' +
-                    (profileUrl
-                        ? '<a href="' + esc(profileUrl) + '" target="_blank" rel="noopener noreferrer">' + esc(name) + '</a>'
-                        : esc(name)
-                    ) +
-                    (userId ? ' [' + esc(userId) + ']' : '') +
-                '</div>\
+                <div class="warhub-name" style="color:#fff !important;">' + esc(name) + (userId ? ' [' + esc(userId) + ']' : '') + '</div>\
                 <div class="warhub-mini" style="margin-top:4px;">' + esc(statusLine) + '</div>\
               </div>\
               <div class="' + pillClass + '">' + esc(pillText) + '</div>\
             </div>\
 \
-            <div style="margin-top:12px;padding:10px 12px;border-radius:12px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;gap:14px;flex-wrap:wrap;">\
+            <div style="margin-top:10px;padding:10px 12px;border-radius:12px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;gap:14px;flex-wrap:wrap;">\
               <div style="white-space:nowrap;"><strong>Lvl:</strong> ' + esc(level || '--') + '</div>\
               <div style="white-space:nowrap;"><strong>Role:</strong> ' + esc(position || '--') + '</div>\
               <div style="white-space:nowrap;"><strong>Status:</strong> ' + esc(pillText) + '</div>\
             </div>\
 \
-            <div class="warhub-actions" style="margin-top:12px;">\
+            <div class="warhub-actions" style="margin-top:10px;">\
               ' + (attackUrl ? '<a class="warhub-btn primary" href="' + esc(attackUrl) + '" target="_blank" rel="noopener noreferrer">Attack</a>' : '') + '\
               ' + (profileUrl ? '<a class="warhub-btn" href="' + esc(profileUrl) + '" target="_blank" rel="noopener noreferrer">Profile</a>' : '') + '\
               ' + (bountyUrl ? '<a class="warhub-btn" href="' + esc(bountyUrl) + '" target="_blank" rel="noopener noreferrer">Bounty</a>' : '') + '\
             </div>\
           </div>';
-    }).join('');
+    }
+
+    function renderGroup(title, key, pillClass) {
+        var list = groups[key] || [];
+        if (!list.length) return '';
+
+        return '\
+          <div class="warhub-card" style="margin-top:12px;">\
+            <div class="warhub-section-title">\
+              <h3>' + esc(title) + '</h3>\
+              <span class="' + esc(pillClass) + '">' + fmtNum(list.length) + '</span>\
+            </div>\
+            ' + list.map(renderEnemyRow).join('') + '\
+          </div>';
+    }
+
+    var groupedHtml =
+        renderGroup('Online', 'online', 'warhub-pill good') +
+        renderGroup('Idle', 'idle', 'warhub-pill neutral') +
+        renderGroup('Travel', 'travel', 'warhub-pill travel') +
+        renderGroup('Jail', 'jail', 'warhub-pill jail') +
+        renderGroup('Hospital', 'hospital', 'warhub-pill bad') +
+        renderGroup('Offline', 'offline', 'warhub-pill');
 
     return '\
       <div class="warhub-card warhub-hero-card">\
@@ -2524,9 +2510,9 @@ function renderEnemiesTab() {
           </div>\
         </div>\
 \
-        <div class="warhub-mini" style="margin-top:10px;">Enemy faction members from live summary or page fallback. No life, energy, or med cooldown shown here.</div>\
+        <div class="warhub-mini" style="margin-top:10px;">Enemy faction members from live summary or strict war-page fallback only.</div>\
       </div>\
-      ' + (cardsHtml || '<div class="warhub-card" style="margin-top:12px;">No enemies found.</div>');
+      ' + (groupedHtml || '<div class="warhub-card" style="margin-top:12px;">No enemies found.</div>');
 }
 
     function renderHospitalTab() {
