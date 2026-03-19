@@ -1384,9 +1384,26 @@ function _loadLiveSummary() {
     // 13. DATA HELPERS / NORMALIZERS
     // ============================================================
 
-    function getMe() {
-        return state && state.me ? state.me : {};
-    }
+function getMe() {
+    var me = (state && state.me) ? state.me : {};
+    var sessionUser = (state && state.user) ? state.user : {};
+    var accessUser = (accessState && accessState.user) ? accessState.user : {};
+
+    return {
+        user_id: me.user_id || sessionUser.user_id || accessUser.user_id || '',
+        name: me.name || me.user_name || sessionUser.name || sessionUser.user_name || accessUser.name || accessUser.user_name || '',
+        available: me.available != null ? me.available : (
+            sessionUser.available != null ? sessionUser.available : accessUser.available
+        ),
+        chain_sitter: me.chain_sitter != null ? me.chain_sitter : (
+            sessionUser.chain_sitter != null ? sessionUser.chain_sitter : accessUser.chain_sitter
+        ),
+        is_available: me.is_available,
+        is_chain_sitter: me.is_chain_sitter,
+        faction_id: me.faction_id || sessionUser.faction_id || accessUser.faction_id || '',
+        faction_name: me.faction_name || sessionUser.faction_name || accessUser.faction_name || ''
+    };
+}
 
     function getWar() {
         return state && state.war ? state.war : {};
@@ -1814,6 +1831,7 @@ function renderChainTab() {
     var war = getWar();
     var me = getMe();
     var faction = getFaction();
+    var chainSitters = arr((state && (state.chain_sitters || state.chainSitters)) || []);
 
     var ourFactionName = (faction && (faction.name || faction.faction_name)) || war.my_faction_name || 'Your Faction';
     var chainUs = Number(war.chain_us || 0);
@@ -1842,9 +1860,29 @@ function renderChainTab() {
         ? '<span class="warhub-pill good">Chain Sitter Opted In</span>'
         : '<span class="warhub-pill neutral">Chain Sitter Opted Out</span>';
 
+    var availableBtnClass = isAvailable ? 'warhub-btn primary' : 'warhub-btn';
+    var unavailableBtnClass = !isAvailable ? 'warhub-btn warn' : 'warhub-btn';
+    var optInBtnClass = isChainSitter ? 'warhub-btn primary' : 'warhub-btn';
+    var optOutBtnClass = !isChainSitter ? 'warhub-btn warn' : 'warhub-btn';
+
     var chainNote = hasWar
         ? 'Live faction chain only.'
         : 'No active war right now. Chain tools still work.';
+
+    var chainSittersHtml = chainSitters.length
+        ? chainSitters.map(function (m) {
+            var name = m.name || m.user_name || m.member_name || 'Unknown';
+            var userId = String(m.user_id || m.member_user_id || '').trim();
+            var statusBits = [];
+            statusBits.push((m.available === 1 || m.available === true || m.available === '1') ? 'Available' : 'Unavailable');
+            statusBits.push((m.chain_sitter === 1 || m.chain_sitter === true || m.chain_sitter === '1') ? 'Opted In' : 'Opted Out');
+
+            return '<div class="warhub-row">' +
+                '<div class="warhub-name">' + esc(name) + (userId ? ' [' + esc(userId) + ']' : '') + '</div>' +
+                '<div class="warhub-meta">' + esc(statusBits.join(' • ')) + '</div>' +
+            '</div>';
+        }).join('')
+        : '<div class="warhub-empty">No chain sitters opted in.</div>';
 
     return '\
       <div class="warhub-card warhub-hero-card">\
@@ -1880,13 +1918,13 @@ function renderChainTab() {
         </div>\
 \
         <div class="warhub-actions" style="margin-top:12px;">\
-          <button class="warhub-btn primary" id="wh-set-available">Available</button>\
-          <button class="warhub-btn warn" id="wh-set-unavailable">Unavailable</button>\
+          <button class="' + availableBtnClass + '" id="wh-set-available">Available</button>\
+          <button class="' + unavailableBtnClass + '" id="wh-set-unavailable">Unavailable</button>\
         </div>\
 \
         <div class="warhub-actions" style="margin-top:10px;">\
-          <button class="warhub-btn" id="wh-chain-opt-in">Chain Sitter Opt In</button>\
-          <button class="warhub-btn" id="wh-chain-opt-out">Chain Sitter Opt Out</button>\
+          <button class="' + optInBtnClass + '" id="wh-chain-opt-in">Chain Sitter Opt In</button>\
+          <button class="' + optOutBtnClass + '" id="wh-chain-opt-out">Chain Sitter Opt Out</button>\
         </div>\
 \
         <div class="warhub-actions" style="margin-top:12px;flex-wrap:wrap;">\
@@ -1897,6 +1935,14 @@ function renderChainTab() {
         <div class="warhub-mini" style="margin-top:10px;">\
           Default status is unavailable until you click Available.\
         </div>\
+      </div>\
+\
+      <div class="warhub-card" style="margin-top:12px;">\
+        <div class="warhub-section-title">\
+          <h3>👥 Chain Sitters</h3>\
+          <span class="warhub-count">' + fmtNum(chainSitters.length) + '</span>\
+        </div>\
+        <div class="warhub-list" style="margin-top:10px;">' + chainSittersHtml + '</div>\
       </div>';
 }
 
