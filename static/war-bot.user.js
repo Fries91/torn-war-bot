@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         War Hub ⚔️
 // @namespace    fries91-war-hub
-// @version      3.1.4
+// @version      3.1.5
 // @description  War Hub by Fries91. Faction-license aware overlay with draggable icon, draggable overlay, PDA friendly, shared war tools, faction member management, and payment lock handling.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -2248,6 +2248,71 @@ function scrapeEnemyMembersFromPage() {
     });
 
     return out;
+}
+ function getEnemyMembersForTab() {
+    function arrify(v) {
+        return Array.isArray(v) ? v : [];
+    }
+
+    function normalizeEnemyRow(e) {
+        if (!e || typeof e !== 'object') return null;
+
+        var userId = String(e.user_id || e.id || e.target_id || '').trim();
+        var name = String(e.name || e.user_name || e.member_name || e.target_name || '').trim();
+
+        if (!userId && !name) return null;
+
+        return {
+            user_id: userId,
+            id: userId,
+            name: name || 'Unknown',
+            level: e.level || e.user_level || '',
+            position: e.position || e.role || e.rank || 'Member',
+            online_state: e.online_state || e.status_class || e.state || '',
+            status: e.status || '',
+            status_detail: e.status_detail || '',
+            display_status: e.display_status || e.last_action || '',
+            hospital_seconds: Number(e.hospital_seconds || e.hospital_time || 0) || 0,
+            attack_url: e.attack_url || (userId ? ('https://www.torn.com/loader.php?sid=attack&user2ID=' + encodeURIComponent(userId)) : ''),
+            profile_url: e.profile_url || (userId ? ('https://www.torn.com/profiles.php?XID=' + encodeURIComponent(userId)) : ''),
+            bounty_url: e.bounty_url || (userId ? ('https://www.torn.com/bounties.php?userID=' + encodeURIComponent(userId)) : '')
+        };
+    }
+
+    function uniqueById(list) {
+        var seen = {};
+        var out = [];
+
+        arrify(list).forEach(function (row) {
+            var enemy = normalizeEnemyRow(row);
+            if (!enemy) return;
+
+            var key = String(enemy.user_id || enemy.name).trim().toLowerCase();
+            if (!key || seen[key]) return;
+
+            seen[key] = true;
+            out.push(enemy);
+        });
+
+        return out;
+    }
+
+    var live = (typeof liveSummaryCache === 'object' && liveSummaryCache) ? liveSummaryCache : {};
+    var liveWar = (live && typeof live.war === 'object' && live.war) ? live.war : {};
+
+    var candidates = [
+        live && live.enemy_members,
+        live && live.enemyMembers,
+        liveWar && liveWar.enemy_members,
+        liveWar && liveWar.enemyMembers
+    ];
+
+    for (var i = 0; i < candidates.length; i++) {
+        var normalized = uniqueById(candidates[i]);
+        if (normalized.length) return normalized;
+    }
+
+    return uniqueById(scrapeEnemyMembersFromPage());
 }
 
 function renderEnemiesTab() {
