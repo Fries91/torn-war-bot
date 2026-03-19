@@ -16,6 +16,7 @@ from db import (
     upsert_user,
     get_user,
     get_user_map_by_faction,
+    get_users_by_faction,
     create_session,
     get_session,
     touch_session,
@@ -1256,6 +1257,224 @@ def _enrich_members_with_saved_keys(
         out.append(merged)
 
     return out
+
+
+
+
+def _first_stat(personalstats: Dict[str, Any], keys: List[str], default: int = 0) -> int:
+    stats = personalstats or {}
+    for key in keys:
+        val = stats.get(key)
+        if isinstance(val, bool):
+            continue
+        if isinstance(val, (int, float)):
+            return int(val)
+        if isinstance(val, str):
+            s = val.strip().replace(',', '')
+            if s.lstrip('-').isdigit():
+                return int(s)
+    return default
+
+
+def _build_live_war_summary(user: Dict[str, Any]) -> Dict[str, Any]:
+    user = user or {}
+    faction_id = str(user.get("faction_id") or "").strip()
+    faction_name = str(user.get("faction_name") or "").strip()
+    viewer_user_id = str(user.get("user_id") or "").strip()
+    viewer_key = str(user.get("api_key") or "").strip()
+
+    if not faction_id:
+        return {
+            "ok": True,
+            "war_id": "",
+            "faction_id": "",
+            "faction_name": "",
+            "has_war": False,
+            "members": [],
+            "leaders": {},
+            "totals": {},
+            "meta": {"reason": "no_faction"},
+        }
+
+    license_status = _build_license_status_payload(faction_id, viewer_user_id=viewer_user_id) if faction_id else {}
+    leader_user_id = str((license_status or {}).get("leader_user_id") or "").strip()
+    leader_user = get_user(leader_user_id) if leader_user_id else None
+    leader_key = str((leader_user or {}).get("api_key") or "").strip()
+
+    war_key = leader_key or viewer_key
+    war_api_key_source = "leader_user_key" if leader_key else ("session_user_key" if viewer_key else "missing")
+
+    war_payload = _ranked_war_payload_for_user(
+        war_key,
+        my_faction_id=faction_id,
+        my_faction_name=faction_name,
+        war_api_key_source=war_api_key_source,
+    ) if war_key else {
+        "war_id": "",
+        "war": {"active": False, "registered": False, "phase": "none", "status": "Currently not in war"},
+        "score_us": 0,
+        "score_them": 0,
+        "chain_us": 0,
+        "chain_them": 0,
+        "enemy_faction_id": "",
+        "enemy_faction_name": "",
+        "members": [],
+    }
+
+    faction_fetch_key = war_key or viewer_key
+    faction_info = _faction_basic_by_id(faction_fetch_key, faction_id) if faction_fetch_key else {"ok": False, "members": []}
+    live_members = list((faction_info or {}).get("members") or [])
+
+    users_by_faction = get_users_by_faction(faction_id) or []
+    user_map = {str(x.get("user_id") or "").strip(): x for x in users_by_faction if str(x.get("user_id") or "").strip()}
+    faction_member_rows = list_faction_members(faction_id) or []
+    faction_member_map = {str(x.get("member_user_id") or "").strip(): x for x in faction_member_rows if str(x.get("member_user_id") or "").strip()}
+
+    items = []
+    synced_count = 0
+    unsynced_count = 0
+
+    for member in live_members:
+        member_user_id = str(member.get("user_id") or member.get("id") or "").strip()
+        if not member_user_id:
+            continue
+
+        saved_user = user_map.get(member_user_id) or {}
+        access_row = faction_member_map.get(member_user_id) or {}
+        member_key = str(
+            access_row.get("member_api_key")
+            or saved_user.get("api_key")
+            or (viewer_key if member_user_id == viewer_user_id else "")
+        ).strip()
+
+        live = member_live_bars(member_key, user_id=member_user_id) if member_key else {
+            "ok": False,
+            "user_id": member_user_id,
+            "personalstats": {},
+            "bars": {},
+            "states": {},
+            "status": {},
+        }
+        synced = bool(live.get("ok"))
+        if synced:
+            synced_count += 1
+        else:
+            unsynced_count += 1
+
+        personalstats = live.get("personalstats") or {}
+
+        hits = _first_stat(personalstats, [
+            "rankedwarhits", "ranked_war_hits", "attackhits", "attackswon", "attacks_won"
+        ], 0)
+        respect_gain = _first_stat(personalstats, [
+            "respectforfaction", "respectforyourfaction", "rankedwarrespect", "ranked_war_respect", "respect"
+        ], 0)
+        respect_lost = _first_stat(personalstats, [
+            "respectlost", "rankedwarrespectlost", "ranked_war_respect_lost", "respectforenemy"
+        ], 0)
+        attacks_lost = _first_stat(personalstats, [
+            "attackslost", "defendslost", "attacks_lost"
+        ], 0)
+        bleed_value = respect_lost if respect_lost > 0 else attacks_lost
+        bleed_source = "respect_lost" if respect_lost > 0 else ("attacks_lost" if attacks_lost > 0 else "none")
+
+        life = ((live.get("bars") or {}).get("life") or {})
+        energy = ((live.get("bars") or {}).get("energy") or {})
+        nerve = ((live.get("bars") or {}).get("nerve") or {})
+
+        items.append({
+            "user_id": member_user_id,
+            "name": str(member.get("name") or saved_user.get("name") or access_row.get("member_name") or member_user_id),
+            "position": str(member.get("position") or access_row.get("position") or ""),
+            "status": str(member.get("status_detail") or member.get("status") or member.get("last_action") or ""),
+            "online_state": str(member.get("online_state") or live.get("states", {}).get("status") or ""),
+            "hospital_seconds": _to_int(member.get("hospital_seconds")),
+            "profile_url": member.get("profile_url") or profile_url(member_user_id),
+            "attack_url": member.get("attack_url") or attack_url(member_user_id),
+            "bounty_url": member.get("bounty_url") or bounty_url(member_user_id),
+            "bars": {
+                "life_current": _to_int(life.get("current")),
+                "life_max": _to_int(life.get("maximum")),
+                "energy_current": _to_int(energy.get("current")),
+                "energy_max": _to_int(energy.get("maximum")),
+                "nerve_current": _to_int(nerve.get("current")),
+                "nerve_max": _to_int(nerve.get("maximum")),
+            },
+            "stats": {
+                "hits": hits,
+                "respect_gain": respect_gain,
+                "respect_lost": respect_lost,
+                "attacks_lost": attacks_lost,
+                "bleed_value": bleed_value,
+                "bleed_source": bleed_source,
+            },
+            "synced": synced,
+            "sync_source": "member_key" if member_key else "none",
+        })
+
+    def _leader_by(stat_key: str) -> Dict[str, Any]:
+        ranked = sorted(items, key=lambda x: (int(((x.get("stats") or {}).get(stat_key) or 0)), str(x.get("name") or "").lower()), reverse=True)
+        if not ranked:
+            return {}
+        top = ranked[0]
+        value = int(((top.get("stats") or {}).get(stat_key) or 0))
+        if value <= 0:
+            return {}
+        return {
+            "user_id": str(top.get("user_id") or ""),
+            "name": str(top.get("name") or "Unknown"),
+            "value": value,
+            "profile_url": top.get("profile_url") or profile_url(str(top.get("user_id") or "")),
+        }
+
+    items.sort(key=lambda x: (
+        -int(((x.get("stats") or {}).get("hits") or 0)),
+        -int(((x.get("stats") or {}).get("respect_gain") or 0)),
+        str(x.get("name") or "").lower(),
+    ))
+
+    totals = {
+        "members_total": len(items),
+        "synced_members": synced_count,
+        "unsynced_members": unsynced_count,
+        "hits": sum(int(((x.get("stats") or {}).get("hits") or 0)) for x in items),
+        "respect_gain": sum(int(((x.get("stats") or {}).get("respect_gain") or 0)) for x in items),
+        "respect_lost": sum(int(((x.get("stats") or {}).get("respect_lost") or 0)) for x in items),
+        "bleed_value": sum(int(((x.get("stats") or {}).get("bleed_value") or 0)) for x in items),
+    }
+
+    return {
+        "ok": True,
+        "war_id": str(war_payload.get("war_id") or ""),
+        "faction_id": faction_id,
+        "faction_name": str((faction_info or {}).get("faction_name") or faction_name or ""),
+        "enemy_faction_id": str(war_payload.get("enemy_faction_id") or ""),
+        "enemy_faction_name": str(war_payload.get("enemy_faction_name") or ""),
+        "has_war": bool(war_payload.get("has_war")),
+        "war": war_payload.get("war") or {},
+        "score": war_payload.get("score") or {},
+        "leaders": {
+            "top_hitter": _leader_by("hits"),
+            "top_respect_gain": _leader_by("respect_gain"),
+            "top_points_bleeder": _leader_by("bleed_value"),
+        },
+        "totals": totals,
+        "members": items,
+        "meta": {
+            "war_api_key_source": war_payload.get("war_api_key_source") or war_api_key_source,
+            "bleeder_metric": "respect_lost_then_attacks_lost_fallback",
+            "generated_at": utc_now(),
+        },
+    }
+
+
+@app.route("/api/war/summary-live", methods=["GET"])
+@require_session
+def api_war_summary_live():
+    blocked = _require_feature_access()
+    if blocked:
+        return blocked
+    return ok(item=_build_live_war_summary(request.user or {}))
 
 
 # ============================================================
