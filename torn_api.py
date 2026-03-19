@@ -171,6 +171,54 @@ def _member_state_from_last_action(last_action_text: str) -> str:
     return "offline"
 
 
+def _extract_medical_cooldown_seconds(payload: Dict[str, Any]) -> int:
+    if not isinstance(payload, dict):
+        return 0
+
+    candidates = []
+
+    cooldowns = payload.get("cooldowns")
+    if isinstance(cooldowns, dict):
+        medical = cooldowns.get("medical")
+        if isinstance(medical, dict):
+            candidates.extend([
+                medical.get("remaining"),
+                medical.get("cooldown"),
+                medical.get("seconds"),
+                medical.get("time"),
+                medical.get("until"),
+            ])
+        else:
+            candidates.append(medical)
+
+        for key in ("medical", "med", "hospital", "drug"):
+            candidates.append(cooldowns.get(key))
+
+    for key in (
+        "medical_cooldown",
+        "medicalCooldown",
+        "cooldown_medical",
+        "med_cooldown",
+        "medCooldown",
+    ):
+        candidates.append(payload.get(key))
+
+    for value in candidates:
+        if isinstance(value, dict):
+            for subkey in ("remaining", "cooldown", "seconds", "time", "until"):
+                subval = value.get(subkey)
+                if isinstance(subval, (int, float)) and int(subval) >= 0:
+                    return int(subval)
+                if isinstance(subval, str) and subval.strip().isdigit():
+                    return int(subval.strip())
+        elif isinstance(value, (int, float)) and int(value) >= 0:
+            return int(value)
+        elif isinstance(value, str) and value.strip().isdigit():
+            return int(value.strip())
+
+    return 0
+
+
 def _normalize_member(uid: Any, member: Dict[str, Any]) -> Dict[str, Any]:
     last_action = ""
     status_text = ""
@@ -1568,7 +1616,7 @@ def member_live_bars(api_key: str, user_id: str = "") -> Dict[str, Any]:
             "status": {},
         }
 
-    selections = "bars,profile,personalstats"
+    selections = "bars,profile,personalstats,cooldowns"
     attempts = []
 
     if user_id:
@@ -1625,12 +1673,16 @@ def member_live_bars(api_key: str, user_id: str = "") -> Dict[str, Any]:
         ).strip()
 
         personalstats = data.get("personalstats") or {}
+        cooldowns = data.get("cooldowns") or {}
+        medical_cooldown = _extract_medical_cooldown_seconds(data)
 
         return {
             "ok": True,
             "user_id": resolved_user_id,
             "name": str(data.get("name") or ""),
             "personalstats": personalstats if isinstance(personalstats, dict) else {},
+            "cooldowns": cooldowns if isinstance(cooldowns, dict) else {},
+            "medical_cooldown": _to_int(medical_cooldown, 0),
             "bars": {
                 "life": {
                     "current": _to_int((life or {}).get("current"), 0),
@@ -1680,6 +1732,8 @@ def member_live_bars(api_key: str, user_id: str = "") -> Dict[str, Any]:
         "error": last_error,
         "user_id": user_id,
         "personalstats": {},
+        "cooldowns": {},
+        "medical_cooldown": 0,
         "bars": {},
         "states": {},
         "status": {},
