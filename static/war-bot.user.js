@@ -81,6 +81,7 @@
     var analyticsCache = null;
     var adminTopFiveCache = null;
     var factionMembersCache = null;
+    var currentFactionMembers = [];
 
     var overlay = null;
     var shield = null;
@@ -453,6 +454,52 @@
       opacity: .75 !important;\n\
       font-size: 11px !important;\n\
       color: #fff !important;\n\
+    }\n\
+            .warhub-hero-card {\n\
+      border: 1px solid rgba(210,51,51,.45) !important;\n\
+      background: linear-gradient(180deg, rgba(210,51,51,.16), rgba(255,255,255,.04)) !important;\n\
+      box-shadow: 0 10px 30px rgba(0,0,0,.22) !important;\n\
+    }\n\
+    .warhub-hero-vs {\n\
+      font-size: 14px !important;\n\
+      font-weight: 800 !important;\n\
+      color: #fff !important;\n\
+      margin-bottom: 10px !important;\n\
+      line-height: 1.35 !important;\n\
+    }\n\
+    .warhub-hero-vs span {\n\
+      opacity: .7 !important;\n\
+      font-weight: 600 !important;\n\
+      margin: 0 4px !important;\n\
+    }\n\
+    .warhub-mini {\n\
+      font-size: 12px !important;\n\
+      line-height: 1.45 !important;\n\
+      color: #fff !important;\n\
+      opacity: .88 !important;\n\
+    }\n\
+    .warhub-list-item {\n\
+      transition: transform .15s ease, border-color .15s ease !important;\n\
+    }\n\
+    .warhub-list-item:hover {\n\
+      transform: translateY(-1px) !important;\n\
+      border-color: rgba(210,51,51,.35) !important;\n\
+    }\n\
+    .warhub-faction-member-row {\n\
+      display: flex !important;\n\
+      align-items: center !important;\n\
+      justify-content: space-between !important;\n\
+      gap: 10px !important;\n\
+    }\n\
+    .warhub-faction-member-main {\n\
+      min-width: 0 !important;\n\
+      flex: 1 1 auto !important;\n\
+    }\n\
+    .warhub-faction-member-action {\n\
+      flex: 0 0 auto !important;\n\
+      display: flex !important;\n\
+      align-items: center !important;\n\
+      justify-content: flex-end !important;\n\
     }\n\
 \n\
     .warhub-pill {\n\
@@ -831,49 +878,63 @@
     // 09. ACCESS / SESSION HELPERS
     // ============================================================
 
-    function normalizeAccessCache(v) {
-        var data = v && typeof v === 'object' ? v : {};
-        return {
-            member_enabled: !!data.member_enabled,
-            is_faction_leader: !!data.is_faction_leader,
-            payment_required: !!data.payment_required,
-            expired: !!data.expired,
-            trial_active: !!data.trial_active,
-            status: String(data.status || ''),
-            can_use_features: !!data.can_use_features,
-            is_user_exempt: !!data.is_user_exempt,
-            is_faction_exempt: !!data.is_faction_exempt,
-            message: String(data.message || ''),
-            license: data.license && typeof data.license === 'object' ? data.license : {}
-        };
-    }
+function normalizeAccessCache(v) {
+    var data = v && typeof v === 'object' ? v : {};
+    return {
+        is_owner: !!data.is_owner,
+        is_admin: !!data.is_admin,
+        show_admin: !!data.show_admin,
+        show_all_tabs: !!data.show_all_tabs,
+        can_manage_faction: !!data.can_manage_faction,
+        member_enabled: !!data.member_enabled,
+        is_faction_leader: !!data.is_faction_leader,
+        payment_required: !!data.payment_required,
+        expired: !!data.expired,
+        trial_active: !!data.trial_active,
+        status: String(data.status || ''),
+        can_use_features: !!data.can_use_features,
+        is_user_exempt: !!data.is_user_exempt,
+        is_faction_exempt: !!data.is_faction_exempt,
+        message: String(data.message || ''),
+        license: data.license && typeof data.license === 'object' ? data.license : {}
+    };
+}
 
-    function saveAccessCache(v) {
-        accessState = normalizeAccessCache(v);
-        GM_setValue(K_ACCESS_CACHE, accessState);
-    }
+function saveAccessCache(v) {
+    accessState = normalizeAccessCache(v);
+    GM_setValue(K_ACCESS_CACHE, accessState);
+}
 
-    function getSessionToken() {
-        return cleanInputValue(GM_getValue(K_SESSION, ''));
-    }
+function getSessionToken() {
+    return cleanInputValue(GM_getValue(K_SESSION, ''));
+}
 
-    function isLoggedIn() {
-        return !!getSessionToken();
-    }
+function isLoggedIn() {
+    return !!getSessionToken();
+}
 
-    function isOwnerSession() {
-        if (!state || !state.me) return false;
-        var me = state.me || {};
-        return String(me.user_id || '') === String(OWNER_USER_ID) || String(me.name || '').toLowerCase() === String(OWNER_NAME).toLowerCase();
-    }
+function isOwnerSession() {
+    if (accessState && accessState.is_owner) return true;
+    if (!state || !state.me) return false;
+    var me = state.me || {};
+    return String(me.user_id || '') === String(OWNER_USER_ID) || String(me.name || '').toLowerCase() === String(OWNER_NAME).toLowerCase();
+}
 
-    function canUseFeatures() {
-        return !!(accessState && accessState.can_use_features);
-    }
+function canUseFeatures() {
+    return !!(accessState && accessState.can_use_features);
+}
 
-    function isFactionLeader() {
-        return !!(accessState && accessState.is_faction_leader);
-    }
+function isFactionLeader() {
+    return !!(accessState && accessState.is_faction_leader);
+}
+
+function canManageFaction() {
+    return !!(accessState && accessState.can_manage_faction);
+}
+
+function canSeeAdmin() {
+    return !!(accessState && accessState.show_admin);
+}
 
     // ============================================================
     // 10. OVERVIEW BOX PREFS / UI POSITION HELPERS
@@ -1102,6 +1163,31 @@
         return _refreshFactionPaymentData.apply(this, arguments);
     }
 
+    function loadFactionMembers(force) {
+    return _loadFactionMembers.apply(this, arguments);
+}
+
+function _loadFactionMembers() {
+    _loadFactionMembers = _asyncToGenerator(function* (force) {
+        if (!isLoggedIn()) return [];
+        if (!canManageFaction()) return [];
+
+        try {
+            var res = yield authedReq('GET', '/api/faction/members');
+            if (!res.ok) {
+                currentFactionMembers = [];
+                return [];
+            }
+            currentFactionMembers = Array.isArray(res.data && res.data.items) ? res.data.items : [];
+            return currentFactionMembers;
+        } catch (e) {
+            currentFactionMembers = [];
+            return [];
+        }
+    });
+    return _loadFactionMembers.apply(this, arguments);
+}
+
     function loadAdminPaymentDue() {
         return _asyncToGenerator(function* () {
             var res = yield adminReq('GET', '/api/license-admin/due');
@@ -1191,6 +1277,37 @@
         return _refreshLeaderFactionData.apply(this, arguments);
     }
 
+    function activateFactionMember(memberId, memberName, position) {
+        return _activateFactionMember.apply(this, arguments);
+}
+
+function _activateFactionMember() {
+    _activateFactionMember = _asyncToGenerator(function* (memberId, memberName, position) {
+        if (!memberId) throw new Error('Missing member ID.');
+
+        var payload = {
+            member_user_id: String(memberId || ''),
+            member_name: String(memberName || ''),
+            position: String(position || '')
+        };
+
+        var res = yield authedReq('POST', '/api/faction/members', payload);
+        if (!res.ok) {
+            throw new Error(res.error || 'Could not activate member.');
+        }
+
+        if (res.data && res.data.license) {
+            accessState = accessState || {};
+            accessState.license = res.data.license;
+            GM_setValue(K_ACCESS_CACHE, accessState);
+        }
+
+        yield loadFactionMembers(true);
+        return res.data || {};
+    });
+    return _activateFactionMember.apply(this, arguments);
+}
+
     function loadAdminDashboard() {
         return _loadAdminDashboard.apply(this, arguments);
     }
@@ -1258,6 +1375,10 @@
 
     function getWarTerms() {
         return state && state.war_terms ? state.war_terms : {};
+    }
+
+    function getFactionMembers() {
+        return Array.isArray(currentFactionMembers) ? currentFactionMembers : [];
     }
 
     function getMyUserId() {
@@ -1366,23 +1487,199 @@
 
 
 
-    function renderFactionTab() {
-        var faction = getFaction();
-        var lic = accessState && accessState.license ? accessState.license : {};
+    function renderTabs() {
+    var html = TAB_ORDER.map(function (pair) {
+        var key = pair[0];
+        var label = pair[1];
+
+        if (key === 'admin' && !canSeeAdmin()) return '';
+        if (key === 'faction' && !canManageFaction()) return '';
+        if (key === 'members' && !canManageFaction()) return '';
+
+        return '<button class="warhub-tab ' + (currentTab === key ? 'active' : '') + '" data-tab="' + esc(key) + '">' + esc(label) + '</button>';
+    }).join('');
+
+    return '<div class="warhub-tabs">' + html + '</div>';
+}
+
+function renderFactionTab() {
+    var faction = getFaction();
+    var lic = accessState && accessState.license ? accessState.license : {};
+    var cycle = currentBillingCycleCache || {};
+    var factionMembers = getFactionMembers();
+
+    var factionName = faction.name || lic.faction_name || '—';
+    var leaderName = lic.leader_name || faction.leader_name || faction.leader || '—';
+    var memberCount = Number(faction.member_count || getMembers().length || 0);
+    var enabledCount = Number(lic.enabled_member_count || 0);
+    var renewalCost = Number(lic.renewal_cost || cycle.amount_due || 0);
+    var expiresAt = lic.expires_at || '';
+    var daysLeft = fmtDaysLeftFromIso(expiresAt);
+    var statusPill = licenseStatusPill(lic);
+
+    var membersHtml = factionMembers.length ? factionMembers.map(function (m) {
+        var memberId = String(m.member_user_id || m.user_id || '');
+        var memberName = m.member_name || m.name || 'Unknown';
+        var position = m.position || '';
+        var enabled = !!m.enabled;
+        var cycleLocked = !!m.cycle_locked;
+        var xanaxOwed = Number(m.xanax_owed || 0);
+        var activatedAt = m.activated_at || '';
+
+        var statePill = enabled
+            ? (cycleLocked
+                ? '<span class="warhub-pill good">Active</span>'
+                : '<span class="warhub-pill good">Enabled</span>')
+            : '<span class="warhub-pill bad">Inactive</span>';
+
+        var actionBtn = enabled
+            ? '<button class="warhub-btn small" disabled>' + (cycleLocked ? 'Locked' : 'Enabled') + '</button>'
+            : '<button class="warhub-btn primary wh-faction-activate" data-member-id="' + esc(memberId) + '" data-member-name="' + esc(memberName) + '" data-position="' + esc(position) + '">Activate</button>';
+
         return '\
-          <div class="warhub-card">\
-            <div class="warhub-section-title"><h3>Faction</h3></div>\
-            <div class="warhub-grid two">\
-              <div class="warhub-metric"><div class="k">Faction Name</div><div class="v">' + esc(faction.name || lic.faction_name || '—') + '</div></div>\
-              <div class="warhub-metric"><div class="k">Faction ID</div><div class="v">' + esc(String(faction.faction_id || lic.faction_id || '—')) + '</div></div>\
-              <div class="warhub-metric"><div class="k">License</div><div class="v">' + licenseStatusPill(lic) + '</div></div>\
-              <div class="warhub-metric"><div class="k">Member Count</div><div class="v">' + fmtNum(faction.member_count || getMembers().length || 0) + '</div></div>\
+          <div class="warhub-list-item warhub-faction-member-row">\
+            <div class="warhub-faction-member-main">\
+              <div class="warhub-name">' + esc(memberName) + ' ' + statePill + '</div>\
+              <div class="warhub-meta">' + esc(position || 'Member') + (memberId ? ' • ID: ' + memberId : '') + (xanaxOwed ? ' • Owed: ' + fmtNum(xanaxOwed) : '') + (activatedAt ? ' • Activated: ' + fmtTs(activatedAt) : '') + '</div>\
             </div>\
-            <div class="warhub-actions">\
-              <button class="warhub-btn" id="wh-refresh-faction">Refresh</button>\
-            </div>\
+            <div class="warhub-faction-member-action">' + actionBtn + '</div>\
           </div>';
-    }
+    }).join('') : '<div class="warhub-empty">No faction billing members loaded yet.</div>';
+
+    return '\
+      <div class="warhub-card">\
+        <div class="warhub-section-title"><h3>🏰 Faction</h3></div>\
+        <div class="warhub-grid two">\
+          <div class="warhub-metric"><div class="k">Faction Name</div><div class="v">' + esc(factionName) + '</div></div>\
+          <div class="warhub-metric"><div class="k">Leader</div><div class="v">' + esc(leaderName) + '</div></div>\
+          <div class="warhub-metric"><div class="k">License</div><div class="v">' + statusPill + '</div></div>\
+          <div class="warhub-metric"><div class="k">Member Count</div><div class="v">' + fmtNum(memberCount) + '</div></div>\
+        </div>\
+        <div class="warhub-actions">\
+          <button class="warhub-btn" id="wh-refresh-faction">Refresh</button>\
+        </div>\
+      </div>\
+      <div class="warhub-card">\
+        <div class="warhub-section-title">\
+          <h3>💰 Billing</h3>\
+          <span class="warhub-count">' + statusPill + '</span>\
+        </div>\
+        <div class="warhub-grid two">\
+          <div class="warhub-metric"><div class="k">Enabled Members</div><div class="v">' + fmtNum(enabledCount) + '</div></div>\
+          <div class="warhub-metric"><div class="k">Renewal Cost</div><div class="v">' + fmtNum(renewalCost) + '</div></div>\
+          <div class="warhub-metric"><div class="k">Expires</div><div class="v">' + esc(expiresAt ? fmtTs(expiresAt) : '—') + '</div></div>\
+          <div class="warhub-metric"><div class="k">Days Left</div><div class="v">' + esc(daysLeft == null ? '—' : String(daysLeft)) + '</div></div>\
+        </div>\
+        ' + ((accessState && accessState.is_faction_exempt) ? '<div class="warhub-payment-line">Faction exemption active.</div>' : '') + '\
+        ' + ((accessState && accessState.is_user_exempt) ? '<div class="warhub-payment-line">Player exemption active.</div>' : '') + '\
+      </div>\
+      <div class="warhub-card">\
+        <div class="warhub-section-title">\
+          <h3>👥 Faction Members</h3>\
+          <span class="warhub-count">' + fmtNum(factionMembers.length) + '</span>\
+        </div>\
+        <div class="warhub-list">' + membersHtml + '</div>\
+      </div>';
+}
+
+function renderOverviewTab() {
+    var war = getWar();
+    var faction = getFaction();
+    var enemy = getEnemyFaction();
+    var notices = getNotifications();
+    var overviewPrefs = getOverviewBoxPrefs();
+    var terms = getWarTerms();
+    var medDeals = getMedDeals();
+    var dibs = getAssignments();
+
+    var ourFactionName = faction.name || war.my_faction_name || '—';
+    var enemyFactionName = enemy.name || war.enemy_faction_name || '—';
+
+    var scoreUs = Number(war.score_us || 0);
+    var scoreThem = Number(war.score_them || 0);
+    var chainUs = Number(war.chain_us || 0);
+    var chainThem = Number(war.chain_them || 0);
+
+    var scoreDiff = scoreUs - scoreThem;
+    var chainDiff = chainUs - chainThem;
+
+    var scoreStatus = scoreDiff > 0
+        ? '<span class="warhub-pill good">+' + fmtNum(scoreDiff) + ' lead</span>'
+        : scoreDiff < 0
+            ? '<span class="warhub-pill bad">' + fmtNum(Math.abs(scoreDiff)) + ' behind</span>'
+            : '<span class="warhub-pill neutral">Even</span>';
+
+    var chainStatus = chainDiff > 0
+        ? '<span class="warhub-pill good">+' + fmtNum(chainDiff) + ' chain</span>'
+        : chainDiff < 0
+            ? '<span class="warhub-pill bad">' + fmtNum(Math.abs(chainDiff)) + ' behind</span>'
+            : '<span class="warhub-pill neutral">Even chain</span>';
+
+    var heroBox = overviewPrefs.war ? '\
+      <div class="warhub-card warhub-hero-card">\
+        <div class="warhub-section-title">\
+          <h3>⚔️ War Overview</h3>\
+          <span class="warhub-count">' + scoreStatus + '</span>\
+        </div>\
+        <div class="warhub-hero-vs">' + esc(ourFactionName) + ' <span>vs</span> ' + esc(enemyFactionName) + '</div>\
+        <div class="warhub-grid two">\
+          <div class="warhub-metric"><div class="k">🏆 Score Us</div><div class="v">' + fmtNum(scoreUs) + '</div></div>\
+          <div class="warhub-metric"><div class="k">🏆 Score Them</div><div class="v">' + fmtNum(scoreThem) + '</div></div>\
+          <div class="warhub-metric"><div class="k">⛓️ Chain Us</div><div class="v">' + fmtNum(chainUs) + '</div></div>\
+          <div class="warhub-metric"><div class="k">⛓️ Chain Them</div><div class="v">' + fmtNum(chainThem) + '</div></div>\
+        </div>\
+        <div class="warhub-actions" style="margin-top:10px;">\
+          ' + scoreStatus + '\
+          ' + chainStatus + '\
+        </div>\
+      </div>' : '';
+
+    var termsBox = '\
+      <div class="warhub-card">\
+        <div class="warhub-section-title"><h3>📜 War Terms</h3></div>\
+        <div class="warhub-mini">' + esc(terms.text || terms.terms || 'No terms set.') + '</div>\
+      </div>';
+
+    var middleBox = '\
+      <div class="warhub-grid two">\
+        <div class="warhub-card">\
+          <div class="warhub-section-title">\
+            <h3>💊 Med Deals</h3>\
+            <span class="warhub-count">' + fmtNum(medDeals.length) + '</span>\
+          </div>\
+          <div class="warhub-list">' + (medDeals.length ? medDeals.slice(0, 5).map(function (d) {
+                return '\
+                  <div class="warhub-list-item">\
+                    <div class="warhub-name">' + esc(d.player_name || d.user_name || 'Unknown') + '</div>\
+                    <div class="warhub-meta">' + esc(d.text || d.note || '') + '</div>\
+                  </div>';
+            }).join('') : '<div class="warhub-empty">No med deals.</div>') + '</div>\
+        </div>\
+        <div class="warhub-card">\
+          <div class="warhub-section-title">\
+            <h3>🎯 Dibs</h3>\
+            <span class="warhub-count">' + fmtNum(dibs.length) + '</span>\
+          </div>\
+          <div class="warhub-list">' + (dibs.length ? dibs.slice(0, 5).map(function (a) {
+                return '\
+                  <div class="warhub-list-item">\
+                    <div class="warhub-name">' + esc(a.target_name || a.name || a.enemy_name || 'Unknown') + '</div>\
+                    <div class="warhub-meta">' + esc((a.assigned_to_name || a.claimed_by_name || a.user_name || 'Claimed') + ((a.target_id || a.enemy_id || a.user_id) ? ' • ID: ' + String(a.target_id || a.enemy_id || a.user_id) : '')) + '</div>\
+                  </div>';
+            }).join('') : '<div class="warhub-empty">No dibs claimed.</div>') + '</div>\
+        </div>\
+      </div>';
+
+    var notificationsBox = overviewPrefs.notifications ? '\
+      <div class="warhub-card">\
+        <div class="warhub-section-title"><h3>🔔 Recent Notifications</h3></div>\
+        <div class="warhub-list">' + (notices.length ? notices.slice(0, 5).map(function (n) {
+            return '<div class="warhub-list-item"><div class="warhub-name">' + esc(n.title || n.kind || 'Notice') + '</div><div class="warhub-meta">' + esc(n.text || n.message || '') + '</div></div>';
+        }).join('') : '<div class="warhub-empty">No notifications.</div>') + '</div>\
+      </div>' : '';
+
+    return heroBox + termsBox + middleBox + notificationsBox;
+}
 function renderOverviewTab() {
     var war = getWar();
     var faction = getFaction();
@@ -1910,189 +2207,229 @@ function renderOverviewTab() {
     // 15. ACTIONS
     // ============================================================
 
-    function loginWithSavedKey() {
-        return _loginWithSavedKey.apply(this, arguments);
-    }
+function loginWithSavedKey() {
+    return _loginWithSavedKey.apply(this, arguments);
+}
 
-    function _loginWithSavedKey() {
-        _loginWithSavedKey = _asyncToGenerator(function* () {
-            var apiKey = cleanInputValue(GM_getValue(K_API_KEY, ''));
-            if (!apiKey) {
-                setStatus('Save your API key first.', true);
-                return;
-            }
+function _loginWithSavedKey() {
+    _loginWithSavedKey = _asyncToGenerator(function* () {
+        var apiKey = cleanInputValue(GM_getValue(K_API_KEY, ''));
+        if (!apiKey) {
+            setStatus('Save your API key first.', true);
+            return;
+        }
 
-            var res = yield authedReq('POST', '/api/auth', {
-                api_key: apiKey
-            });
-
-            if (!res.ok) {
-                setStatus(res.error || 'Login failed.', true);
-                return;
-            }
-
-            var data = res.data || {};
-            var token = String(data.session_token || data.token || '');
-            if (!token) {
-                setStatus('Login failed: no session token returned.', true);
-                return;
-            }
-
-            GM_setValue(K_SESSION, token);
-
-            if (data.access) saveAccessCache(data.access);
-
-            yield loadState();
-            yield refreshFactionPaymentData();
-            if (isOwnerSession()) yield loadAdminDashboard();
-
-            setStatus('Logged in.');
-            renderBody();
+        var res = yield authedReq('POST', '/api/auth', {
+            api_key: apiKey
         });
-        return _loginWithSavedKey.apply(this, arguments);
-    }
 
-    function logoutSession() {
-        return _logoutSession.apply(this, arguments);
-    }
+        if (!res.ok) {
+            setStatus(res.error || 'Login failed.', true);
+            return;
+        }
 
-    function _logoutSession() {
-        _logoutSession = _asyncToGenerator(function* () {
-            try {
-                yield authedReq('POST', '/api/logout', {});
-            } catch (_unused4) {}
+        var data = res.data || {};
+        var token = String(data.session_token || data.token || '');
+        if (!token) {
+            setStatus('Login failed: no session token returned.', true);
+            return;
+        }
 
-            GM_deleteValue(K_SESSION);
-            state = null;
-            saveAccessCache(null);
-            factionPaymentCache = null;
-            factionPaymentHistoryCache = [];
-            currentBillingCycleCache = null;
-            adminPaymentDueCache = [];
-            adminPaymentPendingCache = [];
-            adminPaymentHistoryCache = [];
-            adminFactionExemptionsCache = [];
-            adminUserExemptionsCache = [];
-            adminExemptionSummaryCache = {
-                faction_count: 0,
-                user_count: 0,
-                total_count: 0
-            };
+        GM_setValue(K_SESSION, token);
 
-            setStatus('Logged out.');
-            renderBody();
-        });
-        return _logoutSession.apply(this, arguments);
-    }
+        if (data.access) saveAccessCache(data.access);
+
+        if (canManageFaction()) {
+            yield loadFactionMembers(true);
+        }
+
+        yield loadState();
+        yield refreshFactionPaymentData();
+
+        if (canSeeAdmin()) {
+            yield loadAdminDashboard();
+        }
+
+        setStatus('Logged in.');
+        renderBody();
+    });
+    return _loginWithSavedKey.apply(this, arguments);
+}
+
+function logoutSession() {
+    return _logoutSession.apply(this, arguments);
+}
+
+function _logoutSession() {
+    _logoutSession = _asyncToGenerator(function* () {
+        try {
+            yield authedReq('POST', '/api/logout', {});
+        } catch (_unused4) {}
+
+        GM_deleteValue(K_SESSION);
+        state = null;
+        saveAccessCache(null);
+        currentFactionMembers = [];
+        factionPaymentCache = null;
+        factionPaymentHistoryCache = [];
+        currentBillingCycleCache = null;
+        adminPaymentDueCache = [];
+        adminPaymentPendingCache = [];
+        adminPaymentHistoryCache = [];
+        adminFactionExemptionsCache = [];
+        adminUserExemptionsCache = [];
+        adminExemptionSummaryCache = {
+            faction_count: 0,
+            user_count: 0,
+            total_count: 0
+        };
+
+        setStatus('Logged out.');
+        renderBody();
+    });
+    return _logoutSession.apply(this, arguments);
+}
 
     // ============================================================
     // 16. EVENT BINDING
     // ============================================================
 
     function bindOverlayEvents() {
-        if (!overlay) return;
+    if (!overlay) return;
 
-        var bodyEl = overlay.querySelector('#warhub-body');
-        if (bodyEl && !bodyEl.__warhubBoundScroll) {
-            bodyEl.__warhubBoundScroll = true;
-            bodyEl.addEventListener('scroll', function () {
-                GM_setValue(K_OVERLAY_SCROLL, bodyEl.scrollTop || 0);
-            }, { passive: true });
-        }
+    var bodyEl = overlay.querySelector('#warhub-body');
+    if (bodyEl && !bodyEl.__warhubBoundScroll) {
+        bodyEl.__warhubBoundScroll = true;
+        bodyEl.addEventListener('scroll', function () {
+            GM_setValue(K_OVERLAY_SCROLL, bodyEl.scrollTop || 0);
+        }, { passive: true });
+    }
 
-        overlay.querySelectorAll('[data-tab]').forEach(function (btn) {
-            if (btn.__warhubBound) return;
-            btn.__warhubBound = true;
+    overlay.querySelectorAll('[data-tab]').forEach(function (btn) {
+        if (btn.__warhubBound) return;
+        btn.__warhubBound = true;
 
-            btn.addEventListener('click', _asyncToGenerator(function* () {
-                var tab = btn.getAttribute('data-tab') || 'overview';
-                currentTab = tab;
-                GM_setValue(K_TAB, currentTab);
+        btn.addEventListener('click', _asyncToGenerator(function* () {
+            var tab = btn.getAttribute('data-tab') || 'overview';
+            currentTab = tab;
+            GM_setValue(K_TAB, currentTab);
 
-                if (tab === 'admin' && isOwnerSession()) {
-                    yield loadAdminDashboard();
-                }
+            if (tab === 'faction' && canManageFaction()) {
+                yield loadFactionMembers(true);
+                yield refreshFactionPaymentData();
+            }
 
-                renderBody();
-            }));
+            if (tab === 'admin' && canSeeAdmin()) {
+                yield loadAdminDashboard();
+            }
+
+            renderBody();
+        }));
+    });
+
+    var closeBtn = overlay.querySelector('#warhub-close-btn');
+    if (closeBtn && !closeBtn.__warhubBound) {
+        closeBtn.__warhubBound = true;
+        closeBtn.addEventListener('click', function () {
+            closeOverlay();
         });
+    }
 
-        var closeBtn = overlay.querySelector('#warhub-close-btn');
-        if (closeBtn && !closeBtn.__warhubBound) {
-            closeBtn.__warhubBound = true;
-            closeBtn.addEventListener('click', function () {
-                closeOverlay();
-            });
-        }
+    var saveKeysBtn = overlay.querySelector('#wh-save-keys');
+    if (saveKeysBtn && !saveKeysBtn.__warhubBound) {
+        saveKeysBtn.__warhubBound = true;
+        saveKeysBtn.addEventListener('click', function () {
+            var apiKeyEl = overlay.querySelector('#wh-api-key');
+            var adminKeyEl = overlay.querySelector('#wh-admin-key');
+            var ownerTokenEl = overlay.querySelector('#wh-owner-token');
+            var refreshEl = overlay.querySelector('#wh-refresh-ms');
 
-        var saveKeysBtn = overlay.querySelector('#wh-save-keys');
-        if (saveKeysBtn && !saveKeysBtn.__warhubBound) {
-            saveKeysBtn.__warhubBound = true;
-            saveKeysBtn.addEventListener('click', function () {
-                var apiKeyEl = overlay.querySelector('#wh-api-key');
-                var adminKeyEl = overlay.querySelector('#wh-admin-key');
-                var ownerTokenEl = overlay.querySelector('#wh-owner-token');
-                var refreshEl = overlay.querySelector('#wh-refresh-ms');
+            GM_setValue(K_API_KEY, cleanInputValue(apiKeyEl && apiKeyEl.value || ''));
+            GM_setValue(K_ADMIN_KEY, cleanInputValue(adminKeyEl && adminKeyEl.value || ''));
+            GM_setValue(K_OWNER_TOKEN, cleanInputValue(ownerTokenEl && ownerTokenEl.value || ''));
 
-                GM_setValue(K_API_KEY, cleanInputValue(apiKeyEl && apiKeyEl.value || ''));
-                GM_setValue(K_ADMIN_KEY, cleanInputValue(adminKeyEl && adminKeyEl.value || ''));
-                GM_setValue(K_OWNER_TOKEN, cleanInputValue(ownerTokenEl && ownerTokenEl.value || ''));
+            var refreshMs = Number(cleanInputValue(refreshEl && refreshEl.value || '30000')) || 30000;
+            if (refreshMs < 5000) refreshMs = 5000;
+            GM_setValue(K_REFRESH, refreshMs);
 
-                var refreshMs = Number(cleanInputValue(refreshEl && refreshEl.value || '30000')) || 30000;
-                if (refreshMs < 5000) refreshMs = 5000;
-                GM_setValue(K_REFRESH, refreshMs);
+            restartPolling();
+            setStatus('Keys saved.');
+        });
+    }
 
-                restartPolling();
-                setStatus('Keys saved.');
-            });
-        }
+    var loginBtn = overlay.querySelector('#wh-login-btn');
+    if (loginBtn && !loginBtn.__warhubBound) {
+        loginBtn.__warhubBound = true;
+        loginBtn.addEventListener('click', _asyncToGenerator(function* () {
+            yield loginWithSavedKey();
+        }));
+    }
 
-        var loginBtn = overlay.querySelector('#wh-login-btn');
-        if (loginBtn && !loginBtn.__warhubBound) {
-            loginBtn.__warhubBound = true;
-            loginBtn.addEventListener('click', _asyncToGenerator(function* () {
-                yield loginWithSavedKey();
-            }));
-        }
+    var logoutBtn = overlay.querySelector('#wh-logout-btn');
+    if (logoutBtn && !logoutBtn.__warhubBound) {
+        logoutBtn.__warhubBound = true;
+        logoutBtn.addEventListener('click', _asyncToGenerator(function* () {
+            yield logoutSession();
+        }));
+    }
 
-        var logoutBtn = overlay.querySelector('#wh-logout-btn');
-        if (logoutBtn && !logoutBtn.__warhubBound) {
-            logoutBtn.__warhubBound = true;
-            logoutBtn.addEventListener('click', _asyncToGenerator(function* () {
-                yield logoutSession();
-            }));
-        }
+    var refreshFactionBtn = overlay.querySelector('#wh-refresh-faction');
+    if (refreshFactionBtn && !refreshFactionBtn.__warhubBound) {
+        refreshFactionBtn.__warhubBound = true;
+        refreshFactionBtn.addEventListener('click', _asyncToGenerator(function* () {
+            yield loadState();
+            yield refreshFactionPaymentData();
+            if (canManageFaction()) {
+                yield loadFactionMembers(true);
+            }
+            renderBody();
+            setStatus('Faction refreshed.');
+        }));
+    }
 
-        var refreshFactionBtn = overlay.querySelector('#wh-refresh-faction');
-        if (refreshFactionBtn && !refreshFactionBtn.__warhubBound) {
-            refreshFactionBtn.__warhubBound = true;
-            refreshFactionBtn.addEventListener('click', _asyncToGenerator(function* () {
-                yield loadState();
+    overlay.querySelectorAll('.wh-faction-activate').forEach(function (btn) {
+        if (btn.__warhubBound) return;
+        btn.__warhubBound = true;
+
+        btn.addEventListener('click', _asyncToGenerator(function* () {
+            var memberId = btn.getAttribute('data-member-id') || '';
+            var memberName = btn.getAttribute('data-member-name') || '';
+            var position = btn.getAttribute('data-position') || '';
+
+            btn.disabled = true;
+
+            try {
+                yield activateFactionMember(memberId, memberName, position);
                 yield refreshFactionPaymentData();
                 renderBody();
-                setStatus('Faction refreshed.');
-            }));
-        }
+                setStatus('Member activated.');
+            } catch (e) {
+                btn.disabled = false;
+                setStatus((e && e.message) ? e.message : 'Could not activate member.', true);
+            }
+        }));
+    });
 
-        var adminRefreshPaymentsBtn = overlay.querySelector('#wh-admin-refresh-payments');
-        if (adminRefreshPaymentsBtn && !adminRefreshPaymentsBtn.__warhubBound) {
-            adminRefreshPaymentsBtn.__warhubBound = true;
-            adminRefreshPaymentsBtn.addEventListener('click', _asyncToGenerator(function* () {
-                yield loadAdminPayments();
-                renderBody();
-                setStatus('Payments refreshed.');
-            }));
-        }
+    var adminRefreshPaymentsBtn = overlay.querySelector('#wh-admin-refresh-payments');
+    if (adminRefreshPaymentsBtn && !adminRefreshPaymentsBtn.__warhubBound) {
+        adminRefreshPaymentsBtn.__warhubBound = true;
+        adminRefreshPaymentsBtn.addEventListener('click', _asyncToGenerator(function* () {
+            yield loadAdminPayments();
+            renderBody();
+            setStatus('Payments refreshed.');
+        }));
+    }
 
-        var adminRefreshExemptionsBtn = overlay.querySelector('#wh-admin-refresh-exemptions');
-        if (adminRefreshExemptionsBtn && !adminRefreshExemptionsBtn.__warhubBound) {
-            adminRefreshExemptionsBtn.__warhubBound = true;
-            adminRefreshExemptionsBtn.addEventListener('click', _asyncToGenerator(function* () {
-                yield loadAdminExemptions();
-                renderBody();
-                setStatus('Exemptions refreshed.');
-            }));
-        }
+    var adminRefreshExemptionsBtn = overlay.querySelector('#wh-admin-refresh-exemptions');
+    if (adminRefreshExemptionsBtn && !adminRefreshExemptionsBtn.__warhubBound) {
+        adminRefreshExemptionsBtn.__warhubBound = true;
+        adminRefreshExemptionsBtn.addEventListener('click', _asyncToGenerator(function* () {
+            yield loadAdminExemptions();
+            renderBody();
+            setStatus('Exemptions refreshed.');
+        }));
+    }
+}
 
         var adminAddFactionExemptionBtn = overlay.querySelector('#wh-admin-add-faction-exemption');
         if (adminAddFactionExemptionBtn && !adminAddFactionExemptionBtn.__warhubBound) {
