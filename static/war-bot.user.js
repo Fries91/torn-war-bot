@@ -2188,11 +2188,9 @@ function renderEnemiesTab() {
         []
     );
 
-    var enemyFaction = (state && (state.enemy_faction || state.enemyFaction)) || {};
     var enemyFactionName = String(
-        enemyFaction.name ||
-        state.enemy_faction_name ||
-        warObj.enemy_faction_name ||
+        (state && state.enemy_faction_name) ||
+        (warObj && warObj.enemy_faction_name) ||
         'Enemy Faction'
     );
 
@@ -2207,7 +2205,6 @@ function renderEnemiesTab() {
     function shortTime(secs) {
         var total = Number(secs || 0);
         if (!isFinite(total) || total <= 0) return 'Ready';
-
         total = Math.floor(total);
 
         var days = Math.floor(total / 86400);
@@ -2219,10 +2216,6 @@ function renderEnemiesTab() {
         if (hours > 0) return hours + 'h ' + (mins > 0 ? mins + 'm' : '');
         if (mins > 0) return mins + 'm ' + (remSecs > 0 ? remSecs + 's' : '');
         return remSecs + 's';
-    }
-
-    function medCdText(enemy) {
-        return shortTime(enemy.medical_cooldown);
     }
 
     function enemyState(enemy) {
@@ -2240,13 +2233,7 @@ function renderEnemiesTab() {
 
         if (combined.indexOf('hospital') >= 0) return 'hospital';
         if (combined.indexOf('jail') >= 0 || combined.indexOf('jailed') >= 0) return 'jail';
-        if (
-            combined.indexOf('travel') >= 0 ||
-            combined.indexOf('travelling') >= 0 ||
-            combined.indexOf('traveling') >= 0 ||
-            combined.indexOf('abroad') >= 0 ||
-            combined.indexOf('flying') >= 0
-        ) return 'travel';
+        if (combined.indexOf('travel') >= 0 || combined.indexOf('travelling') >= 0 || combined.indexOf('traveling') >= 0 || combined.indexOf('abroad') >= 0 || combined.indexOf('flying') >= 0) return 'travel';
         if (combined.indexOf('idle') >= 0) return 'idle';
         if (combined.indexOf('online') >= 0) return 'online';
         return 'offline';
@@ -2282,20 +2269,6 @@ function renderEnemiesTab() {
         var matchesFilter = savedFilter === 'all' || stateName === savedFilter;
 
         return matchesSearch && matchesFilter;
-    }).sort(function (a, b) {
-        var order = { online: 1, idle: 2, travel: 3, jail: 4, hospital: 5, offline: 6 };
-        var aState = enemyState(a);
-        var bState = enemyState(b);
-
-        var aOrder = order[aState] || 99;
-        var bOrder = order[bState] || 99;
-        if (aOrder !== bOrder) return aOrder - bOrder;
-
-        var aName = String(a.name || a.user_name || a.member_name || '').toLowerCase();
-        var bName = String(b.name || b.user_name || b.member_name || '').toLowerCase();
-        if (aName < bName) return -1;
-        if (aName > bName) return 1;
-        return 0;
     });
 
     var cardsHtml = filtered.map(function (e) {
@@ -2309,23 +2282,10 @@ function renderEnemiesTab() {
         var lifeMax = toNum(e.life_max || (e.bars && e.bars.life_max));
         var energyCurrent = toNum(e.energy_current || (e.bars && e.bars.energy_current));
         var energyMax = toNum(e.energy_max || (e.bars && e.bars.energy_max));
-        var medCd = medCdText(e);
+        var medCd = shortTime(e.medical_cooldown);
 
         var statusLine = String(e.display_status || e.status_detail || e.status || e.last_action || '').trim();
-        if (stateName === 'hospital') {
-            var hospSecs = toNum(e.hospital_seconds);
-            statusLine = hospSecs > 0 ? ('Hospital for ' + shortTime(hospSecs)) : 'Hospitalized';
-        } else if (stateName === 'jail') {
-            statusLine = statusLine || 'In jail';
-        } else if (stateName === 'travel') {
-            statusLine = statusLine || 'Travelling';
-        } else if (stateName === 'idle') {
-            statusLine = statusLine || 'Idle';
-        } else if (stateName === 'online') {
-            statusLine = statusLine || 'Online';
-        } else {
-            statusLine = statusLine || 'Offline';
-        }
+        if (!statusLine) statusLine = pillText;
 
         var attackUrl = String(e.attack_url || '').trim();
 
@@ -2333,15 +2293,16 @@ function renderEnemiesTab() {
           <div class="warhub-card" style="margin-top:12px;">\
             <div class="warhub-row" style="justify-content:space-between;align-items:center;gap:8px;">\
               <div>\
-                <div class="warhub-name">\
-                  ' + (attackUrl
+                <div class="warhub-name">' +
+                    (attackUrl
                         ? '<a href="' + esc(attackUrl) + '" target="_blank" rel="noopener noreferrer">' + esc(name) + '</a>'
                         : esc(name)
-                    ) + (userId ? ' [' + esc(userId) + ']' : '') + '\
-                </div>\
+                    ) +
+                    (userId ? ' [' + esc(userId) + ']' : '') +
+                '</div>\
                 <div class="warhub-mini" style="margin-top:4px;">' + esc(statusLine) + '</div>\
               </div>\
-              <div class="' + esc(pillClass) + '">' + esc(pillText) + '</div>\
+              <div class="' + pillClass + '">' + esc(pillText) + '</div>\
             </div>\
 \
             <div class="warhub-grid two" style="margin-top:12px;">\
