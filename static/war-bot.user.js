@@ -2429,7 +2429,6 @@ function _logoutSession() {
             setStatus('Exemptions refreshed.');
         }));
     }
-}
 
         var adminAddFactionExemptionBtn = overlay.querySelector('#wh-admin-add-faction-exemption');
         if (adminAddFactionExemptionBtn && !adminAddFactionExemptionBtn.__warhubBound) {
