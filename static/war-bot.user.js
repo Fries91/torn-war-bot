@@ -1740,20 +1740,6 @@ function renderOverviewTab() {
     return heroBox + termsBox + middleBox + notificationsBox;
 }
 
-    function renderWarTab() {
-        var war = getWar();
-        return '\
-          <div class="warhub-card">\
-            <div class="warhub-section-title"><h3>War</h3></div>\
-            <div class="warhub-grid two">\
-              <div class="warhub-metric"><div class="k">Our Score</div><div class="v">' + fmtNum(war.score_us || 0) + '</div></div>\
-              <div class="warhub-metric"><div class="k">Enemy Score</div><div class="v">' + fmtNum(war.score_them || 0) + '</div></div>\
-              <div class="warhub-metric"><div class="k">Our Chain</div><div class="v">' + fmtNum(war.chain_us || 0) + '</div></div>\
-              <div class="warhub-metric"><div class="k">Enemy Chain</div><div class="v">' + fmtNum(war.chain_them || 0) + '</div></div>\
-            </div>\
-          </div>';
-    }
-
     function numFmt(value) {
     var n = Number(value || 0);
     if (!isFinite(n)) n = 0;
@@ -1824,17 +1810,95 @@ function renderSummaryTab() {
     return "\n      <div class=\"warhub-card\">\n        <div class=\"warhub-row\" style=\"justify-content:space-between;align-items:center;gap:8px;\">\n          <h3 style=\"margin:0;\">Live War Summary</h3>\n          <div class=\"warhub-muted\" style=\"font-size:12px;\">".concat(updatedText, "</div>\n        </div>\n        ").concat(loadingHtml, "\n        ").concat(errorHtml, "\n\n        <div class=\"warhub-stats\" style=\"margin-top:8px;\">\n          ").concat(summaryLeaderRow('Top Hitter', leaders.top_hitter, 'attacks_won'), "\n          ").concat(summaryLeaderRow('Top Respect Gain', leaders.top_respect_gain, 'respect_gain'), "\n          ").concat(summaryLeaderRow('Top Points Bleeder', leaders.top_points_bleeder, 'points_bleeder'), "\n          <div class=\"warhub-stat\">\n            <span>Total Attacks Won</span>\n            <strong>").concat(esc(numFmt(totals.attacks_won || 0)), "</strong>\n          </div>\n          <div class=\"warhub-stat\">\n            <span>Total Respect Gain</span>\n            <strong>").concat(esc(numFmt(totals.respect_gain || 0)), "</strong>\n          </div>\n          <div class=\"warhub-stat\">\n            <span>Total Respect Lost</span>\n            <strong>").concat(esc(numFmt(totals.respect_lost || 0)), "</strong>\n          </div>\n        </div>\n      </div>\n\n      <div class=\"warhub-card\" style=\"margin-top:12px;\">\n        <div class=\"warhub-row\" style=\"justify-content:space-between;align-items:center;gap:8px;\">\n          <h3 style=\"margin:0;\">Faction Member Live Data</h3>\n          <button class=\"warhub-btn\" id=\"wh-refresh-live-summary\">Refresh</button>\n        </div>\n\n        <div style=\"overflow:auto;margin-top:10px;\">\n          <table class=\"warhub-table\">\n            <thead>\n              <tr>\n                <th>Member</th>\n                <th>Attacks Won</th>\n                <th>Respect Gain</th>\n                <th>Points Bleeder</th>\n                <th>Respect Lost</th>\n                <th>Attacks Lost</th>\n                <th>Key</th>\n              </tr>\n            </thead>\n            <tbody>\n              ").concat(rowsHtml, "\n            </tbody>\n          </table>\n        </div>\n\n        ").concat(emptyHtml, "\n      </div>\n    ");
 }
 
-    function renderChainTab() {
-        var war = getWar();
-        return '\
-          <div class="warhub-card">\
-            <div class="warhub-section-title"><h3>Chain</h3></div>\
-            <div class="warhub-grid two">\
-              <div class="warhub-metric"><div class="k">Our Chain</div><div class="v">' + fmtNum(war.chain_us || 0) + '</div></div>\
-              <div class="warhub-metric"><div class="k">Enemy Chain</div><div class="v">' + fmtNum(war.chain_them || 0) + '</div></div>\
-            </div>\
-          </div>';
-    }
+function renderChainTab() {
+    var war = getWar();
+    var me = getMe();
+    var faction = getFaction();
+
+    var ourFactionName = (faction && (faction.name || faction.faction_name)) || war.my_faction_name || 'Your Faction';
+    var chainUs = Number(war.chain_us || 0);
+    var hasWar = !!(war && (war.active || war.has_war));
+    var warStatus = war.status_text || (hasWar ? 'War active' : 'Currently not in war');
+
+    var isAvailable = !!(me && (
+        me.available === true ||
+        me.available === 1 ||
+        me.available === '1' ||
+        me.is_available === true
+    ));
+
+    var isChainSitter = !!(me && (
+        me.chain_sitter === true ||
+        me.chain_sitter === 1 ||
+        me.chain_sitter === '1' ||
+        me.is_chain_sitter === true
+    ));
+
+    var availabilityPill = isAvailable
+        ? '<span class="warhub-pill good">Available</span>'
+        : '<span class="warhub-pill bad">Unavailable</span>';
+
+    var sitterPill = isChainSitter
+        ? '<span class="warhub-pill good">Chain Sitter Opted In</span>'
+        : '<span class="warhub-pill neutral">Chain Sitter Opted Out</span>';
+
+    var chainNote = hasWar
+        ? 'Live faction chain only.'
+        : 'No active war right now. Chain tools still work.';
+
+    return '\
+      <div class="warhub-card warhub-hero-card">\
+        <div class="warhub-section-title">\
+          <h3>⛓️ Chain Status</h3>\
+          <span class="warhub-count">' + fmtNum(chainUs) + '</span>\
+        </div>\
+        <div class="warhub-hero-vs">' + esc(ourFactionName) + '</div>\
+        <div class="warhub-mini" style="margin-top:4px;">' + esc(chainNote) + '</div>\
+        <div class="warhub-grid two" style="margin-top:12px;">\
+          <div class="warhub-metric">\
+            <div class="k">Faction Chain</div>\
+            <div class="v">' + fmtNum(chainUs) + '</div>\
+          </div>\
+          <div class="warhub-metric">\
+            <div class="k">War Status</div>\
+            <div class="v" style="font-size:14px;">' + esc(warStatus) + '</div>\
+          </div>\
+        </div>\
+      </div>\
+\
+      <div class="warhub-card" style="margin-top:12px;">\
+        <div class="warhub-section-title"><h3>🧍 Your Status</h3></div>\
+        <div class="warhub-grid two" style="margin-top:10px;">\
+          <div class="warhub-metric">\
+            <div class="k">Availability</div>\
+            <div class="v" style="font-size:14px;">' + (isAvailable ? 'Available' : 'Unavailable') + '</div>\
+          </div>\
+          <div class="warhub-metric">\
+            <div class="k">Chain Sitter</div>\
+            <div class="v" style="font-size:14px;">' + (isChainSitter ? 'Opted In' : 'Opted Out') + '</div>\
+          </div>\
+        </div>\
+\
+        <div class="warhub-actions" style="margin-top:12px;">\
+          <button class="warhub-btn primary" id="wh-set-available">Available</button>\
+          <button class="warhub-btn warn" id="wh-set-unavailable">Unavailable</button>\
+        </div>\
+\
+        <div class="warhub-actions" style="margin-top:10px;">\
+          <button class="warhub-btn" id="wh-chain-opt-in">Chain Sitter Opt In</button>\
+          <button class="warhub-btn" id="wh-chain-opt-out">Chain Sitter Opt Out</button>\
+        </div>\
+\
+        <div class="warhub-actions" style="margin-top:12px;flex-wrap:wrap;">\
+          ' + availabilityPill + '\
+          ' + sitterPill + '\
+        </div>\
+\
+        <div class="warhub-mini" style="margin-top:10px;">\
+          Default status is unavailable until you click Available.\
+        </div>\
+      </div>';
+}
 
     function renderTermsTab() {
         var terms = getWarTerms();
@@ -2427,6 +2491,54 @@ if (refreshLiveSummaryBtn) refreshLiveSummaryBtn.addEventListener('click', _asyn
             setStatus('Exemptions refreshed.');
         }));
     }
+
+var setAvailableBtn = overlay ? overlay.querySelector('#wh-set-available') : null;
+if (setAvailableBtn && !setAvailableBtn.__warhubBound) {
+    setAvailableBtn.__warhubBound = true;
+    setAvailableBtn.addEventListener('click', _asyncToGenerator(function* () {
+        var res = yield doAction('POST', '/api/availability', { available: true });
+        if (res && res.ok) {
+            yield loadState(true);
+            renderBody();
+        }
+    }));
+}
+
+var setUnavailableBtn = overlay ? overlay.querySelector('#wh-set-unavailable') : null;
+if (setUnavailableBtn && !setUnavailableBtn.__warhubBound) {
+    setUnavailableBtn.__warhubBound = true;
+    setUnavailableBtn.addEventListener('click', _asyncToGenerator(function* () {
+        var res = yield doAction('POST', '/api/availability', { available: false });
+        if (res && res.ok) {
+            yield loadState(true);
+            renderBody();
+        }
+    }));
+}
+
+var chainOptInBtn = overlay ? overlay.querySelector('#wh-chain-opt-in') : null;
+if (chainOptInBtn && !chainOptInBtn.__warhubBound) {
+    chainOptInBtn.__warhubBound = true;
+    chainOptInBtn.addEventListener('click', _asyncToGenerator(function* () {
+        var res = yield doAction('POST', '/api/chain-sitter', { enabled: true });
+        if (res && res.ok) {
+            yield loadState(true);
+            renderBody();
+        }
+    }));
+}
+
+var chainOptOutBtn = overlay ? overlay.querySelector('#wh-chain-opt-out') : null;
+if (chainOptOutBtn && !chainOptOutBtn.__warhubBound) {
+    chainOptOutBtn.__warhubBound = true;
+    chainOptOutBtn.addEventListener('click', _asyncToGenerator(function* () {
+        var res = yield doAction('POST', '/api/chain-sitter', { enabled: false });
+        if (res && res.ok) {
+            yield loadState(true);
+            renderBody();
+        }
+    }));
+}
 
         var adminAddFactionExemptionBtn = overlay.querySelector('#wh-admin-add-faction-exemption');
         if (adminAddFactionExemptionBtn && !adminAddFactionExemptionBtn.__warhubBound) {
