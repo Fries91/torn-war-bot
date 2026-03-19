@@ -306,7 +306,7 @@ def init_db():
             api_key TEXT NOT NULL,
             faction_id TEXT DEFAULT '',
             faction_name TEXT DEFAULT '',
-            available INTEGER DEFAULT 1,
+            available INTEGER DEFAULT 0,
             chain_sitter INTEGER DEFAULT 0,
             created_at TEXT DEFAULT '',
             last_seen_at TEXT DEFAULT ''
