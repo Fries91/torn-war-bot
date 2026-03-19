@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         War Hub ⚔️
 // @namespace    fries91-war-hub
-// @version      3.1.0
+// @version      3.1.1
 // @description  War Hub by Fries91. Faction-license aware overlay with draggable icon, draggable overlay, PDA friendly, shared war tools, faction member management, and payment lock handling.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -2901,6 +2901,7 @@ if (overlay) overlay.querySelectorAll('[data-member-bounty="1"]').forEach(functi
             window.open('https://www.torn.com/bounties.php#/!p=add&userID=' + encodeURIComponent(userId), '_blank', 'noopener,noreferrer');
         }
     });
+});
 
     var loginBtn = overlay.querySelector('#wh-login-btn');
     if (loginBtn && !loginBtn.__warhubBound) {
