@@ -2247,14 +2247,16 @@ function renderEnemiesTab() {
         var mins = Math.floor((total % 3600) / 60);
         var remSecs = total % 60;
 
-        if (days > 0) return days + 'd ' + (hours > 0 ? hours + 'h' : '');
-        if (hours > 0) return hours + 'h ' + (mins > 0 ? mins + 'm' : '');
-        if (mins > 0) return mins + 'm ' + (remSecs > 0 ? remSecs + 's' : '');
+        if (days > 0) return days + 'd' + (hours > 0 ? ' ' + hours + 'h' : '');
+        if (hours > 0) return hours + 'h' + (mins > 0 ? ' ' + mins + 'm' : '');
+        if (mins > 0) return mins + 'm' + (remSecs > 0 ? ' ' + remSecs + 's' : '');
         return remSecs + 's';
     }
 
     function enemyState(enemy) {
-        var s = String(enemy.online_state || enemy.status_class || '').trim().toLowerCase();
+        if (!enemy || typeof enemy !== 'object') return 'offline';
+
+        var s = String(enemy.online_state || enemy.status_class || enemy.state || '').trim().toLowerCase();
         if (s === 'online' || s === 'idle' || s === 'travel' || s === 'jail' || s === 'hospital' || s === 'offline') {
             return s;
         }
@@ -2263,7 +2265,8 @@ function renderEnemiesTab() {
             String(enemy.status || ''),
             String(enemy.status_detail || ''),
             String(enemy.last_action || ''),
-            String(enemy.display_status || '')
+            String(enemy.display_status || ''),
+            String(enemy.description || '')
         ].join(' ').toLowerCase();
 
         if (combined.indexOf('hospital') >= 0) return 'hospital';
@@ -2277,12 +2280,13 @@ function renderEnemiesTab() {
         ) return 'travel';
         if (combined.indexOf('idle') >= 0) return 'idle';
         if (combined.indexOf('online') >= 0) return 'online';
+
         return 'offline';
     }
 
     function stateLabel(stateName, enemy) {
         if (stateName === 'hospital') {
-            var secs = toNum(enemy.hospital_seconds);
+            var secs = toNum(enemy && enemy.hospital_seconds);
             return secs > 0 ? 'Hospital (' + shortTime(secs) + ')' : 'Hospital';
         }
         if (stateName === 'jail') return 'Jail';
@@ -2301,9 +2305,26 @@ function renderEnemiesTab() {
         return 'warhub-pill';
     }
 
+    function safeName(enemy) {
+        return String(enemy.name || enemy.user_name || enemy.member_name || 'Unknown');
+    }
+
+    function safeId(enemy) {
+        return String(enemy.user_id || enemy.id || '').trim();
+    }
+
+    function safeLevel(enemy) {
+        var level = String(enemy.level || enemy.user_level || '').trim();
+        return level || '--';
+    }
+
+    function safeRole(enemy) {
+        return String(enemy.position || enemy.role || enemy.rank || '').trim() || '--';
+    }
+
     var filtered = enemies.filter(function (e) {
-        var name = String(e.name || e.user_name || e.member_name || '').toLowerCase();
-        var uid = String(e.user_id || e.id || '').toLowerCase();
+        var name = safeName(e).toLowerCase();
+        var uid = safeId(e).toLowerCase();
         var stateName = enemyState(e);
 
         var matchesSearch = !savedSearch || name.indexOf(savedSearch) >= 0 || uid.indexOf(savedSearch) >= 0;
@@ -2328,24 +2349,48 @@ function renderEnemiesTab() {
 
         if (aOrder !== bOrder) return aOrder - bOrder;
 
-        var aName = String(a.name || a.user_name || a.member_name || '').toLowerCase();
-        var bName = String(b.name || b.user_name || b.member_name || '').toLowerCase();
+        var aName = safeName(a).toLowerCase();
+        var bName = safeName(b).toLowerCase();
 
         if (aName < bName) return -1;
         if (aName > bName) return 1;
         return 0;
     });
 
+    var counts = {
+        all: enemies.length,
+        online: 0,
+        idle: 0,
+        travel: 0,
+        jail: 0,
+        hospital: 0,
+        offline: 0
+    };
+
+    enemies.forEach(function (e) {
+        var s = enemyState(e);
+        if (counts[s] == null) counts[s] = 0;
+        counts[s] += 1;
+    });
+
     var cardsHtml = filtered.map(function (e) {
-        var name = String(e.name || e.user_name || e.member_name || 'Unknown');
-        var userId = String(e.user_id || e.id || '').trim();
-        var level = String(e.level || '').trim();
-        var position = String(e.position || '').trim();
+        var name = safeName(e);
+        var userId = safeId(e);
+        var level = safeLevel(e);
+        var position = safeRole(e);
         var stateName = enemyState(e);
         var pillClass = statePillClass(stateName);
         var pillText = stateLabel(stateName, e);
 
-        var statusLine = String(e.display_status || e.status_detail || e.status || e.last_action || '').trim();
+        var statusLine = String(
+            e.display_status ||
+            e.status_detail ||
+            e.status ||
+            e.last_action ||
+            e.description ||
+            ''
+        ).trim();
+
         if (stateName === 'hospital') {
             var hospSecs = toNum(e.hospital_seconds);
             statusLine = hospSecs > 0 ? ('Hospital for ' + shortTime(hospSecs)) : 'Hospitalized';
@@ -2361,15 +2406,15 @@ function renderEnemiesTab() {
             statusLine = statusLine || 'Offline';
         }
 
-        var attackUrl = String(e.attack_url || '').trim();
-        var profileUrl = String(e.profile_url || '').trim();
-        var bountyUrl = String(e.bounty_url || '').trim();
+        var attackUrl = String(e.attack_url || (userId ? ('https://www.torn.com/loader.php?sid=attack&user2ID=' + encodeURIComponent(userId)) : '') || '').trim();
+        var profileUrl = String(e.profile_url || (userId ? ('https://www.torn.com/profiles.php?XID=' + encodeURIComponent(userId)) : '') || '').trim();
+        var bountyUrl = String(e.bounty_url || (userId ? ('https://www.torn.com/bounties.php?userID=' + encodeURIComponent(userId)) : '') || '').trim();
 
         return '\
           <div class="warhub-card" style="margin-top:12px;">\
             <div class="warhub-row" style="justify-content:space-between;align-items:center;gap:8px;">\
-              <div>\
-                <div class="warhub-name">' +
+              <div style="min-width:0;flex:1;">\
+                <div class="warhub-name" style="word-break:break-word;">' +
                     (profileUrl
                         ? '<a href="' + esc(profileUrl) + '" target="_blank" rel="noopener noreferrer">' + esc(name) + '</a>'
                         : esc(name)
@@ -2378,12 +2423,12 @@ function renderEnemiesTab() {
                 '</div>\
                 <div class="warhub-mini" style="margin-top:4px;">' + esc(statusLine) + '</div>\
               </div>\
-              <div class="' + pillClass + '">' + esc(pillText) + '</div>\
+              <div class="' + pillClass + '" style="white-space:nowrap;">' + esc(pillText) + '</div>\
             </div>\
 \
             <div style="margin-top:12px;padding:10px 12px;border-radius:12px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;gap:14px;flex-wrap:wrap;">\
-              <div style="white-space:nowrap;"><strong>Lvl:</strong> ' + esc(level || '--') + '</div>\
-              <div style="white-space:nowrap;"><strong>Role:</strong> ' + esc(position || '--') + '</div>\
+              <div style="white-space:nowrap;"><strong>Lvl:</strong> ' + esc(level) + '</div>\
+              <div style="white-space:nowrap;"><strong>Role:</strong> ' + esc(position) + '</div>\
               <div style="white-space:nowrap;"><strong>Status:</strong> ' + esc(pillText) + '</div>\
             </div>\
 \
@@ -2402,6 +2447,15 @@ function renderEnemiesTab() {
           <span class="warhub-count">' + fmtNum(filtered.length) + ' / ' + fmtNum(enemies.length) + '</span>\
         </div>\
         <div class="warhub-hero-vs">' + esc(enemyFactionName) + '</div>\
+\
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">\
+          <span class="warhub-pill good">Online ' + fmtNum(counts.online) + '</span>\
+          <span class="warhub-pill neutral">Idle ' + fmtNum(counts.idle) + '</span>\
+          <span class="warhub-pill travel">Travel ' + fmtNum(counts.travel) + '</span>\
+          <span class="warhub-pill jail">Jail ' + fmtNum(counts.jail) + '</span>\
+          <span class="warhub-pill bad">Hospital ' + fmtNum(counts.hospital) + '</span>\
+          <span class="warhub-pill">Offline ' + fmtNum(counts.offline) + '</span>\
+        </div>\
 \
         <div class="warhub-grid two" style="margin-top:12px;">\
           <div>\
@@ -2422,7 +2476,7 @@ function renderEnemiesTab() {
           </div>\
         </div>\
 \
-        <div class="warhub-mini" style="margin-top:10px;">Enemy faction members from current ranked war. No life, energy, or med cooldown shown here.</div>\
+        <div class="warhub-mini" style="margin-top:10px;">Enemy faction members from current ranked war. Public info only. No life, energy, or med cooldown shown here.</div>\
       </div>\
       ' + (cardsHtml || '<div class="warhub-card" style="margin-top:12px;">No enemies found.</div>');
 }
