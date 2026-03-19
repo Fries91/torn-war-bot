@@ -1496,6 +1496,11 @@ def api_state():
     faction_map = get_user_map_by_faction(faction_id) if faction_id else {}
 
     me = me_basic(api_key) or {}
+    me = {
+        **dict(me or {}),
+        "available": 1 if _safe_bool((user or {}).get("available")) else 0,
+        "chain_sitter": 1 if _safe_bool((user or {}).get("chain_sitter")) else 0,
+    }
     live_faction_id = str(me.get("faction_id") or faction_id or "").strip()
     live_faction_name = str(me.get("faction_name") or faction_name or "").strip()
 
@@ -1562,6 +1567,7 @@ def api_state():
 
     members = [_clean_member(x) for x in enriched_members]
     members.sort(key=_bucket_sort_key)
+    chain_sitters = [m for m in members if _safe_bool(m.get("chain_sitter"))]
 
     war_id = str(war_info.get("war_id") or "")
     enemy_faction_id = str(war_info.get("enemy_faction_id") or "").strip()
@@ -1756,6 +1762,8 @@ def api_state():
         enemyMembers=enemies,
         members_count=len(members or []),
         members=members,
+        chain_sitters=chain_sitters,
+        chainSitters=chain_sitters,
         enemies=enemies,
         assignments=assignments,
         notes=notes,
