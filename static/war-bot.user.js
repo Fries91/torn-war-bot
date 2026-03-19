@@ -2197,15 +2197,11 @@ function renderEnemiesTab() {
         ];
 
         for (var i = 0; i < candidates.length; i++) {
-            if (Array.isArray(candidates[i]) && candidates[i].length) {
-                return candidates[i];
-            }
+            if (Array.isArray(candidates[i]) && candidates[i].length) return candidates[i];
         }
 
         for (var j = 0; j < candidates.length; j++) {
-            if (Array.isArray(candidates[j])) {
-                return candidates[j];
-            }
+            if (Array.isArray(candidates[j])) return candidates[j];
         }
 
         return [];
@@ -2333,15 +2329,11 @@ function renderEnemiesTab() {
     var cardsHtml = filtered.map(function (e) {
         var name = String(e.name || e.user_name || e.member_name || 'Unknown');
         var userId = String(e.user_id || e.id || '').trim();
+        var level = String(e.level || '').trim();
+        var position = String(e.position || '').trim();
         var stateName = enemyState(e);
         var pillClass = statePillClass(stateName);
         var pillText = stateLabel(stateName, e);
-
-        var lifeCurrent = toNum(e.life_current || (e.bars && e.bars.life_current));
-        var lifeMax = toNum(e.life_max || (e.bars && e.bars.life_max));
-        var energyCurrent = toNum(e.energy_current || (e.bars && e.bars.energy_current));
-        var energyMax = toNum(e.energy_max || (e.bars && e.bars.energy_max));
-        var medCd = shortTime(e.medical_cooldown);
 
         var statusLine = String(e.display_status || e.status_detail || e.status || e.last_action || '').trim();
         if (stateName === 'hospital') {
@@ -2360,14 +2352,16 @@ function renderEnemiesTab() {
         }
 
         var attackUrl = String(e.attack_url || '').trim();
+        var profileUrl = String(e.profile_url || '').trim();
+        var bountyUrl = String(e.bounty_url || '').trim();
 
         return '\
           <div class="warhub-card" style="margin-top:12px;">\
             <div class="warhub-row" style="justify-content:space-between;align-items:center;gap:8px;">\
               <div>\
                 <div class="warhub-name">' +
-                    (attackUrl
-                        ? '<a href="' + esc(attackUrl) + '" target="_blank" rel="noopener noreferrer">' + esc(name) + '</a>'
+                    (profileUrl
+                        ? '<a href="' + esc(profileUrl) + '" target="_blank" rel="noopener noreferrer">' + esc(name) + '</a>'
                         : esc(name)
                     ) +
                     (userId ? ' [' + esc(userId) + ']' : '') +
@@ -2377,26 +2371,16 @@ function renderEnemiesTab() {
               <div class="' + pillClass + '">' + esc(pillText) + '</div>\
             </div>\
 \
-            <div class="warhub-grid two" style="margin-top:12px;">\
-              <div class="warhub-metric">\
-                <div class="k">Life</div>\
-                <div class="v" style="font-size:14px;">' + esc(fmtNum(lifeCurrent)) + ' / ' + esc(fmtNum(lifeMax)) + '</div>\
-              </div>\
-              <div class="warhub-metric">\
-                <div class="k">Energy</div>\
-                <div class="v" style="font-size:14px;">' + esc(fmtNum(energyCurrent)) + ' / ' + esc(fmtNum(energyMax)) + '</div>\
-              </div>\
+            <div style="margin-top:12px;padding:10px 12px;border-radius:12px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;gap:14px;flex-wrap:wrap;">\
+              <div style="white-space:nowrap;"><strong>Lvl:</strong> ' + esc(level || '--') + '</div>\
+              <div style="white-space:nowrap;"><strong>Role:</strong> ' + esc(position || '--') + '</div>\
+              <div style="white-space:nowrap;"><strong>Status:</strong> ' + esc(pillText) + '</div>\
             </div>\
 \
-            <div class="warhub-grid two" style="margin-top:10px;">\
-              <div class="warhub-metric">\
-                <div class="k">Medical Cooldown</div>\
-                <div class="v" style="font-size:14px;">' + esc(medCd) + '</div>\
-              </div>\
-              <div class="warhub-metric">\
-                <div class="k">Attack</div>\
-                <div class="v" style="font-size:14px;">' + (attackUrl ? '<a href="' + esc(attackUrl) + '" target="_blank" rel="noopener noreferrer">Open</a>' : '-') + '</div>\
-              </div>\
+            <div class="warhub-actions" style="margin-top:12px;">\
+              ' + (attackUrl ? '<a class="warhub-btn primary" href="' + esc(attackUrl) + '" target="_blank" rel="noopener noreferrer">Attack</a>' : '') + '\
+              ' + (profileUrl ? '<a class="warhub-btn" href="' + esc(profileUrl) + '" target="_blank" rel="noopener noreferrer">Profile</a>' : '') + '\
+              ' + (bountyUrl ? '<a class="warhub-btn" href="' + esc(bountyUrl) + '" target="_blank" rel="noopener noreferrer">Bounty</a>' : '') + '\
             </div>\
           </div>';
     }).join('');
@@ -2408,13 +2392,6 @@ function renderEnemiesTab() {
           <span class="warhub-count">' + fmtNum(filtered.length) + ' / ' + fmtNum(enemies.length) + '</span>\
         </div>\
         <div class="warhub-hero-vs">' + esc(enemyFactionName) + '</div>\
-        <div class="warhub-mini" style="margin-top:6px;">' +
-          'root enemies: ' + esc(String(Array.isArray(state && state.enemies) ? state.enemies.length : 0)) +
-          ' | enemy_members: ' + esc(String(Array.isArray(state && state.enemy_members) ? state.enemy_members.length : 0)) +
-          ' | enemyMembers: ' + esc(String(Array.isArray(state && state.enemyMembers) ? state.enemyMembers.length : 0)) +
-          ' | war.enemies: ' + esc(String(Array.isArray(warObj && warObj.enemies) ? warObj.enemies.length : 0)) +
-          ' | war.enemy_members: ' + esc(String(Array.isArray(warObj && warObj.enemy_members) ? warObj.enemy_members.length : 0)) +
-        '</div>\
 \
         <div class="warhub-grid two" style="margin-top:12px;">\
           <div>\
@@ -2435,10 +2412,9 @@ function renderEnemiesTab() {
           </div>\
         </div>\
 \
-        <div class="warhub-mini" style="margin-top:10px;">Only enemies registered for the current war. Tap a name to go straight to attack.</div>\
+        <div class="warhub-mini" style="margin-top:10px;">Enemy faction members from current ranked war. No life, energy, or med cooldown shown here.</div>\
       </div>\
-\
-      <div>' + (cardsHtml || '<div class="warhub-card" style="margin-top:12px;"><div class="warhub-empty">No enemies found for the current war.</div></div>') + '</div>';
+      ' + (cardsHtml || '<div class="warhub-card" style="margin-top:12px;">No enemies found.</div>');
 }
 
     function renderHospitalTab() {
