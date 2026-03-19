@@ -1624,10 +1624,13 @@ def member_live_bars(api_key: str, user_id: str = "") -> Dict[str, Any]:
             or ""
         ).strip()
 
+        personalstats = data.get("personalstats") or {}
+
         return {
             "ok": True,
             "user_id": resolved_user_id,
             "name": str(data.get("name") or ""),
+            "personalstats": personalstats if isinstance(personalstats, dict) else {},
             "bars": {
                 "life": {
                     "current": _to_int((life or {}).get("current"), 0),
@@ -1676,6 +1679,7 @@ def member_live_bars(api_key: str, user_id: str = "") -> Dict[str, Any]:
         "ok": False,
         "error": last_error,
         "user_id": user_id,
+        "personalstats": {},
         "bars": {},
         "states": {},
         "status": {},
