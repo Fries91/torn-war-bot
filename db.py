@@ -690,7 +690,7 @@ def init_db():
     _ensure_column(cur, "users", "api_key", "api_key TEXT DEFAULT ''")
     _ensure_column(cur, "users", "faction_id", "faction_id TEXT DEFAULT ''")
     _ensure_column(cur, "users", "faction_name", "faction_name TEXT DEFAULT ''")
-    _ensure_column(cur, "users", "available", "available INTEGER DEFAULT 1")
+    _ensure_column(cur, "users", "available", "available INTEGER DEFAULT 0")
     _ensure_column(cur, "users", "chain_sitter", "chain_sitter INTEGER DEFAULT 0")
     _ensure_column(cur, "users", "created_at", "created_at TEXT DEFAULT ''")
     _ensure_column(cur, "users", "last_seen_at", "last_seen_at TEXT DEFAULT ''")
@@ -754,7 +754,7 @@ def upsert_user(
         "api_key": str(api_key or ""),
         "faction_id": str(faction_id or ""),
         "faction_name": str(faction_name or ""),
-        "available": 1,
+        "available": 0,
         "chain_sitter": 0,
         "created_at": now,
         "last_seen_at": now,
