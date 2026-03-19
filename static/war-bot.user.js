@@ -1955,21 +1955,227 @@ function renderChainTab() {
           </div>';
     }
 
-    function renderMembersTab() {
-        var members = getMembers();
-        return '\
-          <div class="warhub-card">\
-            <div class="warhub-section-title"><h3>Members</h3><span class="warhub-count">' + fmtNum(members.length) + '</span></div>\
-            <div class="warhub-list section-scroll">' + (members.length ? members.map(function (m) {
-                return '\
-                  <div class="warhub-row">\
-                    <div class="warhub-name">' + esc(m.name || m.user_name || m.user_id || 'Unknown') + '</div>\
-                    <div class="warhub-meta">' + esc('ID: ' + String(m.user_id || '')) + '</div>\
-                    <div class="warhub-actions">' + statusPill(m) + memberEnabledPill(m) + (isLeaderRow(m) ? '<span class="warhub-pill leader">Leader</span>' : '') + exemptionPill(m) + '</div>\
-                  </div>';
-            }).join('') : '<div class="warhub-empty">No members loaded.</div>') + '</div>\
-          </div>';
+ function renderMembersTab() {
+    var members = arr((state && state.members) || []);
+
+    var savedSearch = String(GM_getValue('warhub_members_search', '') || '').trim().toLowerCase();
+    var savedFilter = String(GM_getValue('warhub_members_filter', 'all') || 'all').trim().toLowerCase();
+
+    function toNum(v) {
+        var n = Number(v || 0);
+        return isFinite(n) ? n : 0;
     }
+
+    function shortTime(secs) {
+        var total = Number(secs || 0);
+        if (!isFinite(total) || total <= 0) return 'Ready';
+
+        total = Math.floor(total);
+
+        var days = Math.floor(total / 86400);
+        var hours = Math.floor((total % 86400) / 3600);
+        var mins = Math.floor((total % 3600) / 60);
+        var remSecs = total % 60;
+
+        if (days > 0) {
+            return days + 'd ' + (hours > 0 ? hours + 'h' : '');
+        }
+        if (hours > 0) {
+            return hours + 'h ' + (mins > 0 ? mins + 'm' : '');
+        }
+        if (mins > 0) {
+            return mins + 'm ' + (remSecs > 0 ? remSecs + 's' : '');
+        }
+        return remSecs + 's';
+    }
+
+    function medCdText(member) {
+        return shortTime(member.medical_cooldown);
+    }
+
+    function memberState(member) {
+        var s = String(member.online_state || member.status_class || '').trim().toLowerCase();
+        if (s === 'online' || s === 'idle' || s === 'travel' || s === 'jail' || s === 'hospital' || s === 'offline') {
+            return s;
+        }
+
+        var combined = [
+            String(member.status || ''),
+            String(member.status_detail || ''),
+            String(member.last_action || '')
+        ].join(' ').toLowerCase();
+
+        if (combined.indexOf('hospital') >= 0) return 'hospital';
+        if (combined.indexOf('jail') >= 0 || combined.indexOf('jailed') >= 0) return 'jail';
+        if (
+            combined.indexOf('travel') >= 0 ||
+            combined.indexOf('travelling') >= 0 ||
+            combined.indexOf('traveling') >= 0 ||
+            combined.indexOf('abroad') >= 0 ||
+            combined.indexOf('flying') >= 0
+        ) return 'travel';
+        if (combined.indexOf('idle') >= 0) return 'idle';
+        if (combined.indexOf('online') >= 0) return 'online';
+        return 'offline';
+    }
+
+    function stateLabel(stateName, member) {
+        if (stateName === 'hospital') {
+            var secs = toNum(member.hospital_seconds);
+            return secs > 0 ? 'Hospital (' + shortTime(secs) + ')' : 'Hospital';
+        }
+        if (stateName === 'jail') return 'Jail';
+        if (stateName === 'travel') return 'Travel';
+        if (stateName === 'idle') return 'Idle';
+        if (stateName === 'online') return 'Online';
+        return 'Offline';
+    }
+
+    function statePillClass(stateName) {
+        if (stateName === 'online') return 'warhub-pill good';
+        if (stateName === 'idle') return 'warhub-pill neutral';
+        if (stateName === 'travel') return 'warhub-pill travel';
+        if (stateName === 'jail') return 'warhub-pill jail';
+        if (stateName === 'hospital') return 'warhub-pill bad';
+        return 'warhub-pill';
+    }
+
+    var filtered = members.filter(function (m) {
+        var name = String(m.name || m.user_name || m.member_name || '').toLowerCase();
+        var uid = String(m.user_id || m.id || '').toLowerCase();
+        var stateName = memberState(m);
+
+        var matchesSearch = !savedSearch || name.indexOf(savedSearch) >= 0 || uid.indexOf(savedSearch) >= 0;
+        var matchesFilter = savedFilter === 'all' || stateName === savedFilter;
+
+        return matchesSearch && matchesFilter;
+    }).sort(function (a, b) {
+        var order = {
+            online: 1,
+            idle: 2,
+            travel: 3,
+            jail: 4,
+            hospital: 5,
+            offline: 6
+        };
+
+        var aState = memberState(a);
+        var bState = memberState(b);
+
+        var aOrder = order[aState] || 99;
+        var bOrder = order[bState] || 99;
+
+        if (aOrder !== bOrder) return aOrder - bOrder;
+
+        var aName = String(a.name || a.user_name || a.member_name || '').toLowerCase();
+        var bName = String(b.name || b.user_name || b.member_name || '').toLowerCase();
+
+        if (aName < bName) return -1;
+        if (aName > bName) return 1;
+        return 0;
+    });
+
+    var cardsHtml = filtered.map(function (m) {
+        var name = String(m.name || m.user_name || m.member_name || 'Unknown');
+        var userId = String(m.user_id || m.id || '').trim();
+        var stateName = memberState(m);
+        var pillClass = statePillClass(stateName);
+        var pillText = stateLabel(stateName, m);
+
+        var lifeCurrent = toNum(m.life_current);
+        var lifeMax = toNum(m.life_max);
+        var energyCurrent = toNum(m.energy_current);
+        var energyMax = toNum(m.energy_max);
+        var medCd = medCdText(m);
+
+        var statusLine = String(m.status_detail || m.status || m.last_action || '').trim();
+
+        if (stateName === 'hospital') {
+            var hospSecs = toNum(m.hospital_seconds);
+            statusLine = hospSecs > 0 ? ('Hospital for ' + shortTime(hospSecs)) : 'Hospitalized';
+        } else if (stateName === 'jail') {
+            statusLine = statusLine || 'In jail';
+        } else if (stateName === 'travel') {
+            statusLine = statusLine || 'Travelling';
+        } else if (stateName === 'idle') {
+            statusLine = statusLine || 'Idle';
+        } else if (stateName === 'online') {
+            statusLine = statusLine || 'Online';
+        } else {
+            statusLine = statusLine || 'Offline';
+        }
+
+        var bountyUrl = String(m.bounty_url || '').trim();
+
+        return '\
+          <div class="warhub-card" style="margin-top:12px;">\
+            <div class="warhub-row" style="justify-content:space-between;align-items:center;gap:8px;">\
+              <div>\
+                <div class="warhub-name">' + esc(name) + (userId ? ' [' + esc(userId) + ']' : '') + '</div>\
+                <div class="warhub-mini" style="margin-top:4px;">' + esc(statusLine) + '</div>\
+              </div>\
+              <div class="' + esc(pillClass) + '">' + esc(pillText) + '</div>\
+            </div>\
+\
+            <div class="warhub-grid two" style="margin-top:12px;">\
+              <div class="warhub-metric">\
+                <div class="k">Life</div>\
+                <div class="v" style="font-size:14px;">' + esc(fmtNum(lifeCurrent)) + ' / ' + esc(fmtNum(lifeMax)) + '</div>\
+              </div>\
+              <div class="warhub-metric">\
+                <div class="k">Energy</div>\
+                <div class="v" style="font-size:14px;">' + esc(fmtNum(energyCurrent)) + ' / ' + esc(fmtNum(energyMax)) + '</div>\
+              </div>\
+            </div>\
+\
+            <div class="warhub-grid two" style="margin-top:10px;">\
+              <div class="warhub-metric">\
+                <div class="k">Medical Cooldown</div>\
+                <div class="v" style="font-size:14px;">' + esc(medCd) + '</div>\
+              </div>\
+              <div class="warhub-metric">\
+                <div class="k">Profile</div>\
+                <div class="v" style="font-size:14px;">' + (m.profile_url ? '<a href="' + esc(m.profile_url) + '" target="_blank" rel="noopener noreferrer">Open</a>' : '-') + '</div>\
+              </div>\
+            </div>\
+\
+            <div class="warhub-actions" style="margin-top:12px;">\
+              <button class="warhub-btn" data-member-bounty="1" data-user-id="' + esc(userId) + '" data-user-name="' + esc(name) + '" data-bounty-url="' + esc(bountyUrl) + '">Place Bounty</button>\
+            </div>\
+          </div>';
+    }).join('');
+
+    return '\
+      <div class="warhub-card warhub-hero-card">\
+        <div class="warhub-section-title">\
+          <h3>👥 Members</h3>\
+          <span class="warhub-count">' + fmtNum(filtered.length) + ' / ' + fmtNum(members.length) + '</span>\
+        </div>\
+\
+        <div class="warhub-grid two" style="margin-top:12px;">\
+          <div>\
+            <label class="warhub-label">Search Members</label>\
+            <input class="warhub-input" id="wh-members-search" placeholder="Search name or ID" value="' + esc(savedSearch) + '">\
+          </div>\
+          <div>\
+            <label class="warhub-label">Status Filter</label>\
+            <select class="warhub-input" id="wh-members-filter">\
+              <option value="all"' + (savedFilter === 'all' ? ' selected' : '') + '>All</option>\
+              <option value="online"' + (savedFilter === 'online' ? ' selected' : '') + '>Online</option>\
+              <option value="idle"' + (savedFilter === 'idle' ? ' selected' : '') + '>Idle</option>\
+              <option value="travel"' + (savedFilter === 'travel' ? ' selected' : '') + '>Travel</option>\
+              <option value="jail"' + (savedFilter === 'jail' ? ' selected' : '') + '>Jail</option>\
+              <option value="hospital"' + (savedFilter === 'hospital' ? ' selected' : '') + '>Hospital</option>\
+              <option value="offline"' + (savedFilter === 'offline' ? ' selected' : '') + '>Offline</option>\
+            </select>\
+          </div>\
+        </div>\
+\
+        <div class="warhub-mini" style="margin-top:10px;">Live status, life, energy, med cooldown, and bounty shortcuts.</div>\
+      </div>\
+\
+      <div>' + (cardsHtml || '<div class="warhub-card" style="margin-top:12px;"><div class="warhub-empty">No members match this filter.</div></div>') + '</div>';
+}
 
     function renderEnemiesTab() {
         var members = getEnemyMembers();
@@ -2452,6 +2658,42 @@ function _logoutSession() {
             setStatus('Keys saved.');
         });
     }
+
+var membersSearchInput = overlay ? overlay.querySelector('#wh-members-search') : null;
+if (membersSearchInput && !membersSearchInput.__warhubBound) {
+    membersSearchInput.__warhubBound = true;
+    membersSearchInput.addEventListener('input', function () {
+        GM_setValue('warhub_members_search', String(membersSearchInput.value || ''));
+        renderBody();
+    });
+}
+
+var membersFilterSelect = overlay ? overlay.querySelector('#wh-members-filter') : null;
+if (membersFilterSelect && !membersFilterSelect.__warhubBound) {
+    membersFilterSelect.__warhubBound = true;
+    membersFilterSelect.addEventListener('change', function () {
+        GM_setValue('warhub_members_filter', String(membersFilterSelect.value || 'all'));
+        renderBody();
+    });
+}
+
+if (overlay) overlay.querySelectorAll('[data-member-bounty="1"]').forEach(function (btn) {
+    if (btn.__warhubBound) return;
+    btn.__warhubBound = true;
+
+    btn.addEventListener('click', function () {
+        var bountyUrl = String(btn.getAttribute('data-bounty-url') || '').trim();
+        var userId = String(btn.getAttribute('data-user-id') || '').trim();
+
+        if (bountyUrl) {
+            window.open(bountyUrl, '_blank', 'noopener,noreferrer');
+            return;
+        }
+
+        if (userId) {
+            window.open('https://www.torn.com/bounties.php#/!p=add&userID=' + encodeURIComponent(userId), '_blank', 'noopener,noreferrer');
+        }
+    });
 
     var loginBtn = overlay.querySelector('#wh-login-btn');
     if (loginBtn && !loginBtn.__warhubBound) {
