@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         War Hub ⚔️
 // @namespace    fries91-war-hub
-// @version      3.1.1
+// @version      3.1.2
 // @description  War Hub by Fries91. Faction-license aware overlay with draggable icon, draggable overlay, PDA friendly, shared war tools, faction member management, and payment lock handling.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -2177,10 +2177,24 @@ function renderChainTab() {
       <div>' + (cardsHtml || '<div class="warhub-card" style="margin-top:12px;"><div class="warhub-empty">No members match this filter.</div></div>') + '</div>';
 }
 
-    function renderEnemiesTab() {
-    var enemies = arr((state && (state.enemies || state.enemy_members || state.enemyMembers)) || []);
+function renderEnemiesTab() {
+    var warObj = (state && state.war) ? state.war : {};
+    var enemies = arr(
+        (state && state.enemies) ||
+        (state && state.enemy_members) ||
+        (state && state.enemyMembers) ||
+        (warObj && warObj.enemy_members) ||
+        (warObj && warObj.enemyMembers) ||
+        []
+    );
+
     var enemyFaction = (state && (state.enemy_faction || state.enemyFaction)) || {};
-    var enemyFactionName = String(enemyFaction.name || state.enemy_faction_name || 'Enemy Faction');
+    var enemyFactionName = String(
+        enemyFaction.name ||
+        state.enemy_faction_name ||
+        warObj.enemy_faction_name ||
+        'Enemy Faction'
+    );
 
     var savedSearch = String(GM_getValue('warhub_enemies_search', '') || '').trim().toLowerCase();
     var savedFilter = String(GM_getValue('warhub_enemies_filter', 'all') || 'all').trim().toLowerCase();
@@ -2205,6 +2219,10 @@ function renderChainTab() {
         if (hours > 0) return hours + 'h ' + (mins > 0 ? mins + 'm' : '');
         if (mins > 0) return mins + 'm ' + (remSecs > 0 ? remSecs + 's' : '');
         return remSecs + 's';
+    }
+
+    function medCdText(enemy) {
+        return shortTime(enemy.medical_cooldown);
     }
 
     function enemyState(enemy) {
