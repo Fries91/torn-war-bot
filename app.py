@@ -1247,9 +1247,15 @@ def _enrich_members_with_saved_keys(
                 merged["energy_ticktime"] = _to_int(energy.get("ticktime"))
                 merged["nerve_ticktime"] = _to_int(nerve.get("ticktime"))
                 merged["happy_ticktime"] = _to_int(happy.get("ticktime"))
-                merged["medical_cooldown"] = 0
+                merged["medical_cooldown"] = _to_int(
+                    live.get("medical_cooldown")
+                    or live.get("medicalCooldown")
+                    or ((live.get("cooldowns") or {}).get("medical") if isinstance(live.get("cooldowns"), dict) else 0)
+                )
+                merged["cooldowns"] = live.get("cooldowns") if isinstance(live.get("cooldowns"), dict) else {}
                 merged["live_stats_enabled"] = True
             else:
+                merged["medical_cooldown"] = _to_int(merged.get("medical_cooldown"))
                 merged["live_stats_enabled"] = False
         else:
             merged["live_stats_enabled"] = False
