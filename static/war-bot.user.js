@@ -82,6 +82,10 @@
     var adminTopFiveCache = null;
     var factionMembersCache = null;
     var currentFactionMembers = [];
+    var liveSummaryCache = null;
+    var liveSummaryLoading = false;
+    var liveSummaryError = '';
+    var liveSummaryLastAt = 0;
 
     var overlay = null;
     var shield = null;
@@ -1308,6 +1312,61 @@ function _activateFactionMember() {
     return _activateFactionMember.apply(this, arguments);
 }
 
+    function loadLiveSummary(force) {
+    return _loadLiveSummary.apply(this, arguments);
+}
+
+function _loadLiveSummary() {
+    _loadLiveSummary = _asyncToGenerator(function* (force) {
+        if (!isLoggedIn()) {
+            liveSummaryCache = null;
+            liveSummaryLoading = false;
+            liveSummaryError = '';
+            liveSummaryLastAt = 0;
+            return null;
+        }
+
+        var now = Date.now();
+        if (!force && liveSummaryCache && now - liveSummaryLastAt < 15000) {
+            return liveSummaryCache;
+        }
+
+        liveSummaryLoading = true;
+        liveSummaryError = '';
+
+        try {
+            var res = yield authedReq('GET', '/api/war/summary-live');
+            var data = null;
+
+            try {
+                data = yield res.json();
+            } catch (e) {
+                data = null;
+            }
+
+            if (!res.ok) {
+                liveSummaryCache = null;
+                liveSummaryError = (data && (data.error || data.message)) || 'Failed to load live summary.';
+                liveSummaryLastAt = Date.now();
+                return null;
+            }
+
+            liveSummaryCache = data || null;
+            liveSummaryError = '';
+            liveSummaryLastAt = Date.now();
+            return liveSummaryCache;
+        } catch (err) {
+            liveSummaryCache = null;
+            liveSummaryError = err && err.message ? err.message : 'Failed to load live summary.';
+            liveSummaryLastAt = Date.now();
+            return null;
+        } finally {
+            liveSummaryLoading = false;
+        }
+    });
+    return _loadLiveSummary.apply(this, arguments);
+}
+
     function loadAdminDashboard() {
         return _loadAdminDashboard.apply(this, arguments);
     }
@@ -1695,19 +1754,75 @@ function renderOverviewTab() {
           </div>';
     }
 
-    function renderSummaryTab() {
-        var war = getWar();
-        return '\
-          <div class="warhub-card">\
-            <div class="warhub-section-title"><h3>Summary</h3></div>\
-            <div class="warhub-grid two">\
-              <div class="warhub-metric"><div class="k">Our Members</div><div class="v">' + fmtNum(getMembers().length) + '</div></div>\
-              <div class="warhub-metric"><div class="k">Enemy Members</div><div class="v">' + fmtNum(getEnemyMembers().length) + '</div></div>\
-              <div class="warhub-metric"><div class="k">Our Score</div><div class="v">' + fmtNum(war.score_us || 0) + '</div></div>\
-              <div class="warhub-metric"><div class="k">Enemy Score</div><div class="v">' + fmtNum(war.score_them || 0) + '</div></div>\
-            </div>\
-          </div>';
+    function numFmt(value) {
+    var n = Number(value || 0);
+    if (!isFinite(n)) n = 0;
+    try {
+        return n.toLocaleString();
+    } catch (e) {
+        return String(n);
     }
+}
+
+function liveSummaryName(item, fallback) {
+    if (!item) return fallback || '-';
+    return item.name || item.member_name || item.user_name || fallback || '-';
+}
+
+function liveSummaryId(item) {
+    if (!item) return '';
+    return String(item.user_id || item.member_user_id || item.id || '').trim();
+}
+
+function liveSummaryStat(item, key) {
+    if (!item) return 0;
+    var n = Number(item[key] || 0);
+    return isFinite(n) ? n : 0;
+}
+
+function summaryLeaderRow(label, item, statKey) {
+    var name = liveSummaryName(item, '-');
+    var userId = liveSummaryId(item);
+    var val = numFmt(liveSummaryStat(item, statKey));
+
+    return "\n      <div class=\"warhub-stat\">\n        <span>".concat(esc(label), "</span>\n        <strong>").concat(esc(name)).concat(userId ? " [" + esc(userId) + "]" : "", " • ").concat(esc(val), "</strong>\n      </div>\n    ");
+}
+
+function summaryMemberRow(member) {
+    var name = liveSummaryName(member, '-');
+    var userId = liveSummaryId(member);
+    var attacksWon = numFmt(liveSummaryStat(member, 'attacks_won'));
+    var respectGain = numFmt(liveSummaryStat(member, 'respect_gain'));
+    var respectLost = numFmt(liveSummaryStat(member, 'respect_lost'));
+    var attacksLost = numFmt(liveSummaryStat(member, 'attacks_lost'));
+    var pointsBleeder = numFmt(
+        Number(member && (member.points_bleeder || member.respect_lost || member.attacks_lost) || 0)
+    );
+    var hasKey = !!(member && member.has_key);
+    var keyText = hasKey ? 'Key' : 'No key';
+
+    return "\n      <tr>\n        <td>".concat(esc(name)).concat(userId ? " [" + esc(userId) + "]" : "", "</td>\n        <td>").concat(esc(attacksWon), "</td>\n        <td>").concat(esc(respectGain), "</td>\n        <td>").concat(esc(pointsBleeder), "</td>\n        <td>").concat(esc(respectLost), "</td>\n        <td>").concat(esc(attacksLost), "</td>\n        <td>").concat(esc(keyText), "</td>\n      </tr>\n    ");
+}
+    
+function renderSummaryTab() {
+    var s = liveSummaryCache || {};
+    var totals = s.totals || {};
+    var leaders = s.leaders || {};
+    var members = Array.isArray(s.members) ? s.members : [];
+
+    var updatedAt = s.generated_at || s.updated_at || '';
+    var updatedText = updatedAt ? "Updated: ".concat(esc(updatedAt)) : 'Updated: -';
+
+    var loadingHtml = liveSummaryLoading ? "\n      <div class=\"warhub-muted\" style=\"margin-bottom:8px;\">Loading live summary…</div>\n    " : '';
+
+    var errorHtml = liveSummaryError ? "\n      <div class=\"warhub-muted\" style=\"margin-bottom:8px;color:#ff8a8a;\">".concat(esc(liveSummaryError), "</div>\n    ") : '';
+
+    var emptyHtml = !liveSummaryLoading && !liveSummaryError && !members.length ? "\n      <div class=\"warhub-muted\">No live member war data yet.</div>\n    " : '';
+
+    var rowsHtml = members.map(summaryMemberRow).join('');
+
+    return "\n      <div class=\"warhub-card\">\n        <div class=\"warhub-row\" style=\"justify-content:space-between;align-items:center;gap:8px;\">\n          <h3 style=\"margin:0;\">Live War Summary</h3>\n          <div class=\"warhub-muted\" style=\"font-size:12px;\">".concat(updatedText, "</div>\n        </div>\n        ").concat(loadingHtml, "\n        ").concat(errorHtml, "\n\n        <div class=\"warhub-stats\" style=\"margin-top:8px;\">\n          ").concat(summaryLeaderRow('Top Hitter', leaders.top_hitter, 'attacks_won'), "\n          ").concat(summaryLeaderRow('Top Respect Gain', leaders.top_respect_gain, 'respect_gain'), "\n          ").concat(summaryLeaderRow('Top Points Bleeder', leaders.top_points_bleeder, 'points_bleeder'), "\n          <div class=\"warhub-stat\">\n            <span>Total Attacks Won</span>\n            <strong>").concat(esc(numFmt(totals.attacks_won || 0)), "</strong>\n          </div>\n          <div class=\"warhub-stat\">\n            <span>Total Respect Gain</span>\n            <strong>").concat(esc(numFmt(totals.respect_gain || 0)), "</strong>\n          </div>\n          <div class=\"warhub-stat\">\n            <span>Total Respect Lost</span>\n            <strong>").concat(esc(numFmt(totals.respect_lost || 0)), "</strong>\n          </div>\n        </div>\n      </div>\n\n      <div class=\"warhub-card\" style=\"margin-top:12px;\">\n        <div class=\"warhub-row\" style=\"justify-content:space-between;align-items:center;gap:8px;\">\n          <h3 style=\"margin:0;\">Faction Member Live Data</h3>\n          <button class=\"warhub-btn\" id=\"wh-refresh-live-summary\">Refresh</button>\n        </div>\n\n        <div style=\"overflow:auto;margin-top:10px;\">\n          <table class=\"warhub-table\">\n            <thead>\n              <tr>\n                <th>Member</th>\n                <th>Attacks Won</th>\n                <th>Respect Gain</th>\n                <th>Points Bleeder</th>\n                <th>Respect Lost</th>\n                <th>Attacks Lost</th>\n                <th>Key</th>\n              </tr>\n            </thead>\n            <tbody>\n              ").concat(rowsHtml, "\n            </tbody>\n          </table>\n        </div>\n\n        ").concat(emptyHtml, "\n      </div>\n    ");
+}
 
     function renderChainTab() {
         var war = getWar();
@@ -2068,6 +2183,7 @@ function renderOverviewTab() {
 
         bindOverlayEvents();
     }
+    
 
      // ============================================================
     // 15. ACTIONS
@@ -2175,23 +2291,27 @@ function _logoutSession() {
         if (btn.__warhubBound) return;
         btn.__warhubBound = true;
 
-        btn.addEventListener('click', _asyncToGenerator(function* () {
-            var tab = btn.getAttribute('data-tab') || 'overview';
-            currentTab = tab;
-            GM_setValue(K_TAB, currentTab);
+    btn.addEventListener('click', _asyncToGenerator(function* () {
+    var tab = btn.getAttribute('data-tab') || 'overview';
+    currentTab = tab;
+    GM_setValue(K_TAB, currentTab);
 
-            if (tab === 'faction' && canManageFaction()) {
-                yield loadFactionMembers(true);
-                yield refreshFactionPaymentData();
-            }
+    if (tab === 'faction' && canManageFaction()) {
+        yield loadFactionMembers(true);
+        yield refreshFactionPaymentData();
+    }
 
-            if (tab === 'admin' && canSeeAdmin()) {
-                yield loadAdminDashboard();
-            }
+    if (tab === 'summary') {
+        yield loadLiveSummary(true);
+    }
 
-            renderBody();
-        }));
-    });
+    if (tab === 'admin' && canSeeAdmin()) {
+        yield loadAdminDashboard();
+    }
+
+    renderBody();
+}));
+});
 
     var closeBtn = overlay.querySelector('#warhub-close-btn');
     if (closeBtn && !closeBtn.__warhubBound) {
@@ -2231,14 +2351,20 @@ function _logoutSession() {
         }));
     }
 
-    var logoutBtn = overlay.querySelector('#wh-logout-btn');
-    if (logoutBtn && !logoutBtn.__warhubBound) {
-        logoutBtn.__warhubBound = true;
-        logoutBtn.addEventListener('click', _asyncToGenerator(function* () {
-            yield logoutSession();
-        }));
-    }
+var logoutBtn = overlay.querySelector('#wh-logout-btn');
+if (logoutBtn && !logoutBtn.__warhubBound) {
+    logoutBtn.__warhubBound = true;
+    logoutBtn.addEventListener('click', _asyncToGenerator(function* () {
+        yield logoutSession();
 
+        liveSummaryCache = null;
+        liveSummaryLoading = false;
+        liveSummaryError = '';
+        liveSummaryLastAt = 0;
+
+        renderBody();
+    }));
+}
     var refreshFactionBtn = overlay.querySelector('#wh-refresh-faction');
     if (refreshFactionBtn && !refreshFactionBtn.__warhubBound) {
         refreshFactionBtn.__warhubBound = true;
@@ -2275,6 +2401,12 @@ function _logoutSession() {
             }
         }));
     });
+
+var refreshLiveSummaryBtn = overlay ? overlay.querySelector('#wh-refresh-live-summary') : null;
+if (refreshLiveSummaryBtn) refreshLiveSummaryBtn.addEventListener('click', _asyncToGenerator(function* () {
+    yield loadLiveSummary(true);
+    renderBody();
+}));
 
     var adminRefreshPaymentsBtn = overlay.querySelector('#wh-admin-refresh-payments');
     if (adminRefreshPaymentsBtn && !adminRefreshPaymentsBtn.__warhubBound) {
@@ -2649,31 +2781,35 @@ function _logoutSession() {
     // 18. POLLING
     // ============================================================
 
-    function tick() {
-        return _tick.apply(this, arguments);
-    }
+function tick() {
+    return _tick.apply(this, arguments);
+}
 
-    function _tick() {
-        _tick = _asyncToGenerator(function* () {
-            if (loadInFlight) return;
-            if (!isLoggedIn()) return;
+function _tick() {
+    _tick = _asyncToGenerator(function* () {
+        if (loadInFlight) return;
+        if (!isLoggedIn()) return;
 
-            loadInFlight = true;
-            try {
-                yield loadState();
-                if (canUseFeatures()) {
-                    yield refreshFactionPaymentData();
-                }
-                if (isOwnerSession() && currentTab === 'admin') {
-                    yield loadAdminDashboard();
-                }
-            } catch (_unused5) {
-            } finally {
-                loadInFlight = false;
+        loadInFlight = true;
+        try {
+            yield loadState();
+            if (canUseFeatures()) {
+                yield refreshFactionPaymentData();
             }
-        });
-        return _tick.apply(this, arguments);
-    }
+            if (currentTab === 'summary' && isLoggedIn()) {
+                yield loadLiveSummary(false);
+            }
+            if (isOwnerSession() && currentTab === 'admin') {
+                yield loadAdminDashboard();
+            }
+            renderBody();
+        } catch (_unused5) {
+        } finally {
+            loadInFlight = false;
+        }
+    });
+    return _tick.apply(this, arguments);
+}
 
     function restartPolling() {
         if (pollTimer) {
