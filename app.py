@@ -1347,20 +1347,37 @@ def _build_live_war_summary(user: Dict[str, Any]) -> Dict[str, Any]:
 
         saved_user = user_map.get(member_user_id) or {}
         access_row = faction_member_map.get(member_user_id) or {}
+        is_viewer_member = bool(member_user_id and viewer_user_id and member_user_id == viewer_user_id)
+
         member_key = str(
-            access_row.get("member_api_key")
+            (viewer_key if is_viewer_member else "")
+            or access_row.get("member_api_key")
             or saved_user.get("api_key")
-            or (viewer_key if member_user_id == viewer_user_id else "")
         ).strip()
 
-        live = member_live_bars(member_key, user_id=member_user_id) if member_key else {
+        live = {
             "ok": False,
             "user_id": member_user_id,
             "personalstats": {},
+            "cooldowns": {},
             "bars": {},
             "states": {},
             "status": {},
+            "medical_cooldown": 0,
         }
+
+        if member_key:
+            if is_viewer_member:
+                live = member_live_bars(member_key)
+
+                live_user_id = str(live.get("user_id") or "").strip()
+                if not live.get("ok") or (live_user_id and live_user_id != member_user_id):
+                    fallback_live = member_live_bars(member_key, user_id=member_user_id)
+                    fallback_user_id = str(fallback_live.get("user_id") or "").strip()
+                    if fallback_live.get("ok") and (not fallback_user_id or fallback_user_id == member_user_id):
+                        live = fallback_live
+            else:
+                live = member_live_bars(member_key, user_id=member_user_id)
         synced = bool(live.get("ok"))
         if synced:
             synced_count += 1
