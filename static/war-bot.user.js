@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         War Hub ⚔️
 // @namespace    fries91-war-hub
-// @version      3.1.2
+// @version      3.1.3
 // @description  War Hub by Fries91. Faction-license aware overlay with draggable icon, draggable overlay, PDA friendly, shared war tools, faction member management, and payment lock handling.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -1977,15 +1977,9 @@ function renderChainTab() {
         var mins = Math.floor((total % 3600) / 60);
         var remSecs = total % 60;
 
-        if (days > 0) {
-            return days + 'd ' + (hours > 0 ? hours + 'h' : '');
-        }
-        if (hours > 0) {
-            return hours + 'h ' + (mins > 0 ? mins + 'm' : '');
-        }
-        if (mins > 0) {
-            return mins + 'm ' + (remSecs > 0 ? remSecs + 's' : '');
-        }
+        if (days > 0) return days + 'd ' + (hours > 0 ? hours + 'h' : '');
+        if (hours > 0) return hours + 'h ' + (mins > 0 ? mins + 'm' : '');
+        if (mins > 0) return mins + 'm ' + (remSecs > 0 ? remSecs + 's' : '');
         return remSecs + 's';
     }
 
@@ -2040,6 +2034,25 @@ function renderChainTab() {
         return 'warhub-pill';
     }
 
+    function statText(current, max) {
+        var c = toNum(current);
+        var m = toNum(max);
+        if (m > 0) return fmtNum(c) + '/' + fmtNum(m);
+        if (c > 0) return fmtNum(c);
+        return '--';
+    }
+
+    function hasLiveStats(member) {
+        return !!(
+            toNum(member.life_current) > 0 ||
+            toNum(member.life_max) > 0 ||
+            toNum(member.energy_current) > 0 ||
+            toNum(member.energy_max) > 0 ||
+            toNum(member.medical_cooldown) > 0 ||
+            member.live_stats_enabled
+        );
+    }
+
     var filtered = members.filter(function (m) {
         var name = String(m.name || m.user_name || m.member_name || '').toLowerCase();
         var uid = String(m.user_id || m.id || '').toLowerCase();
@@ -2087,6 +2100,7 @@ function renderChainTab() {
         var energyCurrent = toNum(m.energy_current);
         var energyMax = toNum(m.energy_max);
         var medCd = medCdText(m);
+        var liveOk = hasLiveStats(m);
 
         var statusLine = String(m.status_detail || m.status || m.last_action || '').trim();
 
@@ -2117,25 +2131,18 @@ function renderChainTab() {
               <div class="' + esc(pillClass) + '">' + esc(pillText) + '</div>\
             </div>\
 \
-            <div class="warhub-grid two" style="margin-top:12px;">\
-              <div class="warhub-metric">\
-                <div class="k">Life</div>\
-                <div class="v" style="font-size:14px;">' + esc(fmtNum(lifeCurrent)) + ' / ' + esc(fmtNum(lifeMax)) + '</div>\
+            <div style="margin-top:12px;padding:10px 12px;border-radius:12px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;gap:14px;flex-wrap:wrap;">\
+              <div style="display:flex;align-items:center;gap:6px;white-space:nowrap;">\
+                <span title="Energy">⚡</span>\
+                <span>' + esc(statText(energyCurrent, energyMax)) + '</span>\
               </div>\
-              <div class="warhub-metric">\
-                <div class="k">Energy</div>\
-                <div class="v" style="font-size:14px;">' + esc(fmtNum(energyCurrent)) + ' / ' + esc(fmtNum(energyMax)) + '</div>\
+              <div style="display:flex;align-items:center;gap:6px;white-space:nowrap;">\
+                <span title="Medical Cooldown">💊</span>\
+                <span>' + esc(liveOk ? medCd : '--') + '</span>\
               </div>\
-            </div>\
-\
-            <div class="warhub-grid two" style="margin-top:10px;">\
-              <div class="warhub-metric">\
-                <div class="k">Medical Cooldown</div>\
-                <div class="v" style="font-size:14px;">' + esc(medCd) + '</div>\
-              </div>\
-              <div class="warhub-metric">\
-                <div class="k">Profile</div>\
-                <div class="v" style="font-size:14px;">' + (m.profile_url ? '<a href="' + esc(m.profile_url) + '" target="_blank" rel="noopener noreferrer">Open</a>' : '-') + '</div>\
+              <div style="display:flex;align-items:center;gap:6px;white-space:nowrap;">\
+                <span title="Life">➕</span>\
+                <span>' + esc(statText(lifeCurrent, lifeMax)) + '</span>\
               </div>\
             </div>\
 \
@@ -2171,10 +2178,9 @@ function renderChainTab() {
           </div>\
         </div>\
 \
-        <div class="warhub-mini" style="margin-top:10px;">Live status, life, energy, med cooldown, and bounty shortcuts.</div>\
+        <div class="warhub-mini" style="margin-top:10px;">Live status with inline ⚡ energy, 💊 med cooldown, and ➕ life.</div>\
       </div>\
-\
-      <div>' + (cardsHtml || '<div class="warhub-card" style="margin-top:12px;"><div class="warhub-empty">No members match this filter.</div></div>') + '</div>';
+      ' + (cardsHtml || '<div class="warhub-card" style="margin-top:12px;">No members found.</div>');
 }
 
 function renderEnemiesTab() {
