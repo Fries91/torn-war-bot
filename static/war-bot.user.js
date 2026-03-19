@@ -1955,7 +1955,7 @@ function renderChainTab() {
           </div>';
     }
 
- function renderMembersTab() {
+function renderMembersTab() {
     var members = arr((state && state.members) || []);
 
     var savedSearch = String(GM_getValue('warhub_members_search', '') || '').trim().toLowerCase();
@@ -1977,9 +1977,9 @@ function renderChainTab() {
         var mins = Math.floor((total % 3600) / 60);
         var remSecs = total % 60;
 
-        if (days > 0) return days + 'd ' + (hours > 0 ? ' ' + hours + 'h' : '');
-        if (hours > 0) return hours + 'h' + (mins > 0 ? ' ' + mins + 'm' : '');
-        if (mins > 0) return mins + 'm' + (remSecs > 0 ? ' ' + remSecs + 's' : '');
+        if (days > 0) return days + 'd ' + (hours > 0 ? hours + 'h' : '');
+        if (hours > 0) return hours + 'h ' + (mins > 0 ? mins + 'm' : '');
+        if (mins > 0) return mins + 'm ' + (remSecs > 0 ? remSecs + 's' : '');
         return remSecs + 's';
     }
 
@@ -2064,34 +2064,33 @@ function renderChainTab() {
         var matchesFilter = savedFilter === 'all' || stateName === savedFilter;
 
         return matchesSearch && matchesFilter;
+    }).sort(function (a, b) {
+        var order = {
+            online: 1,
+            idle: 2,
+            travel: 3,
+            jail: 4,
+            hospital: 5,
+            offline: 6
+        };
+
+        var aState = memberState(a);
+        var bState = memberState(b);
+
+        var aOrder = order[aState] || 99;
+        var bOrder = order[bState] || 99;
+
+        if (aOrder !== bOrder) return aOrder - bOrder;
+
+        var aName = String(a.name || a.user_name || a.member_name || '').toLowerCase();
+        var bName = String(b.name || b.user_name || b.member_name || '').toLowerCase();
+
+        if (aName < bName) return -1;
+        if (aName > bName) return 1;
+        return 0;
     });
 
-    var groups = {
-        online: [],
-        idle: [],
-        travel: [],
-        jail: [],
-        hospital: [],
-        offline: []
-    };
-
-    filtered.forEach(function (m) {
-        var stateName = memberState(m);
-        if (!groups[stateName]) groups[stateName] = [];
-        groups[stateName].push(m);
-    });
-
-    Object.keys(groups).forEach(function (key) {
-        groups[key].sort(function (a, b) {
-            var aName = String(a.name || a.user_name || a.member_name || '').toLowerCase();
-            var bName = String(b.name || b.user_name || b.member_name || '').toLowerCase();
-            if (aName < bName) return -1;
-            if (aName > bName) return 1;
-            return 0;
-        });
-    });
-
-    function renderMemberRow(m) {
+    var cardsHtml = filtered.map(function (m) {
         var name = String(m.name || m.user_name || m.member_name || 'Unknown');
         var userId = String(m.user_id || m.id || '').trim();
         var stateName = memberState(m);
@@ -2105,6 +2104,7 @@ function renderChainTab() {
         var liveOk = hasLiveStats(m);
 
         var statusLine = String(m.status_detail || m.status || m.last_action || '').trim();
+
         if (stateName === 'hospital') {
             var hospSecs = toNum(m.hospital_seconds);
             statusLine = hospSecs > 0 ? ('Hospital for ' + shortTime(hospSecs)) : 'Hospitalized';
@@ -2120,46 +2120,47 @@ function renderChainTab() {
             statusLine = statusLine || 'Offline';
         }
 
-        var bountyUrl = String(m.bounty_url || '').trim();
         var attackUrl = String(m.attack_url || '').trim();
         var profileUrl = String(m.profile_url || '').trim();
+        var bountyUrl = String(m.bounty_url || '').trim();
 
         return '\
-          <div class="warhub-card" style="margin-top:8px;padding:10px 12px;">\
-            <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">\
-              <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;min-width:0;flex:1 1 560px;">\
-                <div class="' + esc(pillClass) + '" style="flex:0 0 auto;">' + esc(pillText) + '</div>\
-                <div style="min-width:0;flex:1 1 180px;">\
-                  <div class="warhub-name">' + (profileUrl ? '<a href="' + esc(profileUrl) + '" target="_blank" rel="noopener noreferrer">' + esc(name) + '</a>' : esc(name)) + (userId ? ' [' + esc(userId) + ']' : '') + '</div>\
-                  <div class="warhub-mini" style="margin-top:2px;">' + esc(statusLine) + '</div>\
-                </div>\
-                <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;white-space:nowrap;">\
-                  <span title="Energy">⚡ ' + esc(statText(energyCurrent, energyMax)) + '</span>\
-                  <span title="Medical Cooldown">💊 ' + esc(liveOk ? medCdText(m) : '--') + '</span>\
-                  <span title="Life">➕ ' + esc(statText(lifeCurrent, lifeMax)) + '</span>\
-                </div>\
+          <div class="warhub-card" style="margin-top:12px;">\
+            <div class="warhub-row" style="justify-content:space-between;align-items:center;gap:8px;">\
+              <div>\
+                <div class="warhub-name">' +
+                    (profileUrl
+                        ? '<a href="' + esc(profileUrl) + '" target="_blank" rel="noopener noreferrer">' + esc(name) + '</a>'
+                        : esc(name)
+                    ) +
+                    (userId ? ' [' + esc(userId) + ']' : '') +
+                '</div>\
+                <div class="warhub-mini" style="margin-top:4px;">' + esc(statusLine) + '</div>\
               </div>\
-              <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">\
-                ' + (attackUrl ? '<a class="warhub-btn primary" href="' + esc(attackUrl) + '" target="_blank" rel="noopener noreferrer">Attack</a>' : '') + '\
-                ' + (bountyUrl ? '<a class="warhub-btn" href="' + esc(bountyUrl) + '" target="_blank" rel="noopener noreferrer">Bounty</a>' : '<button class="warhub-btn" data-member-bounty="1" data-user-id="' + esc(userId) + '" data-user-name="' + esc(name) + '">Bounty</button>') + '\
+              <div class="' + esc(pillClass) + '">' + esc(pillText) + '</div>\
+            </div>\
+\
+            <div style="margin-top:12px;padding:10px 12px;border-radius:12px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;gap:14px;flex-wrap:wrap;">\
+              <div style="display:flex;align-items:center;gap:6px;white-space:nowrap;">\
+                <span title="Energy">⚡</span>\
+                <span>' + esc(statText(energyCurrent, energyMax)) + '</span>\
+              </div>\
+              <div style="display:flex;align-items:center;gap:6px;white-space:nowrap;">\
+                <span title="Medical Cooldown">💊</span>\
+                <span>' + esc(liveOk ? medCdText(m) : '--') + '</span>\
+              </div>\
+              <div style="display:flex;align-items:center;gap:6px;white-space:nowrap;">\
+                <span title="Life">➕</span>\
+                <span>' + esc(statText(lifeCurrent, lifeMax)) + '</span>\
               </div>\
             </div>\
-          </div>';
-    }
-
-    function renderGroup(title, key, icon) {
-        var list = groups[key] || [];
-        if (!list.length) return '';
-
-        return '\
-          <div class="warhub-card warhub-hero-card" style="margin-top:12px;">\
-            <div class="warhub-section-title">\
-              <h3>' + esc(icon + ' ' + title) + '</h3>\
-              <span class="warhub-count">' + fmtNum(list.length) + '</span>\
+\
+            <div class="warhub-actions" style="margin-top:12px;">\
+              ' + (attackUrl ? '<a class="warhub-btn primary" href="' + esc(attackUrl) + '" target="_blank" rel="noopener noreferrer">Attack</a>' : '') + '\
+              ' + (bountyUrl ? '<a class="warhub-btn" href="' + esc(bountyUrl) + '" target="_blank" rel="noopener noreferrer">Bounty</a>' : '<button class="warhub-btn" data-member-bounty="1" data-user-id="' + esc(userId) + '" data-user-name="' + esc(name) + '">Bounty</button>') + '\
             </div>\
-            <div style="margin-top:10px;">' + list.map(renderMemberRow).join('') + '</div>\
           </div>';
-    }
+    }).join('');
 
     return '\
       <div class="warhub-card warhub-hero-card">\
@@ -2167,6 +2168,7 @@ function renderChainTab() {
           <h3>👥 Members</h3>\
           <span class="warhub-count">' + fmtNum(filtered.length) + ' / ' + fmtNum(members.length) + '</span>\
         </div>\
+\
         <div class="warhub-grid two" style="margin-top:12px;">\
           <div>\
             <label class="warhub-label">Search Members</label>\
@@ -2185,20 +2187,10 @@ function renderChainTab() {
             </select>\
           </div>\
         </div>\
-        <div class="warhub-mini" style="margin-top:10px;">Grouped by status with single-line member rows and inline bounty button.</div>\
+\
+        <div class="warhub-mini" style="margin-top:10px;">Classic member card layout with inline ⚡ energy, 💊 med cooldown, and ➕ life.</div>\
       </div>\
-      ' +
-      renderGroup('Online', 'online', '🟢') +
-      renderGroup('Idle', 'idle', '🟡') +
-      renderGroup('Travel', 'travel', '✈️') +
-      renderGroup('Jail', 'jail', '🔒') +
-      renderGroup('Hospital', 'hospital', '🏥') +
-      renderGroup('Offline', 'offline', '⚫') +
-      (
-        filtered.length
-          ? ''
-          : '<div class="warhub-card" style="margin-top:12px;">No members found.</div>'
-      );
+      ' + (cardsHtml || '<div class="warhub-card" style="margin-top:12px;">No members found.</div>');
 }
 
 function renderEnemiesTab() {
