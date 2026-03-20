@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         War Hub ⚔️
 // @namespace    fries91-war-hub
-// @version      3.1.5
+// @version      3.1.6
 // @description  War Hub by Fries91. Faction-license aware overlay with draggable icon, draggable overlay, PDA friendly, shared war tools, faction member management, and payment lock handling.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -85,7 +85,11 @@
     var liveSummaryLoading = false;
     var liveSummaryError = '';
     var liveSummaryLastAt = 0;
-
+    var warEnemiesCache = [];
+    var warEnemiesFactionName = '';
+    var warEnemiesFactionId = '';
+    var warEnemiesLoadedAt = 0;
+    
     var overlay = null;
     var shield = null;
     var badge = null;
@@ -868,6 +872,203 @@
             });
         });
     }
+function getKnownWarId() {
+    var live = (typeof liveSummaryCache === 'object' && liveSummaryCache) ? liveSummaryCache : {};
+    var liveWar = (live && typeof live.war === 'object' && live.war) ? live.war : {};
+    var stateWar = (state && typeof state.war === 'object' && state.war) ? state.war : {};
+
+    var candidates = [
+        live && live.war_id,
+        live && live.ranked_war_id,
+        live && live.id,
+        liveWar && liveWar.war_id,
+        liveWar && liveWar.ranked_war_id,
+        liveWar && liveWar.id,
+        state && state.war_id,
+        state && state.ranked_war_id,
+        stateWar && stateWar.war_id,
+        stateWar && stateWar.ranked_war_id,
+        stateWar && stateWar.id
+    ];
+
+    for (var i = 0; i < candidates.length; i++) {
+        var v = String(candidates[i] || '').trim();
+        if (v) return v;
+    }
+
+    return '';
+}
+
+    function authedReq(method, path, body) {
+        return req(method, path, body);
+    }
+
+    function adminReq(method, path, body) {
+        return req(method, path, body);
+    }
+    function _asyncToGenerator(fn) {
+        return function () {
+            var self = this, args = arguments;
+            return new Promise(function (resolve, reject) {
+                var gen = fn.apply(self, args);
+                function step(key, arg) {
+                    var info;
+                    try {
+                        info = gen[key](arg);
+                    } catch (error) {
+                        reject(error);
+                        return;
+                    }
+                    var value = info.value;
+                    if (info.done) {
+                        resolve(value);
+                    } else {
+                        Promise.resolve(value).then(function (val) {
+                            step('next', val);
+                        }, function (err) {
+                            step('throw', err);
+                        });
+                    }
+                }
+                step('next');
+            });
+        };
+    }
+
+    function req(method, path, body, extraHeaders) {
+        return new Promise(function (resolve) {
+            var headers = {
+                'Content-Type': 'application/json'
+            };
+
+            var sessionToken = cleanInputValue(GM_getValue(K_SESSION, ''));
+            if (sessionToken) headers['X-Session-Token'] = sessionToken;
+
+            var ownerToken = cleanInputValue(GM_getValue(K_OWNER_TOKEN, ''));
+            if (ownerToken) headers['X-Owner-Token'] = ownerToken;
+
+            var adminKey = cleanInputValue(GM_getValue(K_ADMIN_KEY, ''));
+            if (adminKey) headers['X-Admin-Key'] = adminKey;
+
+            if (extraHeaders && typeof extraHeaders === 'object') {
+                Object.keys(extraHeaders).forEach(function (k) {
+                    headers[k] = extraHeaders[k];
+                });
+            }
+
+            GM_xmlhttpRequest({
+                method: String(method || 'GET').toUpperCase(),
+                url: BASE_URL + String(path || ''),
+                headers: headers,
+                data: body == null ? null : JSON.stringify(body),
+                timeout: 30000,
+                onload: function (res) {
+                    var json = null;
+                    try {
+                        json = JSON.parse(res.responseText || '{}');
+                    } catch (_unused3) {
+                        json = null;
+                    }
+
+                    if (!json || typeof json !== 'object') {
+                        resolve({
+                            ok: false,
+                            status: res.status || 0,
+                            error: 'Invalid server response.'
+                        });
+                        return;
+                    }
+
+                    if (json.ok === false) {
+                        resolve({
+                            ok: false,
+                            status: res.status || 0,
+                            error: String(json.error || json.message || 'Request failed.'),
+                            data: json
+                        });
+                        return;
+                    }
+
+                    resolve({
+                        ok: true,
+                        status: res.status || 200,
+                        data: json
+                    });
+                },
+                onerror: function () {
+                    resolve({
+                        ok: false,
+                        status: 0,
+                        error: 'Network request failed.'
+                    });
+                },
+                ontimeout: function () {
+                    resolve({
+                        ok: false,
+                        status: 0,
+                        error: 'Request timed out.'
+                    });
+                }
+            });
+        });
+    }
+function getKnownWarId() {
+    var live = (typeof liveSummaryCache === 'object' && liveSummaryCache) ? liveSummaryCache : {};
+    var liveWar = (live && typeof live.war === 'object' && live.war) ? live.war : {};
+    var stateWar = (state && typeof state.war === 'object' && state.war) ? state.war : {};
+
+    var candidates = [
+        live && live.war_id,
+        live && live.ranked_war_id,
+        live && live.id,
+        liveWar && liveWar.war_id,
+        liveWar && liveWar.ranked_war_id,
+        liveWar && liveWar.id,
+        state && state.war_id,
+        state && state.ranked_war_id,
+        stateWar && stateWar.war_id,
+        stateWar && stateWar.ranked_war_id,
+        stateWar && stateWar.id
+    ];
+
+    for (var i = 0; i < candidates.length; i++) {
+        var v = String(candidates[i] || '').trim();
+        if (v) return v;
+    }
+
+    return '';
+}
+function loadWarEnemiesById(force) {
+    return _asyncToGenerator(function* () {
+        var warId = getKnownWarId();
+        if (!warId) {
+            warEnemiesCache = [];
+            warEnemiesFactionName = '';
+            warEnemiesFactionId = '';
+            return [];
+        }
+
+        if (!force && Array.isArray(warEnemiesCache) && warEnemiesCache.length) {
+            return warEnemiesCache;
+        }
+
+        var res = yield authedReq('GET', '/api/war/enemies?war_id=' + encodeURIComponent(warId));
+        if (!res.ok) {
+            warEnemiesCache = [];
+            warEnemiesFactionName = '';
+            warEnemiesFactionId = '';
+            return [];
+        }
+
+        var data = (res && res.data) ? res.data : {};
+        warEnemiesCache = Array.isArray(data.enemy_members) ? data.enemy_members : [];
+        warEnemiesFactionName = String(data.enemy_faction_name || '');
+        warEnemiesFactionId = String(data.enemy_faction_id || '');
+        warEnemiesLoadedAt = Date.now();
+
+        return warEnemiesCache;
+    })();
+}
 
     function authedReq(method, path, body) {
         return req(method, path, body);
@@ -1364,6 +1565,37 @@ function _loadLiveSummary() {
         }
     });
     return _loadLiveSummary.apply(this, arguments);
+}
+function loadWarEnemiesById(force) {
+    return _asyncToGenerator(function* () {
+        var warId = getKnownWarId();
+        if (!warId) {
+            warEnemiesCache = [];
+            warEnemiesFactionName = '';
+            warEnemiesFactionId = '';
+            return [];
+        }
+
+        if (!force && Array.isArray(warEnemiesCache) && warEnemiesCache.length) {
+            return warEnemiesCache;
+        }
+
+        var res = yield authedReq('GET', '/api/war/enemies?war_id=' + encodeURIComponent(warId));
+        if (!res.ok) {
+            warEnemiesCache = [];
+            warEnemiesFactionName = '';
+            warEnemiesFactionId = '';
+            return [];
+        }
+
+        var data = yield res.json();
+        warEnemiesCache = Array.isArray(data && data.enemy_members) ? data.enemy_members : [];
+        warEnemiesFactionName = String(data && data.enemy_faction_name || '');
+        warEnemiesFactionId = String(data && data.enemy_faction_id || '');
+        warEnemiesLoadedAt = Date.now();
+
+        return warEnemiesCache;
+    })();
 }
 
     function loadAdminDashboard() {
@@ -2192,8 +2424,8 @@ function renderMembersTab() {
       ' + (cardsHtml || '<div class="warhub-card" style="margin-top:12px;">No members found.</div>');
 }
 function scrapeEnemyMembersFromPage() {
-    var out = [];
-    var seen = {};
+    return [];
+}
 
     function textOf(el) {
         return String((el && el.textContent) || '').replace(/\s+/g, ' ').trim();
@@ -2282,6 +2514,71 @@ function scrapeEnemyMembersFromPage() {
     });
 
     return out;
+}
+function getEnemyMembersForTab() {
+    return Array.isArray(warEnemiesCache) ? warEnemiesCache : [];
+}
+
+    function arrify(v) {
+        return Array.isArray(v) ? v : [];
+    }
+
+    function normalizeEnemyRow(e) {
+        if (!e || typeof e !== 'object') return null;
+
+        var userId = String(e.user_id || e.id || e.target_id || '').trim();
+        var name = String(e.name || e.user_name || e.member_name || e.target_name || '').trim();
+
+        if (!userId && !name) return null;
+
+        return {
+            user_id: userId,
+            id: userId,
+            name: name || 'Unknown',
+            level: e.level || e.user_level || '',
+            position: e.position || e.role || e.rank || 'Member',
+            online_state: e.online_state || e.status_class || e.state || '',
+            status: e.status || '',
+            status_detail: e.status_detail || '',
+            display_status: e.display_status || e.last_action || '',
+            hospital_seconds: Number(e.hospital_seconds || e.hospital_time || 0) || 0,
+            attack_url: e.attack_url || (userId ? ('https://www.torn.com/loader.php?sid=attack&user2ID=' + encodeURIComponent(userId)) : ''),
+            profile_url: e.profile_url || (userId ? ('https://www.torn.com/profiles.php?XID=' + encodeURIComponent(userId)) : ''),
+            bounty_url: e.bounty_url || (userId ? ('https://www.torn.com/bounties.php?userID=' + encodeURIComponent(userId)) : '')
+        };
+    }
+
+    function uniqueById(list) {
+        var seen = {};
+        var out = [];
+
+        arrify(list).forEach(function (row) {
+            var enemy = normalizeEnemyRow(row);
+            if (!enemy) return;
+
+            var key = String(enemy.user_id || enemy.name).trim().toLowerCase();
+            if (!key || seen[key]) return;
+
+            seen[key] = true;
+            out.push(enemy);
+        });
+
+        return out;
+    }
+
+    var candidates = [
+        live && live.enemy_members,
+        live && live.enemyMembers,
+        liveWar && liveWar.enemy_members,
+        liveWar && liveWar.enemyMembers
+    ];
+
+    for (var i = 0; i < candidates.length; i++) {
+        var normalized = uniqueById(candidates[i]);
+        if (normalized.length) return normalized;
+    }
+
+    return [];
 }
  function renderEnemiesTab() {
     var warObj = (state && state.war && typeof state.war === 'object') ? state.war : {};
@@ -2972,6 +3269,10 @@ function _logoutSession() {
         yield loadFactionMembers(true);
         yield refreshFactionPaymentData();
     }
+    if (tab === 'enemies') {
+        yield loadLiveSummary(true);
+        yield loadWarEnemiesById(true);
+}
 
     if (tab === 'summary' || tab === 'enemies') {
     yield loadLiveSummary(true);
