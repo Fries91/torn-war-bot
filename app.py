@@ -1499,7 +1499,194 @@ def api_war_summary_live():
         return blocked
     return ok(item=_build_live_war_summary(request.user or {}))
 
+@app.route("/api/war/enemies", methods=["GET"])
+@require_session
+def api_war_enemies():
+    blocked = _require_feature_access()
+    if blocked:
+        return blocked
 
+    user = request.user or {}
+    api_key = str(user.get("api_key") or "").strip()
+    user_id = str(user.get("user_id") or "").strip()
+    faction_id = str(user.get("faction_id") or "").strip()
+    faction_name = str(user.get("faction_name") or "").strip()
+    requested_war_id = str(request.args.get("war_id") or "").strip()
+
+    if not faction_id:
+        return err("No faction found.", 400)
+
+    viewer_war_api_key = api_key or ""
+    leader_war_api_key = ""
+    war_api_key = viewer_war_api_key
+    war_api_key_source = "session_user_key" if viewer_war_api_key else "missing"
+
+    license_status = _build_license_status_payload(faction_id, viewer_user_id=user_id) if faction_id else {}
+    leader_user_id = str((license_status or {}).get("leader_user_id") or "").strip()
+    if leader_user_id:
+        try:
+            leader_user = get_user(leader_user_id) or {}
+        except Exception:
+            leader_user = {}
+        leader_war_api_key = str((leader_user or {}).get("api_key") or "").strip()
+
+    if leader_war_api_key:
+        war_api_key = leader_war_api_key
+        war_api_key_source = "leader_user_key"
+
+    if not war_api_key:
+        return err("No war API key available.", 400)
+
+    war_info = ranked_war_summary(
+        war_api_key,
+        my_faction_id=faction_id,
+        my_faction_name=faction_name,
+    ) or {
+        "ok": True,
+        "active": False,
+        "registered": False,
+        "has_war": False,
+        "phase": "none",
+        "war_id": "",
+        "enemy_faction_id": "",
+        "enemy_faction_name": "",
+        "enemy_members": [],
+        "score_us": 0,
+        "score_them": 0,
+        "target_score": 0,
+        "chain_us": 0,
+        "chain_them": 0,
+        "status_text": "Currently not in war",
+        "source_ok": False,
+        "source_note": "No war API key available.",
+    }
+
+    war_id = str(war_info.get("war_id") or "").strip()
+    if requested_war_id and war_id and requested_war_id != war_id:
+        return err(
+            "Requested war_id does not match current active war.",
+            409,
+            requested_war_id=requested_war_id,
+            current_war_id=war_id,
+        )
+
+    enemy_faction_id = str(war_info.get("enemy_faction_id") or "").strip()
+    enemy_faction_name = str(war_info.get("enemy_faction_name") or "").strip()
+    raw_enemy_members = war_info.get("enemy_members") or []
+
+    our_faction_id = str(war_info.get("my_faction_id") or faction_id or "").strip()
+    our_faction_name = str(war_info.get("my_faction_name") or faction_name or "").strip().lower()
+
+    if enemy_faction_id and our_faction_id and enemy_faction_id == our_faction_id:
+        enemy_faction_id = ""
+        enemy_faction_name = ""
+        raw_enemy_members = []
+
+    if (
+        enemy_faction_name
+        and our_faction_name
+        and enemy_faction_name.strip().lower() == our_faction_name
+        and not enemy_faction_id
+        and not raw_enemy_members
+    ):
+        enemy_faction_name = ""
+
+    fallback_sides = [x for x in (war_info.get("debug_factions") or []) if isinstance(x, dict)]
+
+    if not enemy_faction_id or not enemy_faction_name:
+        for side in fallback_sides:
+            side_id = str(side.get("faction_id") or "").strip()
+            side_name = str(side.get("faction_name") or "").strip()
+
+            if side_id and our_faction_id and side_id == our_faction_id:
+                continue
+            if side_name and our_faction_name and side_name.lower() == our_faction_name:
+                continue
+
+            if not enemy_faction_id and side_id:
+                enemy_faction_id = side_id
+            if not enemy_faction_name and side_name:
+                enemy_faction_name = side_name
+
+            if enemy_faction_id and enemy_faction_name:
+                break
+
+    faction_fetch_key = war_api_key or viewer_war_api_key
+    if ((not raw_enemy_members) or (not enemy_faction_name)) and enemy_faction_id and faction_fetch_key:
+        enemy_faction_info = _faction_basic_by_id(faction_fetch_key, enemy_faction_id)
+        if enemy_faction_info.get("ok"):
+            fetched_enemy_id = str(enemy_faction_info.get("faction_id") or enemy_faction_id or "").strip()
+            fetched_enemy_name = str(
+                enemy_faction_info.get("faction_name")
+                or enemy_faction_name
+                or ((war_info.get("debug_enemy_fetch") or {}).get("enemy_fetch_faction_name"))
+                or ((war_info.get("debug_enemy_fetch") or {}).get("enemy_name"))
+                or ""
+            ).strip()
+
+            if not our_faction_id or fetched_enemy_id != our_faction_id:
+                enemy_faction_id = fetched_enemy_id or enemy_faction_id
+                enemy_faction_name = fetched_enemy_name or enemy_faction_name
+                raw_enemy_members = enemy_faction_info.get("members") or raw_enemy_members
+
+    if raw_enemy_members:
+        our_faction_info = _faction_basic_by_id(faction_fetch_key, our_faction_id) if faction_fetch_key and our_faction_id else {}
+        our_members = our_faction_info.get("members") or []
+        our_member_ids = {
+            str(m.get("user_id") or m.get("id") or "").strip()
+            for m in our_members
+            if str(m.get("user_id") or m.get("id") or "").strip()
+        }
+
+        seen_enemy_ids = set()
+        filtered_enemy_members = []
+
+        for enemy in raw_enemy_members:
+            enemy_user_id = str(enemy.get("user_id") or enemy.get("id") or "").strip()
+            if enemy_user_id and enemy_user_id in our_member_ids:
+                continue
+            if enemy_user_id and enemy_user_id in seen_enemy_ids:
+                continue
+            if enemy_user_id:
+                seen_enemy_ids.add(enemy_user_id)
+            filtered_enemy_members.append(enemy)
+
+        raw_enemy_members = filtered_enemy_members
+
+    enemies = _merge_enemy_state(raw_enemy_members, war_id) if raw_enemy_members else []
+
+    enemy_faction_name = str(
+        enemy_faction_name
+        or ((war_info.get("debug_enemy_fetch") or {}).get("enemy_fetch_faction_name"))
+        or ((war_info.get("debug_enemy_fetch") or {}).get("enemy_name"))
+        or ""
+    ).strip()
+
+    return ok(
+        war_id=war_id,
+        requested_war_id=requested_war_id,
+        enemy_faction_id=enemy_faction_id,
+        enemy_faction_name=enemy_faction_name,
+        enemy_members=enemies,
+        enemyMembers=enemies,
+        enemies=enemies,
+        enemy_members_count=len(enemies),
+        has_war=bool(war_info.get("has_war")),
+        war_api_key_source=war_api_key_source,
+        debug={
+            "source_note": str(war_info.get("source_note") or ""),
+            "debug_enemy_fetch": war_info.get("debug_enemy_fetch") or {},
+            "debug_factions": war_info.get("debug_factions") or [],
+            "current_war_id": war_id,
+            "requested_war_id": requested_war_id,
+            "our_faction_id": our_faction_id,
+            "our_faction_name": our_faction_name,
+            "enemy_faction_id": enemy_faction_id,
+            "enemy_faction_name": enemy_faction_name,
+            "enemy_members_count": len(enemies),
+        },
+    )
+    
 # ============================================================
 # 12. STATE / WAR ROUTES
 # /api/state, /api/war/*, /api/faction/basic, /api/enemies, etc.
