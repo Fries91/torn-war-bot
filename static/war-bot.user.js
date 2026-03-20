@@ -1528,10 +1528,10 @@ function loadWarEnemiesById(force) {
             return [];
         }
 
-        var data = yield res.json();
-        warEnemiesCache = Array.isArray(data && data.enemy_members) ? data.enemy_members : [];
-        warEnemiesFactionName = String(data && data.enemy_faction_name || '');
-        warEnemiesFactionId = String(data && data.enemy_faction_id || '');
+        var data = (res && res.data) ? res.data : {};
+        warEnemiesCache = Array.isArray(data.enemy_members) ? data.enemy_members : [];
+        warEnemiesFactionName = String(data.enemy_faction_name || '');
+        warEnemiesFactionId = String(data.enemy_faction_id || '');
         warEnemiesLoadedAt = Date.now();
 
         return warEnemiesCache;
