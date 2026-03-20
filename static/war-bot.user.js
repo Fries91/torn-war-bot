@@ -1014,63 +1014,6 @@ function getKnownWarId() {
             });
         });
     }
-function getKnownWarId() {
-    var live = (typeof liveSummaryCache === 'object' && liveSummaryCache) ? liveSummaryCache : {};
-    var liveWar = (live && typeof live.war === 'object' && live.war) ? live.war : {};
-    var stateWar = (state && typeof state.war === 'object' && state.war) ? state.war : {};
-
-    var candidates = [
-        live && live.war_id,
-        live && live.ranked_war_id,
-        live && live.id,
-        liveWar && liveWar.war_id,
-        liveWar && liveWar.ranked_war_id,
-        liveWar && liveWar.id,
-        state && state.war_id,
-        state && state.ranked_war_id,
-        stateWar && stateWar.war_id,
-        stateWar && stateWar.ranked_war_id,
-        stateWar && stateWar.id
-    ];
-
-    for (var i = 0; i < candidates.length; i++) {
-        var v = String(candidates[i] || '').trim();
-        if (v) return v;
-    }
-
-    return '';
-}
-function loadWarEnemiesById(force) {
-    return _asyncToGenerator(function* () {
-        var warId = getKnownWarId();
-        if (!warId) {
-            warEnemiesCache = [];
-            warEnemiesFactionName = '';
-            warEnemiesFactionId = '';
-            return [];
-        }
-
-        if (!force && Array.isArray(warEnemiesCache) && warEnemiesCache.length) {
-            return warEnemiesCache;
-        }
-
-        var res = yield authedReq('GET', '/api/war/enemies?war_id=' + encodeURIComponent(warId));
-        if (!res.ok) {
-            warEnemiesCache = [];
-            warEnemiesFactionName = '';
-            warEnemiesFactionId = '';
-            return [];
-        }
-
-        var data = (res && res.data) ? res.data : {};
-        warEnemiesCache = Array.isArray(data.enemy_members) ? data.enemy_members : [];
-        warEnemiesFactionName = String(data.enemy_faction_name || '');
-        warEnemiesFactionId = String(data.enemy_faction_id || '');
-        warEnemiesLoadedAt = Date.now();
-
-        return warEnemiesCache;
-    })();
-}
 
     function authedReq(method, path, body) {
         return req(method, path, body);
@@ -2521,67 +2464,6 @@ function getEnemyMembersForTab() {
     return Array.isArray(warEnemiesCache) ? warEnemiesCache : [];
 }
 
-    function arrify(v) {
-        return Array.isArray(v) ? v : [];
-    }
-
-    function normalizeEnemyRow(e) {
-        if (!e || typeof e !== 'object') return null;
-
-        var userId = String(e.user_id || e.id || e.target_id || '').trim();
-        var name = String(e.name || e.user_name || e.member_name || e.target_name || '').trim();
-
-        if (!userId && !name) return null;
-
-        return {
-            user_id: userId,
-            id: userId,
-            name: name || 'Unknown',
-            level: e.level || e.user_level || '',
-            position: e.position || e.role || e.rank || 'Member',
-            online_state: e.online_state || e.status_class || e.state || '',
-            status: e.status || '',
-            status_detail: e.status_detail || '',
-            display_status: e.display_status || e.last_action || '',
-            hospital_seconds: Number(e.hospital_seconds || e.hospital_time || 0) || 0,
-            attack_url: e.attack_url || (userId ? ('https://www.torn.com/loader.php?sid=attack&user2ID=' + encodeURIComponent(userId)) : ''),
-            profile_url: e.profile_url || (userId ? ('https://www.torn.com/profiles.php?XID=' + encodeURIComponent(userId)) : ''),
-            bounty_url: e.bounty_url || (userId ? ('https://www.torn.com/bounties.php?userID=' + encodeURIComponent(userId)) : '')
-        };
-    }
-
-    function uniqueById(list) {
-        var seen = {};
-        var out = [];
-
-        arrify(list).forEach(function (row) {
-            var enemy = normalizeEnemyRow(row);
-            if (!enemy) return;
-
-            var key = String(enemy.user_id || enemy.name).trim().toLowerCase();
-            if (!key || seen[key]) return;
-
-            seen[key] = true;
-            out.push(enemy);
-        });
-
-        return out;
-    }
-
-    var candidates = [
-        live && live.enemy_members,
-        live && live.enemyMembers,
-        liveWar && liveWar.enemy_members,
-        liveWar && liveWar.enemyMembers
-    ];
-
-    for (var i = 0; i < candidates.length; i++) {
-        var normalized = uniqueById(candidates[i]);
-        if (normalized.length) return normalized;
-    }
-
-    return [];
-}
 function toStatNum(v) {
     var n = Number(v || 0);
     return isFinite(n) && n > 0 ? Math.floor(n) : 0;
