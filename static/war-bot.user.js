@@ -875,9 +875,10 @@
         });
     }
 function getKnownWarId() {
-    var live = (typeof liveSummaryCache === 'object' && liveSummaryCache) ? liveSummaryCache : {};
-    var liveWar = (live && typeof live.war === 'object' && live.war) ? live.war : {};
-    var stateWar = (state && typeof state.war === 'object' && state.war) ? state.war : {};
+    var liveRoot = (typeof liveSummaryCache === 'object' && liveSummaryCache) ? liveSummaryCache : {};
+    var live = (liveRoot && typeof liveRoot.item === 'object' && liveRoot.item) ? liveRoot.item : liveRoot;
+    var liveWar = (live && typeof live.war === 'object') ? live.war : {};
+    var stateWar = (state && typeof state.war === 'object') ? state.war : {};
 
     var candidates = [
         live && live.war_id,
@@ -1457,7 +1458,7 @@ function _activateFactionMember() {
     return _activateFactionMember.apply(this, arguments);
 }
 
-    function loadLiveSummary(force) {
+function loadLiveSummary(force) {
     return _loadLiveSummary.apply(this, arguments);
 }
 
@@ -1481,13 +1482,7 @@ function _loadLiveSummary() {
 
         try {
             var res = yield authedReq('GET', '/api/war/summary-live');
-            var data = null;
-
-            try {
-                data = yield res.json();
-            } catch (e) {
-                data = null;
-            }
+            var data = (res && res.data) ? res.data : null;
 
             if (!res.ok) {
                 liveSummaryCache = null;
@@ -2471,7 +2466,8 @@ function renderEnemySpyBlock(enemy) {
 }
 function renderEnemiesTab() {
     var warObj = (state && state.war && typeof state.war === 'object') ? state.war : {};
-    var live = (typeof liveSummaryCache === 'object' && liveSummaryCache) ? liveSummaryCache : {};
+    var liveRoot = (typeof liveSummaryCache === 'object' && liveSummaryCache) ? liveSummaryCache : {};
+    var live = (liveRoot && typeof liveRoot.item === 'object' && liveRoot.item) ? liveRoot.item : liveRoot;
     var liveWar = (live && typeof live.war === 'object') ? live.war : {};
 
     var enemies = getEnemyMembersForTab();
