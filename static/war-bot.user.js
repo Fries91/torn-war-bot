@@ -89,6 +89,8 @@
     var warEnemiesFactionName = '';
     var warEnemiesFactionId = '';
     var warEnemiesLoadedAt = 0;
+    var warEnemyStatsCache = {};
+    var warEnemyStatsLoadedAt = 0;
     
     var overlay = null;
     var shield = null;
@@ -2580,14 +2582,108 @@ function getEnemyMembersForTab() {
 
     return [];
 }
- function renderEnemiesTab() {
+function toStatNum(v) {
+    var n = Number(v || 0);
+    return isFinite(n) && n > 0 ? Math.floor(n) : 0;
+}
+
+function fmtStat(v) {
+    var n = toStatNum(v);
+    if (!n) return '--';
+    return fmtNum(n);
+}
+
+function normalizeSpyRow(row) {
+    if (!row || typeof row !== 'object') return null;
+
+    var userId = String(row.user_id || row.id || row.target_id || '').trim();
+    if (!userId) return null;
+
+    var strength = toStatNum(row.strength);
+    var speed = toStatNum(row.speed);
+    var dexterity = toStatNum(row.dexterity || row.dex);
+    var defense = toStatNum(row.defense || row.def);
+    var total = toStatNum(row.total || (strength + speed + dexterity + defense));
+
+    return {
+        user_id: userId,
+        source: String(row.source || row.spy_source || row.kind || 'none').trim(),
+        exact: !!(row.exact || row.spy_exact),
+        predicted: !!(row.predicted || row.is_predicted),
+        strength: strength,
+        speed: speed,
+        dexterity: dexterity,
+        defense: defense,
+        total: total,
+        age: String(row.age || row.spy_age || '').trim(),
+        updated_at: String(row.updated_at || '').trim()
+    };
+}
+
+function setWarEnemyStatsCache(rows) {
+    warEnemyStatsCache = {};
+
+    if (!Array.isArray(rows)) {
+        warEnemyStatsLoadedAt = Date.now();
+        return warEnemyStatsCache;
+    }
+
+    rows.forEach(function (row) {
+        var spy = normalizeSpyRow(row);
+        if (!spy) return;
+        warEnemyStatsCache[String(spy.user_id)] = spy;
+    });
+
+    warEnemyStatsLoadedAt = Date.now();
+    return warEnemyStatsCache;
+}
+
+function getEnemySpyById(userId) {
+    var key = String(userId || '').trim();
+    if (!key) return null;
+    return warEnemyStatsCache[key] || null;
+}
+
+function renderEnemySpyBlock(enemy) {
+    var userId = String(enemy && (enemy.user_id || enemy.id) || '').trim();
+    var spy = getEnemySpyById(userId);
+
+    if (!spy) {
+        return '\
+          <div style="margin-top:10px;padding:10px 12px;border-radius:12px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);">\
+            <div class="warhub-mini">Stats: No spy data</div>\
+          </div>';
+    }
+
+    var label = spy.exact ? 'Exact Spy' : (spy.predicted ? 'Predicted' : 'Stats');
+    var sub = [];
+    if (spy.source) sub.push(spy.source);
+    if (spy.age) sub.push('Age ' + spy.age);
+
+    return '\
+      <div style="margin-top:10px;padding:10px 12px;border-radius:12px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);">\
+        <div class="warhub-row" style="justify-content:space-between;align-items:center;gap:8px;">\
+          <div><strong>' + esc(label) + '</strong></div>\
+          <div class="warhub-mini">' + esc(sub.join(' • ') || 'No source') + '</div>\
+        </div>\
+        <div style="margin-top:8px;display:flex;gap:12px;flex-wrap:wrap;">\
+          <div style="white-space:nowrap;"><strong>STR:</strong> ' + esc(fmtStat(spy.strength)) + '</div>\
+          <div style="white-space:nowrap;"><strong>SPD:</strong> ' + esc(fmtStat(spy.speed)) + '</div>\
+          <div style="white-space:nowrap;"><strong>DEX:</strong> ' + esc(fmtStat(spy.dexterity)) + '</div>\
+          <div style="white-space:nowrap;"><strong>DEF:</strong> ' + esc(fmtStat(spy.defense)) + '</div>\
+          <div style="white-space:nowrap;"><strong>Total:</strong> ' + esc(fmtStat(spy.total)) + '</div>\
+        </div>\
+      </div>';
+}
+function renderEnemiesTab() {
     var warObj = (state && state.war && typeof state.war === 'object') ? state.war : {};
     var live = (typeof liveSummaryCache === 'object' && liveSummaryCache) ? liveSummaryCache : {};
-    var liveWar = (live && typeof live.war === 'object' && live.war) ? live.war : {};
+    var liveWar = (live && typeof live.war === 'object') ? live.war : {};
 
     var enemies = getEnemyMembersForTab();
 
     var enemyFactionName = String(
+        warEnemiesFactionName ||
         (live && live.enemy_faction_name) ||
         (liveWar && liveWar.enemy_faction_name) ||
         (state && state.enemy_faction_name) ||
@@ -2730,9 +2826,20 @@ function getEnemyMembersForTab() {
             statusLine = statusLine || 'Offline';
         }
 
-        var attackUrl = String(e.attack_url || '').trim();
-        var profileUrl = String(e.profile_url || '').trim();
-        var bountyUrl = String(e.bounty_url || '').trim();
+        var attackUrl = String(
+            e.attack_url ||
+            (userId ? ('https://www.torn.com/loader.php?sid=attack&user2ID=' + encodeURIComponent(userId)) : '')
+        ).trim();
+
+        var profileUrl = String(
+            e.profile_url ||
+            (userId ? ('https://www.torn.com/profiles.php?XID=' + encodeURIComponent(userId)) : '')
+        ).trim();
+
+        var bountyUrl = String(
+            e.bounty_url ||
+            (userId ? ('https://www.torn.com/bounties.php?userID=' + encodeURIComponent(userId)) : '')
+        ).trim();
 
         return '\
           <div class="warhub-card" style="margin-top:10px;">\
@@ -2749,6 +2856,8 @@ function getEnemyMembersForTab() {
               <div style="white-space:nowrap;"><strong>Role:</strong> ' + esc(position || '--') + '</div>\
               <div style="white-space:nowrap;"><strong>Status:</strong> ' + esc(pillText) + '</div>\
             </div>\
+\
+            ' + renderEnemySpyBlock(e) + '\
 \
             <div class="warhub-actions" style="margin-top:10px;">\
               ' + (attackUrl ? '<a class="warhub-btn primary" href="' + esc(attackUrl) + '" target="_blank" rel="noopener noreferrer">Attack</a>' : '') + '\
@@ -2807,7 +2916,7 @@ function getEnemyMembersForTab() {
           </div>\
         </div>\
 \
-        <div class="warhub-mini" style="margin-top:10px;">Enemy faction members from live summary or strict war-page fallback only.</div>\
+        <div class="warhub-mini" style="margin-top:10px;">Enemy faction members from war-id enemy cache only.</div>\
       </div>\
       ' + (groupedHtml || '<div class="warhub-card" style="margin-top:12px;">No enemies found.</div>');
 }
