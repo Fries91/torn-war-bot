@@ -3168,15 +3168,14 @@ function _logoutSession() {
         yield loadFactionMembers(true);
         yield refreshFactionPaymentData();
     }
-    if (tab === 'enemies') {
-        yield loadLiveSummary(true);
-        yield loadWarEnemiesById(true);
-}
-
-    if (tab === 'summary' || tab === 'enemies') {
+    if (tab === 'summary') {
     yield loadLiveSummary(true);
 }
 
+if (tab === 'enemies') {
+    yield loadLiveSummary(true);
+    yield loadWarEnemiesById(true);
+}
     if (tab === 'admin' && canSeeAdmin()) {
         yield loadAdminDashboard();
     }
