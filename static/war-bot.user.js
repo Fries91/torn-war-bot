@@ -2747,7 +2747,7 @@ function renderEnemiesTab() {
         </div>\
         <div class="warhub-hero-vs">' + esc(enemyFactionName) + '</div>\
         <div class="warhub-mini" style="margin-top:6px;">Raw cache: ' + fmtNum(rawEnemyCacheCount) + ' | Filtered: ' + fmtNum(filtered.length) + ' | War ID: ' + esc(String(warEnemyDebug.war_id || getKnownWarId() || '--')) + '</div>\
-        <div class="warhub-mini" style="margin-top:4px;">Route count: ' + esc(String(warEnemyDebug.enemy_members_count != null ? warEnemyDebug.enemy_members_count : '--')) + ' | Route ok: ' + esc(String(warEnemyDebug.ok != null ? warEnemyDebug.ok : '--')) + ' | Route error: ' + esc(String(warEnemyDebug.error || '')) + '</div>
+        <div class="warhub-mini" style="margin-top:4px;">Route count: ' + esc(String(warEnemyDebug.enemy_members_count != null ? warEnemyDebug.enemy_members_count : '--')) + ' | Route ok: ' + esc(String(warEnemyDebug.ok != null ? warEnemyDebug.ok : '--')) + ' | Route error: ' + esc(String(warEnemyDebug.error || '')) + '</div>\
     \
         <div class="warhub-grid two" style="margin-top:12px;">\
           <div>\
