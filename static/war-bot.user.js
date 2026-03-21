@@ -764,116 +764,117 @@
         positionBadge();
     }
 
-    // ============================================================
-    // 08. ASYNC / REQUEST HELPERS
-    // ============================================================
+// ============================================================
+// 08. ASYNC / REQUEST HELPERS
+// ============================================================
 
-    function _asyncToGenerator(fn) {
-        return function () {
-            var self = this, args = arguments;
-            return new Promise(function (resolve, reject) {
-                var gen = fn.apply(self, args);
-                function step(key, arg) {
-                    var info;
-                    try {
-                        info = gen[key](arg);
-                    } catch (error) {
-                        reject(error);
-                        return;
-                    }
-                    var value = info.value;
-                    if (info.done) {
-                        resolve(value);
-                    } else {
-                        Promise.resolve(value).then(function (val) {
-                            step('next', val);
-                        }, function (err) {
-                            step('throw', err);
-                        });
-                    }
+function _asyncToGenerator(fn) {
+    return function () {
+        var self = this, args = arguments;
+        return new Promise(function (resolve, reject) {
+            var gen = fn.apply(self, args);
+            function step(key, arg) {
+                var info;
+                try {
+                    info = gen[key](arg);
+                } catch (error) {
+                    reject(error);
+                    return;
                 }
-                step('next');
-            });
-        };
-    }
-
-    function req(method, path, body, extraHeaders) {
-        return new Promise(function (resolve) {
-            var headers = {
-                'Content-Type': 'application/json'
-            };
-
-            var sessionToken = cleanInputValue(GM_getValue(K_SESSION, ''));
-            if (sessionToken) headers['X-Session-Token'] = sessionToken;
-
-            var ownerToken = cleanInputValue(GM_getValue(K_OWNER_TOKEN, ''));
-            if (ownerToken) headers['X-Owner-Token'] = ownerToken;
-
-            var adminKey = cleanInputValue(GM_getValue(K_ADMIN_KEY, ''));
-            if (adminKey) headers['X-Admin-Key'] = adminKey;
-
-            if (extraHeaders && typeof extraHeaders === 'object') {
-                Object.keys(extraHeaders).forEach(function (k) {
-                    headers[k] = extraHeaders[k];
-                });
+                var value = info.value;
+                if (info.done) {
+                    resolve(value);
+                } else {
+                    Promise.resolve(value).then(function (val) {
+                        step('next', val);
+                    }, function (err) {
+                        step('throw', err);
+                    });
+                }
             }
+            step('next');
+        });
+    };
+}
 
-            GM_xmlhttpRequest({
-                method: String(method || 'GET').toUpperCase(),
-                url: BASE_URL + String(path || ''),
-                headers: headers,
-                data: body == null ? null : JSON.stringify(body),
-                timeout: 30000,
-                onload: function (res) {
-                    var json = null;
-                    try {
-                        json = JSON.parse(res.responseText || '{}');
-                    } catch (_unused3) {
-                        json = null;
-                    }
+function req(method, path, body, extraHeaders) {
+    return new Promise(function (resolve) {
+        var headers = {
+            'Content-Type': 'application/json'
+        };
 
-                    if (!json || typeof json !== 'object') {
-                        resolve({
-                            ok: false,
-                            status: res.status || 0,
-                            error: 'Invalid server response.'
-                        });
-                        return;
-                    }
+        var sessionToken = cleanInputValue(GM_getValue(K_SESSION, ''));
+        if (sessionToken) headers['X-Session-Token'] = sessionToken;
 
-                    if (json.ok === false) {
-                        resolve({
-                            ok: false,
-                            status: res.status || 0,
-                            error: String(json.error || json.message || 'Request failed.'),
-                            data: json
-                        });
-                        return;
-                    }
+        var ownerToken = cleanInputValue(GM_getValue(K_OWNER_TOKEN, ''));
+        if (ownerToken) headers['X-Owner-Token'] = ownerToken;
 
+        var adminKey = cleanInputValue(GM_getValue(K_ADMIN_KEY, ''));
+        if (adminKey) headers['X-Admin-Key'] = adminKey;
+
+        if (extraHeaders && typeof extraHeaders === 'object') {
+            Object.keys(extraHeaders).forEach(function (k) {
+                headers[k] = extraHeaders[k];
+            });
+        }
+
+        GM_xmlhttpRequest({
+            method: String(method || 'GET').toUpperCase(),
+            url: BASE_URL + String(path || ''),
+            headers: headers,
+            data: body == null ? null : JSON.stringify(body),
+            timeout: 30000,
+            onload: function (res) {
+                var json = null;
+                try {
+                    json = JSON.parse(res.responseText || '{}');
+                } catch (_unused3) {
+                    json = null;
+                }
+
+                if (!json || typeof json !== 'object') {
                     resolve({
-                        ok: true,
-                        status: res.status || 200,
+                        ok: false,
+                        status: res.status || 0,
+                        error: 'Invalid server response.'
+                    });
+                    return;
+                }
+
+                if (json.ok === false) {
+                    resolve({
+                        ok: false,
+                        status: res.status || 0,
+                        error: String(json.error || json.message || 'Request failed.'),
                         data: json
                     });
-                },
-                onerror: function () {
-                    resolve({
-                        ok: false,
-                        status: 0,
-                        error: 'Network request failed.'
-                    });
-                },
-                ontimeout: function () {
-                    resolve({
-                        ok: false,
-                        status: 0,
-                        error: 'Request timed out.'
-                    });
+                    return;
                 }
-            });
+
+                resolve({
+                    ok: true,
+                    status: res.status || 200,
+                    data: json
+                });
+            },
+            onerror: function () {
+                resolve({
+                    ok: false,
+                    status: 0,
+                    error: 'Network request failed.'
+                });
+            },
+            ontimeout: function () {
+                resolve({
+                    ok: false,
+                    status: 0,
+                    error: 'Request timed out.'
+                });
+            }
         });
-    }
+    });
+}
+
 function getKnownWarId() {
     var liveRoot = (typeof liveSummaryCache === 'object' && liveSummaryCache) ? liveSummaryCache : {};
     var live = (liveRoot && typeof liveRoot.item === 'object' && liveRoot.item) ? liveRoot.item : liveRoot;
@@ -896,143 +897,19 @@ function getKnownWarId() {
 
     for (var i = 0; i < candidates.length; i++) {
         var v = String(candidates[i] || '').trim();
-        if (v) {
-            console.log('[WarHub][Enemies] Found war id:', v, 'from index', i);
-            return v;
-        }
+        if (v) return v;
     }
-
-    console.log('[WarHub][Enemies] No known war id found.', {
-        liveRoot: liveRoot,
-        live: live,
-        liveWar: liveWar,
-        stateWar: stateWar
-    });
 
     return '';
 }
 
-    function authedReq(method, path, body) {
-        return req(method, path, body);
-    }
+function authedReq(method, path, body) {
+    return req(method, path, body);
+}
 
-    function adminReq(method, path, body) {
-        return req(method, path, body);
-    }
-    function _asyncToGenerator(fn) {
-        return function () {
-            var self = this, args = arguments;
-            return new Promise(function (resolve, reject) {
-                var gen = fn.apply(self, args);
-                function step(key, arg) {
-                    var info;
-                    try {
-                        info = gen[key](arg);
-                    } catch (error) {
-                        reject(error);
-                        return;
-                    }
-                    var value = info.value;
-                    if (info.done) {
-                        resolve(value);
-                    } else {
-                        Promise.resolve(value).then(function (val) {
-                            step('next', val);
-                        }, function (err) {
-                            step('throw', err);
-                        });
-                    }
-                }
-                step('next');
-            });
-        };
-    }
-
-    function req(method, path, body, extraHeaders) {
-        return new Promise(function (resolve) {
-            var headers = {
-                'Content-Type': 'application/json'
-            };
-
-            var sessionToken = cleanInputValue(GM_getValue(K_SESSION, ''));
-            if (sessionToken) headers['X-Session-Token'] = sessionToken;
-
-            var ownerToken = cleanInputValue(GM_getValue(K_OWNER_TOKEN, ''));
-            if (ownerToken) headers['X-Owner-Token'] = ownerToken;
-
-            var adminKey = cleanInputValue(GM_getValue(K_ADMIN_KEY, ''));
-            if (adminKey) headers['X-Admin-Key'] = adminKey;
-
-            if (extraHeaders && typeof extraHeaders === 'object') {
-                Object.keys(extraHeaders).forEach(function (k) {
-                    headers[k] = extraHeaders[k];
-                });
-            }
-
-            GM_xmlhttpRequest({
-                method: String(method || 'GET').toUpperCase(),
-                url: BASE_URL + String(path || ''),
-                headers: headers,
-                data: body == null ? null : JSON.stringify(body),
-                timeout: 30000,
-                onload: function (res) {
-                    var json = null;
-                    try {
-                        json = JSON.parse(res.responseText || '{}');
-                    } catch (_unused3) {
-                        json = null;
-                    }
-
-                    if (!json || typeof json !== 'object') {
-                        resolve({
-                            ok: false,
-                            status: res.status || 0,
-                            error: 'Invalid server response.'
-                        });
-                        return;
-                    }
-
-                    if (json.ok === false) {
-                        resolve({
-                            ok: false,
-                            status: res.status || 0,
-                            error: String(json.error || json.message || 'Request failed.'),
-                            data: json
-                        });
-                        return;
-                    }
-
-                    resolve({
-                        ok: true,
-                        status: res.status || 200,
-                        data: json
-                    });
-                },
-                onerror: function () {
-                    resolve({
-                        ok: false,
-                        status: 0,
-                        error: 'Network request failed.'
-                    });
-                },
-                ontimeout: function () {
-                    resolve({
-                        ok: false,
-                        status: 0,
-                        error: 'Request timed out.'
-                    });
-                }
-            });
-        });
-    }
-
-    function authedReq(method, path, body) {
-        return req(method, path, body);
-    }
-
-    function adminReq(method, path, body) {
-        return req(method, path, body);
-    }
+function adminReq(method, path, body) {
+    return req(method, path, body);
+}
 
     // ============================================================
     // 09. ACCESS / SESSION HELPERS
@@ -1494,9 +1371,9 @@ function _loadLiveSummary() {
             var res = yield authedReq('GET', '/api/war/summary-live');
             var data = (res && res.data) ? res.data : null;
 
-            if (!res.ok) {
+            if (!res || !res.ok) {
                 liveSummaryCache = null;
-                liveSummaryError = (data && (data.error || data.message)) || 'Failed to load live summary.';
+                liveSummaryError = (res && res.error) || (data && (data.error || data.message)) || 'Failed to load live summary.';
                 liveSummaryLastAt = Date.now();
                 return null;
             }
@@ -1516,11 +1393,9 @@ function _loadLiveSummary() {
     });
     return _loadLiveSummary.apply(this, arguments);
 }
-    
+
 function loadWarEnemiesById(force) {
     return _asyncToGenerator(function* () {
-        console.log('[WarHub][Enemies] loadWarEnemiesById called');
-
         window.__warEnemyDebug = {
             war_id: '',
             ok: false,
@@ -1539,16 +1414,28 @@ function loadWarEnemiesById(force) {
             warEnemiesCache = [];
             warEnemiesFactionName = '';
             warEnemiesFactionId = '';
+            setWarEnemyStatsCache([]);
             window.__warEnemyDebug.error = 'missing_war_id_before_request';
             return [];
         }
 
-        var res = yield authedReq('GET', '/api/war/enemies?war_id=' + encodeURIComponent(warId));
-
-        if (!res.ok) {
+        var res;
+        try {
+            res = yield authedReq('GET', '/api/war/enemies?war_id=' + encodeURIComponent(warId));
+        } catch (err) {
             warEnemiesCache = [];
             warEnemiesFactionName = '';
             warEnemiesFactionId = '';
+            setWarEnemyStatsCache([]);
+            window.__warEnemyDebug.error = err && err.message ? err.message : 'request_threw';
+            return [];
+        }
+
+        if (!res || !res.ok) {
+            warEnemiesCache = [];
+            warEnemiesFactionName = '';
+            warEnemiesFactionId = '';
+            setWarEnemyStatsCache([]);
 
             window.__warEnemyDebug = {
                 war_id: warId,
@@ -1568,6 +1455,12 @@ function loadWarEnemiesById(force) {
         warEnemiesFactionName = String(data.enemy_faction_name || '');
         warEnemiesFactionId = String(data.enemy_faction_id || '');
         warEnemiesLoadedAt = Date.now();
+
+        if (Array.isArray(data.enemy_stats)) {
+            setWarEnemyStatsCache(data.enemy_stats);
+        } else {
+            setWarEnemyStatsCache([]);
+        }
 
         window.__warEnemyDebug = {
             war_id: warId,
@@ -1779,9 +1672,7 @@ function getMe() {
         return '<div class="warhub-tabs">' + html + '</div>';
     }
 
-
-
-    function renderTabs() {
+ function renderTabs() {
     var html = TAB_ORDER.map(function (pair) {
         var key = pair[0];
         var label = pair[1];
@@ -2026,7 +1917,9 @@ function summaryMemberRow(member) {
 }
     
 function renderSummaryTab() {
-    var s = liveSummaryCache || {};
+    var root = (typeof liveSummaryCache === 'object' && liveSummaryCache) ? liveSummaryCache : {};
+    var s = (root && typeof root.item === 'object' && root.item) ? root.item : root;
+
     var totals = s.totals || {};
     var leaders = s.leaders || {};
     var members = Array.isArray(s.members) ? s.members : [];
@@ -2035,9 +1928,7 @@ function renderSummaryTab() {
     var updatedText = updatedAt ? "Updated: ".concat(esc(updatedAt)) : 'Updated: -';
 
     var loadingHtml = liveSummaryLoading ? "\n      <div class=\"warhub-muted\" style=\"margin-bottom:8px;\">Loading live summary…</div>\n    " : '';
-
     var errorHtml = liveSummaryError ? "\n      <div class=\"warhub-muted\" style=\"margin-bottom:8px;color:#ff8a8a;\">".concat(esc(liveSummaryError), "</div>\n    ") : '';
-
     var emptyHtml = !liveSummaryLoading && !liveSummaryError && !members.length ? "\n      <div class=\"warhub-muted\">No live member war data yet.</div>\n    " : '';
 
     var rowsHtml = members.map(summaryMemberRow).join('');
@@ -2511,6 +2402,7 @@ function renderEnemySpyBlock(enemy) {
         </div>\
       </div>';
 }
+
 function renderEnemiesTab() {
     var warObj = (state && state.war && typeof state.war === 'object') ? state.war : {};
     var liveRoot = (typeof liveSummaryCache === 'object' && liveSummaryCache) ? liveSummaryCache : {};
@@ -2519,9 +2411,16 @@ function renderEnemiesTab() {
 
     var enemies = getEnemyMembersForTab();
     var rawEnemyCacheCount = Array.isArray(warEnemiesCache) ? warEnemiesCache.length : 0;
-    var warEnemyDebug = (typeof window !== 'undefined' && window.__warEnemyDebug && typeof window.__warEnemyDebug === 'object')
-    ? window.__warEnemyDebug
-    : {};
+    var warEnemyDebug = window.__warEnemyDebug || {
+        war_id: '',
+        ok: false,
+        status: 0,
+        error: 'debug_not_set',
+        enemy_members_count: 0,
+        raw_enemy_members_length: 0,
+        enemy_faction_name: '',
+        enemy_faction_id: ''
+    };
 
     var enemyFactionName = String(
         warEnemiesFactionName ||
@@ -2739,7 +2638,6 @@ function renderEnemiesTab() {
         <div class="warhub-hero-vs">' + esc(enemyFactionName) + '</div>\
         <div class="warhub-mini" style="margin-top:6px;">Raw cache: ' + fmtNum(rawEnemyCacheCount) + ' | Filtered: ' + fmtNum(filtered.length) + ' | War ID: ' + esc(String(warEnemyDebug.war_id || getKnownWarId() || '--')) + '</div>\
         <div class="warhub-mini" style="margin-top:4px;">Route count: ' + esc(String(warEnemyDebug.enemy_members_count != null ? warEnemyDebug.enemy_members_count : '--')) + ' | Route ok: ' + esc(String(warEnemyDebug.ok != null ? warEnemyDebug.ok : '--')) + ' | Route error: ' + esc(String(warEnemyDebug.error || '')) + '</div>\
-    \
         <div class="warhub-grid two" style="margin-top:12px;">\
           <div>\
             <label class="warhub-label">Search Enemies</label>\
@@ -3192,12 +3090,11 @@ function _logoutSession() {
     });
     return _logoutSession.apply(this, arguments);
 }
+// ============================================================
+// 16. EVENT BINDING
+// ============================================================
 
-    // ============================================================
-    // 16. EVENT BINDING
-    // ============================================================
-
-    function bindOverlayEvents() {
+function bindOverlayEvents() {
     if (!overlay) return;
 
     var bodyEl = overlay.querySelector('#warhub-body');
@@ -3212,37 +3109,36 @@ function _logoutSession() {
         if (btn.__warhubBound) return;
         btn.__warhubBound = true;
 
-    btn.addEventListener('click', _asyncToGenerator(function* () {
-    var tab = btn.getAttribute('data-tab') || 'overview';
-    currentTab = tab;
-    GM_setValue(K_TAB, currentTab);
+        btn.addEventListener('click', _asyncToGenerator(function* () {
+            var tab = btn.getAttribute('data-tab') || 'overview';
+            currentTab = tab;
+            GM_setValue(K_TAB, currentTab);
 
-    if (tab === 'faction' && canManageFaction()) {
-        yield loadFactionMembers(true);
-        yield refreshFactionPaymentData();
-    }
+            if (tab === 'faction' && canManageFaction()) {
+                yield loadFactionMembers(true);
+                yield refreshFactionPaymentData();
+            }
 
-    if (tab === 'summary') {
-        yield loadLiveSummary(true);
-    }
+            if (tab === 'summary') {
+                yield loadLiveSummary(true);
+            }
 
-    if (tab === 'enemies') {
-        GM_setValue('warhub_enemies_search', '');
-        GM_setValue('warhub_enemies_filter', 'all');
+            if (tab === 'enemies') {
+                GM_setValue('warhub_enemies_search', '');
+                GM_setValue('warhub_enemies_filter', 'all');
+                yield loadLiveSummary(true);
+                yield loadWarEnemiesById(true);
+                renderBody();
+                return;
+            }
 
-        console.log('[WarHub][Enemies] enemies tab clicked');
+            if (tab === 'admin' && canSeeAdmin()) {
+                yield loadAdminDashboard();
+            }
 
-        yield loadLiveSummary(true);
-        yield loadWarEnemiesById(true);
-    }
-
-    if (tab === 'admin' && canSeeAdmin()) {
-        yield loadAdminDashboard();
-    }
-
-    renderBody();
-}));
-});
+            renderBody();
+        }));
+    });
 
     var closeBtn = overlay.querySelector('#warhub-close-btn');
     if (closeBtn && !closeBtn.__warhubBound) {
@@ -3274,59 +3170,60 @@ function _logoutSession() {
         });
     }
 
-var enemiesSearchInput = overlay ? overlay.querySelector('#wh-enemies-search') : null;
-if (enemiesSearchInput && !enemiesSearchInput.__warhubBound) {
-    enemiesSearchInput.__warhubBound = true;
-    enemiesSearchInput.addEventListener('input', function () {
-        GM_setValue('warhub_enemies_search', String(enemiesSearchInput.value || ''));
-        renderBody();
+    var enemiesSearchInput = overlay.querySelector('#wh-enemies-search');
+    if (enemiesSearchInput && !enemiesSearchInput.__warhubBound) {
+        enemiesSearchInput.__warhubBound = true;
+        enemiesSearchInput.addEventListener('input', function () {
+            GM_setValue('warhub_enemies_search', String(enemiesSearchInput.value || ''));
+            renderBody();
+        });
+    }
+
+    var enemiesFilterSelect = overlay.querySelector('#wh-enemies-filter');
+    if (enemiesFilterSelect && !enemiesFilterSelect.__warhubBound) {
+        enemiesFilterSelect.__warhubBound = true;
+        enemiesFilterSelect.addEventListener('change', function () {
+            GM_setValue('warhub_enemies_filter', String(enemiesFilterSelect.value || 'all'));
+            renderBody();
+        });
+    }
+
+    var membersSearchInput = overlay.querySelector('#wh-members-search');
+    if (membersSearchInput && !membersSearchInput.__warhubBound) {
+        membersSearchInput.__warhubBound = true;
+        membersSearchInput.addEventListener('input', function () {
+            GM_setValue('warhub_members_search', String(membersSearchInput.value || ''));
+            renderBody();
+        });
+    }
+
+    var membersFilterSelect = overlay.querySelector('#wh-members-filter');
+    if (membersFilterSelect && !membersFilterSelect.__warhubBound) {
+        membersFilterSelect.__warhubBound = true;
+        membersFilterSelect.addEventListener('change', function () {
+            GM_setValue('warhub_members_filter', String(membersFilterSelect.value || 'all'));
+            renderBody();
+        });
+    }
+
+    overlay.querySelectorAll('[data-member-bounty="1"]').forEach(function (btn) {
+        if (btn.__warhubBound) return;
+        btn.__warhubBound = true;
+
+        btn.addEventListener('click', function () {
+            var bountyUrl = String(btn.getAttribute('data-bounty-url') || '').trim();
+            var userId = String(btn.getAttribute('data-user-id') || '').trim();
+
+            if (bountyUrl) {
+                window.open(bountyUrl, '_blank', 'noopener,noreferrer');
+                return;
+            }
+
+            if (userId) {
+                window.open('https://www.torn.com/bounties.php#/!p=add&userID=' + encodeURIComponent(userId), '_blank', 'noopener,noreferrer');
+            }
+        });
     });
-}
-
-var enemiesFilterSelect = overlay ? overlay.querySelector('#wh-enemies-filter') : null;
-if (enemiesFilterSelect && !enemiesFilterSelect.__warhubBound) {
-    enemiesFilterSelect.__warhubBound = true;
-    enemiesFilterSelect.addEventListener('change', function () {
-        GM_setValue('warhub_enemies_filter', String(enemiesFilterSelect.value || 'all'));
-        renderBody();
-    });
-}
-var membersSearchInput = overlay ? overlay.querySelector('#wh-members-search') : null;
-if (membersSearchInput && !membersSearchInput.__warhubBound) {
-    membersSearchInput.__warhubBound = true;
-    membersSearchInput.addEventListener('input', function () {
-        GM_setValue('warhub_members_search', String(membersSearchInput.value || ''));
-        renderBody();
-    });
-}
-
-var membersFilterSelect = overlay ? overlay.querySelector('#wh-members-filter') : null;
-if (membersFilterSelect && !membersFilterSelect.__warhubBound) {
-    membersFilterSelect.__warhubBound = true;
-    membersFilterSelect.addEventListener('change', function () {
-        GM_setValue('warhub_members_filter', String(membersFilterSelect.value || 'all'));
-        renderBody();
-    });
-}
-
-if (overlay) overlay.querySelectorAll('[data-member-bounty="1"]').forEach(function (btn) {
-    if (btn.__warhubBound) return;
-    btn.__warhubBound = true;
-
-    btn.addEventListener('click', function () {
-        var bountyUrl = String(btn.getAttribute('data-bounty-url') || '').trim();
-        var userId = String(btn.getAttribute('data-user-id') || '').trim();
-
-        if (bountyUrl) {
-            window.open(bountyUrl, '_blank', 'noopener,noreferrer');
-            return;
-        }
-
-        if (userId) {
-            window.open('https://www.torn.com/bounties.php#/!p=add&userID=' + encodeURIComponent(userId), '_blank', 'noopener,noreferrer');
-        }
-    });
-});
 
     var loginBtn = overlay.querySelector('#wh-login-btn');
     if (loginBtn && !loginBtn.__warhubBound) {
@@ -3336,20 +3233,21 @@ if (overlay) overlay.querySelectorAll('[data-member-bounty="1"]').forEach(functi
         }));
     }
 
-var logoutBtn = overlay.querySelector('#wh-logout-btn');
-if (logoutBtn && !logoutBtn.__warhubBound) {
-    logoutBtn.__warhubBound = true;
-    logoutBtn.addEventListener('click', _asyncToGenerator(function* () {
-        yield logoutSession();
+    var logoutBtn = overlay.querySelector('#wh-logout-btn');
+    if (logoutBtn && !logoutBtn.__warhubBound) {
+        logoutBtn.__warhubBound = true;
+        logoutBtn.addEventListener('click', _asyncToGenerator(function* () {
+            yield logoutSession();
 
-        liveSummaryCache = null;
-        liveSummaryLoading = false;
-        liveSummaryError = '';
-        liveSummaryLastAt = 0;
+            liveSummaryCache = null;
+            liveSummaryLoading = false;
+            liveSummaryError = '';
+            liveSummaryLastAt = 0;
 
-        renderBody();
-    }));
-}
+            renderBody();
+        }));
+    }
+
     var refreshFactionBtn = overlay.querySelector('#wh-refresh-faction');
     if (refreshFactionBtn && !refreshFactionBtn.__warhubBound) {
         refreshFactionBtn.__warhubBound = true;
@@ -3387,11 +3285,14 @@ if (logoutBtn && !logoutBtn.__warhubBound) {
         }));
     });
 
-var refreshLiveSummaryBtn = overlay ? overlay.querySelector('#wh-refresh-live-summary') : null;
-if (refreshLiveSummaryBtn) refreshLiveSummaryBtn.addEventListener('click', _asyncToGenerator(function* () {
-    yield loadLiveSummary(true);
-    renderBody();
-}));
+    var refreshLiveSummaryBtn = overlay.querySelector('#wh-refresh-live-summary');
+    if (refreshLiveSummaryBtn && !refreshLiveSummaryBtn.__warhubBound) {
+        refreshLiveSummaryBtn.__warhubBound = true;
+        refreshLiveSummaryBtn.addEventListener('click', _asyncToGenerator(function* () {
+            yield loadLiveSummary(true);
+            renderBody();
+        }));
+    }
 
     var adminRefreshPaymentsBtn = overlay.querySelector('#wh-admin-refresh-payments');
     if (adminRefreshPaymentsBtn && !adminRefreshPaymentsBtn.__warhubBound) {
@@ -3413,241 +3314,241 @@ if (refreshLiveSummaryBtn) refreshLiveSummaryBtn.addEventListener('click', _asyn
         }));
     }
 
-var setAvailableBtn = overlay ? overlay.querySelector('#wh-set-available') : null;
-if (setAvailableBtn && !setAvailableBtn.__warhubBound) {
-    setAvailableBtn.__warhubBound = true;
-    setAvailableBtn.addEventListener('click', _asyncToGenerator(function* () {
-        var res = yield doAction('POST', '/api/availability', { available: true });
-        if (res && res.ok) {
-            yield loadState(true);
-            renderBody();
-        }
-    }));
-}
-
-var setUnavailableBtn = overlay ? overlay.querySelector('#wh-set-unavailable') : null;
-if (setUnavailableBtn && !setUnavailableBtn.__warhubBound) {
-    setUnavailableBtn.__warhubBound = true;
-    setUnavailableBtn.addEventListener('click', _asyncToGenerator(function* () {
-        var res = yield doAction('POST', '/api/availability', { available: false });
-        if (res && res.ok) {
-            yield loadState(true);
-            renderBody();
-        }
-    }));
-}
-
-var chainOptInBtn = overlay ? overlay.querySelector('#wh-chain-opt-in') : null;
-if (chainOptInBtn && !chainOptInBtn.__warhubBound) {
-    chainOptInBtn.__warhubBound = true;
-    chainOptInBtn.addEventListener('click', _asyncToGenerator(function* () {
-        var res = yield doAction('POST', '/api/chain-sitter', { enabled: true });
-        if (res && res.ok) {
-            yield loadState(true);
-            renderBody();
-        }
-    }));
-}
-
-var chainOptOutBtn = overlay ? overlay.querySelector('#wh-chain-opt-out') : null;
-if (chainOptOutBtn && !chainOptOutBtn.__warhubBound) {
-    chainOptOutBtn.__warhubBound = true;
-    chainOptOutBtn.addEventListener('click', _asyncToGenerator(function* () {
-        var res = yield doAction('POST', '/api/chain-sitter', { enabled: false });
-        if (res && res.ok) {
-            yield loadState(true);
-            renderBody();
-        }
-    }));
-}
-
-        var adminAddFactionExemptionBtn = overlay.querySelector('#wh-admin-add-faction-exemption');
-        if (adminAddFactionExemptionBtn && !adminAddFactionExemptionBtn.__warhubBound) {
-            adminAddFactionExemptionBtn.__warhubBound = true;
-            adminAddFactionExemptionBtn.addEventListener('click', _asyncToGenerator(function* () {
-                var factionIdEl = overlay.querySelector('#wh-admin-faction-exemption-id');
-                var factionNameEl = overlay.querySelector('#wh-admin-faction-exemption-name');
-                var reasonEl = overlay.querySelector('#wh-admin-faction-exemption-reason');
-
-                var factionId = cleanInputValue(factionIdEl && factionIdEl.value || '');
-                var factionName = cleanInputValue(factionNameEl && factionNameEl.value || '');
-                var reason = cleanInputValue(reasonEl && reasonEl.value || '');
-
-                if (!factionId) {
-                    setStatus('Faction ID is required.', true);
-                    return;
-                }
-
-                var res = yield adminReq('POST', '/api/admin/exemptions/factions', {
-                    faction_id: factionId,
-                    faction_name: factionName,
-                    note: reason
-                });
-
-                if (!res.ok) {
-                    setStatus(res.error || 'Could not add faction exemption.', true);
-                    return;
-                }
-
-                yield loadAdminExemptions();
+    var setAvailableBtn = overlay.querySelector('#wh-set-available');
+    if (setAvailableBtn && !setAvailableBtn.__warhubBound) {
+        setAvailableBtn.__warhubBound = true;
+        setAvailableBtn.addEventListener('click', _asyncToGenerator(function* () {
+            var res = yield doAction('POST', '/api/availability', { available: true });
+            if (res && res.ok) {
+                yield loadState(true);
                 renderBody();
-                setStatus('Faction exemption added.');
-            }));
-        }
-
-        var adminAddUserExemptionBtn = overlay.querySelector('#wh-admin-add-user-exemption');
-        if (adminAddUserExemptionBtn && !adminAddUserExemptionBtn.__warhubBound) {
-            adminAddUserExemptionBtn.__warhubBound = true;
-            adminAddUserExemptionBtn.addEventListener('click', _asyncToGenerator(function* () {
-                var userIdEl = overlay.querySelector('#wh-admin-user-exemption-id');
-                var userNameEl = overlay.querySelector('#wh-admin-user-exemption-name');
-                var factionIdEl = overlay.querySelector('#wh-admin-user-exemption-faction-id');
-                var factionNameEl = overlay.querySelector('#wh-admin-user-exemption-faction-name');
-                var reasonEl = overlay.querySelector('#wh-admin-user-exemption-reason');
-
-                var userId = cleanInputValue(userIdEl && userIdEl.value || '');
-                var userName = cleanInputValue(userNameEl && userNameEl.value || '');
-                var factionId = cleanInputValue(factionIdEl && factionIdEl.value || '');
-                var factionName = cleanInputValue(factionNameEl && factionNameEl.value || '');
-                var reason = cleanInputValue(reasonEl && reasonEl.value || '');
-
-                if (!userId) {
-                    setStatus('Player ID is required.', true);
-                    return;
-                }
-
-                var res = yield adminReq('POST', '/api/admin/exemptions/users', {
-                    user_id: userId,
-                    user_name: userName,
-                    faction_id: factionId,
-                    faction_name: factionName,
-                    note: reason
-                });
-
-                if (!res.ok) {
-                    setStatus(res.error || 'Could not add player exemption.', true);
-                    return;
-                }
-
-                yield loadAdminExemptions();
-                renderBody();
-                setStatus('Player exemption added.');
-            }));
-        }
-
-        overlay.querySelectorAll('[data-admin-remove-faction-exemption]').forEach(function (btn) {
-            if (btn.__warhubBound) return;
-            btn.__warhubBound = true;
-
-            btn.addEventListener('click', _asyncToGenerator(function* () {
-                var factionId = cleanInputValue(btn.getAttribute('data-admin-remove-faction-exemption') || '');
-                if (!factionId) return;
-                if (!confirm('Remove faction exemption for ' + factionId + '?')) return;
-
-                var res = yield adminReq('DELETE', '/api/admin/exemptions/factions/' + encodeURIComponent(factionId));
-                if (!res.ok) {
-                    setStatus(res.error || 'Could not remove faction exemption.', true);
-                    return;
-                }
-
-                yield loadAdminExemptions();
-                renderBody();
-                setStatus('Faction exemption removed.');
-            }));
-        });
-
-        overlay.querySelectorAll('[data-admin-remove-user-exemption]').forEach(function (btn) {
-            if (btn.__warhubBound) return;
-            btn.__warhubBound = true;
-
-            btn.addEventListener('click', _asyncToGenerator(function* () {
-                var userId = cleanInputValue(btn.getAttribute('data-admin-remove-user-exemption') || '');
-                if (!userId) return;
-                if (!confirm('Remove player exemption for ' + userId + '?')) return;
-
-                var res = yield adminReq('DELETE', '/api/admin/exemptions/users/' + encodeURIComponent(userId));
-                if (!res.ok) {
-                    setStatus(res.error || 'Could not remove player exemption.', true);
-                    return;
-                }
-
-                yield loadAdminExemptions();
-                renderBody();
-                setStatus('Player exemption removed.');
-            }));
-        });
-
-        overlay.querySelectorAll('[data-admin-renew]').forEach(function (btn) {
-            if (btn.__warhubBound) return;
-            btn.__warhubBound = true;
-
-            btn.addEventListener('click', _asyncToGenerator(function* () {
-                var factionId = cleanInputValue(btn.getAttribute('data-admin-renew') || '');
-                if (!factionId) return;
-
-                var res = yield adminReq('POST', '/api/license-admin/renew', {
-                    faction_id: factionId
-                });
-
-                if (!res.ok) {
-                    setStatus(res.error || 'Could not confirm payment.', true);
-                    return;
-                }
-
-                yield loadAdminPayments();
-                renderBody();
-                setStatus('Payment confirmed.');
-            }));
-        });
-
-        overlay.querySelectorAll('[data-admin-confirm-intent]').forEach(function (btn) {
-            if (btn.__warhubBound) return;
-            btn.__warhubBound = true;
-
-            btn.addEventListener('click', _asyncToGenerator(function* () {
-                var intentId = cleanInputValue(btn.getAttribute('data-admin-confirm-intent') || '');
-                var amount = Number(btn.getAttribute('data-admin-confirm-amount') || 0) || 0;
-                if (!intentId) return;
-
-                var res = yield adminReq('POST', '/api/license-admin/confirm-intent', {
-                    intent_id: intentId,
-                    amount_paid: amount
-                });
-
-                if (!res.ok) {
-                    setStatus(res.error || 'Could not confirm intent.', true);
-                    return;
-                }
-
-                yield loadAdminPayments();
-                renderBody();
-                setStatus('Renewal request confirmed.');
-            }));
-        });
-
-        overlay.querySelectorAll('[data-admin-cancel-intent]').forEach(function (btn) {
-            if (btn.__warhubBound) return;
-            btn.__warhubBound = true;
-
-            btn.addEventListener('click', _asyncToGenerator(function* () {
-                var intentId = cleanInputValue(btn.getAttribute('data-admin-cancel-intent') || '');
-                if (!intentId) return;
-
-                var res = yield adminReq('POST', '/api/license-admin/cancel-intent', {
-                    intent_id: intentId
-                });
-
-                if (!res.ok) {
-                    setStatus(res.error || 'Could not cancel intent.', true);
-                    return;
-                }
-
-                yield loadAdminPayments();
-                renderBody();
-                setStatus('Renewal request cancelled.');
-            }));
-        });
+            }
+        }));
     }
+
+    var setUnavailableBtn = overlay.querySelector('#wh-set-unavailable');
+    if (setUnavailableBtn && !setUnavailableBtn.__warhubBound) {
+        setUnavailableBtn.__warhubBound = true;
+        setUnavailableBtn.addEventListener('click', _asyncToGenerator(function* () {
+            var res = yield doAction('POST', '/api/availability', { available: false });
+            if (res && res.ok) {
+                yield loadState(true);
+                renderBody();
+            }
+        }));
+    }
+
+    var chainOptInBtn = overlay.querySelector('#wh-chain-opt-in');
+    if (chainOptInBtn && !chainOptInBtn.__warhubBound) {
+        chainOptInBtn.__warhubBound = true;
+        chainOptInBtn.addEventListener('click', _asyncToGenerator(function* () {
+            var res = yield doAction('POST', '/api/chain-sitter', { enabled: true });
+            if (res && res.ok) {
+                yield loadState(true);
+                renderBody();
+            }
+        }));
+    }
+
+    var chainOptOutBtn = overlay.querySelector('#wh-chain-opt-out');
+    if (chainOptOutBtn && !chainOptInBtn.__warhubBound) {
+        chainOptOutBtn.__warhubBound = true;
+        chainOptOutBtn.addEventListener('click', _asyncToGenerator(function* () {
+            var res = yield doAction('POST', '/api/chain-sitter', { enabled: false });
+            if (res && res.ok) {
+                yield loadState(true);
+                renderBody();
+            }
+        }));
+    }
+
+    var adminAddFactionExemptionBtn = overlay.querySelector('#wh-admin-add-faction-exemption');
+    if (adminAddFactionExemptionBtn && !adminAddFactionExemptionBtn.__warhubBound) {
+        adminAddFactionExemptionBtn.__warhubBound = true;
+        adminAddFactionExemptionBtn.addEventListener('click', _asyncToGenerator(function* () {
+            var factionIdEl = overlay.querySelector('#wh-admin-faction-exemption-id');
+            var factionNameEl = overlay.querySelector('#wh-admin-faction-exemption-name');
+            var reasonEl = overlay.querySelector('#wh-admin-faction-exemption-reason');
+
+            var factionId = cleanInputValue(factionIdEl && factionIdEl.value || '');
+            var factionName = cleanInputValue(factionNameEl && factionNameEl.value || '');
+            var reason = cleanInputValue(reasonEl && reasonEl.value || '');
+
+            if (!factionId) {
+                setStatus('Faction ID is required.', true);
+                return;
+            }
+
+            var res = yield adminReq('POST', '/api/admin/exemptions/factions', {
+                faction_id: factionId,
+                faction_name: factionName,
+                note: reason
+            });
+
+            if (!res.ok) {
+                setStatus(res.error || 'Could not add faction exemption.', true);
+                return;
+            }
+
+            yield loadAdminExemptions();
+            renderBody();
+            setStatus('Faction exemption added.');
+        }));
+    }
+
+    var adminAddUserExemptionBtn = overlay.querySelector('#wh-admin-add-user-exemption');
+    if (adminAddUserExemptionBtn && !adminAddUserExemptionBtn.__warhubBound) {
+        adminAddUserExemptionBtn.__warhubBound = true;
+        adminAddUserExemptionBtn.addEventListener('click', _asyncToGenerator(function* () {
+            var userIdEl = overlay.querySelector('#wh-admin-user-exemption-id');
+            var userNameEl = overlay.querySelector('#wh-admin-user-exemption-name');
+            var factionIdEl = overlay.querySelector('#wh-admin-user-exemption-faction-id');
+            var factionNameEl = overlay.querySelector('#wh-admin-user-exemption-faction-name');
+            var reasonEl = overlay.querySelector('#wh-admin-user-exemption-reason');
+
+            var userId = cleanInputValue(userIdEl && userIdEl.value || '');
+            var userName = cleanInputValue(userNameEl && userNameEl.value || '');
+            var factionId = cleanInputValue(factionIdEl && factionIdEl.value || '');
+            var factionName = cleanInputValue(factionNameEl && factionNameEl.value || '');
+            var reason = cleanInputValue(reasonEl && reasonEl.value || '');
+
+            if (!userId) {
+                setStatus('Player ID is required.', true);
+                return;
+            }
+
+            var res = yield adminReq('POST', '/api/admin/exemptions/users', {
+                user_id: userId,
+                user_name: userName,
+                faction_id: factionId,
+                faction_name: factionName,
+                note: reason
+            });
+
+            if (!res.ok) {
+                setStatus(res.error || 'Could not add player exemption.', true);
+                return;
+            }
+
+            yield loadAdminExemptions();
+            renderBody();
+            setStatus('Player exemption added.');
+        }));
+    }
+
+    overlay.querySelectorAll('[data-admin-remove-faction-exemption]').forEach(function (btn) {
+        if (btn.__warhubBound) return;
+        btn.__warhubBound = true;
+
+        btn.addEventListener('click', _asyncToGenerator(function* () {
+            var factionId = cleanInputValue(btn.getAttribute('data-admin-remove-faction-exemption') || '');
+            if (!factionId) return;
+            if (!confirm('Remove faction exemption for ' + factionId + '?')) return;
+
+            var res = yield adminReq('DELETE', '/api/admin/exemptions/factions/' + encodeURIComponent(factionId));
+            if (!res.ok) {
+                setStatus(res.error || 'Could not remove faction exemption.', true);
+                return;
+            }
+
+            yield loadAdminExemptions();
+            renderBody();
+            setStatus('Faction exemption removed.');
+        }));
+    });
+
+    overlay.querySelectorAll('[data-admin-remove-user-exemption]').forEach(function (btn) {
+        if (btn.__warhubBound) return;
+        btn.__warhubBound = true;
+
+        btn.addEventListener('click', _asyncToGenerator(function* () {
+            var userId = cleanInputValue(btn.getAttribute('data-admin-remove-user-exemption') || '');
+            if (!userId) return;
+            if (!confirm('Remove player exemption for ' + userId + '?')) return;
+
+            var res = yield adminReq('DELETE', '/api/admin/exemptions/users/' + encodeURIComponent(userId));
+            if (!res.ok) {
+                setStatus(res.error || 'Could not remove player exemption.', true);
+                return;
+            }
+
+            yield loadAdminExemptions();
+            renderBody();
+            setStatus('Player exemption removed.');
+        }));
+    });
+
+    overlay.querySelectorAll('[data-admin-renew]').forEach(function (btn) {
+        if (btn.__warhubBound) return;
+        btn.__warhubBound = true;
+
+        btn.addEventListener('click', _asyncToGenerator(function* () {
+            var factionId = cleanInputValue(btn.getAttribute('data-admin-renew') || '');
+            if (!factionId) return;
+
+            var res = yield adminReq('POST', '/api/license-admin/renew', {
+                faction_id: factionId
+            });
+
+            if (!res.ok) {
+                setStatus(res.error || 'Could not confirm payment.', true);
+                return;
+            }
+
+            yield loadAdminPayments();
+            renderBody();
+            setStatus('Payment confirmed.');
+        }));
+    });
+
+    overlay.querySelectorAll('[data-admin-confirm-intent]').forEach(function (btn) {
+        if (btn.__warhubBound) return;
+        btn.__warhubBound = true;
+
+        btn.addEventListener('click', _asyncToGenerator(function* () {
+            var intentId = cleanInputValue(btn.getAttribute('data-admin-confirm-intent') || '');
+            var amount = Number(btn.getAttribute('data-admin-confirm-amount') || 0) || 0;
+            if (!intentId) return;
+
+            var res = yield adminReq('POST', '/api/license-admin/confirm-intent', {
+                intent_id: intentId,
+                amount_paid: amount
+            });
+
+            if (!res.ok) {
+                setStatus(res.error || 'Could not confirm intent.', true);
+                return;
+            }
+
+            yield loadAdminPayments();
+            renderBody();
+            setStatus('Renewal request confirmed.');
+        }));
+    });
+
+    overlay.querySelectorAll('[data-admin-cancel-intent]').forEach(function (btn) {
+        if (btn.__warhubBound) return;
+        btn.__warhubBound = true;
+
+        btn.addEventListener('click', _asyncToGenerator(function* () {
+            var intentId = cleanInputValue(btn.getAttribute('data-admin-cancel-intent') || '');
+            if (!intentId) return;
+
+            var res = yield adminReq('POST', '/api/license-admin/cancel-intent', {
+                intent_id: intentId
+            });
+
+            if (!res.ok) {
+                setStatus(res.error || 'Could not cancel intent.', true);
+                return;
+            }
+
+            yield loadAdminPayments();
+            renderBody();
+            setStatus('Renewal request cancelled.');
+        }));
+    });
+}
 
     // ============================================================
     // 17. OPEN / CLOSE / MOUNT
@@ -3831,6 +3732,10 @@ function _tick() {
             }
             if (currentTab === 'summary' && isLoggedIn()) {
                 yield loadLiveSummary(false);
+            }
+            if (currentTab === 'enemies' && isLoggedIn()) {
+                yield loadLiveSummary(false);
+                yield loadWarEnemiesById(false);
             }
             if (isOwnerSession() && currentTab === 'admin') {
                 yield loadAdminDashboard();
