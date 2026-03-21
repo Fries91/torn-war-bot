@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         War Hub ⚔️
 // @namespace    fries91-war-hub
-// @version      3.2.0
+// @version      3.2.1
 // @description  War Hub by Fries91. Faction-license aware overlay with draggable icon, draggable overlay, PDA friendly, shared war tools, faction member management, and payment lock handling.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -1533,8 +1533,28 @@ function getMe() {
     }
 
     function getEnemyMembers() {
-        return arr(state && state.enemy_members);
+    return arr(state && state.enemy_members);
+}
+
+function getEnemyMembersForTab() {
+    if (Array.isArray(warEnemiesCache) && warEnemiesCache.length) {
+        return warEnemiesCache;
     }
+
+    var liveRoot = (typeof liveSummaryCache === 'object' && liveSummaryCache) ? liveSummaryCache : {};
+    var live = (liveRoot && typeof liveRoot.item === 'object' && liveRoot.item) ? liveRoot.item : liveRoot;
+    var liveWar = (live && typeof live.war === 'object') ? live.war : {};
+    var warObj = (state && state.war && typeof state.war === 'object') ? state.war : {};
+
+    return arr(
+        (state && state.enemy_members) ||
+        (state && state.enemies) ||
+        (live && live.enemy_members) ||
+        (liveWar && liveWar.enemy_members) ||
+        (warObj && warObj.enemy_members) ||
+        []
+    );
+}
 
     function getNotifications() {
         return arr(state && state.notifications);
@@ -2065,7 +2085,7 @@ function renderChainTab() {
     }
 
 function renderMembersTab() {
-    var members = Array.isArray(currentFactionMembers) ? currentFactionMembers : [];
+    var members = getFactionMembers();
 
     var savedSearch = String(GM_getValue('warhub_members_search', '') || '').trim().toLowerCase();
     var savedFilter = String(GM_getValue('warhub_members_filter', 'all') || 'all').trim().toLowerCase();
@@ -2139,46 +2159,23 @@ function renderMembersTab() {
         return 'warhub-pill';
     }
 
-    function statText(current, max) {
-        var c = toNum(current);
+    function statText(cur, max) {
+        var c = toNum(cur);
         var m = toNum(max);
         if (m > 0) return fmtNum(c) + '/' + fmtNum(m);
-        if (c > 0) return fmtNum(c);
-        return '--';
-    }
-
-    function medCdText(member) {
-        var cd = toNum(member.medical_cooldown);
-        if (cd <= 0) return 'Ready';
-        return shortTime(cd);
+        return fmtNum(c);
     }
 
     function hasLiveStats(member) {
-        return !!(
-            toNum(member.life_current) > 0 ||
-            toNum(member.life_max) > 0 ||
-            toNum(member.energy_current) > 0 ||
-            toNum(member.energy_max) > 0 ||
-            toNum(member.medical_cooldown) > 0 ||
-            member.live_stats_enabled
-        );
+        return toNum(member.energy_max) > 0 || toNum(member.life_max) > 0;
     }
 
-    function memberStatusLine(m, stateName) {
-        var statusLine = String(m.status_detail || m.status || m.last_action || '').trim();
-
-        if (stateName === 'hospital') {
-            var hospSecs = toNum(m.hospital_seconds);
-            return hospSecs > 0 ? ('Hospital for ' + shortTime(hospSecs)) : 'Hospitalized';
-        }
-        if (stateName === 'jail') return statusLine || 'In jail';
-        if (stateName === 'travel') return statusLine || 'Travelling';
-        if (stateName === 'idle') return statusLine || 'Idle';
-        if (stateName === 'online') return statusLine || 'Online';
-        return statusLine || 'Offline';
+    function medCdText(member) {
+        var secs = toNum(member.medical_cooldown || member.med_cd || member.drug_cd || 0);
+        return secs > 0 ? shortTime(secs) : 'Ready';
     }
 
-    var order = {
+        var order = {
         online: 1,
         idle: 2,
         travel: 3,
@@ -2228,23 +2225,23 @@ function renderMembersTab() {
         grouped[s].push(m);
     });
 
-function renderMemberRow(m) {
-    var name = String(m.name || m.user_name || m.member_name || 'Unknown');
-    var userId = String(m.user_id || m.id || '').trim();
-    var stateName = memberState(m);
-    var pillClass = statePillClass(stateName);
-    var pillText = stateLabel(stateName, m);
+    function renderMemberRow(m) {
+        var name = String(m.name || m.user_name || m.member_name || 'Unknown');
+        var userId = String(m.user_id || m.id || '').trim();
+        var stateName = memberState(m);
+        var pillClass = statePillClass(stateName);
+        var pillText = stateLabel(stateName, m);
 
-    var lifeCurrent = toNum(m.life_current);
-    var lifeMax = toNum(m.life_max);
-    var energyCurrent = toNum(m.energy_current);
-    var energyMax = toNum(m.energy_max);
-    var liveOk = hasLiveStats(m);
+        var lifeCurrent = toNum(m.life_current);
+        var lifeMax = toNum(m.life_max);
+        var energyCurrent = toNum(m.energy_current);
+        var energyMax = toNum(m.energy_max);
+        var liveOk = hasLiveStats(m);
 
-    var profileUrl = String(m.profile_url || '').trim();
-    var bountyUrl = String(m.bounty_url || '').trim();
+        var profileUrl = String(m.profile_url || '').trim();
+        var bountyUrl = String(m.bounty_url || '').trim();
 
-    return '\
+        return '\
       <div class="warhub-card" style="margin-top:6px;padding:7px 8px;">\
         <div style="display:flex;align-items:center;gap:6px;flex-wrap:nowrap;">\
           <div style="min-width:0;flex:1 1 auto;overflow:hidden;">\
@@ -2281,7 +2278,8 @@ function renderMemberRow(m) {
           </div>\
         </div>\
       </div>';
-}
+    }
+
     function renderGroup(key, title, openByDefault) {
         var list = grouped[key] || [];
         var isOpen = openByDefault ? ' open' : '';
@@ -3072,11 +3070,12 @@ function _loginWithSavedKey() {
 
         if (data.access) saveAccessCache(data.access);
 
+        yield loadState();
+
         if (canManageFaction()) {
             yield loadFactionMembers(true);
         }
 
-        yield loadState();
         yield refreshFactionPaymentData();
 
         if (canSeeAdmin()) {
@@ -3150,6 +3149,16 @@ function bindOverlayEvents() {
                 yield loadLiveSummary(true);
             }
 
+            if (tab === 'members') {
+                GM_setValue('warhub_members_search', '');
+                GM_setValue('warhub_members_filter', 'all');
+                if (canManageFaction()) {
+                    yield loadFactionMembers(true);
+                }
+                renderBody();
+                return;
+            }
+
             if (tab === 'enemies') {
                 GM_setValue('warhub_enemies_search', '');
                 GM_setValue('warhub_enemies_filter', 'all');
@@ -3167,53 +3176,70 @@ function bindOverlayEvents() {
         }));
     });
 
-    var closeBtn = overlay.querySelector('#warhub-close-btn');
-    if (closeBtn && !closeBtn.__warhubBound) {
-        closeBtn.__warhubBound = true;
-        closeBtn.addEventListener('click', function () {
-            closeOverlay();
-        });
-    }
-
     var saveKeysBtn = overlay.querySelector('#wh-save-keys');
     if (saveKeysBtn && !saveKeysBtn.__warhubBound) {
         saveKeysBtn.__warhubBound = true;
         saveKeysBtn.addEventListener('click', function () {
-            var apiKeyEl = overlay.querySelector('#wh-api-key');
-            var adminKeyEl = overlay.querySelector('#wh-admin-key');
-            var ownerTokenEl = overlay.querySelector('#wh-owner-token');
-            var refreshEl = overlay.querySelector('#wh-refresh-ms');
-
-            GM_setValue(K_API_KEY, cleanInputValue(apiKeyEl && apiKeyEl.value || ''));
-            GM_setValue(K_ADMIN_KEY, cleanInputValue(adminKeyEl && adminKeyEl.value || ''));
-            GM_setValue(K_OWNER_TOKEN, cleanInputValue(ownerTokenEl && ownerTokenEl.value || ''));
-
-            var refreshMs = Number(cleanInputValue(refreshEl && refreshEl.value || '30000')) || 30000;
-            if (refreshMs < 5000) refreshMs = 5000;
-            GM_setValue(K_REFRESH, refreshMs);
-
-            restartPolling();
-            setStatus('Keys saved.');
+            var input = overlay.querySelector('#wh-api-key');
+            var apiKey = cleanInputValue(input ? input.value : '');
+            GM_setValue(K_API_KEY, apiKey);
+            setStatus(apiKey ? 'API key saved.' : 'API key cleared.');
+            renderStatus();
         });
     }
 
-    var enemiesSearchInput = overlay.querySelector('#wh-enemies-search');
-    if (enemiesSearchInput && !enemiesSearchInput.__warhubBound) {
-        enemiesSearchInput.__warhubBound = true;
-        enemiesSearchInput.addEventListener('input', function () {
-            GM_setValue('warhub_enemies_search', String(enemiesSearchInput.value || ''));
+    var loginBtn = overlay.querySelector('#wh-login-btn');
+    if (loginBtn && !loginBtn.__warhubBound) {
+        loginBtn.__warhubBound = true;
+        loginBtn.addEventListener('click', function () {
+            loginWithSavedKey();
+        });
+    }
+
+    var logoutBtn = overlay.querySelector('#wh-logout-btn');
+    if (logoutBtn && !logoutBtn.__warhubBound) {
+        logoutBtn.__warhubBound = true;
+        logoutBtn.addEventListener('click', function () {
+            logoutSession();
+        });
+    }
+
+    var membersSearch = overlay.querySelector('#wh-members-search');
+    if (membersSearch && !membersSearch.__warhubBound) {
+        membersSearch.__warhubBound = true;
+        membersSearch.addEventListener('input', function () {
+            GM_setValue('warhub_members_search', String(membersSearch.value || ''));
             renderBody();
         });
     }
 
-    var enemiesFilterSelect = overlay.querySelector('#wh-enemies-filter');
-    if (enemiesFilterSelect && !enemiesFilterSelect.__warhubBound) {
-        enemiesFilterSelect.__warhubBound = true;
-        enemiesFilterSelect.addEventListener('change', function () {
-            GM_setValue('warhub_enemies_filter', String(enemiesFilterSelect.value || 'all'));
+    var membersFilter = overlay.querySelector('#wh-members-filter');
+    if (membersFilter && !membersFilter.__warhubBound) {
+        membersFilter.__warhubBound = true;
+        membersFilter.addEventListener('change', function () {
+            GM_setValue('warhub_members_filter', String(membersFilter.value || 'all'));
             renderBody();
         });
     }
+
+    var enemiesSearch = overlay.querySelector('#wh-enemies-search');
+    if (enemiesSearch && !enemiesSearch.__warhubBound) {
+        enemiesSearch.__warhubBound = true;
+        enemiesSearch.addEventListener('input', function () {
+            GM_setValue('warhub_enemies_search', String(enemiesSearch.value || ''));
+            renderBody();
+        });
+    }
+
+    var enemiesFilter = overlay.querySelector('#wh-enemies-filter');
+    if (enemiesFilter && !enemiesFilter.__warhubBound) {
+        enemiesFilter.__warhubBound = true;
+        enemiesFilter.addEventListener('change', function () {
+            GM_setValue('warhub_enemies_filter', String(enemiesFilter.value || 'all'));
+            renderBody();
+        });
+    }
+}
 
     var membersSearchInput = overlay.querySelector('#wh-members-search');
     if (membersSearchInput && !membersSearchInput.__warhubBound) {
