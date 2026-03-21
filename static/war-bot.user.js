@@ -2335,10 +2335,6 @@ function scrapeEnemyMembersFromPage() {
     return [];
 }
 
-function getEnemyMembersForTab() {
-    return Array.isArray(warEnemiesCache) ? warEnemiesCache : [];
-}
-
 function toStatNum(v) {
     var n = Number(v || 0);
     return isFinite(n) && n > 0 ? Math.floor(n) : 0;
