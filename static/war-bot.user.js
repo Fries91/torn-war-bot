@@ -2086,9 +2086,9 @@ function renderMembersTab() {
         var mins = Math.floor((total % 3600) / 60);
         var remSecs = total % 60;
 
-        if (days > 0) return days + 'd ' + (hours > 0 ? hours + 'h' : '');
-        if (hours > 0) return hours + 'h ' + (mins > 0 ? mins + 'm' : '');
-        if (mins > 0) return mins + 'm ' + (remSecs > 0 ? remSecs + 's' : '');
+        if (days > 0) return days + 'd ' + (hours > 0 ? ' ' + hours + 'h' : '');
+        if (hours > 0) return hours + 'h' + (mins > 0 ? ' ' + mins + 'm' : '');
+        if (mins > 0) return mins + 'm' + (remSecs > 0 ? ' ' + remSecs + 's' : '');
         return remSecs + 's';
     }
 
@@ -2164,6 +2164,29 @@ function renderMembersTab() {
         );
     }
 
+    function memberStatusLine(m, stateName) {
+        var statusLine = String(m.status_detail || m.status || m.last_action || '').trim();
+
+        if (stateName === 'hospital') {
+            var hospSecs = toNum(m.hospital_seconds);
+            return hospSecs > 0 ? ('Hospital for ' + shortTime(hospSecs)) : 'Hospitalized';
+        }
+        if (stateName === 'jail') return statusLine || 'In jail';
+        if (stateName === 'travel') return statusLine || 'Travelling';
+        if (stateName === 'idle') return statusLine || 'Idle';
+        if (stateName === 'online') return statusLine || 'Online';
+        return statusLine || 'Offline';
+    }
+
+    var order = {
+        online: 1,
+        idle: 2,
+        travel: 3,
+        jail: 4,
+        hospital: 5,
+        offline: 6
+    };
+
     var filtered = members.filter(function (m) {
         var name = String(m.name || m.user_name || m.member_name || '').toLowerCase();
         var uid = String(m.user_id || m.id || '').toLowerCase();
@@ -2174,15 +2197,6 @@ function renderMembersTab() {
 
         return matchesSearch && matchesFilter;
     }).sort(function (a, b) {
-        var order = {
-            online: 1,
-            idle: 2,
-            travel: 3,
-            jail: 4,
-            hospital: 5,
-            offline: 6
-        };
-
         var aState = memberState(a);
         var bState = memberState(b);
 
@@ -2199,77 +2213,255 @@ function renderMembersTab() {
         return 0;
     });
 
-    var cardsHtml = filtered.map(function (m) {
-        var name = String(m.name || m.user_name || m.member_name || 'Unknown');
-        var userId = String(m.user_id || m.id || '').trim();
-        var stateName = memberState(m);
-        var pillClass = statePillClass(stateName);
-        var pillText = stateLabel(stateName, m);
+    var grouped = {
+        online: [],
+        idle: [],
+        travel: [],
+        jail: [],
+        hospital: [],
+        offline: []
+    };
 
-        var lifeCurrent = toNum(m.life_current);
-        var lifeMax = toNum(m.life_max);
-        var energyCurrent = toNum(m.energy_current);
-        var energyMax = toNum(m.energy_max);
-        var liveOk = hasLiveStats(m);
+    filtered.forEach(function (m) {
+        var s = memberState(m);
+        if (!grouped[s]) grouped[s] = [];
+        grouped[s].push(m);
+    });
 
+    function renderMembersTab() {
+    var members = arr((state && state.members) || []);
+
+    var savedSearch = String(GM_getValue('warhub_members_search', '') || '').trim().toLowerCase();
+    var savedFilter = String(GM_getValue('warhub_members_filter', 'all') || 'all').trim().toLowerCase();
+
+    function toNum(v) {
+        var n = Number(v || 0);
+        return isFinite(n) ? n : 0;
+    }
+
+    function shortTime(secs) {
+        var total = Number(secs || 0);
+        if (!isFinite(total) || total <= 0) return 'Ready';
+
+        total = Math.floor(total);
+
+        var days = Math.floor(total / 86400);
+        var hours = Math.floor((total % 86400) / 3600);
+        var mins = Math.floor((total % 3600) / 60);
+        var remSecs = total % 60;
+
+        if (days > 0) return days + 'd ' + (hours > 0 ? ' ' + hours + 'h' : '');
+        if (hours > 0) return hours + 'h' + (mins > 0 ? ' ' + mins + 'm' : '');
+        if (mins > 0) return mins + 'm' + (remSecs > 0 ? ' ' + remSecs + 's' : '');
+        return remSecs + 's';
+    }
+
+    function memberState(member) {
+        var s = String(member.online_state || member.status_class || '').trim().toLowerCase();
+        if (s === 'online' || s === 'idle' || s === 'travel' || s === 'jail' || s === 'hospital' || s === 'offline') {
+            return s;
+        }
+
+        var combined = [
+            String(member.status || ''),
+            String(member.status_detail || ''),
+            String(member.last_action || '')
+        ].join(' ').toLowerCase();
+
+        if (combined.indexOf('hospital') >= 0) return 'hospital';
+        if (combined.indexOf('jail') >= 0 || combined.indexOf('jailed') >= 0) return 'jail';
+        if (
+            combined.indexOf('travel') >= 0 ||
+            combined.indexOf('travelling') >= 0 ||
+            combined.indexOf('traveling') >= 0 ||
+            combined.indexOf('abroad') >= 0 ||
+            combined.indexOf('flying') >= 0
+        ) return 'travel';
+        if (combined.indexOf('idle') >= 0) return 'idle';
+        if (combined.indexOf('online') >= 0) return 'online';
+        return 'offline';
+    }
+
+    function stateLabel(stateName, member) {
+        if (stateName === 'hospital') {
+            var secs = toNum(member.hospital_seconds);
+            return secs > 0 ? 'Hospital (' + shortTime(secs) + ')' : 'Hospital';
+        }
+        if (stateName === 'jail') return 'Jail';
+        if (stateName === 'travel') return 'Travel';
+        if (stateName === 'idle') return 'Idle';
+        if (stateName === 'online') return 'Online';
+        return 'Offline';
+    }
+
+    function statePillClass(stateName) {
+        if (stateName === 'online') return 'warhub-pill good';
+        if (stateName === 'idle') return 'warhub-pill neutral';
+        if (stateName === 'travel') return 'warhub-pill travel';
+        if (stateName === 'jail') return 'warhub-pill jail';
+        if (stateName === 'hospital') return 'warhub-pill bad';
+        return 'warhub-pill';
+    }
+
+    function statText(current, max) {
+        var c = toNum(current);
+        var m = toNum(max);
+        if (m > 0) return fmtNum(c) + '/' + fmtNum(m);
+        if (c > 0) return fmtNum(c);
+        return '--';
+    }
+
+    function medCdText(member) {
+        var cd = toNum(member.medical_cooldown);
+        if (cd <= 0) return 'Ready';
+        return shortTime(cd);
+    }
+
+    function hasLiveStats(member) {
+        return !!(
+            toNum(member.life_current) > 0 ||
+            toNum(member.life_max) > 0 ||
+            toNum(member.energy_current) > 0 ||
+            toNum(member.energy_max) > 0 ||
+            toNum(member.medical_cooldown) > 0 ||
+            member.live_stats_enabled
+        );
+    }
+
+    function memberStatusLine(m, stateName) {
         var statusLine = String(m.status_detail || m.status || m.last_action || '').trim();
 
         if (stateName === 'hospital') {
             var hospSecs = toNum(m.hospital_seconds);
-            statusLine = hospSecs > 0 ? ('Hospital for ' + shortTime(hospSecs)) : 'Hospitalized';
-        } else if (stateName === 'jail') {
-            statusLine = statusLine || 'In jail';
-        } else if (stateName === 'travel') {
-            statusLine = statusLine || 'Travelling';
-        } else if (stateName === 'idle') {
-            statusLine = statusLine || 'Idle';
-        } else if (stateName === 'online') {
-            statusLine = statusLine || 'Online';
-        } else {
-            statusLine = statusLine || 'Offline';
+            return hospSecs > 0 ? ('Hospital for ' + shortTime(hospSecs)) : 'Hospitalized';
         }
+        if (stateName === 'jail') return statusLine || 'In jail';
+        if (stateName === 'travel') return statusLine || 'Travelling';
+        if (stateName === 'idle') return statusLine || 'Idle';
+        if (stateName === 'online') return statusLine || 'Online';
+        return statusLine || 'Offline';
+    }
 
-        var attackUrl = String(m.attack_url || '').trim();
-        var profileUrl = String(m.profile_url || '').trim();
-        var bountyUrl = String(m.bounty_url || '').trim();
+    var order = {
+        online: 1,
+        idle: 2,
+        travel: 3,
+        jail: 4,
+        hospital: 5,
+        offline: 6
+    };
+
+    var filtered = members.filter(function (m) {
+        var name = String(m.name || m.user_name || m.member_name || '').toLowerCase();
+        var uid = String(m.user_id || m.id || '').toLowerCase();
+        var stateName = memberState(m);
+
+        var matchesSearch = !savedSearch || name.indexOf(savedSearch) >= 0 || uid.indexOf(savedSearch) >= 0;
+        var matchesFilter = savedFilter === 'all' || stateName === savedFilter;
+
+        return matchesSearch && matchesFilter;
+    }).sort(function (a, b) {
+        var aState = memberState(a);
+        var bState = memberState(b);
+
+        var aOrder = order[aState] || 99;
+        var bOrder = order[bState] || 99;
+
+        if (aOrder !== bOrder) return aOrder - bOrder;
+
+        var aName = String(a.name || a.user_name || a.member_name || '').toLowerCase();
+        var bName = String(b.name || b.user_name || b.member_name || '').toLowerCase();
+
+        if (aName < bName) return -1;
+        if (aName > bName) return 1;
+        return 0;
+    });
+
+    var grouped = {
+        online: [],
+        idle: [],
+        travel: [],
+        jail: [],
+        hospital: [],
+        offline: []
+    };
+
+    filtered.forEach(function (m) {
+        var s = memberState(m);
+        if (!grouped[s]) grouped[s] = [];
+        grouped[s].push(m);
+    });
+
+function renderMemberRow(m) {
+    var name = String(m.name || m.user_name || m.member_name || 'Unknown');
+    var userId = String(m.user_id || m.id || '').trim();
+    var stateName = memberState(m);
+    var pillClass = statePillClass(stateName);
+    var pillText = stateLabel(stateName, m);
+
+    var lifeCurrent = toNum(m.life_current);
+    var lifeMax = toNum(m.life_max);
+    var energyCurrent = toNum(m.energy_current);
+    var energyMax = toNum(m.energy_max);
+    var liveOk = hasLiveStats(m);
+
+    var profileUrl = String(m.profile_url || '').trim();
+    var bountyUrl = String(m.bounty_url || '').trim();
+
+    return '\
+      <div class="warhub-card" style="margin-top:6px;padding:7px 8px;">\
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:nowrap;">\
+          <div style="min-width:0;flex:1 1 auto;overflow:hidden;">\
+            <div class="warhub-name" style="font-size:12px;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' +
+              (profileUrl
+                ? '<a href="' + esc(profileUrl) + '" target="_blank" rel="noopener noreferrer">' + esc(name) + '</a>'
+                : esc(name)
+              ) +
+            '</div>\
+          </div>\
+\
+          <div class="' + esc(pillClass) + '" style="flex:0 0 auto;font-size:10px;padding:2px 6px;white-space:nowrap;">' + esc(pillText) + '</div>\
+\
+          <div style="display:flex;align-items:center;gap:3px;flex:0 0 auto;font-size:11px;white-space:nowrap;">\
+            <span title="Energy">⚡</span>\
+            <span>' + esc(statText(energyCurrent, energyMax)) + '</span>\
+          </div>\
+\
+          <div style="display:flex;align-items:center;gap:3px;flex:0 0 auto;font-size:11px;white-space:nowrap;">\
+            <span title="Medical Cooldown">💊</span>\
+            <span>' + esc(liveOk ? medCdText(m) : '--') + '</span>\
+          </div>\
+\
+          <div style="display:flex;align-items:center;gap:3px;flex:0 0 auto;font-size:11px;white-space:nowrap;">\
+            <span title="Life">➕</span>\
+            <span>' + esc(statText(lifeCurrent, lifeMax)) + '</span>\
+          </div>\
+\
+          <div class="warhub-actions" style="display:flex;align-items:center;gap:4px;flex:0 0 auto;margin-left:2px;">\
+            ' + (bountyUrl
+                ? '<a class="warhub-btn" style="padding:4px 7px;font-size:11px;min-height:auto;" href="' + esc(bountyUrl) + '" target="_blank" rel="noopener noreferrer">Bounty</a>'
+                : '<button class="warhub-btn" style="padding:4px 7px;font-size:11px;min-height:auto;" data-member-bounty="1" data-user-id="' + esc(userId) + '" data-user-name="' + esc(name) + '" data-bounty-url="https://www.torn.com/bounties.php#/!p=add&userID=' + esc(userId) + '">Bounty</button>'
+            ) + '\
+          </div>\
+        </div>\
+      </div>';
+}
+    function renderGroup(key, title, openByDefault) {
+        var list = grouped[key] || [];
+        var isOpen = openByDefault ? ' open' : '';
+        var inner = list.length
+            ? list.map(renderMemberRow).join('')
+            : '<div class="warhub-card" style="margin-top:8px;">No members in this section.</div>';
 
         return '\
-          <div class="warhub-card" style="margin-top:12px;">\
-            <div class="warhub-row" style="justify-content:space-between;align-items:center;gap:8px;">\
-              <div>\
-                <div class="warhub-name">' +
-                    (profileUrl
-                        ? '<a href="' + esc(profileUrl) + '" target="_blank" rel="noopener noreferrer">' + esc(name) + '</a>'
-                        : esc(name)
-                    ) +
-                    (userId ? ' [' + esc(userId) + ']' : '') +
-                '</div>\
-                <div class="warhub-mini" style="margin-top:4px;">' + esc(statusLine) + '</div>\
-              </div>\
-              <div class="' + esc(pillClass) + '">' + esc(pillText) + '</div>\
-            </div>\
-\
-            <div style="margin-top:12px;padding:10px 12px;border-radius:12px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;gap:14px;flex-wrap:wrap;">\
-              <div style="display:flex;align-items:center;gap:6px;white-space:nowrap;">\
-                <span title="Energy">⚡</span>\
-                <span>' + esc(statText(energyCurrent, energyMax)) + '</span>\
-              </div>\
-              <div style="display:flex;align-items:center;gap:6px;white-space:nowrap;">\
-                <span title="Medical Cooldown">💊</span>\
-                <span>' + esc(liveOk ? medCdText(m) : '--') + '</span>\
-              </div>\
-              <div style="display:flex;align-items:center;gap:6px;white-space:nowrap;">\
-                <span title="Life">➕</span>\
-                <span>' + esc(statText(lifeCurrent, lifeMax)) + '</span>\
-              </div>\
-            </div>\
-\
-            <div class="warhub-actions" style="margin-top:12px;">\
-              ' + (attackUrl ? '<a class="warhub-btn primary" href="' + esc(attackUrl) + '" target="_blank" rel="noopener noreferrer">Attack</a>' : '') + '\
-              ' + (bountyUrl ? '<a class="warhub-btn" href="' + esc(bountyUrl) + '" target="_blank" rel="noopener noreferrer">Bounty</a>' : '<button class="warhub-btn" data-member-bounty="1" data-user-id="' + esc(userId) + '" data-user-name="' + esc(name) + '">Bounty</button>') + '\
-            </div>\
-          </div>';
-    }).join('');
+          <details class="warhub-card" style="margin-top:12px;"' + isOpen + '>\
+            <summary style="cursor:pointer;list-style:none;display:flex;align-items:center;justify-content:space-between;gap:8px;font-weight:800;">\
+              <span>' + esc(title) + '</span>\
+              <span class="warhub-count">' + fmtNum(list.length) + '</span>\
+            </summary>\
+            <div style="margin-top:10px;">' + inner + '</div>\
+          </details>';
+    }
 
     return '\
       <div class="warhub-card warhub-hero-card">\
@@ -2278,29 +2470,33 @@ function renderMembersTab() {
           <span class="warhub-count">' + fmtNum(filtered.length) + ' / ' + fmtNum(members.length) + '</span>\
         </div>\
 \
-        <div class="warhub-grid two" style="margin-top:12px;">\
-          <div>\
-            <label class="warhub-label">Search Members</label>\
-            <input class="warhub-input" id="wh-members-search" placeholder="Search name or ID" value="' + esc(savedSearch) + '">\
-          </div>\
-          <div>\
-            <label class="warhub-label">Status Filter</label>\
-            <select class="warhub-input" id="wh-members-filter">\
-              <option value="all"' + (savedFilter === 'all' ? ' selected' : '') + '>All</option>\
-              <option value="online"' + (savedFilter === 'online' ? ' selected' : '') + '>Online</option>\
-              <option value="idle"' + (savedFilter === 'idle' ? ' selected' : '') + '>Idle</option>\
-              <option value="travel"' + (savedFilter === 'travel' ? ' selected' : '') + '>Travel</option>\
-              <option value="jail"' + (savedFilter === 'jail' ? ' selected' : '') + '>Jail</option>\
-              <option value="hospital"' + (savedFilter === 'hospital' ? ' selected' : '') + '>Hospital</option>\
-              <option value="offline"' + (savedFilter === 'offline' ? ' selected' : '') + '>Offline</option>\
-            </select>\
-          </div>\
+        <div style="margin-top:12px;">\
+          <label class="warhub-label">Search Members</label>\
+          <input class="warhub-input" id="wh-members-search" placeholder="Search name or ID" value="' + esc(savedSearch) + '">\
         </div>\
 \
-        <div class="warhub-mini" style="margin-top:10px;">Classic member card layout with inline ⚡ energy, 💊 med cooldown, and ➕ life.</div>\
+        <div style="margin-top:12px;">\
+          <label class="warhub-label">Status Filter</label>\
+          <select class="warhub-input" id="wh-members-filter">\
+            <option value="all"' + (savedFilter === 'all' ? ' selected' : '') + '>All</option>\
+            <option value="online"' + (savedFilter === 'online' ? ' selected' : '') + '>Online</option>\
+            <option value="idle"' + (savedFilter === 'idle' ? ' selected' : '') + '>Idle</option>\
+            <option value="travel"' + (savedFilter === 'travel' ? ' selected' : '') + '>Travel</option>\
+            <option value="jail"' + (savedFilter === 'jail' ? ' selected' : '') + '>Jail</option>\
+            <option value="hospital"' + (savedFilter === 'hospital' ? ' selected' : '') + '>Hospital</option>\
+            <option value="offline"' + (savedFilter === 'offline' ? ' selected' : '') + '>Offline</option>\
+          </select>\
+        </div>\
       </div>\
-      ' + (cardsHtml || '<div class="warhub-card" style="margin-top:12px;">No members found.</div>');
+\
+      ' + renderGroup('online', '🟢 Online', true) + '\
+      ' + renderGroup('idle', '🟡 Idle', false) + '\
+      ' + renderGroup('travel', '✈️ Travel', false) + '\
+      ' + renderGroup('jail', '⛓️ Jail', false) + '\
+      ' + renderGroup('hospital', '🏥 Hospital', false) + '\
+      ' + renderGroup('offline', '⚫ Offline', false);
 }
+    
 function scrapeEnemyMembersFromPage() {
     return [];
 }
