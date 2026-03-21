@@ -1516,6 +1516,7 @@ function _loadLiveSummary() {
     });
     return _loadLiveSummary.apply(this, arguments);
 }
+    
 function loadWarEnemiesById(force) {
     return _asyncToGenerator(function* () {
         console.log('[WarHub][Enemies] loadWarEnemiesById called');
@@ -1532,7 +1533,6 @@ function loadWarEnemiesById(force) {
         };
 
         var warId = getKnownWarId();
-
         window.__warEnemyDebug.war_id = warId || '';
 
         if (!warId) {
@@ -1540,24 +1540,10 @@ function loadWarEnemiesById(force) {
             warEnemiesFactionName = '';
             warEnemiesFactionId = '';
             window.__warEnemyDebug.error = 'missing_war_id_before_request';
-            console.log('[WarHub][Enemies] No war id found before request.');
             return [];
         }
 
-        if (!force && Array.isArray(warEnemiesCache) && warEnemiesCache.length) {
-            console.log('[WarHub][Enemies] Using cached enemies:', warEnemiesCache.length);
-            window.__warEnemyDebug.ok = true;
-            window.__warEnemyDebug.enemy_members_count = warEnemiesCache.length;
-            window.__warEnemyDebug.raw_enemy_members_length = warEnemiesCache.length;
-            window.__warEnemyDebug.enemy_faction_name = String(warEnemiesFactionName || '');
-            window.__warEnemyDebug.enemy_faction_id = String(warEnemiesFactionId || '');
-            return warEnemiesCache;
-        }
-
-        var url = '/api/war/enemies?war_id=' + encodeURIComponent(warId);
-        console.log('[WarHub][Enemies] Requesting:', url);
-
-        var res = yield authedReq('GET', url);
+        var res = yield authedReq('GET', '/api/war/enemies?war_id=' + encodeURIComponent(warId));
 
         if (!res.ok) {
             warEnemiesCache = [];
@@ -1574,8 +1560,6 @@ function loadWarEnemiesById(force) {
                 enemy_faction_name: '',
                 enemy_faction_id: ''
             };
-
-            console.log('[WarHub][Enemies] Request failed:', res);
             return [];
         }
 
@@ -1596,9 +1580,6 @@ function loadWarEnemiesById(force) {
             enemy_faction_id: warEnemiesFactionId,
             debug: data.debug || {}
         };
-
-        console.log('[WarHub][Enemies] Response data:', data);
-        console.log('[WarHub][Enemies] Cached enemies:', warEnemiesCache.length, warEnemiesCache);
 
         return warEnemiesCache;
     })();
@@ -3240,23 +3221,27 @@ function _logoutSession() {
         yield loadFactionMembers(true);
         yield refreshFactionPaymentData();
     }
-    if (tab === 'summary') {
-    yield loadLiveSummary(true);
-}
 
-if (tab === 'enemies') {
-    resetEnemiesDebugFilters();
-    yield loadLiveSummary(true);
-    yield loadWarEnemiesById(true);
-    console.log('[WarHub][Enemies] enemies tab clicked');
-}
+    if (tab === 'summary') {
+        yield loadLiveSummary(true);
+    }
+
+    if (tab === 'enemies') {
+        GM_setValue('warhub_enemies_search', '');
+        GM_setValue('warhub_enemies_filter', 'all');
+
+        console.log('[WarHub][Enemies] enemies tab clicked');
+
+        yield loadLiveSummary(true);
+        yield loadWarEnemiesById(true);
+    }
+
     if (tab === 'admin' && canSeeAdmin()) {
         yield loadAdminDashboard();
     }
 
     renderBody();
 }));
-});
 
     var closeBtn = overlay.querySelector('#warhub-close-btn');
     if (closeBtn && !closeBtn.__warhubBound) {
