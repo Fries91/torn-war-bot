@@ -19,8 +19,8 @@
 (function () {
     'use strict';
 
-    if (window.__WAR_HUB_V285__) return;
-    window.__WAR_HUB_V285__ = true;
+    if (window.__WAR_HUB_V286__) return;
+    window.__WAR_HUB_V286__ = true;
 
     // ============================================================
     // 01. CORE CONFIG / STORAGE KEYS
