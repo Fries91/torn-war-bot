@@ -1677,21 +1677,6 @@ function getEnemyMembersForTab() {
           </div>';
     }
 
-    function renderTabs() {
-        var html = TAB_ORDER.map(function (pair) {
-            var key = pair[0];
-            var label = pair[1];
-
-            if (key === 'admin' && !isOwnerSession()) return '';
-            if (key === 'faction' && !isFactionLeader() && !isOwnerSession()) return '';
-            if (key === 'members' && !isFactionLeader() && !isOwnerSession()) return '';
-
-            return '<button class="warhub-tab ' + (currentTab === key ? 'active' : '') + '" data-tab="' + esc(key) + '">' + esc(label) + '</button>';
-        }).join('');
-
-        return '<div class="warhub-tabs">' + html + '</div>';
-    }
-
  function renderTabs() {
     var html = TAB_ORDER.map(function (pair) {
         var key = pair[0];
