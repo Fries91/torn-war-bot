@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         War Hub ⚔️
 // @namespace    fries91-war-hub
-// @version      3.1.7
+// @version      3.1.8
 // @description  War Hub by Fries91. Faction-license aware overlay with draggable icon, draggable overlay, PDA friendly, shared war tools, faction member management, and payment lock handling.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -2071,9 +2071,9 @@ function renderMembersTab() {
         var mins = Math.floor((total % 3600) / 60);
         var remSecs = total % 60;
 
-        if (days > 0) return days + 'd ' + (hours > 0 ? hours + 'h' : '');
-        if (hours > 0) return hours + 'h ' + (mins > 0 ? mins + 'm' : '');
-        if (mins > 0) return mins + 'm ' + (remSecs > 0 ? remSecs + 's' : '');
+        if (days > 0) return days + 'd ' + (hours > 0 ? ' ' + hours + 'h' : '');
+        if (hours > 0) return hours + 'h' + (mins > 0 ? ' ' + mins + 'm' : '');
+        if (mins > 0) return mins + 'm' + (remSecs > 0 ? ' ' + remSecs + 's' : '');
         return remSecs + 's';
     }
 
@@ -2149,6 +2149,29 @@ function renderMembersTab() {
         );
     }
 
+    function memberStatusLine(m, stateName) {
+        var statusLine = String(m.status_detail || m.status || m.last_action || '').trim();
+
+        if (stateName === 'hospital') {
+            var hospSecs = toNum(m.hospital_seconds);
+            return hospSecs > 0 ? ('Hospital for ' + shortTime(hospSecs)) : 'Hospitalized';
+        }
+        if (stateName === 'jail') return statusLine || 'In jail';
+        if (stateName === 'travel') return statusLine || 'Travelling';
+        if (stateName === 'idle') return statusLine || 'Idle';
+        if (stateName === 'online') return statusLine || 'Online';
+        return statusLine || 'Offline';
+    }
+
+    var order = {
+        online: 1,
+        idle: 2,
+        travel: 3,
+        jail: 4,
+        hospital: 5,
+        offline: 6
+    };
+
     var filtered = members.filter(function (m) {
         var name = String(m.name || m.user_name || m.member_name || '').toLowerCase();
         var uid = String(m.user_id || m.id || '').toLowerCase();
@@ -2159,15 +2182,6 @@ function renderMembersTab() {
 
         return matchesSearch && matchesFilter;
     }).sort(function (a, b) {
-        var order = {
-            online: 1,
-            idle: 2,
-            travel: 3,
-            jail: 4,
-            hospital: 5,
-            offline: 6
-        };
-
         var aState = memberState(a);
         var bState = memberState(b);
 
@@ -2184,12 +2198,28 @@ function renderMembersTab() {
         return 0;
     });
 
-    var cardsHtml = filtered.map(function (m) {
+    var grouped = {
+        online: [],
+        idle: [],
+        travel: [],
+        jail: [],
+        hospital: [],
+        offline: []
+    };
+
+    filtered.forEach(function (m) {
+        var s = memberState(m);
+        if (!grouped[s]) grouped[s] = [];
+        grouped[s].push(m);
+    });
+
+    function renderMemberRow(m) {
         var name = String(m.name || m.user_name || m.member_name || 'Unknown');
         var userId = String(m.user_id || m.id || '').trim();
         var stateName = memberState(m);
         var pillClass = statePillClass(stateName);
         var pillText = stateLabel(stateName, m);
+        var statusLine = memberStatusLine(m, stateName);
 
         var lifeCurrent = toNum(m.life_current);
         var lifeMax = toNum(m.life_max);
@@ -2197,64 +2227,69 @@ function renderMembersTab() {
         var energyMax = toNum(m.energy_max);
         var liveOk = hasLiveStats(m);
 
-        var statusLine = String(m.status_detail || m.status || m.last_action || '').trim();
-
-        if (stateName === 'hospital') {
-            var hospSecs = toNum(m.hospital_seconds);
-            statusLine = hospSecs > 0 ? ('Hospital for ' + shortTime(hospSecs)) : 'Hospitalized';
-        } else if (stateName === 'jail') {
-            statusLine = statusLine || 'In jail';
-        } else if (stateName === 'travel') {
-            statusLine = statusLine || 'Travelling';
-        } else if (stateName === 'idle') {
-            statusLine = statusLine || 'Idle';
-        } else if (stateName === 'online') {
-            statusLine = statusLine || 'Online';
-        } else {
-            statusLine = statusLine || 'Offline';
-        }
-
         var attackUrl = String(m.attack_url || '').trim();
         var profileUrl = String(m.profile_url || '').trim();
         var bountyUrl = String(m.bounty_url || '').trim();
 
         return '\
-          <div class="warhub-card" style="margin-top:12px;">\
-            <div class="warhub-row" style="justify-content:space-between;align-items:center;gap:8px;">\
-              <div>\
-                <div class="warhub-name">' +
+          <div class="warhub-card" style="margin-top:8px;padding:10px 12px;">\
+            <div class="warhub-row" style="align-items:center;gap:8px;flex-wrap:wrap;">\
+              <div style="min-width:170px;flex:1 1 170px;">\
+                <div class="warhub-name" style="font-size:13px;">' +
                     (profileUrl
                         ? '<a href="' + esc(profileUrl) + '" target="_blank" rel="noopener noreferrer">' + esc(name) + '</a>'
                         : esc(name)
                     ) +
                     (userId ? ' [' + esc(userId) + ']' : '') +
                 '</div>\
-                <div class="warhub-mini" style="margin-top:4px;">' + esc(statusLine) + '</div>\
               </div>\
-              <div class="' + esc(pillClass) + '">' + esc(pillText) + '</div>\
-            </div>\
 \
-            <div style="margin-top:12px;padding:10px 12px;border-radius:12px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;gap:14px;flex-wrap:wrap;">\
+              <div style="min-width:120px;flex:1 1 120px;" class="warhub-mini">' + esc(statusLine) + '</div>\
+\
+              <div class="' + esc(pillClass) + '" style="white-space:nowrap;">' + esc(pillText) + '</div>\
+\
               <div style="display:flex;align-items:center;gap:6px;white-space:nowrap;">\
                 <span title="Energy">⚡</span>\
                 <span>' + esc(statText(energyCurrent, energyMax)) + '</span>\
               </div>\
+\
               <div style="display:flex;align-items:center;gap:6px;white-space:nowrap;">\
                 <span title="Medical Cooldown">💊</span>\
                 <span>' + esc(liveOk ? medCdText(m) : '--') + '</span>\
               </div>\
+\
               <div style="display:flex;align-items:center;gap:6px;white-space:nowrap;">\
                 <span title="Life">➕</span>\
                 <span>' + esc(statText(lifeCurrent, lifeMax)) + '</span>\
               </div>\
-            </div>\
 \
-            <div class="warhub-actions" style="margin-top:12px;">\
-              ' + (attackUrl ? '<a class="warhub-btn primary" href="' + esc(attackUrl) + '" target="_blank" rel="noopener noreferrer">Attack</a>' : '') + '\
-              ' + (bountyUrl ? '<a class="warhub-btn" href="' + esc(bountyUrl) + '" target="_blank" rel="noopener noreferrer">Bounty</a>' : '<button class="warhub-btn" data-member-bounty="1" data-user-id="' + esc(userId) + '" data-user-name="' + esc(name) + '">Bounty</button>') + '\
+              <div class="warhub-actions" style="margin-left:auto;gap:6px;">\
+                ' + (attackUrl ? '<a class="warhub-btn primary" href="' + esc(attackUrl) + '" target="_blank" rel="noopener noreferrer">Attack</a>' : '') + '\
+                ' + (bountyUrl
+                    ? '<a class="warhub-btn" href="' + esc(bountyUrl) + '" target="_blank" rel="noopener noreferrer">Bounty</a>'
+                    : '<button class="warhub-btn" data-member-bounty="1" data-user-id="' + esc(userId) + '" data-user-name="' + esc(name) + '" data-bounty-url="https://www.torn.com/bounties.php#/!p=add&userID=' + esc(userId) + '">Bounty</button>'
+                ) + '\
+              </div>\
             </div>\
           </div>';
-    }).join('');
+    }
+
+    function renderGroup(key, title, openByDefault) {
+        var list = grouped[key] || [];
+        var isOpen = openByDefault ? ' open' : '';
+        var inner = list.length
+            ? list.map(renderMemberRow).join('')
+            : '<div class="warhub-card" style="margin-top:8px;">No members in this section.</div>';
+
+        return '\
+          <details class="warhub-card" style="margin-top:12px;"' + isOpen + '>\
+            <summary style="cursor:pointer;list-style:none;display:flex;align-items:center;justify-content:space-between;gap:8px;font-weight:800;">\
+              <span>' + esc(title) + '</span>\
+              <span class="warhub-count">' + fmtNum(list.length) + '</span>\
+            </summary>\
+            <div style="margin-top:10px;">' + inner + '</div>\
+          </details>';
+    }
 
     return '\
       <div class="warhub-card warhub-hero-card">\
@@ -2263,28 +2298,31 @@ function renderMembersTab() {
           <span class="warhub-count">' + fmtNum(filtered.length) + ' / ' + fmtNum(members.length) + '</span>\
         </div>\
 \
-        <div class="warhub-grid two" style="margin-top:12px;">\
-          <div>\
-            <label class="warhub-label">Search Members</label>\
-            <input class="warhub-input" id="wh-members-search" placeholder="Search name or ID" value="' + esc(savedSearch) + '">\
-          </div>\
-          <div>\
-            <label class="warhub-label">Status Filter</label>\
-            <select class="warhub-input" id="wh-members-filter">\
-              <option value="all"' + (savedFilter === 'all' ? ' selected' : '') + '>All</option>\
-              <option value="online"' + (savedFilter === 'online' ? ' selected' : '') + '>Online</option>\
-              <option value="idle"' + (savedFilter === 'idle' ? ' selected' : '') + '>Idle</option>\
-              <option value="travel"' + (savedFilter === 'travel' ? ' selected' : '') + '>Travel</option>\
-              <option value="jail"' + (savedFilter === 'jail' ? ' selected' : '') + '>Jail</option>\
-              <option value="hospital"' + (savedFilter === 'hospital' ? ' selected' : '') + '>Hospital</option>\
-              <option value="offline"' + (savedFilter === 'offline' ? ' selected' : '') + '>Offline</option>\
-            </select>\
-          </div>\
+        <div style="margin-top:12px;">\
+          <label class="warhub-label">Search Members</label>\
+          <input class="warhub-input" id="wh-members-search" placeholder="Search name or ID" value="' + esc(savedSearch) + '">\
         </div>\
 \
-        <div class="warhub-mini" style="margin-top:10px;">Classic member card layout with inline ⚡ energy, 💊 med cooldown, and ➕ life.</div>\
+        <div style="margin-top:12px;">\
+          <label class="warhub-label">Status Filter</label>\
+          <select class="warhub-input" id="wh-members-filter">\
+            <option value="all"' + (savedFilter === 'all' ? ' selected' : '') + '>All</option>\
+            <option value="online"' + (savedFilter === 'online' ? ' selected' : '') + '>Online</option>\
+            <option value="idle"' + (savedFilter === 'idle' ? ' selected' : '') + '>Idle</option>\
+            <option value="travel"' + (savedFilter === 'travel' ? ' selected' : '') + '>Travel</option>\
+            <option value="jail"' + (savedFilter === 'jail' ? ' selected' : '') + '>Jail</option>\
+            <option value="hospital"' + (savedFilter === 'hospital' ? ' selected' : '') + '>Hospital</option>\
+            <option value="offline"' + (savedFilter === 'offline' ? ' selected' : '') + '>Offline</option>\
+          </select>\
+        </div>\
       </div>\
-      ' + (cardsHtml || '<div class="warhub-card" style="margin-top:12px;">No members found.</div>');
+\
+      ' + renderGroup('online', '🟢 Online', true) + '\
+      ' + renderGroup('idle', '🟡 Idle', false) + '\
+      ' + renderGroup('travel', '✈️ Travel', false) + '\
+      ' + renderGroup('jail', '⛓️ Jail', false) + '\
+      ' + renderGroup('hospital', '🏥 Hospital', false) + '\
+      ' + renderGroup('offline', '⚫ Offline', false);
 }
 function scrapeEnemyMembersFromPage() {
     return [];
