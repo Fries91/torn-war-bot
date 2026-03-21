@@ -1156,7 +1156,7 @@ function _loadState() {
             ).trim();
 
             var rawMembers = arr((state && state.members) || []);
-            factionMembersCache = rawMembers.filter(function (m) {
+            var filteredMembers = rawMembers.filter(function (m) {
                 var mfid = String(
                     (m && (m.faction_id || m.member_faction_id || m.faction)) || ''
                 ).trim();
@@ -1165,6 +1165,8 @@ function _loadState() {
                 if (!mfid) return true;
                 return mfid === myFactionId;
             });
+
+            factionMembersCache = filteredMembers.length ? filteredMembers : rawMembers;
         } catch (err) {
             console.error('factionMembersCache build failed', err);
             factionMembersCache = arr((state && state.members) || []);
@@ -2081,18 +2083,22 @@ function renderChainTab() {
 
 function renderMembersTab() {
     var myFactionId = String(
-        (state && state.my_faction_id) ||
-        (state && state.our_faction_id) ||
-        (state && state.faction_id) ||
-        ''
-    ).trim();
+    (state && state.my_faction_id) ||
+    (state && state.our_faction_id) ||
+    (state && state.faction_id) ||
+    ''
+).trim();
 
-    var members = (Array.isArray(factionMembersCache) ? factionMembersCache : []).filter(function (m) {
-        var mfid = String(m.faction_id || m.member_faction_id || '').trim();
-        if (!myFactionId) return true;
-        if (!mfid) return true;
-        return mfid === myFactionId;
-    });
+var lockedMembers = Array.isArray(factionMembersCache) ? factionMembersCache : [];
+var stateMembers = arr((state && state.members) || []);
+var membersSource = lockedMembers.length ? lockedMembers : stateMembers;
+
+var members = membersSource.filter(function (m) {
+    var mfid = String(m.faction_id || m.member_faction_id || '').trim();
+    if (!myFactionId) return true;
+    if (!mfid) return true;
+    return mfid === myFactionId;
+});
 
     var savedSearch = String(GM_getValue('warhub_members_search', '') || '').trim().toLowerCase();
     var savedFilter = String(GM_getValue('warhub_members_filter', 'all') || 'all').trim().toLowerCase();
@@ -2352,7 +2358,14 @@ function scrapeEnemyMembersFromPage() {
 }
 
 function getEnemyMembersForTab() {
-    return Array.isArray(enemyMembersCache) ? enemyMembersCache : [];
+    if (Array.isArray(enemyMembersCache) && enemyMembersCache.length) return enemyMembersCache;
+    if (Array.isArray(warEnemiesCache) && warEnemiesCache.length) return warEnemiesCache;
+    return arr(state && state.enemy_members);
+}
+function getFactionMembers() {
+    if (Array.isArray(currentFactionMembers) && currentFactionMembers.length) return currentFactionMembers;
+    if (Array.isArray(factionMembersCache) && factionMembersCache.length) return factionMembersCache;
+    return arr(state && state.members);
 }
 
 function toStatNum(v) {
