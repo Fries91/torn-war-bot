@@ -2533,6 +2533,23 @@ function renderEnemiesTab() {
     }
 
     function sortEnemies(a, b) {
+        var order = {
+            online: 1,
+            idle: 2,
+            travel: 3,
+            jail: 4,
+            hospital: 5,
+            offline: 6
+        };
+
+        var aState = enemyState(a);
+        var bState = enemyState(b);
+
+        var aOrder = order[aState] || 99;
+        var bOrder = order[bState] || 99;
+
+        if (aOrder !== bOrder) return aOrder - bOrder;
+
         var aName = String(a.name || a.user_name || a.member_name || '').toLowerCase();
         var bName = String(b.name || b.user_name || b.member_name || '').toLowerCase();
 
@@ -2558,30 +2575,25 @@ function renderEnemiesTab() {
         groups[s].push(e);
     });
 
+    function renderEnemySpyInline(e) {
+        var userId = String((e && (e.user_id || e.id)) || '').trim();
+        var spy = getEnemySpyById(userId);
+
+        if (!spy) {
+            return '<div class="warhub-mini" style="font-size:10px;padding:2px 6px;border-radius:999px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);white-space:nowrap;">No Spy</div>';
+        }
+
+        var label = spy.exact ? 'Exact' : (spy.predicted ? 'Pred' : 'Spy');
+        var total = fmtStat(spy.total);
+        return '<div class="warhub-mini" style="font-size:10px;padding:2px 6px;border-radius:999px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);white-space:nowrap;">' + esc(label + ': ' + total) + '</div>';
+    }
+
     function renderEnemyRow(e) {
         var name = String(e.name || e.user_name || e.member_name || 'Unknown');
         var userId = String(e.user_id || e.id || '').trim();
-        var level = String(e.level || '').trim();
-        var position = String(e.position || '').trim();
         var stateName = enemyState(e);
         var pillClass = statePillClass(stateName);
         var pillText = stateLabel(stateName, e);
-
-        var statusLine = String(e.display_status || e.status_detail || e.status || e.last_action || '').trim();
-        if (stateName === 'hospital') {
-            var hospSecs = toNum(e.hospital_seconds);
-            statusLine = hospSecs > 0 ? ('Hospital for ' + shortTime(hospSecs)) : 'Hospitalized';
-        } else if (stateName === 'jail') {
-            statusLine = statusLine || 'In jail';
-        } else if (stateName === 'travel') {
-            statusLine = statusLine || 'Travelling';
-        } else if (stateName === 'idle') {
-            statusLine = statusLine || 'Idle';
-        } else if (stateName === 'online') {
-            statusLine = statusLine || 'Online';
-        } else {
-            statusLine = statusLine || 'Offline';
-        }
 
         var attackUrl = String(
             e.attack_url ||
@@ -2593,58 +2605,53 @@ function renderEnemiesTab() {
             (userId ? ('https://www.torn.com/profiles.php?XID=' + encodeURIComponent(userId)) : '')
         ).trim();
 
-        var bountyUrl = String(
-            e.bounty_url ||
-            (userId ? ('https://www.torn.com/bounties.php?userID=' + encodeURIComponent(userId)) : '')
-        ).trim();
-
         return '\
-          <div class="warhub-card" style="margin-top:10px;">\
-            <div class="warhub-row" style="justify-content:space-between;align-items:center;gap:8px;">\
-              <div>\
-                <div class="warhub-name" style="color:#fff !important;">' + esc(name) + (userId ? ' [' + esc(userId) + ']' : '') + '</div>\
-                <div class="warhub-mini" style="margin-top:4px;">' + esc(statusLine) + '</div>\
+          <div class="warhub-card" style="margin-top:6px;padding:7px 8px;">\
+            <div style="display:flex;align-items:center;gap:6px;flex-wrap:nowrap;">\
+              <div style="min-width:0;flex:1 1 auto;overflow:hidden;display:flex;align-items:center;gap:6px;">\
+                <div class="warhub-name" style="font-size:12px;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;">' +
+                  (profileUrl
+                    ? '<a href="' + esc(profileUrl) + '" target="_blank" rel="noopener noreferrer">' + esc(name) + '</a>'
+                    : esc(name)
+                  ) +
+                '</div>\
+\
+                <div style="flex:0 0 auto;min-width:0;">' + renderEnemySpyInline(e) + '</div>\
               </div>\
-              <div class="' + pillClass + '">' + esc(pillText) + '</div>\
-            </div>\
 \
-            <div style="margin-top:10px;padding:10px 12px;border-radius:12px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;gap:14px;flex-wrap:wrap;">\
-              <div style="white-space:nowrap;"><strong>Lvl:</strong> ' + esc(level || '--') + '</div>\
-              <div style="white-space:nowrap;"><strong>Role:</strong> ' + esc(position || '--') + '</div>\
-              <div style="white-space:nowrap;"><strong>Status:</strong> ' + esc(pillText) + '</div>\
-            </div>\
+              <div class="' + esc(pillClass) + '" style="flex:0 0 auto;font-size:10px;padding:2px 6px;white-space:nowrap;">' + esc(pillText) + '</div>\
 \
-            ' + renderEnemySpyBlock(e) + '\
-\
-            <div class="warhub-actions" style="margin-top:10px;">\
-              ' + (attackUrl ? '<a class="warhub-btn primary" href="' + esc(attackUrl) + '" target="_blank" rel="noopener noreferrer">Attack</a>' : '') + '\
-              ' + (profileUrl ? '<a class="warhub-btn" href="' + esc(profileUrl) + '" target="_blank" rel="noopener noreferrer">Profile</a>' : '') + '\
-              ' + (bountyUrl ? '<a class="warhub-btn" href="' + esc(bountyUrl) + '" target="_blank" rel="noopener noreferrer">Bounty</a>' : '') + '\
+              <div class="warhub-actions" style="display:flex;align-items:center;gap:4px;flex:0 0 auto;margin-left:2px;">\
+                ' + (attackUrl ? '<a class="warhub-btn primary" style="padding:4px 7px;font-size:11px;min-height:auto;" href="' + esc(attackUrl) + '" target="_blank" rel="noopener noreferrer">Attack</a>' : '') + '\
+              </div>\
             </div>\
           </div>';
     }
 
-    function renderGroup(title, key, pillClass) {
+    function renderGroup(title, key, pillClass, openByDefault) {
         var list = groups[key] || [];
-        if (!list.length) return '';
+        var isOpen = openByDefault ? ' open' : '';
+        var inner = list.length
+            ? list.map(renderEnemyRow).join('')
+            : '<div class="warhub-card" style="margin-top:8px;">No enemies in this section.</div>';
 
         return '\
-          <div class="warhub-card" style="margin-top:12px;">\
-            <div class="warhub-section-title">\
-              <h3>' + esc(title) + '</h3>\
+          <details class="warhub-card" style="margin-top:12px;"' + isOpen + '>\
+            <summary style="cursor:pointer;list-style:none;display:flex;align-items:center;justify-content:space-between;gap:8px;font-weight:800;">\
+              <span>' + esc(title) + '</span>\
               <span class="' + esc(pillClass) + '">' + fmtNum(list.length) + '</span>\
-            </div>\
-            ' + list.map(renderEnemyRow).join('') + '\
-          </div>';
+            </summary>\
+            <div style="margin-top:10px;">' + inner + '</div>\
+          </details>';
     }
 
     var groupedHtml =
-        renderGroup('Online', 'online', 'warhub-pill good') +
-        renderGroup('Idle', 'idle', 'warhub-pill neutral') +
-        renderGroup('Travel', 'travel', 'warhub-pill travel') +
-        renderGroup('Jail', 'jail', 'warhub-pill jail') +
-        renderGroup('Hospital', 'hospital', 'warhub-pill bad') +
-        renderGroup('Offline', 'offline', 'warhub-pill');
+        renderGroup('Online', 'online', 'warhub-pill good', true) +
+        renderGroup('Idle', 'idle', 'warhub-pill neutral', false) +
+        renderGroup('Travel', 'travel', 'warhub-pill travel', false) +
+        renderGroup('Jail', 'jail', 'warhub-pill jail', false) +
+        renderGroup('Hospital', 'hospital', 'warhub-pill bad', false) +
+        renderGroup('Offline', 'offline', 'warhub-pill', false);
 
     return '\
       <div class="warhub-card warhub-hero-card">\
