@@ -79,7 +79,8 @@
     var state = null;
     var analyticsCache = null;
     var adminTopFiveCache = null;
-    var factionMembersCache = null;
+    var factionMembersCache = [];
+    var enemyMembersCache = [];
     var currentFactionMembers = [];
     var liveSummaryCache = null;
     var liveSummaryLoading = false;
@@ -1119,36 +1120,57 @@ function canSeeAdmin() {
     // 12. STATE LOADERS
     // ============================================================
 
-    function loadState() {
-        return _loadState.apply(this, arguments);
-    }
-
-    function _loadState() {
-        _loadState = _asyncToGenerator(function* () {
-            if (!isLoggedIn()) {
-                state = null;
-                renderBody();
-                return null;
-            }
-
-            var res = yield authedReq('GET', '/api/state');
-            if (!res.ok) {
-                if (res.status === 401 || res.status === 403) {
-                    GM_deleteValue(K_SESSION);
-                    state = null;
-                }
-                setStatus(res.error || 'Could not load state.', true);
-                renderBody();
-                return null;
-            }
-
-            state = res.data || {};
-            if (state && state.access) saveAccessCache(state.access);
+function _loadState() {
+    _loadState = _asyncToGenerator(function* () {
+        if (!isLoggedIn()) {
+            state = null;
+            factionMembersCache = [];
             renderBody();
-            return state;
+            return null;
+        }
+
+        var res = yield authedReq('GET', '/api/state');
+        if (!res.ok) {
+            if (res.status === 401 || res.status === 403) {
+                GM_deleteValue(K_SESSION);
+                state = null;
+                factionMembersCache = [];
+            }
+            setStatus(res.error || 'Could not load state.', true);
+            renderBody();
+            return null;
+        }
+
+        state = res.data || {};
+        if (state && state.access) saveAccessCache(state.access);
+
+        var myFactionId = String(
+            (state && state.my_faction_id) ||
+            (state && state.our_faction_id) ||
+            (state && state.faction_id) ||
+            (state && state.user && state.user.faction_id) ||
+            ''
+        ).trim();
+
+        var rawMembers = arr((state && state.members) || []);
+        factionMembersCache = rawMembers.filter(function (m) {
+            var mfid = String(
+                m.faction_id ||
+                m.member_faction_id ||
+                m.faction ||
+                ''
+            ).trim();
+
+            if (!myFactionId) return true;
+            if (!mfid) return true;
+            return mfid === myFactionId;
         });
-        return _loadState.apply(this, arguments);
-    }
+
+        renderBody();
+        return state;
+    });
+    return _loadState.apply(this, arguments);
+}
 
     function loadFactionPaymentStatus() {
         return _asyncToGenerator(function* () {
@@ -1411,6 +1433,7 @@ function loadWarEnemiesById(force) {
         window.__warEnemyDebug.war_id = warId || '';
 
         if (!warId) {
+            enemyMembersCache = [];
             warEnemiesCache = [];
             warEnemiesFactionName = '';
             warEnemiesFactionId = '';
@@ -1423,6 +1446,7 @@ function loadWarEnemiesById(force) {
         try {
             res = yield authedReq('GET', '/api/war/enemies?war_id=' + encodeURIComponent(warId));
         } catch (err) {
+            enemyMembersCache = [];
             warEnemiesCache = [];
             warEnemiesFactionName = '';
             warEnemiesFactionId = '';
@@ -1432,6 +1456,7 @@ function loadWarEnemiesById(force) {
         }
 
         if (!res || !res.ok) {
+            enemyMembersCache = [];
             warEnemiesCache = [];
             warEnemiesFactionName = '';
             warEnemiesFactionId = '';
@@ -1451,7 +1476,8 @@ function loadWarEnemiesById(force) {
         }
 
         var data = (res && res.data) ? res.data : {};
-        warEnemiesCache = Array.isArray(data.enemy_members) ? data.enemy_members : [];
+        enemyMembersCache = Array.isArray(data.enemy_members) ? data.enemy_members : [];
+        warEnemiesCache = enemyMembersCache.slice();
         warEnemiesFactionName = String(data.enemy_faction_name || '');
         warEnemiesFactionId = String(data.enemy_faction_id || '');
         warEnemiesLoadedAt = Date.now();
@@ -1468,13 +1494,13 @@ function loadWarEnemiesById(force) {
             status: Number((res && res.status) || 200) || 200,
             error: '',
             enemy_members_count: Number(data.enemy_members_count || 0) || 0,
-            raw_enemy_members_length: warEnemiesCache.length,
+            raw_enemy_members_length: enemyMembersCache.length,
             enemy_faction_name: warEnemiesFactionName,
             enemy_faction_id: warEnemiesFactionId,
             debug: data.debug || {}
         };
 
-        return warEnemiesCache;
+        return enemyMembersCache;
     })();
 }
 
@@ -2050,7 +2076,19 @@ function renderChainTab() {
     }
 
 function renderMembersTab() {
-    var members = arr((state && state.members) || []);
+    var myFactionId = String(
+        (state && state.my_faction_id) ||
+        (state && state.our_faction_id) ||
+        (state && state.faction_id) ||
+        ''
+    ).trim();
+
+    var members = (Array.isArray(factionMembersCache) ? factionMembersCache : []).filter(function (m) {
+        var mfid = String(m.faction_id || m.member_faction_id || '').trim();
+        if (!myFactionId) return true;
+        if (!mfid) return true;
+        return mfid === myFactionId;
+    });
 
     var savedSearch = String(GM_getValue('warhub_members_search', '') || '').trim().toLowerCase();
     var savedFilter = String(GM_getValue('warhub_members_filter', 'all') || 'all').trim().toLowerCase();
@@ -2149,29 +2187,6 @@ function renderMembersTab() {
         );
     }
 
-    function memberStatusLine(m, stateName) {
-        var statusLine = String(m.status_detail || m.status || m.last_action || '').trim();
-
-        if (stateName === 'hospital') {
-            var hospSecs = toNum(m.hospital_seconds);
-            return hospSecs > 0 ? ('Hospital for ' + shortTime(hospSecs)) : 'Hospitalized';
-        }
-        if (stateName === 'jail') return statusLine || 'In jail';
-        if (stateName === 'travel') return statusLine || 'Travelling';
-        if (stateName === 'idle') return statusLine || 'Idle';
-        if (stateName === 'online') return statusLine || 'Online';
-        return statusLine || 'Offline';
-    }
-
-    var order = {
-        online: 1,
-        idle: 2,
-        travel: 3,
-        jail: 4,
-        hospital: 5,
-        offline: 6
-    };
-
     var filtered = members.filter(function (m) {
         var name = String(m.name || m.user_name || m.member_name || '').toLowerCase();
         var uid = String(m.user_id || m.id || '').toLowerCase();
@@ -2182,6 +2197,15 @@ function renderMembersTab() {
 
         return matchesSearch && matchesFilter;
     }).sort(function (a, b) {
+        var order = {
+            online: 1,
+            idle: 2,
+            travel: 3,
+            jail: 4,
+            hospital: 5,
+            offline: 6
+        };
+
         var aState = memberState(a);
         var bState = memberState(b);
 
@@ -2213,60 +2237,60 @@ function renderMembersTab() {
         grouped[s].push(m);
     });
 
-function renderMemberRow(m) {
-    var name = String(m.name || m.user_name || m.member_name || 'Unknown');
-    var userId = String(m.user_id || m.id || '').trim();
-    var stateName = memberState(m);
-    var pillClass = statePillClass(stateName);
-    var pillText = stateLabel(stateName, m);
+    function renderMemberRow(m) {
+        var name = String(m.name || m.user_name || m.member_name || 'Unknown');
+        var userId = String(m.user_id || m.id || '').trim();
+        var stateName = memberState(m);
+        var pillClass = statePillClass(stateName);
+        var pillText = stateLabel(stateName, m);
 
-    var lifeCurrent = toNum(m.life_current);
-    var lifeMax = toNum(m.life_max);
-    var energyCurrent = toNum(m.energy_current);
-    var energyMax = toNum(m.energy_max);
-    var liveOk = hasLiveStats(m);
+        var lifeCurrent = toNum(m.life_current);
+        var lifeMax = toNum(m.life_max);
+        var energyCurrent = toNum(m.energy_current);
+        var energyMax = toNum(m.energy_max);
+        var liveOk = hasLiveStats(m);
 
-    var profileUrl = String(m.profile_url || '').trim();
-    var bountyUrl = String(m.bounty_url || '').trim();
+        var profileUrl = String(m.profile_url || '').trim();
+        var bountyUrl = String(m.bounty_url || '').trim();
 
-    return '\
-      <div class="warhub-card" style="margin-top:6px;padding:7px 8px;">\
-        <div style="display:flex;align-items:center;gap:6px;flex-wrap:nowrap;">\
-          <div style="min-width:0;flex:1 1 auto;overflow:hidden;">\
-            <div class="warhub-name" style="font-size:12px;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' +
-              (profileUrl
-                ? '<a href="' + esc(profileUrl) + '" target="_blank" rel="noopener noreferrer">' + esc(name) + '</a>'
-                : esc(name)
-              ) +
-            '</div>\
-          </div>\
+        return '\
+          <div class="warhub-card" style="margin-top:6px;padding:7px 8px;">\
+            <div style="display:flex;align-items:center;gap:6px;flex-wrap:nowrap;">\
+              <div style="min-width:0;flex:1 1 auto;overflow:hidden;">\
+                <div class="warhub-name" style="font-size:12px;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' +
+                  (profileUrl
+                    ? '<a href="' + esc(profileUrl) + '" target="_blank" rel="noopener noreferrer">' + esc(name) + '</a>'
+                    : esc(name)
+                  ) +
+                '</div>\
+              </div>\
 \
-          <div class="' + esc(pillClass) + '" style="flex:0 0 auto;font-size:10px;padding:2px 6px;white-space:nowrap;">' + esc(pillText) + '</div>\
+              <div class="' + esc(pillClass) + '" style="flex:0 0 auto;font-size:10px;padding:2px 6px;white-space:nowrap;">' + esc(pillText) + '</div>\
 \
-          <div style="display:flex;align-items:center;gap:3px;flex:0 0 auto;font-size:11px;white-space:nowrap;">\
-            <span title="Energy">⚡</span>\
-            <span>' + esc(statText(energyCurrent, energyMax)) + '</span>\
-          </div>\
+              <div style="display:flex;align-items:center;gap:3px;flex:0 0 auto;font-size:11px;white-space:nowrap;">\
+                <span title="Energy">⚡</span>\
+                <span>' + esc(statText(energyCurrent, energyMax)) + '</span>\
+              </div>\
 \
-          <div style="display:flex;align-items:center;gap:3px;flex:0 0 auto;font-size:11px;white-space:nowrap;">\
-            <span title="Medical Cooldown">💊</span>\
-            <span>' + esc(liveOk ? medCdText(m) : '--') + '</span>\
-          </div>\
+              <div style="display:flex;align-items:center;gap:3px;flex:0 0 auto;font-size:11px;white-space:nowrap;">\
+                <span title="Medical Cooldown">💊</span>\
+                <span>' + esc(liveOk ? medCdText(m) : '--') + '</span>\
+              </div>\
 \
-          <div style="display:flex;align-items:center;gap:3px;flex:0 0 auto;font-size:11px;white-space:nowrap;">\
-            <span title="Life">➕</span>\
-            <span>' + esc(statText(lifeCurrent, lifeMax)) + '</span>\
-          </div>\
+              <div style="display:flex;align-items:center;gap:3px;flex:0 0 auto;font-size:11px;white-space:nowrap;">\
+                <span title="Life">➕</span>\
+                <span>' + esc(statText(lifeCurrent, lifeMax)) + '</span>\
+              </div>\
 \
-          <div class="warhub-actions" style="display:flex;align-items:center;gap:4px;flex:0 0 auto;margin-left:2px;">\
-            ' + (bountyUrl
-                ? '<a class="warhub-btn" style="padding:4px 7px;font-size:11px;min-height:auto;" href="' + esc(bountyUrl) + '" target="_blank" rel="noopener noreferrer">Bounty</a>'
-                : '<button class="warhub-btn" style="padding:4px 7px;font-size:11px;min-height:auto;" data-member-bounty="1" data-user-id="' + esc(userId) + '" data-user-name="' + esc(name) + '" data-bounty-url="https://www.torn.com/bounties.php#/!p=add&userID=' + esc(userId) + '">Bounty</button>'
-            ) + '\
-          </div>\
-        </div>\
-      </div>';
-}
+              <div class="warhub-actions" style="display:flex;align-items:center;gap:4px;flex:0 0 auto;margin-left:2px;">\
+                ' + (bountyUrl
+                    ? '<a class="warhub-btn" style="padding:4px 7px;font-size:11px;min-height:auto;" href="' + esc(bountyUrl) + '" target="_blank" rel="noopener noreferrer">Bounty</a>'
+                    : '<button class="warhub-btn" style="padding:4px 7px;font-size:11px;min-height:auto;" data-member-bounty="1" data-user-id="' + esc(userId) + '" data-user-name="' + esc(name) + '" data-bounty-url="https://www.torn.com/bounties.php#/!p=add&userID=' + esc(userId) + '">Bounty</button>'
+                ) + '\
+              </div>\
+            </div>\
+          </div>';
+    }
 
     function renderGroup(key, title, openByDefault) {
         var list = grouped[key] || [];
@@ -2292,22 +2316,23 @@ function renderMemberRow(m) {
           <span class="warhub-count">' + fmtNum(filtered.length) + ' / ' + fmtNum(members.length) + '</span>\
         </div>\
 \
-        <div style="margin-top:12px;">\
-          <label class="warhub-label">Search Members</label>\
-          <input class="warhub-input" id="wh-members-search" placeholder="Search name or ID" value="' + esc(savedSearch) + '">\
-        </div>\
-\
-        <div style="margin-top:12px;">\
-          <label class="warhub-label">Status Filter</label>\
-          <select class="warhub-input" id="wh-members-filter">\
-            <option value="all"' + (savedFilter === 'all' ? ' selected' : '') + '>All</option>\
-            <option value="online"' + (savedFilter === 'online' ? ' selected' : '') + '>Online</option>\
-            <option value="idle"' + (savedFilter === 'idle' ? ' selected' : '') + '>Idle</option>\
-            <option value="travel"' + (savedFilter === 'travel' ? ' selected' : '') + '>Travel</option>\
-            <option value="jail"' + (savedFilter === 'jail' ? ' selected' : '') + '>Jail</option>\
-            <option value="hospital"' + (savedFilter === 'hospital' ? ' selected' : '') + '>Hospital</option>\
-            <option value="offline"' + (savedFilter === 'offline' ? ' selected' : '') + '>Offline</option>\
-          </select>\
+        <div class="warhub-grid two" style="margin-top:12px;">\
+          <div>\
+            <label class="warhub-label">Search Members</label>\
+            <input class="warhub-input" id="wh-members-search" placeholder="Search name or ID" value="' + esc(savedSearch) + '">\
+          </div>\
+          <div>\
+            <label class="warhub-label">Status Filter</label>\
+            <select class="warhub-input" id="wh-members-filter">\
+              <option value="all"' + (savedFilter === 'all' ? ' selected' : '') + '>All</option>\
+              <option value="online"' + (savedFilter === 'online' ? ' selected' : '') + '>Online</option>\
+              <option value="idle"' + (savedFilter === 'idle' ? ' selected' : '') + '>Idle</option>\
+              <option value="travel"' + (savedFilter === 'travel' ? ' selected' : '') + '>Travel</option>\
+              <option value="jail"' + (savedFilter === 'jail' ? ' selected' : '') + '>Jail</option>\
+              <option value="hospital"' + (savedFilter === 'hospital' ? ' selected' : '') + '>Hospital</option>\
+              <option value="offline"' + (savedFilter === 'offline' ? ' selected' : '') + '>Offline</option>\
+            </select>\
+          </div>\
         </div>\
       </div>\
 \
@@ -2323,7 +2348,7 @@ function scrapeEnemyMembersFromPage() {
 }
 
 function getEnemyMembersForTab() {
-    return Array.isArray(warEnemiesCache) ? warEnemiesCache : [];
+    return Array.isArray(enemyMembersCache) ? enemyMembersCache : [];
 }
 
 function toStatNum(v) {
@@ -3093,6 +3118,11 @@ function _logoutSession() {
 
         GM_deleteValue(K_SESSION);
         state = null;
+        factionMembersCache = [];
+        enemyMembersCache = [];
+        warEnemiesCache = [];
+        warEnemiesFactionName = '';
+        warEnemiesFactionId = '';
         saveAccessCache(null);
         currentFactionMembers = [];
         factionPaymentCache = null;
@@ -3108,6 +3138,8 @@ function _logoutSession() {
             user_count: 0,
             total_count: 0
         };
+
+        setWarEnemyStatsCache([]);
 
         setStatus('Logged out.');
         renderBody();
