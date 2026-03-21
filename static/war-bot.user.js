@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         War Hub ⚔️
 // @namespace    fries91-war-hub
-// @version      3.1.7
+// @version      3.1.8
 // @description  War Hub by Fries91. Faction-license aware overlay with draggable icon, draggable overlay, PDA friendly, shared war tools, faction member management, and payment lock handling.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -79,7 +79,8 @@
     var state = null;
     var analyticsCache = null;
     var adminTopFiveCache = null;
-    var factionMembersCache = null;
+    var factionMembersCache = [];
+    var enemyMembersCache = [];
     var currentFactionMembers = [];
     var liveSummaryCache = null;
     var liveSummaryLoading = false;
@@ -1119,36 +1120,57 @@ function canSeeAdmin() {
     // 12. STATE LOADERS
     // ============================================================
 
-    function loadState() {
-        return _loadState.apply(this, arguments);
-    }
-
-    function _loadState() {
-        _loadState = _asyncToGenerator(function* () {
-            if (!isLoggedIn()) {
-                state = null;
-                renderBody();
-                return null;
-            }
-
-            var res = yield authedReq('GET', '/api/state');
-            if (!res.ok) {
-                if (res.status === 401 || res.status === 403) {
-                    GM_deleteValue(K_SESSION);
-                    state = null;
-                }
-                setStatus(res.error || 'Could not load state.', true);
-                renderBody();
-                return null;
-            }
-
-            state = res.data || {};
-            if (state && state.access) saveAccessCache(state.access);
+function _loadState() {
+    _loadState = _asyncToGenerator(function* () {
+        if (!isLoggedIn()) {
+            state = null;
+            factionMembersCache = [];
             renderBody();
-            return state;
+            return null;
+        }
+
+        var res = yield authedReq('GET', '/api/state');
+        if (!res.ok) {
+            if (res.status === 401 || res.status === 403) {
+                GM_deleteValue(K_SESSION);
+                state = null;
+                factionMembersCache = [];
+            }
+            setStatus(res.error || 'Could not load state.', true);
+            renderBody();
+            return null;
+        }
+
+        state = res.data || {};
+        if (state && state.access) saveAccessCache(state.access);
+
+        var myFactionId = String(
+            (state && state.my_faction_id) ||
+            (state && state.our_faction_id) ||
+            (state && state.faction_id) ||
+            (state && state.user && state.user.faction_id) ||
+            ''
+        ).trim();
+
+        var rawMembers = arr((state && state.members) || []);
+        factionMembersCache = rawMembers.filter(function (m) {
+            var mfid = String(
+                m.faction_id ||
+                m.member_faction_id ||
+                m.faction ||
+                ''
+            ).trim();
+
+            if (!myFactionId) return true;
+            if (!mfid) return true;
+            return mfid === myFactionId;
         });
-        return _loadState.apply(this, arguments);
-    }
+
+        renderBody();
+        return state;
+    });
+    return _loadState.apply(this, arguments);
+}
 
     function loadFactionPaymentStatus() {
         return _asyncToGenerator(function* () {
@@ -1411,6 +1433,7 @@ function loadWarEnemiesById(force) {
         window.__warEnemyDebug.war_id = warId || '';
 
         if (!warId) {
+            enemyMembersCache = [];
             warEnemiesCache = [];
             warEnemiesFactionName = '';
             warEnemiesFactionId = '';
@@ -1423,6 +1446,7 @@ function loadWarEnemiesById(force) {
         try {
             res = yield authedReq('GET', '/api/war/enemies?war_id=' + encodeURIComponent(warId));
         } catch (err) {
+            enemyMembersCache = [];
             warEnemiesCache = [];
             warEnemiesFactionName = '';
             warEnemiesFactionId = '';
@@ -1432,6 +1456,7 @@ function loadWarEnemiesById(force) {
         }
 
         if (!res || !res.ok) {
+            enemyMembersCache = [];
             warEnemiesCache = [];
             warEnemiesFactionName = '';
             warEnemiesFactionId = '';
@@ -1451,7 +1476,8 @@ function loadWarEnemiesById(force) {
         }
 
         var data = (res && res.data) ? res.data : {};
-        warEnemiesCache = Array.isArray(data.enemy_members) ? data.enemy_members : [];
+        enemyMembersCache = Array.isArray(data.enemy_members) ? data.enemy_members : [];
+        warEnemiesCache = enemyMembersCache.slice();
         warEnemiesFactionName = String(data.enemy_faction_name || '');
         warEnemiesFactionId = String(data.enemy_faction_id || '');
         warEnemiesLoadedAt = Date.now();
@@ -1468,13 +1494,13 @@ function loadWarEnemiesById(force) {
             status: Number((res && res.status) || 200) || 200,
             error: '',
             enemy_members_count: Number(data.enemy_members_count || 0) || 0,
-            raw_enemy_members_length: warEnemiesCache.length,
+            raw_enemy_members_length: enemyMembersCache.length,
             enemy_faction_name: warEnemiesFactionName,
             enemy_faction_id: warEnemiesFactionId,
             debug: data.debug || {}
         };
 
-        return warEnemiesCache;
+        return enemyMembersCache;
     })();
 }
 
@@ -1655,21 +1681,6 @@ function getMe() {
               <button class="warhub-close" id="warhub-close-btn">Close</button>\
             </div>\
           </div>';
-    }
-
-    function renderTabs() {
-        var html = TAB_ORDER.map(function (pair) {
-            var key = pair[0];
-            var label = pair[1];
-
-            if (key === 'admin' && !isOwnerSession()) return '';
-            if (key === 'faction' && !isFactionLeader() && !isOwnerSession()) return '';
-            if (key === 'members' && !isFactionLeader() && !isOwnerSession()) return '';
-
-            return '<button class="warhub-tab ' + (currentTab === key ? 'active' : '') + '" data-tab="' + esc(key) + '">' + esc(label) + '</button>';
-        }).join('');
-
-        return '<div class="warhub-tabs">' + html + '</div>';
     }
 
  function renderTabs() {
@@ -2065,7 +2076,19 @@ function renderChainTab() {
     }
 
 function renderMembersTab() {
-    var members = arr((state && state.members) || []);
+    var myFactionId = String(
+        (state && state.my_faction_id) ||
+        (state && state.our_faction_id) ||
+        (state && state.faction_id) ||
+        ''
+    ).trim();
+
+    var members = (Array.isArray(factionMembersCache) ? factionMembersCache : []).filter(function (m) {
+        var mfid = String(m.faction_id || m.member_faction_id || '').trim();
+        if (!myFactionId) return true;
+        if (!mfid) return true;
+        return mfid === myFactionId;
+    });
 
     var savedSearch = String(GM_getValue('warhub_members_search', '') || '').trim().toLowerCase();
     var savedFilter = String(GM_getValue('warhub_members_filter', 'all') || 'all').trim().toLowerCase();
@@ -2086,9 +2109,9 @@ function renderMembersTab() {
         var mins = Math.floor((total % 3600) / 60);
         var remSecs = total % 60;
 
-        if (days > 0) return days + 'd ' + (hours > 0 ? hours + 'h' : '');
-        if (hours > 0) return hours + 'h ' + (mins > 0 ? mins + 'm' : '');
-        if (mins > 0) return mins + 'm ' + (remSecs > 0 ? remSecs + 's' : '');
+        if (days > 0) return days + 'd ' + (hours > 0 ? ' ' + hours + 'h' : '');
+        if (hours > 0) return hours + 'h' + (mins > 0 ? ' ' + mins + 'm' : '');
+        if (mins > 0) return mins + 'm' + (remSecs > 0 ? ' ' + remSecs + 's' : '');
         return remSecs + 's';
     }
 
@@ -2199,7 +2222,22 @@ function renderMembersTab() {
         return 0;
     });
 
-    var cardsHtml = filtered.map(function (m) {
+    var grouped = {
+        online: [],
+        idle: [],
+        travel: [],
+        jail: [],
+        hospital: [],
+        offline: []
+    };
+
+    filtered.forEach(function (m) {
+        var s = memberState(m);
+        if (!grouped[s]) grouped[s] = [];
+        grouped[s].push(m);
+    });
+
+    function renderMemberRow(m) {
         var name = String(m.name || m.user_name || m.member_name || 'Unknown');
         var userId = String(m.user_id || m.id || '').trim();
         var stateName = memberState(m);
@@ -2212,64 +2250,64 @@ function renderMembersTab() {
         var energyMax = toNum(m.energy_max);
         var liveOk = hasLiveStats(m);
 
-        var statusLine = String(m.status_detail || m.status || m.last_action || '').trim();
-
-        if (stateName === 'hospital') {
-            var hospSecs = toNum(m.hospital_seconds);
-            statusLine = hospSecs > 0 ? ('Hospital for ' + shortTime(hospSecs)) : 'Hospitalized';
-        } else if (stateName === 'jail') {
-            statusLine = statusLine || 'In jail';
-        } else if (stateName === 'travel') {
-            statusLine = statusLine || 'Travelling';
-        } else if (stateName === 'idle') {
-            statusLine = statusLine || 'Idle';
-        } else if (stateName === 'online') {
-            statusLine = statusLine || 'Online';
-        } else {
-            statusLine = statusLine || 'Offline';
-        }
-
-        var attackUrl = String(m.attack_url || '').trim();
         var profileUrl = String(m.profile_url || '').trim();
         var bountyUrl = String(m.bounty_url || '').trim();
 
         return '\
-          <div class="warhub-card" style="margin-top:12px;">\
-            <div class="warhub-row" style="justify-content:space-between;align-items:center;gap:8px;">\
-              <div>\
-                <div class="warhub-name">' +
-                    (profileUrl
-                        ? '<a href="' + esc(profileUrl) + '" target="_blank" rel="noopener noreferrer">' + esc(name) + '</a>'
-                        : esc(name)
-                    ) +
-                    (userId ? ' [' + esc(userId) + ']' : '') +
+          <div class="warhub-card" style="margin-top:6px;padding:7px 8px;">\
+            <div style="display:flex;align-items:center;gap:6px;flex-wrap:nowrap;">\
+              <div style="min-width:0;flex:1 1 auto;overflow:hidden;">\
+                <div class="warhub-name" style="font-size:12px;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' +
+                  (profileUrl
+                    ? '<a href="' + esc(profileUrl) + '" target="_blank" rel="noopener noreferrer">' + esc(name) + '</a>'
+                    : esc(name)
+                  ) +
                 '</div>\
-                <div class="warhub-mini" style="margin-top:4px;">' + esc(statusLine) + '</div>\
               </div>\
-              <div class="' + esc(pillClass) + '">' + esc(pillText) + '</div>\
-            </div>\
 \
-            <div style="margin-top:12px;padding:10px 12px;border-radius:12px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;gap:14px;flex-wrap:wrap;">\
-              <div style="display:flex;align-items:center;gap:6px;white-space:nowrap;">\
+              <div class="' + esc(pillClass) + '" style="flex:0 0 auto;font-size:10px;padding:2px 6px;white-space:nowrap;">' + esc(pillText) + '</div>\
+\
+              <div style="display:flex;align-items:center;gap:3px;flex:0 0 auto;font-size:11px;white-space:nowrap;">\
                 <span title="Energy">⚡</span>\
                 <span>' + esc(statText(energyCurrent, energyMax)) + '</span>\
               </div>\
-              <div style="display:flex;align-items:center;gap:6px;white-space:nowrap;">\
+\
+              <div style="display:flex;align-items:center;gap:3px;flex:0 0 auto;font-size:11px;white-space:nowrap;">\
                 <span title="Medical Cooldown">💊</span>\
                 <span>' + esc(liveOk ? medCdText(m) : '--') + '</span>\
               </div>\
-              <div style="display:flex;align-items:center;gap:6px;white-space:nowrap;">\
+\
+              <div style="display:flex;align-items:center;gap:3px;flex:0 0 auto;font-size:11px;white-space:nowrap;">\
                 <span title="Life">➕</span>\
                 <span>' + esc(statText(lifeCurrent, lifeMax)) + '</span>\
               </div>\
-            </div>\
 \
-            <div class="warhub-actions" style="margin-top:12px;">\
-              ' + (attackUrl ? '<a class="warhub-btn primary" href="' + esc(attackUrl) + '" target="_blank" rel="noopener noreferrer">Attack</a>' : '') + '\
-              ' + (bountyUrl ? '<a class="warhub-btn" href="' + esc(bountyUrl) + '" target="_blank" rel="noopener noreferrer">Bounty</a>' : '<button class="warhub-btn" data-member-bounty="1" data-user-id="' + esc(userId) + '" data-user-name="' + esc(name) + '">Bounty</button>') + '\
+              <div class="warhub-actions" style="display:flex;align-items:center;gap:4px;flex:0 0 auto;margin-left:2px;">\
+                ' + (bountyUrl
+                    ? '<a class="warhub-btn" style="padding:4px 7px;font-size:11px;min-height:auto;" href="' + esc(bountyUrl) + '" target="_blank" rel="noopener noreferrer">Bounty</a>'
+                    : '<button class="warhub-btn" style="padding:4px 7px;font-size:11px;min-height:auto;" data-member-bounty="1" data-user-id="' + esc(userId) + '" data-user-name="' + esc(name) + '" data-bounty-url="https://www.torn.com/bounties.php#/!p=add&userID=' + esc(userId) + '">Bounty</button>'
+                ) + '\
+              </div>\
             </div>\
           </div>';
-    }).join('');
+    }
+
+    function renderGroup(key, title, openByDefault) {
+        var list = grouped[key] || [];
+        var isOpen = openByDefault ? ' open' : '';
+        var inner = list.length
+            ? list.map(renderMemberRow).join('')
+            : '<div class="warhub-card" style="margin-top:8px;">No members in this section.</div>';
+
+        return '\
+          <details class="warhub-card" style="margin-top:12px;"' + isOpen + '>\
+            <summary style="cursor:pointer;list-style:none;display:flex;align-items:center;justify-content:space-between;gap:8px;font-weight:800;">\
+              <span>' + esc(title) + '</span>\
+              <span class="warhub-count">' + fmtNum(list.length) + '</span>\
+            </summary>\
+            <div style="margin-top:10px;">' + inner + '</div>\
+          </details>';
+    }
 
     return '\
       <div class="warhub-card warhub-hero-card">\
@@ -2296,17 +2334,21 @@ function renderMembersTab() {
             </select>\
           </div>\
         </div>\
-\
-        <div class="warhub-mini" style="margin-top:10px;">Classic member card layout with inline ⚡ energy, 💊 med cooldown, and ➕ life.</div>\
       </div>\
-      ' + (cardsHtml || '<div class="warhub-card" style="margin-top:12px;">No members found.</div>');
+\
+      ' + renderGroup('online', '🟢 Online', true) + '\
+      ' + renderGroup('idle', '🟡 Idle', false) + '\
+      ' + renderGroup('travel', '✈️ Travel', false) + '\
+      ' + renderGroup('jail', '⛓️ Jail', false) + '\
+      ' + renderGroup('hospital', '🏥 Hospital', false) + '\
+      ' + renderGroup('offline', '⚫ Offline', false);
 }
 function scrapeEnemyMembersFromPage() {
     return [];
 }
 
 function getEnemyMembersForTab() {
-    return Array.isArray(warEnemiesCache) ? warEnemiesCache : [];
+    return Array.isArray(enemyMembersCache) ? enemyMembersCache : [];
 }
 
 function toStatNum(v) {
@@ -2516,6 +2558,23 @@ function renderEnemiesTab() {
     }
 
     function sortEnemies(a, b) {
+        var order = {
+            online: 1,
+            idle: 2,
+            travel: 3,
+            jail: 4,
+            hospital: 5,
+            offline: 6
+        };
+
+        var aState = enemyState(a);
+        var bState = enemyState(b);
+
+        var aOrder = order[aState] || 99;
+        var bOrder = order[bState] || 99;
+
+        if (aOrder !== bOrder) return aOrder - bOrder;
+
         var aName = String(a.name || a.user_name || a.member_name || '').toLowerCase();
         var bName = String(b.name || b.user_name || b.member_name || '').toLowerCase();
 
@@ -2541,30 +2600,25 @@ function renderEnemiesTab() {
         groups[s].push(e);
     });
 
+    function renderEnemySpyInline(e) {
+        var userId = String((e && (e.user_id || e.id)) || '').trim();
+        var spy = getEnemySpyById(userId);
+
+        if (!spy) {
+            return '<div class="warhub-mini" style="font-size:10px;padding:2px 6px;border-radius:999px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);white-space:nowrap;">No Spy</div>';
+        }
+
+        var label = spy.exact ? 'Exact' : (spy.predicted ? 'Pred' : 'Spy');
+        var total = fmtStat(spy.total);
+        return '<div class="warhub-mini" style="font-size:10px;padding:2px 6px;border-radius:999px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);white-space:nowrap;">' + esc(label + ': ' + total) + '</div>';
+    }
+
     function renderEnemyRow(e) {
         var name = String(e.name || e.user_name || e.member_name || 'Unknown');
         var userId = String(e.user_id || e.id || '').trim();
-        var level = String(e.level || '').trim();
-        var position = String(e.position || '').trim();
         var stateName = enemyState(e);
         var pillClass = statePillClass(stateName);
         var pillText = stateLabel(stateName, e);
-
-        var statusLine = String(e.display_status || e.status_detail || e.status || e.last_action || '').trim();
-        if (stateName === 'hospital') {
-            var hospSecs = toNum(e.hospital_seconds);
-            statusLine = hospSecs > 0 ? ('Hospital for ' + shortTime(hospSecs)) : 'Hospitalized';
-        } else if (stateName === 'jail') {
-            statusLine = statusLine || 'In jail';
-        } else if (stateName === 'travel') {
-            statusLine = statusLine || 'Travelling';
-        } else if (stateName === 'idle') {
-            statusLine = statusLine || 'Idle';
-        } else if (stateName === 'online') {
-            statusLine = statusLine || 'Online';
-        } else {
-            statusLine = statusLine || 'Offline';
-        }
 
         var attackUrl = String(
             e.attack_url ||
@@ -2576,58 +2630,53 @@ function renderEnemiesTab() {
             (userId ? ('https://www.torn.com/profiles.php?XID=' + encodeURIComponent(userId)) : '')
         ).trim();
 
-        var bountyUrl = String(
-            e.bounty_url ||
-            (userId ? ('https://www.torn.com/bounties.php?userID=' + encodeURIComponent(userId)) : '')
-        ).trim();
-
         return '\
-          <div class="warhub-card" style="margin-top:10px;">\
-            <div class="warhub-row" style="justify-content:space-between;align-items:center;gap:8px;">\
-              <div>\
-                <div class="warhub-name" style="color:#fff !important;">' + esc(name) + (userId ? ' [' + esc(userId) + ']' : '') + '</div>\
-                <div class="warhub-mini" style="margin-top:4px;">' + esc(statusLine) + '</div>\
+          <div class="warhub-card" style="margin-top:6px;padding:7px 8px;">\
+            <div style="display:flex;align-items:center;gap:6px;flex-wrap:nowrap;">\
+              <div style="min-width:0;flex:1 1 auto;overflow:hidden;display:flex;align-items:center;gap:6px;">\
+                <div class="warhub-name" style="font-size:12px;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;">' +
+                  (profileUrl
+                    ? '<a href="' + esc(profileUrl) + '" target="_blank" rel="noopener noreferrer">' + esc(name) + '</a>'
+                    : esc(name)
+                  ) +
+                '</div>\
+\
+                <div style="flex:0 0 auto;min-width:0;">' + renderEnemySpyInline(e) + '</div>\
               </div>\
-              <div class="' + pillClass + '">' + esc(pillText) + '</div>\
-            </div>\
 \
-            <div style="margin-top:10px;padding:10px 12px;border-radius:12px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;gap:14px;flex-wrap:wrap;">\
-              <div style="white-space:nowrap;"><strong>Lvl:</strong> ' + esc(level || '--') + '</div>\
-              <div style="white-space:nowrap;"><strong>Role:</strong> ' + esc(position || '--') + '</div>\
-              <div style="white-space:nowrap;"><strong>Status:</strong> ' + esc(pillText) + '</div>\
-            </div>\
+              <div class="' + esc(pillClass) + '" style="flex:0 0 auto;font-size:10px;padding:2px 6px;white-space:nowrap;">' + esc(pillText) + '</div>\
 \
-            ' + renderEnemySpyBlock(e) + '\
-\
-            <div class="warhub-actions" style="margin-top:10px;">\
-              ' + (attackUrl ? '<a class="warhub-btn primary" href="' + esc(attackUrl) + '" target="_blank" rel="noopener noreferrer">Attack</a>' : '') + '\
-              ' + (profileUrl ? '<a class="warhub-btn" href="' + esc(profileUrl) + '" target="_blank" rel="noopener noreferrer">Profile</a>' : '') + '\
-              ' + (bountyUrl ? '<a class="warhub-btn" href="' + esc(bountyUrl) + '" target="_blank" rel="noopener noreferrer">Bounty</a>' : '') + '\
+              <div class="warhub-actions" style="display:flex;align-items:center;gap:4px;flex:0 0 auto;margin-left:2px;">\
+                ' + (attackUrl ? '<a class="warhub-btn primary" style="padding:4px 7px;font-size:11px;min-height:auto;" href="' + esc(attackUrl) + '" target="_blank" rel="noopener noreferrer">Attack</a>' : '') + '\
+              </div>\
             </div>\
           </div>';
     }
 
-    function renderGroup(title, key, pillClass) {
+    function renderGroup(title, key, pillClass, openByDefault) {
         var list = groups[key] || [];
-        if (!list.length) return '';
+        var isOpen = openByDefault ? ' open' : '';
+        var inner = list.length
+            ? list.map(renderEnemyRow).join('')
+            : '<div class="warhub-card" style="margin-top:8px;">No enemies in this section.</div>';
 
         return '\
-          <div class="warhub-card" style="margin-top:12px;">\
-            <div class="warhub-section-title">\
-              <h3>' + esc(title) + '</h3>\
+          <details class="warhub-card" style="margin-top:12px;"' + isOpen + '>\
+            <summary style="cursor:pointer;list-style:none;display:flex;align-items:center;justify-content:space-between;gap:8px;font-weight:800;">\
+              <span>' + esc(title) + '</span>\
               <span class="' + esc(pillClass) + '">' + fmtNum(list.length) + '</span>\
-            </div>\
-            ' + list.map(renderEnemyRow).join('') + '\
-          </div>';
+            </summary>\
+            <div style="margin-top:10px;">' + inner + '</div>\
+          </details>';
     }
 
     var groupedHtml =
-        renderGroup('Online', 'online', 'warhub-pill good') +
-        renderGroup('Idle', 'idle', 'warhub-pill neutral') +
-        renderGroup('Travel', 'travel', 'warhub-pill travel') +
-        renderGroup('Jail', 'jail', 'warhub-pill jail') +
-        renderGroup('Hospital', 'hospital', 'warhub-pill bad') +
-        renderGroup('Offline', 'offline', 'warhub-pill');
+        renderGroup('Online', 'online', 'warhub-pill good', true) +
+        renderGroup('Idle', 'idle', 'warhub-pill neutral', false) +
+        renderGroup('Travel', 'travel', 'warhub-pill travel', false) +
+        renderGroup('Jail', 'jail', 'warhub-pill jail', false) +
+        renderGroup('Hospital', 'hospital', 'warhub-pill bad', false) +
+        renderGroup('Offline', 'offline', 'warhub-pill', false);
 
     return '\
       <div class="warhub-card warhub-hero-card">\
@@ -3069,6 +3118,11 @@ function _logoutSession() {
 
         GM_deleteValue(K_SESSION);
         state = null;
+        factionMembersCache = [];
+        enemyMembersCache = [];
+        warEnemiesCache = [];
+        warEnemiesFactionName = '';
+        warEnemiesFactionId = '';
         saveAccessCache(null);
         currentFactionMembers = [];
         factionPaymentCache = null;
@@ -3084,6 +3138,8 @@ function _logoutSession() {
             user_count: 0,
             total_count: 0
         };
+
+        setWarEnemyStatsCache([]);
 
         setStatus('Logged out.');
         renderBody();
