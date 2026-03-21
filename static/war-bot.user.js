@@ -2065,7 +2065,11 @@ function renderChainTab() {
     }
 
 function renderMembersTab() {
-    var members = arr((state && state.members) || []);
+    function renderMembersTab() {
+    var members = Array.isArray(currentFactionMembers) ? currentFactionMembers : [];
+
+    var savedSearch = String(GM_getValue('warhub_members_search', '') || '').trim().toLowerCase();
+    var savedFilter = String(GM_getValue('warhub_members_filter', 'all') || 'all').trim().toLowerCase();
 
     var savedSearch = String(GM_getValue('warhub_members_search', '') || '').trim().toLowerCase();
     var savedFilter = String(GM_getValue('warhub_members_filter', 'all') || 'all').trim().toLowerCase();
