@@ -2219,7 +2219,6 @@ function renderMemberRow(m) {
     var stateName = memberState(m);
     var pillClass = statePillClass(stateName);
     var pillText = stateLabel(stateName, m);
-    var statusLine = memberStatusLine(m, stateName);
 
     var lifeCurrent = toNum(m.life_current);
     var lifeMax = toNum(m.life_max);
@@ -2227,47 +2226,42 @@ function renderMemberRow(m) {
     var energyMax = toNum(m.energy_max);
     var liveOk = hasLiveStats(m);
 
-    var attackUrl = String(m.attack_url || '').trim();
     var profileUrl = String(m.profile_url || '').trim();
     var bountyUrl = String(m.bounty_url || '').trim();
 
     return '\
-      <div class="warhub-card" style="margin-top:8px;padding:8px 10px;overflow-x:auto;">\
-        <div class="warhub-member-row" style="display:flex;align-items:center;gap:10px;flex-wrap:nowrap;min-width:max-content;white-space:nowrap;">\
-          <div style="min-width:190px;flex:0 0 190px;overflow:hidden;text-overflow:ellipsis;">\
-            <div class="warhub-name" style="font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' +
-                (profileUrl
-                    ? '<a href="' + esc(profileUrl) + '" target="_blank" rel="noopener noreferrer">' + esc(name) + '</a>'
-                    : esc(name)
-                ) +
-                (userId ? ' [' + esc(userId) + ']' : '') +
+      <div class="warhub-card" style="margin-top:6px;padding:7px 8px;">\
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:nowrap;">\
+          <div style="min-width:0;flex:1 1 auto;overflow:hidden;">\
+            <div class="warhub-name" style="font-size:12px;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' +
+              (profileUrl
+                ? '<a href="' + esc(profileUrl) + '" target="_blank" rel="noopener noreferrer">' + esc(name) + '</a>'
+                : esc(name)
+              ) +
             '</div>\
           </div>\
 \
-          <div style="min-width:150px;flex:0 0 150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" class="warhub-mini">' + esc(statusLine) + '</div>\
+          <div class="' + esc(pillClass) + '" style="flex:0 0 auto;font-size:10px;padding:2px 6px;white-space:nowrap;">' + esc(pillText) + '</div>\
 \
-          <div class="' + esc(pillClass) + '" style="flex:0 0 auto;white-space:nowrap;">' + esc(pillText) + '</div>\
-\
-          <div style="display:flex;align-items:center;gap:6px;flex:0 0 auto;white-space:nowrap;">\
+          <div style="display:flex;align-items:center;gap:3px;flex:0 0 auto;font-size:11px;white-space:nowrap;">\
             <span title="Energy">⚡</span>\
             <span>' + esc(statText(energyCurrent, energyMax)) + '</span>\
           </div>\
 \
-          <div style="display:flex;align-items:center;gap:6px;flex:0 0 auto;white-space:nowrap;">\
+          <div style="display:flex;align-items:center;gap:3px;flex:0 0 auto;font-size:11px;white-space:nowrap;">\
             <span title="Medical Cooldown">💊</span>\
             <span>' + esc(liveOk ? medCdText(m) : '--') + '</span>\
           </div>\
 \
-          <div style="display:flex;align-items:center;gap:6px;flex:0 0 auto;white-space:nowrap;">\
+          <div style="display:flex;align-items:center;gap:3px;flex:0 0 auto;font-size:11px;white-space:nowrap;">\
             <span title="Life">➕</span>\
             <span>' + esc(statText(lifeCurrent, lifeMax)) + '</span>\
           </div>\
 \
-          <div class="warhub-actions" style="display:flex;align-items:center;gap:6px;flex:0 0 auto;margin-left:8px;">\
-            ' + (attackUrl ? '<a class="warhub-btn primary" href="' + esc(attackUrl) + '" target="_blank" rel="noopener noreferrer">Attack</a>' : '') + '\
+          <div class="warhub-actions" style="display:flex;align-items:center;gap:4px;flex:0 0 auto;margin-left:2px;">\
             ' + (bountyUrl
-                ? '<a class="warhub-btn" href="' + esc(bountyUrl) + '" target="_blank" rel="noopener noreferrer">Bounty</a>'
-                : '<button class="warhub-btn" data-member-bounty="1" data-user-id="' + esc(userId) + '" data-user-name="' + esc(name) + '" data-bounty-url="https://www.torn.com/bounties.php#/!p=add&userID=' + esc(userId) + '">Bounty</button>'
+                ? '<a class="warhub-btn" style="padding:4px 7px;font-size:11px;min-height:auto;" href="' + esc(bountyUrl) + '" target="_blank" rel="noopener noreferrer">Bounty</a>'
+                : '<button class="warhub-btn" style="padding:4px 7px;font-size:11px;min-height:auto;" data-member-bounty="1" data-user-id="' + esc(userId) + '" data-user-name="' + esc(name) + '" data-bounty-url="https://www.torn.com/bounties.php#/!p=add&userID=' + esc(userId) + '">Bounty</button>'
             ) + '\
           </div>\
         </div>\
