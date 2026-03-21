@@ -3220,7 +3220,6 @@ function bindOverlayEvents() {
             renderBody();
         });
     }
-}
 
     var membersSearchInput = overlay.querySelector('#wh-members-search');
     if (membersSearchInput && !membersSearchInput.__warhubBound) {
