@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         War Hub ⚔️
 // @namespace    fries91-war-hub
-// @version      3.2.2
+// @version      3.2.3
 // @description  War Hub by Fries91. Faction-license aware overlay with draggable icon, draggable overlay, PDA friendly, shared war tools, faction member management, and payment lock handling.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -19,8 +19,8 @@
 (function () {
     'use strict';
 
-    if (window.__WAR_HUB_V286__) return;
-    window.__WAR_HUB_V286__ = true;
+    if (window.__WAR_HUB_V287__) return;
+    window.__WAR_HUB_V287__ = true;
 
     // ============================================================
     // 01. CORE CONFIG / STORAGE KEYS
