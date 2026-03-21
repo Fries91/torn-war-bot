@@ -1130,41 +1130,45 @@ function _loadState() {
         }
 
         var res = yield authedReq('GET', '/api/state');
-        if (!res.ok) {
-            if (res.status === 401 || res.status === 403) {
+        if (!res || !res.ok) {
+            if (res && (res.status === 401 || res.status === 403)) {
                 GM_deleteValue(K_SESSION);
                 state = null;
                 factionMembersCache = [];
             }
-            setStatus(res.error || 'Could not load state.', true);
+            setStatus((res && res.error) || 'Could not load state.', true);
             renderBody();
             return null;
         }
 
-        state = res.data || {};
+        var payload = res.data || {};
+        state = payload && payload.data && typeof payload.data === 'object' ? payload.data : payload;
+
         if (state && state.access) saveAccessCache(state.access);
 
-        var myFactionId = String(
-            (state && state.my_faction_id) ||
-            (state && state.our_faction_id) ||
-            (state && state.faction_id) ||
-            (state && state.user && state.user.faction_id) ||
-            ''
-        ).trim();
-
-        var rawMembers = arr((state && state.members) || []);
-        factionMembersCache = rawMembers.filter(function (m) {
-            var mfid = String(
-                m.faction_id ||
-                m.member_faction_id ||
-                m.faction ||
+        try {
+            var myFactionId = String(
+                (state && state.my_faction_id) ||
+                (state && state.our_faction_id) ||
+                (state && state.faction_id) ||
+                (state && state.user && state.user.faction_id) ||
                 ''
             ).trim();
 
-            if (!myFactionId) return true;
-            if (!mfid) return true;
-            return mfid === myFactionId;
-        });
+            var rawMembers = arr((state && state.members) || []);
+            factionMembersCache = rawMembers.filter(function (m) {
+                var mfid = String(
+                    (m && (m.faction_id || m.member_faction_id || m.faction)) || ''
+                ).trim();
+
+                if (!myFactionId) return true;
+                if (!mfid) return true;
+                return mfid === myFactionId;
+            });
+        } catch (err) {
+            console.error('factionMembersCache build failed', err);
+            factionMembersCache = arr((state && state.members) || []);
+        }
 
         renderBody();
         return state;
@@ -3063,45 +3067,81 @@ function loginWithSavedKey() {
 
 function _loginWithSavedKey() {
     _loginWithSavedKey = _asyncToGenerator(function* () {
-        var apiKey = cleanInputValue(GM_getValue(K_API_KEY, ''));
-        if (!apiKey) {
-            setStatus('Save your API key first.', true);
-            return;
+        try {
+            var apiKey = cleanInputValue(GM_getValue(K_API_KEY, ''));
+            if (!apiKey) {
+                setStatus('Save your API key first.', true);
+                return;
+            }
+
+            setStatus('Logging in...');
+
+            var res = yield req('POST', '/api/auth', {
+                api_key: apiKey
+            });
+
+            if (!res || !res.ok) {
+                setStatus((res && res.error) || 'Login failed.', true);
+                return;
+            }
+
+            var payload = (res && res.data) ? res.data : {};
+            var data = payload && payload.data && typeof payload.data === 'object' ? payload.data : payload;
+
+            var token = String(
+                (data && (data.session_token || data.token)) ||
+                (payload && (payload.session_token || payload.token)) ||
+                ''
+            ).trim();
+
+            if (!token) {
+                setStatus('Login failed: no session token returned.', true);
+                return;
+            }
+
+            GM_setValue(K_SESSION, token);
+
+            if (data && data.access) {
+                saveAccessCache(data.access);
+            } else if (payload && payload.access) {
+                saveAccessCache(payload.access);
+            }
+
+            setStatus('Login successful.');
+
+            try {
+                yield loadState();
+            } catch (err1) {
+                console.error('loadState failed after login', err1);
+            }
+
+            try {
+                if (canManageFaction()) {
+                    yield loadFactionMembers(true);
+                }
+            } catch (err2) {
+                console.error('loadFactionMembers failed after login', err2);
+            }
+
+            try {
+                yield refreshFactionPaymentData();
+            } catch (err3) {
+                console.error('refreshFactionPaymentData failed after login', err3);
+            }
+
+            try {
+                if (canSeeAdmin()) {
+                    yield loadAdminDashboard();
+                }
+            } catch (err4) {
+                console.error('loadAdminDashboard failed after login', err4);
+            }
+
+            renderBody();
+        } catch (err) {
+            console.error('loginWithSavedKey crashed', err);
+            setStatus('Login crashed: ' + String((err && err.message) || err || 'unknown error'), true);
         }
-
-        var res = yield authedReq('POST', '/api/auth', {
-            api_key: apiKey
-        });
-
-        if (!res.ok) {
-            setStatus(res.error || 'Login failed.', true);
-            return;
-        }
-
-        var data = res.data || {};
-        var token = String(data.session_token || data.token || '');
-        if (!token) {
-            setStatus('Login failed: no session token returned.', true);
-            return;
-        }
-
-        GM_setValue(K_SESSION, token);
-
-        if (data.access) saveAccessCache(data.access);
-
-        if (canManageFaction()) {
-            yield loadFactionMembers(true);
-        }
-
-        yield loadState();
-        yield refreshFactionPaymentData();
-
-        if (canSeeAdmin()) {
-            yield loadAdminDashboard();
-        }
-
-        setStatus('Logged in.');
-        renderBody();
     });
     return _loginWithSavedKey.apply(this, arguments);
 }
