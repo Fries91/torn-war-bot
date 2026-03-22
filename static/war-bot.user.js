@@ -4046,10 +4046,11 @@ function _tickCurrentTab() {
                     yield loadState();
                     yield loadFactionMembers(true);
                     renderBody();
+                    startMembersCountdownLoop();
                     restartPollingForCurrentTab();
                 })();
                 return;
-             }
+}
 
 if (currentTab === 'hospital' || currentTab === 'wartop5' || currentTab === 'overview' || currentTab === 'faction') {
     loadState().then(function () {
