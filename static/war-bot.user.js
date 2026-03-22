@@ -4069,7 +4069,7 @@ function mount() {
 // ============================================================
 
 function tabNeedsLivePolling(tab) {
-    return tab === 'summary' || tab === 'enemies' || tab === 'members';
+    return tab === 'summary' || tab === 'enemies';
 }
 
 function stopPolling() {
