@@ -3459,7 +3459,7 @@ if (tab === 'summary') {
             renderBody();
             restartPollingForCurrentTab();
         }));
-    }
+     });
 
     var saveKeysBtn = overlay.querySelector('#wh-save-keys');
     if (saveKeysBtn && !saveKeysBtn.__warhubBound) {
