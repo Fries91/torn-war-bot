@@ -3649,7 +3649,7 @@ function bindOverlayEvents() {
             renderBody();
             setStatus('Player exemption added.');
         }));
-    });
+    }
 
     overlay.querySelectorAll('[data-admin-remove-faction-exemption]').forEach(function (btn) {
         if (btn.__warhubBound) return;
