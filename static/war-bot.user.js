@@ -1532,28 +1532,6 @@ function getMe() {
         return arr(state && state.members);
     }
 
-    function getEnemyMembersForTab() {
-    var byId = {};
-    var out = [];
-
-    function addRows(rows) {
-        arr(rows).forEach(function (row) {
-            if (!row || typeof row !== 'object') return;
-
-            var id = String(row.user_id || row.member_user_id || row.id || '').trim();
-            if (!id || byId[id]) return;
-
-            byId[id] = true;
-            out.push(row);
-        });
-    }
-
-    addRows(warEnemiesCache);
-    addRows(state && state.enemy_members);
-
-    return out;
-}
-
 function getEnemyMembersForTab() {
     var factionRows = getFactionMembers();
     var ownIds = {};
@@ -3172,63 +3150,68 @@ function bindOverlayEvents() {
         }, { passive: true });
     }
 
+overlay.querySelectorAll('[data-tab]').forEach(function (btn) {
+    if (btn.__warhubBound) return;
+    btn.__warhubBound = true;
+
     btn.addEventListener('click', _asyncToGenerator(function* () {
-    var tab = btn.getAttribute('data-tab') || 'overview';
-    currentTab = tab;
-    GM_setValue(K_TAB, currentTab);
+        var tab = btn.getAttribute('data-tab') || 'overview';
+        currentTab = tab;
+        GM_setValue(K_TAB, currentTab);
 
-    stopPolling();
+        stopPolling();
 
-    if (tab === 'summary') {
-        yield loadLiveSummary(true);
+        if (tab === 'summary') {
+            yield loadLiveSummary(true);
+            renderBody();
+            restartPollingForCurrentTab();
+            return;
+        }
+
+        if (tab === 'members') {
+            GM_setValue('warhub_members_search', '');
+            GM_setValue('warhub_members_filter', 'all');
+            yield loadState();
+            renderBody();
+            restartPollingForCurrentTab();
+            return;
+        }
+
+        if (tab === 'enemies') {
+            GM_setValue('warhub_enemies_search', '');
+            GM_setValue('warhub_enemies_filter', 'all');
+            yield loadLiveSummary(true);
+            yield loadWarEnemiesById(true);
+            renderBody();
+            restartPollingForCurrentTab();
+            return;
+        }
+
+        if (tab === 'hospital') {
+            yield loadState();
+            renderBody();
+            restartPollingForCurrentTab();
+            return;
+        }
+
+        if (tab === 'wartop5') {
+            yield loadState();
+            renderBody();
+            restartPollingForCurrentTab();
+            return;
+        }
+
+        if (tab === 'admin' && canSeeAdmin()) {
+            yield loadAdminDashboard();
+            renderBody();
+            restartPollingForCurrentTab();
+            return;
+        }
+
         renderBody();
         restartPollingForCurrentTab();
-        return;
-    }
-
-    if (tab === 'members') {
-        GM_setValue('warhub_members_search', '');
-        GM_setValue('warhub_members_filter', 'all');
-        yield loadState();
-        renderBody();
-        restartPollingForCurrentTab();
-        return;
-    }
-
-    if (tab === 'enemies') {
-        GM_setValue('warhub_enemies_search', '');
-        GM_setValue('warhub_enemies_filter', 'all');
-        yield loadLiveSummary(true);
-        yield loadWarEnemiesById(true);
-        renderBody();
-        restartPollingForCurrentTab();
-        return;
-    }
-
-    if (tab === 'hospital') {
-        yield loadState();
-        renderBody();
-        restartPollingForCurrentTab();
-        return;
-    }
-
-    if (tab === 'wartop5') {
-        yield loadState();
-        renderBody();
-        restartPollingForCurrentTab();
-        return;
-    }
-
-    if (tab === 'admin' && canSeeAdmin()) {
-        yield loadAdminDashboard();
-        renderBody();
-        restartPollingForCurrentTab();
-        return;
-    }
-
-    renderBody();
-    restartPollingForCurrentTab();
-}));
+    }));
+});
 
     var saveKeysBtn = overlay.querySelector('#wh-save-keys');
     if (saveKeysBtn && !saveKeysBtn.__warhubBound) {
