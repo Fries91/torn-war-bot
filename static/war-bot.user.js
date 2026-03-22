@@ -2977,7 +2977,6 @@ function renderEnemyDebugCard() {
         switch (currentTab) {
             case 'overview': return renderOverviewTab();
             case 'faction': return renderFactionTab();
-            case 'war': return renderWarTab();
             case 'summary': return renderSummaryTab();
             case 'chain': return renderChainTab();
             case 'terms': return renderTermsTab();
@@ -3161,10 +3160,24 @@ function bindOverlayEvents() {
     if (saveKeysBtn && !saveKeysBtn.__warhubBound) {
         saveKeysBtn.__warhubBound = true;
         saveKeysBtn.addEventListener('click', function () {
-            var input = overlay.querySelector('#wh-api-key');
-            var apiKey = cleanInputValue(input ? input.value : '');
+            var apiKeyEl = overlay.querySelector('#wh-api-key');
+            var adminKeyEl = overlay.querySelector('#wh-admin-key');
+            var ownerTokenEl = overlay.querySelector('#wh-owner-token');
+            var refreshEl = overlay.querySelector('#wh-refresh-ms');
+
+            var apiKey = cleanInputValue(apiKeyEl ? apiKeyEl.value : '');
+            var adminKey = cleanInputValue(adminKeyEl ? adminKeyEl.value : '');
+            var ownerToken = cleanInputValue(ownerTokenEl ? ownerTokenEl.value : '');
+            var refreshMs = Number(refreshEl ? refreshEl.value : 30000) || 30000;
+            if (refreshMs < 5000) refreshMs = 5000;
+
             GM_setValue(K_API_KEY, apiKey);
-            setStatus(apiKey ? 'API key saved.' : 'API key cleared.');
+            GM_setValue(K_ADMIN_KEY, adminKey);
+            GM_setValue(K_OWNER_TOKEN, ownerToken);
+            GM_setValue(K_REFRESH, refreshMs);
+
+            restartPolling();
+            setStatus(apiKey ? 'Keys saved.' : 'API key cleared.');
             renderStatus();
         });
     }
@@ -3172,17 +3185,28 @@ function bindOverlayEvents() {
     var loginBtn = overlay.querySelector('#wh-login-btn');
     if (loginBtn && !loginBtn.__warhubBound) {
         loginBtn.__warhubBound = true;
-        loginBtn.addEventListener('click', function () {
-            loginWithSavedKey();
-        });
+        loginBtn.addEventListener('click', _asyncToGenerator(function* () {
+            yield loginWithSavedKey();
+        }));
     }
 
     var logoutBtn = overlay.querySelector('#wh-logout-btn');
     if (logoutBtn && !logoutBtn.__warhubBound) {
         logoutBtn.__warhubBound = true;
-        logoutBtn.addEventListener('click', function () {
-            logoutSession();
-        });
+        logoutBtn.addEventListener('click', _asyncToGenerator(function* () {
+            yield logoutSession();
+
+            liveSummaryCache = null;
+            liveSummaryLoading = false;
+            liveSummaryError = '';
+            liveSummaryLastAt = 0;
+            warEnemiesCache = [];
+            warEnemiesFactionName = '';
+            warEnemiesFactionId = '';
+            setWarEnemyStatsCache([]);
+
+            renderBody();
+        }));
     }
 
     var membersSearch = overlay.querySelector('#wh-members-search');
@@ -3221,24 +3245,6 @@ function bindOverlayEvents() {
         });
     }
 
-    var membersSearchInput = overlay.querySelector('#wh-members-search');
-    if (membersSearchInput && !membersSearchInput.__warhubBound) {
-        membersSearchInput.__warhubBound = true;
-        membersSearchInput.addEventListener('input', function () {
-            GM_setValue('warhub_members_search', String(membersSearchInput.value || ''));
-            renderBody();
-        });
-    }
-
-    var membersFilterSelect = overlay.querySelector('#wh-members-filter');
-    if (membersFilterSelect && !membersFilterSelect.__warhubBound) {
-        membersFilterSelect.__warhubBound = true;
-        membersFilterSelect.addEventListener('change', function () {
-            GM_setValue('warhub_members_filter', String(membersFilterSelect.value || 'all'));
-            renderBody();
-        });
-    }
-
     overlay.querySelectorAll('[data-member-bounty="1"]').forEach(function (btn) {
         if (btn.__warhubBound) return;
         btn.__warhubBound = true;
@@ -3253,33 +3259,14 @@ function bindOverlayEvents() {
             }
 
             if (userId) {
-                window.open('https://www.torn.com/bounties.php#/!p=add&userID=' + encodeURIComponent(userId), '_blank', 'noopener,noreferrer');
+                window.open(
+                    'https://www.torn.com/bounties.php#/!p=add&userID=' + encodeURIComponent(userId),
+                    '_blank',
+                    'noopener,noreferrer'
+                );
             }
         });
     });
-
-    var loginBtn = overlay.querySelector('#wh-login-btn');
-    if (loginBtn && !loginBtn.__warhubBound) {
-        loginBtn.__warhubBound = true;
-        loginBtn.addEventListener('click', _asyncToGenerator(function* () {
-            yield loginWithSavedKey();
-        }));
-    }
-
-    var logoutBtn = overlay.querySelector('#wh-logout-btn');
-    if (logoutBtn && !logoutBtn.__warhubBound) {
-        logoutBtn.__warhubBound = true;
-        logoutBtn.addEventListener('click', _asyncToGenerator(function* () {
-            yield logoutSession();
-
-            liveSummaryCache = null;
-            liveSummaryLoading = false;
-            liveSummaryError = '';
-            liveSummaryLastAt = 0;
-
-            renderBody();
-        }));
-    }
 
     var refreshFactionBtn = overlay.querySelector('#wh-refresh-faction');
     if (refreshFactionBtn && !refreshFactionBtn.__warhubBound) {
@@ -3581,167 +3568,168 @@ function bindOverlayEvents() {
             setStatus('Renewal request cancelled.');
         }));
     });
+}
 
-    // ============================================================
-    // 17. OPEN / CLOSE / MOUNT
-    // ============================================================
+// ============================================================
+// 17. OPEN / CLOSE / MOUNT
+// ============================================================
 
-    function openOverlay() {
-        if (!overlay) return;
-        isOpen = true;
-        GM_setValue(K_OPEN, true);
-        overlay.classList.add('open');
-        renderBody();
+function openOverlay() {
+    if (!overlay) return;
+    isOpen = true;
+    GM_setValue(K_OPEN, true);
+    overlay.classList.add('open');
+    renderBody();
+}
+
+function closeOverlay() {
+    if (!overlay) return;
+    isOpen = false;
+    GM_setValue(K_OPEN, false);
+    overlay.classList.remove('open');
+}
+
+function bindDrag(el, handle, onDone) {
+    if (!el || !handle) return;
+
+    var startX = 0;
+    var startY = 0;
+    var left = 0;
+    var top = 0;
+    var dragging = false;
+
+    function onMove(ev) {
+        if (!dragging) return;
+        var clientX = ev.touches ? ev.touches[0].clientX : ev.clientX;
+        var clientY = ev.touches ? ev.touches[0].clientY : ev.clientY;
+
+        var nx = left + (clientX - startX);
+        var ny = top + (clientY - startY);
+
+        el.style.left = nx + 'px';
+        el.style.top = ny + 'px';
+        el.style.right = 'auto';
+        el.style.bottom = 'auto';
+
+        clampToViewport(el);
+        dragMoved = true;
     }
 
-    function closeOverlay() {
-        if (!overlay) return;
-        isOpen = false;
-        GM_setValue(K_OPEN, false);
-        overlay.classList.remove('open');
+    function onUp() {
+        if (!dragging) return;
+        dragging = false;
+        handle.classList.remove('dragging');
+        document.removeEventListener('mousemove', onMove, true);
+        document.removeEventListener('mouseup', onUp, true);
+        document.removeEventListener('touchmove', onMove, true);
+        document.removeEventListener('touchend', onUp, true);
+
+        if (typeof onDone === 'function') onDone();
     }
 
-    function bindDrag(el, handle, onDone) {
-        if (!el || !handle) return;
-
-        var startX = 0;
-        var startY = 0;
-        var left = 0;
-        var top = 0;
-        var dragging = false;
-
-        function onMove(ev) {
-            if (!dragging) return;
-            var clientX = ev.touches ? ev.touches[0].clientX : ev.clientX;
-            var clientY = ev.touches ? ev.touches[0].clientY : ev.clientY;
-
-            var nx = left + (clientX - startX);
-            var ny = top + (clientY - startY);
-
-            el.style.left = nx + 'px';
-            el.style.top = ny + 'px';
-            el.style.right = 'auto';
-            el.style.bottom = 'auto';
-
-            clampToViewport(el);
-            dragMoved = true;
+    function onDown(ev) {
+        var target = ev.target;
+        if (target && (target.closest('button') || target.closest('input') || target.closest('textarea') || target.closest('select'))) {
+            return;
         }
 
-        function onUp() {
-            if (!dragging) return;
-            dragging = false;
-            handle.classList.remove('dragging');
-            document.removeEventListener('mousemove', onMove, true);
-            document.removeEventListener('mouseup', onUp, true);
-            document.removeEventListener('touchmove', onMove, true);
-            document.removeEventListener('touchend', onUp, true);
+        dragging = true;
+        dragMoved = false;
+        handle.classList.add('dragging');
 
-            if (typeof onDone === 'function') onDone();
-        }
+        var rect = el.getBoundingClientRect();
+        left = rect.left;
+        top = rect.top;
 
-        function onDown(ev) {
-            var target = ev.target;
-            if (target && (target.closest('button') || target.closest('input') || target.closest('textarea') || target.closest('select'))) {
-                return;
-            }
+        startX = ev.touches ? ev.touches[0].clientX : ev.clientX;
+        startY = ev.touches ? ev.touches[0].clientY : ev.clientY;
 
-            dragging = true;
-            dragMoved = false;
-            handle.classList.add('dragging');
-
-            var rect = el.getBoundingClientRect();
-            left = rect.left;
-            top = rect.top;
-
-            startX = ev.touches ? ev.touches[0].clientX : ev.clientX;
-            startY = ev.touches ? ev.touches[0].clientY : ev.clientY;
-
-            document.addEventListener('mousemove', onMove, true);
-            document.addEventListener('mouseup', onUp, true);
-            document.addEventListener('touchmove', onMove, true);
-            document.addEventListener('touchend', onUp, true);
-        }
-
-        handle.addEventListener('mousedown', onDown, true);
-        handle.addEventListener('touchstart', onDown, { passive: true, capture: true });
+        document.addEventListener('mousemove', onMove, true);
+        document.addEventListener('mouseup', onUp, true);
+        document.addEventListener('touchmove', onMove, true);
+        document.addEventListener('touchend', onUp, true);
     }
 
-    function mount() {
-        if (mounted) return;
-        mounted = true;
+    handle.addEventListener('mousedown', onDown, true);
+    handle.addEventListener('touchstart', onDown, { passive: true, capture: true });
+}
 
-        shield = document.createElement('div');
-        shield.id = 'warhub-shield';
-        shield.textContent = '⚔️';
+function mount() {
+    if (mounted) return;
+    mounted = true;
 
-        badge = document.createElement('div');
-        badge.id = 'warhub-badge';
+    shield = document.createElement('div');
+    shield.id = 'warhub-shield';
+    shield.textContent = '⚔️';
 
-        overlay = document.createElement('div');
-        overlay.id = 'warhub-overlay';
+    badge = document.createElement('div');
+    badge.id = 'warhub-badge';
 
-        document.body.appendChild(shield);
-        document.body.appendChild(badge);
-        document.body.appendChild(overlay);
+    overlay = document.createElement('div');
+    overlay.id = 'warhub-overlay';
 
-        var savedShield = GM_getValue(K_SHIELD_POS, null);
-        if (savedShield && typeof savedShield === 'object' && typeof savedShield.left === 'number' && typeof savedShield.top === 'number') {
-            shield.style.left = savedShield.left + 'px';
-            shield.style.top = savedShield.top + 'px';
-            shield.style.right = 'auto';
-            shield.style.bottom = 'auto';
-        } else {
-            resetShieldPosition();
-        }
+    document.body.appendChild(shield);
+    document.body.appendChild(badge);
+    document.body.appendChild(overlay);
 
-        var savedOverlay = GM_getValue(K_OVERLAY_POS, null);
-        if (savedOverlay && typeof savedOverlay === 'object' && typeof savedOverlay.left === 'number' && typeof savedOverlay.top === 'number') {
-            overlay.style.left = savedOverlay.left + 'px';
-            overlay.style.top = savedOverlay.top + 'px';
-            overlay.style.right = 'auto';
-            overlay.style.bottom = 'auto';
-        }
+    var savedShield = GM_getValue(K_SHIELD_POS, null);
+    if (savedShield && typeof savedShield === 'object' && typeof savedShield.left === 'number' && typeof savedShield.top === 'number') {
+        shield.style.left = savedShield.left + 'px';
+        shield.style.top = savedShield.top + 'px';
+        shield.style.right = 'auto';
+        shield.style.bottom = 'auto';
+    } else {
+        resetShieldPosition();
+    }
 
-        clampToViewport(shield);
-        clampToViewport(overlay);
+    var savedOverlay = GM_getValue(K_OVERLAY_POS, null);
+    if (savedOverlay && typeof savedOverlay === 'object' && typeof savedOverlay.left === 'number' && typeof savedOverlay.top === 'number') {
+        overlay.style.left = savedOverlay.left + 'px';
+        overlay.style.top = savedOverlay.top + 'px';
+        overlay.style.right = 'auto';
+        overlay.style.bottom = 'auto';
+    }
+
+    clampToViewport(shield);
+    clampToViewport(overlay);
+    saveShieldPos();
+    saveOverlayPos();
+
+    shield.addEventListener('click', function () {
+        if (dragMoved) return;
+        if (isOpen) closeOverlay();
+        else openOverlay();
+    });
+
+    bindDrag(shield, shield, function () {
         saveShieldPos();
-        saveOverlayPos();
+        positionBadge();
+    });
 
-        shield.addEventListener('click', function () {
-            if (dragMoved) return;
-            if (isOpen) closeOverlay();
-            else openOverlay();
+    renderBody();
+
+    var head = function () { return overlay.querySelector('#warhub-drag-head'); };
+    var bindHeadDrag = function () {
+        var h = head();
+        if (!h || h.__warhubDragBound) return;
+        h.__warhubDragBound = true;
+        bindDrag(overlay, h, function () {
+            saveOverlayPos();
         });
+    };
 
-        bindDrag(shield, shield, function () {
-            saveShieldPos();
-            positionBadge();
-        });
+    bindHeadDrag();
 
-        renderBody();
-
-        var head = function () { return overlay.querySelector('#warhub-drag-head'); };
-        var bindHeadDrag = function () {
-            var h = head();
-            if (!h || h.__warhubDragBound) return;
-            h.__warhubDragBound = true;
-            bindDrag(overlay, h, function () {
-                saveOverlayPos();
-            });
-        };
-
+    var observer = new MutationObserver(function () {
         bindHeadDrag();
+    });
+    observer.observe(overlay, { childList: true, subtree: true });
 
-        var observer = new MutationObserver(function () {
-            bindHeadDrag();
-        });
-        observer.observe(overlay, { childList: true, subtree: true });
+    if (isOpen) overlay.classList.add('open');
+    else overlay.classList.remove('open');
 
-        if (isOpen) overlay.classList.add('open');
-        else overlay.classList.remove('open');
-
-        updateBadge();
-    }
+    updateBadge();
+}
 
     // ============================================================
     // 18. POLLING
