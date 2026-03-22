@@ -19,7 +19,7 @@
 (function () {
     'use strict';
 
-    if (window.__WAR_HUB_V287__) return;
+    if (window.__WAR_HUB_V287__ && document.getElementById('warhub-shield')) return;
     window.__WAR_HUB_V287__ = true;
 
     // ============================================================
@@ -1533,26 +1533,48 @@ function getMe() {
     }
 
 function getEnemyMembersForTab() {
-    var factionRows = getFactionMembers();
+    var byId = {};
+    var out = [];
     var ownIds = {};
 
-    factionRows.forEach(function (m) {
-        var id = String(m.user_id || m.member_user_id || m.id || '').trim();
-        if (id) ownIds[id] = true;
+    arr(getFactionMembers()).forEach(function (m) {
+        var ownId = String(m.user_id || m.member_user_id || m.id || '').trim();
+        if (ownId) ownIds[ownId] = true;
     });
 
-    var all = getMembers();
+    function addRows(rows) {
+        arr(rows).forEach(function (row) {
+            if (!row || typeof row !== 'object') return;
 
-    if (!factionRows.length) {
-        return all;
+            var id = String(row.user_id || row.member_user_id || row.id || '').trim();
+            if (!id) return;
+            if (ownIds[id]) return;
+            if (byId[id]) return;
+
+            byId[id] = true;
+            out.push(row);
+        });
     }
 
-    return all.filter(function (m) {
-        var id = String(m.user_id || m.member_user_id || m.id || '').trim();
-        if (!id) return false;
-        return !ownIds[id];
-    });
-    } 
+    addRows(warEnemiesCache);
+    addRows(state && state.enemy_members);
+
+    if (!out.length) {
+        arr(getMembers()).forEach(function (row) {
+            if (!row || typeof row !== 'object') return;
+
+            var id = String(row.user_id || row.member_user_id || row.id || '').trim();
+            if (!id) return;
+            if (ownIds[id]) return;
+            if (byId[id]) return;
+
+            byId[id] = true;
+            out.push(row);
+        });
+    }
+
+    return out;
+} 
 
     function getNotifications() {
         return arr(state && state.notifications);
