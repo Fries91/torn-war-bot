@@ -1686,7 +1686,7 @@ function getEnemyMembersForTab() {
 
         if (key === 'admin' && !canSeeAdmin()) return '';
         if (key === 'faction' && !canManageFaction()) return '';
-        if (key === 'members' && !canManageFaction()) return '';
+        if (key === 'members' && !isLoggedIn()) return '';
 
         return '<button class="warhub-tab ' + (currentTab === key ? 'active' : '') + '" data-tab="' + esc(key) + '">' + esc(label) + '</button>';
     }).join('');
@@ -2072,7 +2072,10 @@ function renderChainTab() {
     }
 
 function renderMembersTab() {
-    var members = getFactionMembers();
+    var members = getMembers();
+    if (!members.length) {
+        members = getFactionMembers();
+    }
 
     var savedSearch = String(GM_getValue('warhub_members_search', '') || '').trim().toLowerCase();
     var savedFilter = String(GM_getValue('warhub_members_filter', 'all') || 'all').trim().toLowerCase();
@@ -2108,7 +2111,10 @@ function renderMembersTab() {
         var combined = [
             String(member.status || ''),
             String(member.status_detail || ''),
-            String(member.last_action || '')
+            String(member.last_action || ''),
+            String(member.display_status || ''),
+            String(member.last_action_status || ''),
+            String(member.state || '')
         ].join(' ').toLowerCase();
 
         if (combined.indexOf('hospital') >= 0) return 'hospital';
@@ -2127,7 +2133,7 @@ function renderMembersTab() {
 
     function stateLabel(stateName, member) {
         if (stateName === 'hospital') {
-            var secs = toNum(member.hospital_seconds);
+            var secs = toNum(member.hospital_seconds || member.hospital_time || member.status_until);
             return secs > 0 ? 'Hospital (' + shortTime(secs) + ')' : 'Hospital';
         }
         if (stateName === 'jail') return 'Jail';
@@ -2150,7 +2156,7 @@ function renderMembersTab() {
         var c = toNum(cur);
         var m = toNum(max);
         if (m > 0) return fmtNum(c) + '/' + fmtNum(m);
-        return fmtNum(c);
+        return c > 0 ? fmtNum(c) : '--';
     }
 
     function hasLiveStats(member) {
@@ -2162,7 +2168,7 @@ function renderMembersTab() {
         return secs > 0 ? shortTime(secs) : 'Ready';
     }
 
-        var order = {
+    var order = {
         online: 1,
         idle: 2,
         travel: 3,
@@ -2173,7 +2179,7 @@ function renderMembersTab() {
 
     var filtered = members.filter(function (m) {
         var name = String(m.name || m.user_name || m.member_name || '').toLowerCase();
-        var uid = String(m.user_id || m.id || '').toLowerCase();
+        var uid = String(m.user_id || m.member_user_id || m.id || '').toLowerCase();
         var stateName = memberState(m);
 
         var matchesSearch = !savedSearch || name.indexOf(savedSearch) >= 0 || uid.indexOf(savedSearch) >= 0;
@@ -2214,19 +2220,26 @@ function renderMembersTab() {
 
     function renderMemberRow(m) {
         var name = String(m.name || m.user_name || m.member_name || 'Unknown');
-        var userId = String(m.user_id || m.id || '').trim();
+        var userId = String(m.user_id || m.member_user_id || m.id || '').trim();
         var stateName = memberState(m);
         var pillClass = statePillClass(stateName);
         var pillText = stateLabel(stateName, m);
 
-        var lifeCurrent = toNum(m.life_current);
-        var lifeMax = toNum(m.life_max);
-        var energyCurrent = toNum(m.energy_current);
-        var energyMax = toNum(m.energy_max);
+        var lifeCurrent = toNum(m.life_current || m.life);
+        var lifeMax = toNum(m.life_max || m.max_life);
+        var energyCurrent = toNum(m.energy_current || m.energy);
+        var energyMax = toNum(m.energy_max || m.max_energy);
         var liveOk = hasLiveStats(m);
 
-        var profileUrl = String(m.profile_url || '').trim();
-        var bountyUrl = String(m.bounty_url || '').trim();
+        var profileUrl = String(
+            m.profile_url ||
+            (userId ? ('https://www.torn.com/profiles.php?XID=' + encodeURIComponent(userId)) : '')
+        ).trim();
+
+        var bountyUrl = String(
+            m.bounty_url ||
+            (userId ? ('https://www.torn.com/bounties.php#/!p=add&userID=' + encodeURIComponent(userId)) : '')
+        ).trim();
 
         return '\
       <div class="warhub-card" style="margin-top:6px;padding:7px 8px;">\
@@ -3134,9 +3147,7 @@ function bindOverlayEvents() {
 if (tab === 'members') {
     GM_setValue('warhub_members_search', '');
     GM_setValue('warhub_members_filter', 'all');
-    if (canManageFaction()) {
-        yield loadFactionMembers(true);
-    }
+    yield loadState();
     renderBody();
     return;
 }
