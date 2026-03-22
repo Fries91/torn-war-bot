@@ -1011,6 +1011,24 @@ function authedReq(method, path, body) {
 function adminReq(method, path, body) {
     return req(method, path, body);
 }
+    function doAction(method, path, body) {
+    return _doAction.apply(this, arguments);
+}
+
+function _doAction() {
+    _doAction = _asyncToGenerator(function* (method, path, body) {
+        var res = yield authedReq(method, path, body);
+
+        if (!res || !res.ok) {
+            setStatus((res && res.error) || 'Action failed.', true);
+            return res || { ok: false, error: 'Action failed.' };
+        }
+
+        setStatus('Updated.');
+        return res;
+    });
+    return _doAction.apply(this, arguments);
+}
 
     // ============================================================
     // 09. ACCESS / SESSION HELPERS
