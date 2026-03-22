@@ -3287,6 +3287,7 @@ function bindOverlayEvents() {
                 GM_setValue('warhub_members_search', '');
                 GM_setValue('warhub_members_filter', 'all');
                 yield loadState();
+                yield loadFactionMembers(true);
                 renderBody();
                 startMembersCountdownLoop();
                 restartPollingForCurrentTab();
@@ -3564,7 +3565,7 @@ function bindOverlayEvents() {
     }
 
     var chainOptOutBtn = overlay.querySelector('#wh-chain-opt-out');
-    if (chainOptOutBtn && !chainOptInBtn.__warhubBound) {
+    if (chainOptOutBtn && !chainOptOutBtn.__warhubBound) {
         chainOptOutBtn.__warhubBound = true;
         chainOptOutBtn.addEventListener('click', _asyncToGenerator(function* () {
             var res = yield doAction('POST', '/api/chain-sitter', { enabled: false });
