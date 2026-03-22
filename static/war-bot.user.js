@@ -1546,6 +1546,28 @@ function getEnemyMembersForTab() {
     var liveWar = (live && typeof live.war === 'object') ? live.war : {};
     var warObj = (state && state.war && typeof state.war === 'object') ? state.war : {};
 
+    var enemies = arr(
+        (state && state.enemy_members) ||
+        (state && state.enemies) ||
+        (live && live.enemy_members) ||
+        (liveWar && liveWar.enemy_members) ||
+        (warObj && warObj.enemy_members) ||
+        []
+    );
+
+    if (enemies.length) {
+        return enemies;
+    }
+
+    return getMembers();
+}
+    }
+
+    var liveRoot = (typeof liveSummaryCache === 'object' && liveSummaryCache) ? liveSummaryCache : {};
+    var live = (liveRoot && typeof liveRoot.item === 'object' && liveRoot.item) ? liveRoot.item : liveRoot;
+    var liveWar = (live && typeof live.war === 'object') ? live.war : {};
+    var warObj = (state && state.war && typeof state.war === 'object') ? state.war : {};
+
     return arr(
         (state && state.enemy_members) ||
         (state && state.enemies) ||
