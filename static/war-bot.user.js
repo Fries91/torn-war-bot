@@ -1462,7 +1462,7 @@ function _loadLiveSummary() {
         }
 
         var now = Date.now();
-        if (!force && liveSummaryCache && now - liveSummaryLastAt < 15000) {
+        if (!force && liveSummaryCache && now - liveSummaryLastAt < 5000) {
             return liveSummaryCache;
         }
 
