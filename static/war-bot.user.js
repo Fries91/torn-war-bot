@@ -3888,36 +3888,39 @@ function _tickCurrentTab() {
     // ============================================================
 
     function boot() {
-    mount();
+        mount();
 
-    if (isLoggedIn()) {
-        if (currentTab === 'summary') {
-            loadLiveSummary(true).then(function () {
-                renderBody();
-                restartPollingForCurrentTab();
-            }).catch(function () {});
-            return;
+        if (isLoggedIn()) {
+            if (currentTab === 'summary') {
+                loadLiveSummary(true).then(function () {
+                    renderBody();
+                    restartPollingForCurrentTab();
+                }).catch(function () {});
+                return;
+            }
+
+            if (currentTab === 'enemies') {
+                _asyncToGenerator(function* () {
+                    yield loadLiveSummary(true);
+                    yield loadWarEnemiesById(true);
+                    renderBody();
+                    restartPollingForCurrentTab();
+                })();
+                return;
+            }
+
+            if (currentTab === 'members' || currentTab === 'hospital' || currentTab === 'wartop5' || currentTab === 'overview' || currentTab === 'faction') {
+                loadState().then(function () {
+                    renderBody();
+                    restartPollingForCurrentTab();
+                }).catch(function () {});
+                return;
+            }
+
+            renderBody();
+            restartPollingForCurrentTab();
         }
-
-        if (currentTab === 'enemies') {
-            _asyncToGenerator(function* () {
-                yield loadLiveSummary(true);
-                yield loadWarEnemiesById(true);
-                renderBody();
-                restartPollingForCurrentTab();
-            })();
-            return;
-        }
-
-        if (currentTab === 'members' || currentTab === 'hospital' || currentTab === 'wartop5' || currentTab === 'overview' || currentTab === 'faction') {
-            loadState().then(function () {
-                renderBody();
-                restartPollingForCurrentTab();
-            }).catch(function () {});
-            return;
-        }
-
-        renderBody();
-        restartPollingForCurrentTab();
     }
-}
+
+    boot();
+})();
