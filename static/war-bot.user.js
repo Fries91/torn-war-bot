@@ -106,6 +106,9 @@
     var remountTimer = null;
     var loadInFlight = false;
 
+    var membersCountdownTimer = null;
+    var membersLiveStamp = 0;
+
     var lastStatusMsg = '';
     var lastStatusErr = false;
 
@@ -636,74 +639,142 @@
 
     GM_addStyle(css);
 
-    // ============================================================
-    // 06. BASIC UTILITIES
-    // ============================================================
+// ============================================================
+// 06. BASIC UTILITIES
+// ============================================================
 
-    function esc(v) {
-        return String(v == null ? '' : v)
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#39;');
+function esc(v) {
+    return String(v == null ? '' : v)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function fmtNum(v) {
+    var n = Number(v);
+    return Number.isFinite(n) ? n.toLocaleString() : '—';
+}
+
+function netPill(value, label) {
+    var n = Number(value || 0);
+    var cls = n > 0 ? 'good' : (n < 0 ? 'bad' : 'neutral');
+    return '<span class="warhub-pill ' + cls + '">' + esc(label || 'Net') + ' ' + fmtNum(n) + '</span>';
+}
+
+function fmtMoney(v) {
+    var n = Number(v);
+    return Number.isFinite(n) ? "$".concat(n.toLocaleString()) : '—';
+}
+
+function fmtHosp(v, txt) {
+    if (txt) return txt;
+    var n = Number(v);
+    return Number.isFinite(n) && n > 0 ? "".concat(n, "s") : '—';
+}
+
+function fmtTs(v) {
+    if (!v) return '—';
+    try {
+        var d = new Date(v);
+        if (Number.isNaN(d.getTime())) return String(v);
+        return d.toLocaleString();
+    } catch (_unused) {
+        return String(v);
     }
+}
 
-    function fmtNum(v) {
-        var n = Number(v);
-        return Number.isFinite(n) ? n.toLocaleString() : '—';
+function fmtDaysLeftFromIso(v) {
+    if (!v) return null;
+    try {
+        var ms = new Date(v).getTime() - Date.now();
+        if (!Number.isFinite(ms)) return null;
+        return Math.ceil(ms / 86400000);
+    } catch (_unused2) {
+        return null;
     }
+}
 
-    function netPill(value, label) {
-        var n = Number(value || 0);
-        var cls = n > 0 ? 'good' : (n < 0 ? 'bad' : 'neutral');
-        return '<span class="warhub-pill ' + cls + '">' + esc(label || 'Net') + ' ' + fmtNum(n) + '</span>';
+function arr(v) {
+    return Array.isArray(v) ? v : [];
+}
+
+function cleanInputValue(v) {
+    return String(v || '')
+        .replace(/[\u200B-\u200D\uFEFF]/g, '')
+        .trim()
+        .replace(/^['"]+|['"]+$/g, '')
+        .trim();
+}
+
+function formatCountdown(totalSecs) {
+    totalSecs = Math.max(0, Number(totalSecs || 0) | 0);
+
+    var h = Math.floor(totalSecs / 3600);
+    var m = Math.floor((totalSecs % 3600) / 60);
+    var s = totalSecs % 60;
+
+    if (h > 0) return h + 'h ' + String(m).padStart(2, '0') + 'm ' + String(s).padStart(2, '0') + 's';
+    if (m > 0) return m + 'm ' + String(s).padStart(2, '0') + 's';
+    return s + 's';
+}
+
+function stopMembersCountdownLoop() {
+    if (membersCountdownTimer) {
+        clearInterval(membersCountdownTimer);
+        membersCountdownTimer = null;
     }
+}
 
-    function fmtMoney(v) {
-        var n = Number(v);
-        return Number.isFinite(n) ? "$".concat(n.toLocaleString()) : '—';
-    }
+function tickMembersCountdowns() {
+    if (!overlay || currentTab !== 'members') return;
+    if (!membersLiveStamp) return;
 
-    function fmtHosp(v, txt) {
-        if (txt) return txt;
-        var n = Number(v);
-        return Number.isFinite(n) && n > 0 ? "".concat(n, "s") : '—';
-    }
+    var elapsed = Math.floor((Date.now() - membersLiveStamp) / 1000);
+    var rows = overlay.querySelectorAll('.warhub-member-row');
 
-    function fmtTs(v) {
-        if (!v) return '—';
-        try {
-            var d = new Date(v);
-            if (Number.isNaN(d.getTime())) return String(v);
-            return d.toLocaleString();
-        } catch (_unused) {
-            return String(v);
+    rows.forEach(function (row) {
+        var medEl = row.querySelector('[data-medcd]');
+        var statusEl = row.querySelector('[data-statuscd]');
+
+        if (medEl) {
+            var baseMed = Number(row.getAttribute('data-medcd-base') || 0);
+            var liveMed = Math.max(0, baseMed - elapsed);
+            medEl.textContent = liveMed > 0 ? formatCountdown(liveMed) : 'Ready';
         }
-    }
 
-    function fmtDaysLeftFromIso(v) {
-        if (!v) return null;
-        try {
-            var ms = new Date(v).getTime() - Date.now();
-            if (!Number.isFinite(ms)) return null;
-            return Math.ceil(ms / 86400000);
-        } catch (_unused2) {
-            return null;
+        if (statusEl) {
+            var baseStatus = Number(row.getAttribute('data-statuscd-base') || 0);
+            var stateName = String(row.getAttribute('data-state-name') || '').toLowerCase();
+            var liveStatus = Math.max(0, baseStatus - elapsed);
+
+            if (stateName === 'hospital') {
+                statusEl.textContent = liveStatus > 0 ? 'Hospital (' + formatCountdown(liveStatus) + ')' : 'Hospital';
+            } else if (stateName === 'jail') {
+                statusEl.textContent = liveStatus > 0 ? 'Jail (' + formatCountdown(liveStatus) + ')' : 'Jail';
+            } else if (stateName === 'travel') {
+                statusEl.textContent = liveStatus > 0 ? 'Travel (' + formatCountdown(liveStatus) + ')' : 'Travel';
+            } else if (stateName === 'idle') {
+                statusEl.textContent = 'Idle';
+            } else if (stateName === 'online') {
+                statusEl.textContent = 'Online';
+            } else {
+                statusEl.textContent = 'Offline';
+            }
         }
-    }
+    });
+}
 
-    function arr(v) {
-        return Array.isArray(v) ? v : [];
-    }
+function startMembersCountdownLoop() {
+    stopMembersCountdownLoop();
 
-    function cleanInputValue(v) {
-        return String(v || '')
-            .replace(/[\u200B-\u200D\uFEFF]/g, '')
-            .trim()
-            .replace(/^['"]+|['"]+$/g, '')
-            .trim();
-    }
+    if (currentTab !== 'members') return;
+
+    membersCountdownTimer = setInterval(function () {
+        tickMembersCountdowns();
+    }, 1000);
+}
 
     // ============================================================
     // 07. LOCAL NOTIFICATIONS / STATUS
@@ -1142,7 +1213,8 @@ function canSeeAdmin() {
                 return null;
             }
 
-            state = res.data || {};
+            state = res.data;
+            membersLiveStamp = Date.now();
             if (state && state.access) saveAccessCache(state.access);
             renderBody();
             return state;
@@ -2279,8 +2351,8 @@ function renderMembersTab() {
             (userId ? ('https://www.torn.com/bounties.php#/!p=add&userID=' + encodeURIComponent(userId)) : '')
         ).trim();
 
-        return '\
-      <div class="warhub-card" style="margin-top:6px;padding:7px 8px;">\
+    return '\
+      <div class="warhub-card warhub-member-row" style="margin-top:6px;padding:7px 8px;" data-medcd-base="' + esc(String(toNum(m.medical_cooldown || m.med_cd || m.drug_cd || 0))) + '" data-statuscd-base="' + esc(String(toNum(m.hospital_seconds || m.hospital_time || m.status_until || m.status_cd || 0))) + '" data-state-name="' + esc(stateName) + '">\
         <div style="display:flex;align-items:center;gap:6px;flex-wrap:nowrap;">\
           <div style="min-width:0;flex:1 1 auto;overflow:hidden;">\
             <div class="warhub-name" style="font-size:12px;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' +
@@ -2291,7 +2363,7 @@ function renderMembersTab() {
             '</div>\
           </div>\
 \
-          <div class="' + esc(pillClass) + '" style="flex:0 0 auto;font-size:10px;padding:2px 6px;white-space:nowrap;">' + esc(pillText) + '</div>\
+          <div class="' + esc(pillClass) + '" style="flex:0 0 auto;font-size:10px;padding:2px 6px;white-space:nowrap;"><span data-statuscd>' + esc(pillText) + '</span></div>\
 \
           <div style="display:flex;align-items:center;gap:3px;flex:0 0 auto;font-size:11px;white-space:nowrap;">\
             <span title="Energy">⚡</span>\
@@ -2300,7 +2372,7 @@ function renderMembersTab() {
 \
           <div style="display:flex;align-items:center;gap:3px;flex:0 0 auto;font-size:11px;white-space:nowrap;">\
             <span title="Medical Cooldown">💊</span>\
-            <span>' + esc(liveOk ? medCdText(m) : '--') + '</span>\
+            <span data-medcd>' + esc(liveOk ? medCdText(m) : '--') + '</span>\
           </div>\
 \
           <div style="display:flex;align-items:center;gap:3px;flex:0 0 auto;font-size:11px;white-space:nowrap;">\
@@ -3192,68 +3264,70 @@ function bindOverlayEvents() {
         }, { passive: true });
     }
 
-overlay.querySelectorAll('[data-tab]').forEach(function (btn) {
-    if (btn.__warhubBound) return;
-    btn.__warhubBound = true;
+    overlay.querySelectorAll('[data-tab]').forEach(function (btn) {
+        if (btn.__warhubBound) return;
+        btn.__warhubBound = true;
 
-    btn.addEventListener('click', _asyncToGenerator(function* () {
-        var tab = btn.getAttribute('data-tab') || 'overview';
-        currentTab = tab;
-        GM_setValue(K_TAB, currentTab);
+        btn.addEventListener('click', _asyncToGenerator(function* () {
+            var tab = btn.getAttribute('data-tab') || 'overview';
+            currentTab = tab;
+            GM_setValue(K_TAB, currentTab);
 
-        stopPolling();
+            stopPolling();
+            stopMembersCountdownLoop();
 
-        if (tab === 'summary') {
-            yield loadLiveSummary(true);
+            if (tab === 'summary') {
+                yield loadLiveSummary(true);
+                renderBody();
+                restartPollingForCurrentTab();
+                return;
+            }
+
+            if (tab === 'members') {
+                GM_setValue('warhub_members_search', '');
+                GM_setValue('warhub_members_filter', 'all');
+                yield loadState();
+                renderBody();
+                startMembersCountdownLoop();
+                restartPollingForCurrentTab();
+                return;
+            }
+
+            if (tab === 'enemies') {
+                GM_setValue('warhub_enemies_search', '');
+                GM_setValue('warhub_enemies_filter', 'all');
+                yield loadLiveSummary(true);
+                yield loadWarEnemiesById(true);
+                renderBody();
+                restartPollingForCurrentTab();
+                return;
+            }
+
+            if (tab === 'hospital') {
+                yield loadState();
+                renderBody();
+                restartPollingForCurrentTab();
+                return;
+            }
+
+            if (tab === 'wartop5') {
+                yield loadState();
+                renderBody();
+                restartPollingForCurrentTab();
+                return;
+            }
+
+            if (tab === 'admin' && canSeeAdmin()) {
+                yield loadAdminDashboard();
+                renderBody();
+                restartPollingForCurrentTab();
+                return;
+            }
+
             renderBody();
             restartPollingForCurrentTab();
-            return;
-        }
-
-        if (tab === 'members') {
-            GM_setValue('warhub_members_search', '');
-            GM_setValue('warhub_members_filter', 'all');
-            yield loadState();
-            renderBody();
-            restartPollingForCurrentTab();
-            return;
-        }
-
-        if (tab === 'enemies') {
-            GM_setValue('warhub_enemies_search', '');
-            GM_setValue('warhub_enemies_filter', 'all');
-            yield loadLiveSummary(true);
-            yield loadWarEnemiesById(true);
-            renderBody();
-            restartPollingForCurrentTab();
-            return;
-        }
-
-        if (tab === 'hospital') {
-            yield loadState();
-            renderBody();
-            restartPollingForCurrentTab();
-            return;
-        }
-
-        if (tab === 'wartop5') {
-            yield loadState();
-            renderBody();
-            restartPollingForCurrentTab();
-            return;
-        }
-
-        if (tab === 'admin' && canSeeAdmin()) {
-            yield loadAdminDashboard();
-            renderBody();
-            restartPollingForCurrentTab();
-            return;
-        }
-
-        renderBody();
-        restartPollingForCurrentTab();
-    }));
-});
+        }));
+    });
 
     var saveKeysBtn = overlay.querySelector('#wh-save-keys');
     if (saveKeysBtn && !saveKeysBtn.__warhubBound) {
@@ -3286,6 +3360,9 @@ overlay.querySelectorAll('[data-tab]').forEach(function (btn) {
         loginBtn.__warhubBound = true;
         loginBtn.addEventListener('click', _asyncToGenerator(function* () {
             yield loginWithSavedKey();
+            if (currentTab === 'members') {
+                startMembersCountdownLoop();
+            }
         }));
     }
 
@@ -3293,6 +3370,7 @@ overlay.querySelectorAll('[data-tab]').forEach(function (btn) {
     if (logoutBtn && !logoutBtn.__warhubBound) {
         logoutBtn.__warhubBound = true;
         logoutBtn.addEventListener('click', _asyncToGenerator(function* () {
+            stopMembersCountdownLoop();
             yield logoutSession();
 
             liveSummaryCache = null;
@@ -3308,12 +3386,22 @@ overlay.querySelectorAll('[data-tab]').forEach(function (btn) {
         }));
     }
 
+    var closeBtn = overlay.querySelector('#warhub-close-btn');
+    if (closeBtn && !closeBtn.__warhubBound) {
+        closeBtn.__warhubBound = true;
+        closeBtn.addEventListener('click', function () {
+            stopMembersCountdownLoop();
+            closeOverlay();
+        });
+    }
+
     var membersSearch = overlay.querySelector('#wh-members-search');
     if (membersSearch && !membersSearch.__warhubBound) {
         membersSearch.__warhubBound = true;
         membersSearch.addEventListener('input', function () {
             GM_setValue('warhub_members_search', String(membersSearch.value || ''));
             renderBody();
+            if (currentTab === 'members') startMembersCountdownLoop();
         });
     }
 
@@ -3323,6 +3411,7 @@ overlay.querySelectorAll('[data-tab]').forEach(function (btn) {
         membersFilter.addEventListener('change', function () {
             GM_setValue('warhub_members_filter', String(membersFilter.value || 'all'));
             renderBody();
+            if (currentTab === 'members') startMembersCountdownLoop();
         });
     }
 
@@ -3377,6 +3466,7 @@ overlay.querySelectorAll('[data-tab]').forEach(function (btn) {
                 yield loadFactionMembers(true);
             }
             renderBody();
+            if (currentTab === 'members') startMembersCountdownLoop();
             setStatus('Faction refreshed.');
         }));
     }
@@ -3396,6 +3486,7 @@ overlay.querySelectorAll('[data-tab]').forEach(function (btn) {
                 yield activateFactionMember(memberId, memberName, position);
                 yield refreshFactionPaymentData();
                 renderBody();
+                if (currentTab === 'members') startMembersCountdownLoop();
                 setStatus('Member activated.');
             } catch (e) {
                 btn.disabled = false;
@@ -3441,6 +3532,7 @@ overlay.querySelectorAll('[data-tab]').forEach(function (btn) {
             if (res && res.ok) {
                 yield loadState(true);
                 renderBody();
+                if (currentTab === 'members') startMembersCountdownLoop();
             }
         }));
     }
@@ -3453,6 +3545,7 @@ overlay.querySelectorAll('[data-tab]').forEach(function (btn) {
             if (res && res.ok) {
                 yield loadState(true);
                 renderBody();
+                if (currentTab === 'members') startMembersCountdownLoop();
             }
         }));
     }
@@ -3465,18 +3558,20 @@ overlay.querySelectorAll('[data-tab]').forEach(function (btn) {
             if (res && res.ok) {
                 yield loadState(true);
                 renderBody();
+                if (currentTab === 'members') startMembersCountdownLoop();
             }
         }));
     }
 
     var chainOptOutBtn = overlay.querySelector('#wh-chain-opt-out');
-    if (chainOptOutBtn && !chainOptOutBtn.__warhubBound) {
+    if (chainOptOutBtn && !chainOptInBtn.__warhubBound) {
         chainOptOutBtn.__warhubBound = true;
         chainOptOutBtn.addEventListener('click', _asyncToGenerator(function* () {
             var res = yield doAction('POST', '/api/chain-sitter', { enabled: false });
             if (res && res.ok) {
                 yield loadState(true);
                 renderBody();
+                if (currentTab === 'members') startMembersCountdownLoop();
             }
         }));
     }
@@ -3553,7 +3648,7 @@ overlay.querySelectorAll('[data-tab]').forEach(function (btn) {
             renderBody();
             setStatus('Player exemption added.');
         }));
-    }
+    });
 
     overlay.querySelectorAll('[data-admin-remove-faction-exemption]').forEach(function (btn) {
         if (btn.__warhubBound) return;
@@ -3679,10 +3774,17 @@ function openOverlay() {
     GM_setValue(K_OPEN, true);
     overlay.classList.add('open');
     renderBody();
+
+    if (currentTab === 'members') {
+        startMembersCountdownLoop();
+    } else {
+        stopMembersCountdownLoop();
+    }
 }
 
 function closeOverlay() {
     if (!overlay) return;
+    stopMembersCountdownLoop();
     isOpen = false;
     GM_setValue(K_OPEN, false);
     overlay.classList.remove('open');
@@ -3881,6 +3983,7 @@ function _tickCurrentTab() {
             yield loadState();
             yield loadFactionMembers(true);
             renderBody();
+            startMembersCountdownLoop();
             return;
         }
 
@@ -3902,7 +4005,8 @@ function _tickCurrentTab() {
                 renderBody();
                 return;
             }
-        } catch (_unused5) {
+        } catch (e) {
+            console.warn('War Hub tick failed', e);
         } finally {
             loadInFlight = false;
         }
