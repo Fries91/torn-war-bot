@@ -1537,46 +1537,26 @@ function getMe() {
 }
 
 function getEnemyMembersForTab() {
-    if (Array.isArray(warEnemiesCache) && warEnemiesCache.length) {
-        return warEnemiesCache;
+    var factionRows = getFactionMembers();
+    var ownIds = {};
+
+    factionRows.forEach(function (m) {
+        var id = String(m.user_id || m.member_user_id || m.id || '').trim();
+        if (id) ownIds[id] = true;
+    });
+
+    var all = getMembers();
+
+    if (!factionRows.length) {
+        return all;
     }
 
-    var liveRoot = (typeof liveSummaryCache === 'object' && liveSummaryCache) ? liveSummaryCache : {};
-    var live = (liveRoot && typeof liveRoot.item === 'object' && liveRoot.item) ? liveRoot.item : liveRoot;
-    var liveWar = (live && typeof live.war === 'object') ? live.war : {};
-    var warObj = (state && state.war && typeof state.war === 'object') ? state.war : {};
-
-    var enemies = arr(
-        (state && state.enemy_members) ||
-        (state && state.enemies) ||
-        (live && live.enemy_members) ||
-        (liveWar && liveWar.enemy_members) ||
-        (warObj && warObj.enemy_members) ||
-        []
-    );
-
-    if (enemies.length) {
-        return enemies;
-    }
-
-    return getMembers();
-}
-    }
-
-    var liveRoot = (typeof liveSummaryCache === 'object' && liveSummaryCache) ? liveSummaryCache : {};
-    var live = (liveRoot && typeof liveRoot.item === 'object' && liveRoot.item) ? liveRoot.item : liveRoot;
-    var liveWar = (live && typeof live.war === 'object') ? live.war : {};
-    var warObj = (state && state.war && typeof state.war === 'object') ? state.war : {};
-
-    return arr(
-        (state && state.enemy_members) ||
-        (state && state.enemies) ||
-        (live && live.enemy_members) ||
-        (liveWar && liveWar.enemy_members) ||
-        (warObj && warObj.enemy_members) ||
-        []
-    );
-}
+    return all.filter(function (m) {
+        var id = String(m.user_id || m.member_user_id || m.id || '').trim();
+        if (!id) return false;
+        return !ownIds[id];
+    });
+    } 
 
     function getNotifications() {
         return arr(state && state.notifications);
@@ -3151,15 +3131,15 @@ function bindOverlayEvents() {
                 yield loadLiveSummary(true);
             }
 
-            if (tab === 'members') {
-                GM_setValue('warhub_members_search', '');
-                GM_setValue('warhub_members_filter', 'all');
-                if (canManageFaction()) {
-                    yield loadFactionMembers(true);
-                }
-                renderBody();
-                return;
-            }
+if (tab === 'members') {
+    GM_setValue('warhub_members_search', '');
+    GM_setValue('warhub_members_filter', 'all');
+    if (canManageFaction()) {
+        yield loadFactionMembers(true);
+    }
+    renderBody();
+    return;
+}
 
             if (tab === 'enemies') {
                 GM_setValue('warhub_enemies_search', '');
