@@ -612,6 +612,36 @@
       margin-top: 8px !important;\n\
     }\n\
 \n\
+    .warhub-table {\n\
+      width: 100% !important;\n\
+      border-collapse: collapse !important;\n\
+      background: #ffffff !important;\n\
+      color: #111111 !important;\n\
+      border-radius: 10px !important;\n\
+      overflow: hidden !important;\n\
+    }\n\
+    .warhub-table thead {\n\
+      background: #f3f4f6 !important;\n\
+    }\n\
+    .warhub-table th {\n\
+      color: #111111 !important;\n\
+      font-size: 12px !important;\n\
+      font-weight: 800 !important;\n\
+      text-align: left !important;\n\
+      padding: 10px 8px !important;\n\
+      border-bottom: 1px solid #d1d5db !important;\n\
+      white-space: nowrap !important;\n\
+    }\n\
+    .warhub-table td {\n\
+      color: #111111 !important;\n\
+      font-size: 12px !important;\n\
+      padding: 9px 8px !important;\n\
+      border-bottom: 1px solid #e5e7eb !important;\n\
+      background: #ffffff !important;\n\
+    }\n\
+    .warhub-table tbody tr:nth-child(even) td {\n\
+      background: #f9fafb !important;\n\
+    }\n\
     @media (max-width: 700px) {\n\
       #warhub-overlay {\n\
         width: 98vw !important;\n\
@@ -2021,6 +2051,19 @@ function renderSummaryTab() {
     var leaders = s.leaders || {};
     var members = Array.isArray(s.members) ? s.members : [];
 
+    var war = getWar();
+    var faction = getFaction();
+    var enemyFaction = getEnemyFaction();
+
+    var ourFactionName = faction.name || war.my_faction_name || 'Your Faction';
+    var enemyFactionName = enemyFaction.name || war.enemy_faction_name || 'Enemy Faction';
+
+    var scoreUs = Number(war.score_us || 0);
+    var scoreThem = Number(war.score_them || 0);
+    var chainUs = Number(war.chain_us || 0);
+    var chainThem = Number(war.chain_them || 0);
+    var attacksWonTotal = Number(totals.attacks_won || war.attacks_won || war.total_attacks_won || 0);
+
     var updatedAt = s.generated_at || s.updated_at || '';
     var updatedText = updatedAt ? "Updated: ".concat(esc(updatedAt)) : 'Updated: -';
 
@@ -2030,9 +2073,75 @@ function renderSummaryTab() {
 
     var rowsHtml = members.map(summaryMemberRow).join('');
 
-    return "\n      <div class=\"warhub-card\">\n        <div class=\"warhub-row\" style=\"justify-content:space-between;align-items:center;gap:8px;\">\n          <h3 style=\"margin:0;\">Live War Summary</h3>\n          <div class=\"warhub-muted\" style=\"font-size:12px;\">".concat(updatedText, "</div>\n        </div>\n        ").concat(loadingHtml, "\n        ").concat(errorHtml, "\n\n        <div class=\"warhub-stats\" style=\"margin-top:8px;\">\n          ").concat(summaryLeaderRow('Top Hitter', leaders.top_hitter, 'attacks_won'), "\n          ").concat(summaryLeaderRow('Top Respect Gain', leaders.top_respect_gain, 'respect_gain'), "\n          ").concat(summaryLeaderRow('Top Points Bleeder', leaders.top_points_bleeder, 'points_bleeder'), "\n          <div class=\"warhub-stat\">\n            <span>Total Attacks Won</span>\n            <strong>").concat(esc(numFmt(totals.attacks_won || 0)), "</strong>\n          </div>\n          <div class=\"warhub-stat\">\n            <span>Total Respect Gain</span>\n            <strong>").concat(esc(numFmt(totals.respect_gain || 0)), "</strong>\n          </div>\n          <div class=\"warhub-stat\">\n            <span>Total Respect Lost</span>\n            <strong>").concat(esc(numFmt(totals.respect_lost || 0)), "</strong>\n          </div>\n        </div>\n      </div>\n\n      <div class=\"warhub-card\" style=\"margin-top:12px;\">\n        <div class=\"warhub-row\" style=\"justify-content:space-between;align-items:center;gap:8px;\">\n          <h3 style=\"margin:0;\">Faction Member Live Data</h3>\n          <button class=\"warhub-btn\" id=\"wh-refresh-live-summary\">Refresh</button>\n        </div>\n\n        <div style=\"overflow:auto;margin-top:10px;\">\n          <table class=\"warhub-table\">\n            <thead>\n              <tr>\n                <th>Member</th>\n                <th>Attacks Won</th>\n                <th>Respect Gain</th>\n                <th>Points Bleeder</th>\n                <th>Respect Lost</th>\n                <th>Attacks Lost</th>\n                <th>Key</th>\n              </tr>\n            </thead>\n            <tbody>\n              ").concat(rowsHtml, "\n            </tbody>\n          </table>\n        </div>\n\n        ").concat(emptyHtml, "\n      </div>\n    ");
+    return "\n\
+      <div class=\"warhub-card warhub-hero-card\">\n\
+        <div class=\"warhub-hero-vs\">" + esc(ourFactionName) + " <span>vs</span> " + esc(enemyFactionName) + "</div>\n\
+        <div class=\"warhub-grid two\">\n\
+          <div class=\"warhub-metric\"><div class=\"k\">Score Us</div><div class=\"v\">" + esc(numFmt(scoreUs)) + "</div></div>\n\
+          <div class=\"warhub-metric\"><div class=\"k\">Score Them</div><div class=\"v\">" + esc(numFmt(scoreThem)) + "</div></div>\n\
+          <div class=\"warhub-metric\"><div class=\"k\">Chain Us</div><div class=\"v\">" + esc(numFmt(chainUs)) + "</div></div>\n\
+          <div class=\"warhub-metric\"><div class=\"k\">Chain Them</div><div class=\"v\">" + esc(numFmt(chainThem)) + "</div></div>\n\
+          <div class=\"warhub-metric\"><div class=\"k\">Attacks Won</div><div class=\"v\">" + esc(numFmt(attacksWonTotal)) + "</div></div>\n\
+          <div class=\"warhub-metric\"><div class=\"k\">Updated</div><div class=\"v\">" + esc(updatedAt || '-') + "</div></div>\n\
+        </div>\n\
+      </div>\n\
+\n\
+      <div class=\"warhub-card\">\n\
+        <div class=\"warhub-row\" style=\"justify-content:space-between;align-items:center;gap:8px;\">\n\
+          <h3 style=\"margin:0;\">Live War Summary</h3>\n\
+          <div class=\"warhub-muted\" style=\"font-size:12px;\">".concat(updatedText, "</div>\n\
+        </div>\n\
+        ").concat(loadingHtml, "\n\
+        ").concat(errorHtml, "\n\
+\n\
+        <div class=\"warhub-stats\" style=\"margin-top:8px;\">\n\
+          ").concat(summaryLeaderRow('Top Hitter', leaders.top_hitter, 'attacks_won'), "\n\
+          ").concat(summaryLeaderRow('Top Respect Gain', leaders.top_respect_gain, 'respect_gain'), "\n\
+          ").concat(summaryLeaderRow('Top Points Bleeder', leaders.top_points_bleeder, 'points_bleeder'), "\n\
+          <div class=\"warhub-stat\">\n\
+            <span>Total Attacks Won</span>\n\
+            <strong>").concat(esc(numFmt(totals.attacks_won || 0)), "</strong>\n\
+          </div>\n\
+          <div class=\"warhub-stat\">\n\
+            <span>Total Respect Gain</span>\n\
+            <strong>").concat(esc(numFmt(totals.respect_gain || 0)), "</strong>\n\
+          </div>\n\
+          <div class=\"warhub-stat\">\n\
+            <span>Total Respect Lost</span>\n\
+            <strong>").concat(esc(numFmt(totals.respect_lost || 0)), "</strong>\n\
+          </div>\n\
+        </div>\n\
+      </div>\n\
+\n\
+      <div class=\"warhub-card\" style=\"margin-top:12px;\">\n\
+        <div class=\"warhub-row\" style=\"justify-content:space-between;align-items:center;gap:8px;\">\n\
+          <h3 style=\"margin:0;\">Faction Member Live Data</h3>\n\
+          <button class=\"warhub-btn\" id=\"wh-refresh-live-summary\">Refresh</button>\n\
+        </div>\n\
+\n\
+        <div style=\"overflow:auto;margin-top:10px;\">\n\
+          <table class=\"warhub-table\">\n\
+            <thead>\n\
+              <tr>\n\
+                <th>Member</th>\n\
+                <th>Attacks Won</th>\n\
+                <th>Respect Gain</th>\n\
+                <th>Points Bleeder</th>\n\
+                <th>Respect Lost</th>\n\
+                <th>Attacks Lost</th>\n\
+                <th>Key</th>\n\
+              </tr>\n\
+            </thead>\n\
+            <tbody>\n\
+              ").concat(rowsHtml, "\n\
+            </tbody>\n\
+          </table>\n\
+        </div>\n\
+\n\
+        ").concat(emptyHtml, "\n\
+      </div>\n\
+    ");
 }
-
 function renderChainTab() {
     var war = getWar();
     var me = getMe();
@@ -3276,13 +3385,17 @@ function bindOverlayEvents() {
             stopPolling();
             stopMembersCountdownLoop();
 
-            if (tab === 'summary') {
-                yield loadLiveSummary(true);
-                renderBody();
-                restartPollingForCurrentTab();
-                return;
-            }
+if (tab === 'summary') {
+    renderBody();
+    restartPollingForCurrentTab();
 
+    loadLiveSummary(true).then(function () {
+        if (currentTab === 'summary') renderBody();
+    }).catch(function () {
+        if (currentTab === 'summary') renderBody();
+    });
+    return;
+}
             if (tab === 'members') {
                 GM_setValue('warhub_members_search', '');
                 GM_setValue('warhub_members_filter', 'all');
@@ -3328,7 +3441,7 @@ function bindOverlayEvents() {
             renderBody();
             restartPollingForCurrentTab();
         }));
-    });
+    }
 
     var saveKeysBtn = overlay.querySelector('#wh-save-keys');
     if (saveKeysBtn && !saveKeysBtn.__warhubBound) {
