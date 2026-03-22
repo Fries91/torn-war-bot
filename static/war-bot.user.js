@@ -3815,7 +3815,7 @@ function mount() {
 // ============================================================
 
 function tabNeedsLivePolling(tab) {
-    return tab === 'summary' || tab === 'enemies';
+    return tab === 'summary' || tab === 'enemies' || tab === 'members';
 }
 
 function stopPolling() {
@@ -3851,24 +3851,30 @@ function _tickCurrentTab() {
 
         loadInFlight = true;
         try {
-            if (currentTab === 'summary') {
-                yield loadLiveSummary(false);
-                renderBody();
-                return;
-            }
+                    if (currentTab === 'summary') {
+            yield loadLiveSummary(false);
+            renderBody();
+            return;
+        }
 
-            if (currentTab === 'enemies') {
-                yield loadLiveSummary(false);
-                yield loadWarEnemiesById(false);
-                renderBody();
-                return;
-            }
+        if (currentTab === 'members') {
+            yield loadState();
+            renderBody();
+            return;
+        }
 
-            if (currentTab === 'hospital') {
-                yield loadState();
-                renderBody();
-                return;
-            }
+        if (currentTab === 'enemies') {
+            yield loadLiveSummary(false);
+            yield loadWarEnemiesById(false);
+            renderBody();
+            return;
+        }
+
+        if (currentTab === 'hospital') {
+            yield loadState();
+            renderBody();
+            return;
+        }
 
             if (currentTab === 'wartop5') {
                 yield loadState();
