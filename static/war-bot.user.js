@@ -2090,9 +2090,29 @@ function renderChainTab() {
     }
 
 function renderMembersTab() {
-    var members = getMembers();
+    var factionMembers = getFactionMembers();
+    var liveMembers = getMembers();
+    var byId = {};
+    var members = [];
+
+    arr(factionMembers).forEach(function (m) {
+        var id = String(m && (m.user_id || m.member_user_id || m.id || '')).trim();
+        if (!id) return;
+        byId[id] = Object.assign({}, m);
+    });
+
+    arr(liveMembers).forEach(function (m) {
+        var id = String(m && (m.user_id || m.member_user_id || m.id || '')).trim();
+        if (!id) return;
+        byId[id] = Object.assign({}, byId[id] || {}, m);
+    });
+
+    Object.keys(byId).forEach(function (id) {
+        members.push(byId[id]);
+    });
+
     if (!members.length) {
-        members = getFactionMembers();
+        members = liveMembers.length ? liveMembers : factionMembers;
     }
 
     var savedSearch = String(GM_getValue('warhub_members_search', '') || '').trim().toLowerCase();
@@ -3859,6 +3879,7 @@ function _tickCurrentTab() {
 
         if (currentTab === 'members') {
             yield loadState();
+            yield loadFactionMembers(true);
             renderBody();
             return;
         }
@@ -3915,13 +3936,23 @@ function _tickCurrentTab() {
                 return;
             }
 
-            if (currentTab === 'members' || currentTab === 'hospital' || currentTab === 'wartop5' || currentTab === 'overview' || currentTab === 'faction') {
-                loadState().then(function () {
+            if (currentTab === 'members') {
+                _asyncToGenerator(function* () {
+                    yield loadState();
+                    yield loadFactionMembers(true);
                     renderBody();
                     restartPollingForCurrentTab();
-                }).catch(function () {});
+                })();
                 return;
-            }
+             }
+
+if (currentTab === 'hospital' || currentTab === 'wartop5' || currentTab === 'overview' || currentTab === 'faction') {
+    loadState().then(function () {
+        renderBody();
+        restartPollingForCurrentTab();
+    }).catch(function () {});
+    return;
+}
 
             renderBody();
             restartPollingForCurrentTab();
