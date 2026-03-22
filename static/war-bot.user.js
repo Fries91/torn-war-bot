@@ -3172,43 +3172,63 @@ function bindOverlayEvents() {
         }, { passive: true });
     }
 
-    overlay.querySelectorAll('[data-tab]').forEach(function (btn) {
-        if (btn.__warhubBound) return;
-        btn.__warhubBound = true;
+    btn.addEventListener('click', _asyncToGenerator(function* () {
+    var tab = btn.getAttribute('data-tab') || 'overview';
+    currentTab = tab;
+    GM_setValue(K_TAB, currentTab);
 
-        btn.addEventListener('click', _asyncToGenerator(function* () {
-            var tab = btn.getAttribute('data-tab') || 'overview';
-            currentTab = tab;
-            GM_setValue(K_TAB, currentTab);
+    stopPolling();
 
-            if (tab === 'summary') {
-                yield loadLiveSummary(true);
-            }
+    if (tab === 'summary') {
+        yield loadLiveSummary(true);
+        renderBody();
+        restartPollingForCurrentTab();
+        return;
+    }
 
-if (tab === 'members') {
-    GM_setValue('warhub_members_search', '');
-    GM_setValue('warhub_members_filter', 'all');
-    yield loadState();
+    if (tab === 'members') {
+        GM_setValue('warhub_members_search', '');
+        GM_setValue('warhub_members_filter', 'all');
+        yield loadState();
+        renderBody();
+        restartPollingForCurrentTab();
+        return;
+    }
+
+    if (tab === 'enemies') {
+        GM_setValue('warhub_enemies_search', '');
+        GM_setValue('warhub_enemies_filter', 'all');
+        yield loadLiveSummary(true);
+        yield loadWarEnemiesById(true);
+        renderBody();
+        restartPollingForCurrentTab();
+        return;
+    }
+
+    if (tab === 'hospital') {
+        yield loadState();
+        renderBody();
+        restartPollingForCurrentTab();
+        return;
+    }
+
+    if (tab === 'wartop5') {
+        yield loadState();
+        renderBody();
+        restartPollingForCurrentTab();
+        return;
+    }
+
+    if (tab === 'admin' && canSeeAdmin()) {
+        yield loadAdminDashboard();
+        renderBody();
+        restartPollingForCurrentTab();
+        return;
+    }
+
     renderBody();
-    return;
-}
-
-            if (tab === 'enemies') {
-                GM_setValue('warhub_enemies_search', '');
-                GM_setValue('warhub_enemies_filter', 'all');
-                yield loadLiveSummary(true);
-                yield loadWarEnemiesById(true);
-                renderBody();
-                return;
-            }
-
-            if (tab === 'admin' && canSeeAdmin()) {
-                yield loadAdminDashboard();
-            }
-
-            renderBody();
-        }));
-    });
+    restartPollingForCurrentTab();
+}));
 
     var saveKeysBtn = overlay.querySelector('#wh-save-keys');
     if (saveKeysBtn && !saveKeysBtn.__warhubBound) {
@@ -3230,7 +3250,7 @@ if (tab === 'members') {
             GM_setValue(K_OWNER_TOKEN, ownerToken);
             GM_setValue(K_REFRESH, refreshMs);
 
-            restartPolling();
+            restartPollingForCurrentTab();
             setStatus(apiKey ? 'Keys saved.' : 'API key cleared.');
             renderStatus();
         });
@@ -3785,75 +3805,114 @@ function mount() {
     updateBadge();
 }
 
-    // ============================================================
-    // 18. POLLING
-    // ============================================================
+// ============================================================
+// 18. POLLING
+// ============================================================
 
-function tick() {
-    return _tick.apply(this, arguments);
+function tabNeedsLivePolling(tab) {
+    return tab === 'summary' || tab === 'enemies';
 }
 
-function _tick() {
-    _tick = _asyncToGenerator(function* () {
+function stopPolling() {
+    if (pollTimer) {
+        clearInterval(pollTimer);
+        pollTimer = null;
+    }
+}
+
+function restartPollingForCurrentTab() {
+    stopPolling();
+
+    if (!isLoggedIn()) return;
+    if (!tabNeedsLivePolling(currentTab)) return;
+
+    var ms = Number(GM_getValue(K_REFRESH, 30000)) || 30000;
+    if (ms < 5000) ms = 5000;
+
+    pollTimer = setInterval(function () {
+        tickCurrentTab();
+    }, ms);
+}
+
+function tickCurrentTab() {
+    return _tickCurrentTab.apply(this, arguments);
+}
+
+function _tickCurrentTab() {
+    _tickCurrentTab = _asyncToGenerator(function* () {
         if (loadInFlight) return;
         if (!isLoggedIn()) return;
+        if (!tabNeedsLivePolling(currentTab)) return;
 
         loadInFlight = true;
         try {
-            yield loadState();
-            if (canUseFeatures()) {
-                yield refreshFactionPaymentData();
-            }
-            if (currentTab === 'summary' && isLoggedIn()) {
+            if (currentTab === 'summary') {
                 yield loadLiveSummary(false);
+                renderBody();
+                return;
             }
-            if (currentTab === 'enemies' && isLoggedIn()) {
+
+            if (currentTab === 'enemies') {
                 yield loadLiveSummary(false);
                 yield loadWarEnemiesById(false);
+                renderBody();
+                return;
             }
-            if (isOwnerSession() && currentTab === 'admin') {
-                yield loadAdminDashboard();
+
+            if (currentTab === 'hospital') {
+                yield loadState();
+                renderBody();
+                return;
             }
-            renderBody();
+
+            if (currentTab === 'wartop5') {
+                yield loadState();
+                renderBody();
+                return;
+            }
         } catch (_unused5) {
         } finally {
             loadInFlight = false;
         }
     });
-    return _tick.apply(this, arguments);
+    return _tickCurrentTab.apply(this, arguments);
 }
-
-    function restartPolling() {
-        if (pollTimer) {
-            clearInterval(pollTimer);
-            pollTimer = null;
-        }
-
-        var ms = Number(GM_getValue(K_REFRESH, 30000)) || 30000;
-        if (ms < 5000) ms = 5000;
-
-        pollTimer = setInterval(function () {
-            tick();
-        }, ms);
-    }
 
     // ============================================================
     // 19. STARTUP
     // ============================================================
 
     function boot() {
-        mount();
-        restartPolling();
+    mount();
 
-        if (isLoggedIn()) {
-            tick();
+    if (isLoggedIn()) {
+        if (currentTab === 'summary') {
+            loadLiveSummary(true).then(function () {
+                renderBody();
+                restartPollingForCurrentTab();
+            }).catch(function () {});
+            return;
         }
-    }
 
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', boot, { once: true });
-    } else {
-        boot();
-    }
+        if (currentTab === 'enemies') {
+            _asyncToGenerator(function* () {
+                yield loadLiveSummary(true);
+                yield loadWarEnemiesById(true);
+                renderBody();
+                restartPollingForCurrentTab();
+            })();
+            return;
+        }
 
-})();
+        if (currentTab === 'members' || currentTab === 'hospital' || currentTab === 'wartop5' || currentTab === 'overview' || currentTab === 'faction') {
+            loadState().then(function () {
+                renderBody();
+                restartPollingForCurrentTab();
+            }).catch(function () {});
+            return;
+        }
+
+        renderBody();
+        restartPollingForCurrentTab();
+    }
+}
