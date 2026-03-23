@@ -2429,35 +2429,34 @@ function renderChainTab() {
     }
 
 function renderMembersTab() {
-    var knownIds = getKnownFactionIdMap();
     var factionMembers = getFactionMembers();
     var liveMembers = getMembers();
     var byId = {};
     var members = [];
 
-    arr(factionMembers).forEach(function (m) {
-        var id = getRowId(m);
-        if (!id) return;
-        if (!knownIds[id]) return;
-        byId[id] = Object.assign({}, m);
-    });
-
+    // Start with live members first
     arr(liveMembers).forEach(function (m) {
         var id = getRowId(m);
         if (!id) return;
-        if (!knownIds[id]) return;
         byId[id] = Object.assign({}, byId[id] || {}, m);
     });
 
-    Object.keys(byId).forEach(function (id) {
-        members.push(byId[id]);
+    // Merge faction roster in, but keep live values when present
+    arr(factionMembers).forEach(function (m) {
+        var id = getRowId(m);
+        if (!id) return;
+        byId[id] = Object.assign({}, m, byId[id] || {});
     });
 
-    if (!members.length) {
-        members = arr(factionMembers).filter(function (m) {
+    // Only show your faction roster when it exists
+    if (arr(factionMembers).length) {
+        members = arr(factionMembers).map(function (m) {
             var id = getRowId(m);
-            return !!(id && knownIds[id]);
-        });
+            return id && byId[id] ? byId[id] : m;
+        }).filter(Boolean);
+    } else {
+        // Fallback only if faction roster has not loaded yet
+        members = arr(liveMembers).slice();
     }
 
     var savedSearch = String(GM_getValue('warhub_members_search', '') || '').trim().toLowerCase();
