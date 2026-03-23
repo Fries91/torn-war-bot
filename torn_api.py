@@ -10,6 +10,7 @@ API_BASE = str(os.getenv("TORN_API_BASE", "https://api.torn.com")).rstrip("/")
 TORN_TIMEOUT = int(os.getenv("TORN_TIMEOUT", "30"))
 CACHE_TTL_USER_PROFILE = int(os.getenv("CACHE_TTL_USER_PROFILE", "30"))
 CACHE_TTL_FACTION_BASIC = int(os.getenv("CACHE_TTL_FACTION_BASIC", "20"))
+CACHE_TTL_WAR_SUMMARY = int(os.getenv("CACHE_TTL_WAR_SUMMARY", "15"))
 
 try:
     from db import cache_get, cache_set
@@ -324,16 +325,137 @@ def faction_basic(api_key: str, faction_id: str = "") -> Dict[str, Any]:
     return {"ok": False, "faction_id": faction_id, "faction_name": "", "members": [], "error": best_error, "debug_attempts": debug_attempts}
 
 
-def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: str = "") -> Dict[str, Any]:
+def _stringify_lower(value: Any) -> str:
+    return str(value or "").strip().lower()
+
+
+def _candidate_war_nodes(payload: Any) -> List[Dict[str, Any]]:
+    found: List[Dict[str, Any]] = []
+
+    def walk(node: Any):
+        if isinstance(node, dict):
+            lowered_keys = {str(k).lower() for k in node.keys()}
+            has_war_shape = (
+                any(k in lowered_keys for k in {"war_id", "warid", "start", "end", "target", "winner", "ranked", "rankedwarid"})
+                or ("factions" in lowered_keys and any(k in lowered_keys for k in {"status", "state", "phase"}))
+                or ("teams" in lowered_keys and any(k in lowered_keys for k in {"status", "state", "phase"}))
+            )
+            if has_war_shape:
+                found.append(node)
+            for value in node.values():
+                walk(value)
+        elif isinstance(node, list):
+            for item in node:
+                walk(item)
+
+    walk(payload)
+    return found
+
+
+def _parse_war_factions(node: Dict[str, Any]) -> List[Dict[str, Any]]:
+    raw = node.get("factions")
+    if not raw:
+        raw = node.get("teams")
+    out: List[Dict[str, Any]] = []
+    if isinstance(raw, dict):
+        for key, value in raw.items():
+            if isinstance(value, dict):
+                faction_id = str(value.get("id") or value.get("faction_id") or value.get("factionID") or key or "").strip()
+                name = str(value.get("name") or value.get("faction_name") or value.get("factionName") or "").strip()
+                score = _to_int(value.get("score") or value.get("points") or value.get("respect"), 0)
+                chain = _to_int(value.get("chain") or value.get("chain_count"), 0)
+                out.append({"faction_id": faction_id, "name": name, "score": score, "chain": chain, "raw": value})
+    elif isinstance(raw, list):
+        for value in raw:
+            if isinstance(value, dict):
+                faction_id = str(value.get("id") or value.get("faction_id") or value.get("factionID") or "").strip()
+                name = str(value.get("name") or value.get("faction_name") or value.get("factionName") or "").strip()
+                score = _to_int(value.get("score") or value.get("points") or value.get("respect"), 0)
+                chain = _to_int(value.get("chain") or value.get("chain_count"), 0)
+                out.append({"faction_id": faction_id, "name": name, "score": score, "chain": chain, "raw": value})
+    return out
+
+
+def _is_current_ranked_war(node: Dict[str, Any], my_faction_id: str = "", my_faction_name: str = "") -> bool:
+    text = " ".join([
+        str(node.get("status") or ""),
+        str(node.get("state") or ""),
+        str(node.get("phase") or ""),
+        str(node.get("war_type") or ""),
+        str(node.get("type") or ""),
+    ]).lower()
+    factions = _parse_war_factions(node)
+    if my_faction_id and factions and not any(str(x.get("faction_id") or "") == my_faction_id for x in factions):
+        return False
+    if my_faction_name and factions and not any(_stringify_lower(x.get("name")) == _stringify_lower(my_faction_name) for x in factions):
+        return False
+    if any(flag in text for flag in ["ranked", "active", "attacking", "defending", "ongoing", "confirmed", "register", "registered", "prewar"]):
+        return True
+    start = _to_int(node.get("start") or node.get("start_timestamp") or node.get("starts"), 0)
+    end = _to_int(node.get("end") or node.get("end_timestamp") or node.get("ends"), 0)
+    now_ts = int(time.time())
+    if start and start <= now_ts and (not end or end > now_ts):
+        return True
+    return False
+
+
+def _build_ranked_war_response(node: Dict[str, Any], source_note: str, my_faction_id: str = "", my_faction_name: str = "") -> Dict[str, Any]:
+    factions = _parse_war_factions(node)
+    my_side = None
+    enemy_side = None
+
+    if my_faction_id:
+        my_side = next((x for x in factions if str(x.get("faction_id") or "") == str(my_faction_id)), None)
+    if my_side is None and my_faction_name:
+        my_side = next((x for x in factions if _stringify_lower(x.get("name")) == _stringify_lower(my_faction_name)), None)
+    if factions:
+        enemy_side = next((x for x in factions if x is not my_side), None)
+    phase = str(node.get("phase") or node.get("state") or node.get("status") or "none").strip().lower() or "none"
+    war_type = str(node.get("war_type") or node.get("type") or ("ranked" if "ranked" in source_note.lower() else "")).strip().lower()
+    active = phase in {"active", "ongoing", "attacking", "defending"} or "active" in phase or "ongoing" in phase
+    registered = phase in {"registered", "registering", "confirmed", "prewar"} or "register" in phase or "confirm" in phase
+    if not active and not registered:
+        combined = f"{phase} {war_type}".lower()
+        active = any(x in combined for x in ["active", "ongoing"])
+        registered = any(x in combined for x in ["register", "confirmed", "prewar"])
+
     return {
+        "has_war": bool(factions or node),
+        "active": bool(active),
+        "registered": bool(registered),
+        "phase": phase or "none",
+        "war_id": str(node.get("war_id") or node.get("warID") or node.get("id") or node.get("rankedwarid") or "").strip(),
+        "war_type": war_type or "rankedwars",
+        "my_faction_id": str((my_side or {}).get("faction_id") or my_faction_id or "").strip(),
+        "my_faction_name": str((my_side or {}).get("name") or my_faction_name or "").strip(),
+        "enemy_faction_id": str((enemy_side or {}).get("faction_id") or "").strip(),
+        "enemy_faction_name": str((enemy_side or {}).get("name") or "").strip(),
+        "enemy_members": [],
+        "score_us": _to_int((my_side or {}).get("score"), 0),
+        "score_them": _to_int((enemy_side or {}).get("score"), 0),
+        "chain_us": _to_int((my_side or {}).get("chain"), 0),
+        "chain_them": _to_int((enemy_side or {}).get("chain"), 0),
+        "target_score": _to_int(node.get("target") or node.get("target_score") or node.get("score_target"), 0),
+        "source_note": source_note,
+        "debug_factions": [{k: v for k, v in x.items() if k != "raw"} for x in factions],
+        "debug_raw_keys": sorted(list(node.keys())),
+        "debug_raw": node,
+    }
+
+
+def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: str = "") -> Dict[str, Any]:
+    api_key = str(api_key or "").strip()
+    my_faction_id = str(my_faction_id or "").strip()
+    my_faction_name = str(my_faction_name or "").strip()
+    base = {
         "has_war": False,
         "active": False,
         "registered": False,
         "phase": "none",
         "war_id": "",
         "war_type": "",
-        "my_faction_id": str(my_faction_id or ""),
-        "my_faction_name": str(my_faction_name or ""),
+        "my_faction_id": my_faction_id,
+        "my_faction_name": my_faction_name,
         "enemy_faction_id": "",
         "enemy_faction_name": "",
         "enemy_members": [],
@@ -342,11 +464,46 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
         "chain_us": 0,
         "chain_them": 0,
         "target_score": 0,
-        "source_note": "War features removed from this backend reset.",
+        "source_note": "No current registered or active ranked war found.",
         "debug_factions": [],
         "debug_raw_keys": [],
         "debug_raw": {},
     }
+    if not api_key:
+        base["source_note"] = "Missing API key."
+        return base
+
+    attempts = []
+    if my_faction_id:
+        attempts.extend([
+            (f"{API_BASE}/v2/faction/{my_faction_id}/rankedwars", {"key": api_key, "striptags": "true"}, "v2_faction_rankedwars_direct"),
+            (f"{API_BASE}/faction/{my_faction_id}", {"selections": "rankedwars", "key": api_key, "striptags": "true"}, "v1_faction_rankedwars_direct"),
+            (f"{API_BASE}/faction/", {"selections": "rankedwars", "ID": my_faction_id, "key": api_key, "striptags": "true"}, "v1_faction_rankedwars_id_upper"),
+            (f"{API_BASE}/faction/", {"selections": "rankedwars", "id": my_faction_id, "key": api_key, "striptags": "true"}, "v1_faction_rankedwars_id_lower"),
+        ])
+    attempts.append((f"{API_BASE}/faction/", {"selections": "rankedwars", "key": api_key, "striptags": "true"}, "v1_faction_rankedwars_self"))
+
+    best_error = "Could not load ranked wars."
+    for url, params, prefix in attempts:
+        res = _safe_get(url, params, cache_seconds=CACHE_TTL_WAR_SUMMARY, cache_prefix=prefix)
+        if not res.get("ok"):
+            best_error = str(res.get("error") or best_error)
+            continue
+        payload = res.get("data") or {}
+        nodes = _candidate_war_nodes(payload)
+        if not nodes and isinstance(payload, dict):
+            nodes = [payload]
+        for node in nodes:
+            if not isinstance(node, dict):
+                continue
+            if not _is_current_ranked_war(node, my_faction_id=my_faction_id, my_faction_name=my_faction_name):
+                continue
+            built = _build_ranked_war_response(node, source_note=f"Loaded from {prefix}.", my_faction_id=my_faction_id, my_faction_name=my_faction_name)
+            if built.get("enemy_faction_id") or built.get("registered") or built.get("active"):
+                return built
+
+    base["source_note"] = best_error or base["source_note"]
+    return base
 
 
 def member_live_bars(api_key: str, user_id: str = "") -> Dict[str, Any]:
