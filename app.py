@@ -1321,6 +1321,137 @@ def _enrich_members_with_saved_keys(
 
 
 
+
+def _combined_faction_member_map(faction_id: str) -> Dict[str, Dict[str, Any]]:
+    faction_id = str(faction_id or "").strip()
+    merged: Dict[str, Dict[str, Any]] = {}
+
+    if not faction_id:
+        return merged
+
+    try:
+        user_rows = get_users_by_faction(faction_id) or []
+    except Exception:
+        user_rows = []
+
+    for row in user_rows:
+        if not isinstance(row, dict):
+            continue
+        member_user_id = str(row.get("user_id") or row.get("member_user_id") or "").strip()
+        if not member_user_id:
+            continue
+        merged[member_user_id] = {**merged.get(member_user_id, {}), **dict(row)}
+
+    try:
+        access_rows = list_faction_members(faction_id) or []
+    except Exception:
+        access_rows = []
+
+    for row in access_rows:
+        if not isinstance(row, dict):
+            continue
+        member_user_id = str(row.get("member_user_id") or row.get("user_id") or "").strip()
+        if not member_user_id:
+            continue
+        merged[member_user_id] = {**merged.get(member_user_id, {}), **dict(row)}
+
+    try:
+        legacy_map = get_user_map_by_faction(faction_id) or {}
+    except Exception:
+        legacy_map = {}
+
+    if isinstance(legacy_map, dict):
+        for member_user_id, row in legacy_map.items():
+            mid = str(member_user_id or "").strip()
+            if not mid:
+                continue
+            row = row if isinstance(row, dict) else {}
+            merged[mid] = {**merged.get(mid, {}), **dict(row)}
+
+    return merged
+
+
+def _strict_members_payload_for_state(
+    *,
+    user: Dict[str, Any],
+    faction_id: str,
+    faction_name: str,
+    faction_fetch_key: str,
+    faction_member_map: Dict[str, Dict[str, Any]],
+) -> Dict[str, Any]:
+    faction_id = str(faction_id or "").strip()
+    faction_name = str(faction_name or "").strip()
+    faction_fetch_key = str(faction_fetch_key or "").strip()
+    faction_member_map = faction_member_map if isinstance(faction_member_map, dict) else {}
+
+    empty = {
+        "members": [],
+        "members_count": 0,
+        "chain_sitters": [],
+        "source_faction_id": faction_id,
+        "source_faction_name": faction_name,
+        "source_ok": False,
+        "source_error": "No faction id available.",
+        "verified": False,
+    }
+
+    if not faction_id or not faction_fetch_key:
+        return dict(empty)
+
+    faction_info = _faction_basic_by_id(faction_fetch_key, faction_id)
+    resolved_faction_id = str((faction_info or {}).get("faction_id") or "").strip()
+    resolved_faction_name = str((faction_info or {}).get("faction_name") or faction_name or "").strip()
+
+    if not faction_info.get("verified") or resolved_faction_id != faction_id:
+        bad = dict(empty)
+        bad.update({
+            "source_faction_id": faction_id,
+            "source_faction_name": resolved_faction_name or faction_name,
+            "source_error": str((faction_info or {}).get("error") or "Faction verification failed."),
+            "verified": False,
+        })
+        return bad
+
+    seen_ids = set()
+    base_members: List[Dict[str, Any]] = []
+    for row in (faction_info.get("members") or []):
+        member = dict(row or {})
+        member_user_id = str(member.get("user_id") or member.get("id") or "").strip()
+        if not member_user_id or member_user_id in seen_ids:
+            continue
+        seen_ids.add(member_user_id)
+
+        saved = faction_member_map.get(member_user_id) if isinstance(faction_member_map, dict) else None
+        saved = saved if isinstance(saved, dict) else {}
+        merged = dict(member)
+
+        for key, value in saved.items():
+            if value not in (None, ""):
+                merged[key] = value
+
+        merged["user_id"] = member_user_id
+        merged["id"] = member_user_id
+        merged["is_our_member"] = True
+        base_members.append(merged)
+
+    enriched_members = _enrich_members_with_saved_keys(base_members, faction_member_map)
+    members = [_clean_member(x) for x in enriched_members]
+    members.sort(key=_bucket_sort_key)
+
+    chain_sitters = [m for m in members if _safe_bool(m.get("chain_sitter"))]
+
+    return {
+        "members": members,
+        "members_count": len(members),
+        "chain_sitters": chain_sitters,
+        "source_faction_id": faction_id,
+        "source_faction_name": resolved_faction_name or faction_name,
+        "source_ok": True,
+        "source_error": "",
+        "verified": True,
+    }
+
+
 def _first_stat(personalstats: Dict[str, Any], keys: List[str], default: int = 0) -> int:
     stats = personalstats or {}
     for key in keys:
@@ -1733,25 +1864,23 @@ def api_state():
     faction_id = str(user.get("faction_id") or "").strip()
     faction_name = str(user.get("faction_name") or "").strip()
 
-    license_status = _build_license_status_payload(faction_id, viewer_user_id=user_id) if faction_id else {}
-    access = _feature_access_for_user(user)
-    faction_map = get_user_map_by_faction(faction_id) if faction_id else {}
-
     me = me_basic(api_key) or {}
     me = {
         **dict(me or {}),
         "available": 1 if _safe_bool((user or {}).get("available")) else 0,
         "chain_sitter": 1 if _safe_bool((user or {}).get("chain_sitter")) else 0,
     }
+
     live_faction_id = str(me.get("faction_id") or faction_id or "").strip()
     live_faction_name = str(me.get("faction_name") or faction_name or "").strip()
 
     if live_faction_id and live_faction_id != faction_id:
         faction_id = live_faction_id
         faction_name = live_faction_name
-        license_status = _build_license_status_payload(faction_id, viewer_user_id=user_id) if faction_id else {}
-        access = _feature_access_for_user({**user, "faction_id": faction_id, "faction_name": faction_name})
-        faction_map = get_user_map_by_faction(faction_id) if faction_id else {}
+
+    license_status = _build_license_status_payload(faction_id, viewer_user_id=user_id) if faction_id else {}
+    access = _feature_access_for_user({**user, "faction_id": faction_id, "faction_name": faction_name})
+    faction_member_map = _combined_faction_member_map(faction_id) if faction_id else {}
 
     viewer_war_api_key = api_key or ""
     leader_war_api_key = ""
@@ -1771,22 +1900,26 @@ def api_state():
         war_api_key_source = "leader_user_key"
 
     faction_fetch_key = war_api_key or viewer_war_api_key
-    faction_info = _faction_basic_by_id(faction_fetch_key, faction_id) if faction_fetch_key else {"ok": False, "members": [], "verified": False}
-    if str((faction_info or {}).get("faction_id") or "").strip() != faction_id:
-        faction_info = {
-            "ok": False,
-            "faction_id": faction_id,
-            "faction_name": faction_name,
-            "members": [],
-            "requested_faction_id": faction_id,
-            "verified": False,
-            "error": "Faction mismatch while building /api/state members.",
-        }
+    strict_members_payload = _strict_members_payload_for_state(
+        user=user,
+        faction_id=faction_id,
+        faction_name=faction_name,
+        faction_fetch_key=faction_fetch_key,
+        faction_member_map=faction_member_map,
+    )
+
+    members = list(strict_members_payload.get("members") or [])
+    chain_sitters = list(strict_members_payload.get("chain_sitters") or [])
+    our_member_ids = {
+        str(m.get("user_id") or m.get("id") or "").strip()
+        for m in members
+        if str(m.get("user_id") or m.get("id") or "").strip()
+    }
 
     war_info = ranked_war_summary(
         war_api_key,
-        my_faction_id=live_faction_id,
-        my_faction_name=live_faction_name,
+        my_faction_id=faction_id,
+        my_faction_name=faction_name,
     ) if war_api_key else {
         "ok": True,
         "active": False,
@@ -1807,29 +1940,13 @@ def api_state():
         "source_note": "No war API key available.",
     }
 
-    raw_members = []
-    for m in (faction_info.get("members") or []):
-        member_id = str(m.get("user_id") or m.get("id") or "")
-        merged = dict(m)
-        if member_id and member_id in faction_map:
-            merged.update({k: v for k, v in faction_map[member_id].items() if v not in (None, "")})
-        raw_members.append(merged)
-
-    enriched_members = _enrich_members_with_saved_keys(raw_members, faction_map or {})
-
-    members = [_clean_member(x) for x in enriched_members]
-    members.sort(key=_bucket_sort_key)
-    chain_sitters = [m for m in members if _safe_bool(m.get("chain_sitter"))]
-
     war_id = str(war_info.get("war_id") or "")
     enemy_faction_id = str(war_info.get("enemy_faction_id") or "").strip()
     enemy_faction_name = str(war_info.get("enemy_faction_name") or "").strip()
+    raw_enemy_members = list(war_info.get("enemy_members") or [])
 
-    raw_enemy_members = war_info.get("enemy_members") or []
-    enemies: List[Dict[str, Any]] = []
-
-    our_faction_id = str(war_info.get("my_faction_id") or live_faction_id or "").strip()
-    our_faction_name = str(war_info.get("my_faction_name") or live_faction_name or "").strip().lower()
+    our_faction_id = str(war_info.get("my_faction_id") or faction_id or "").strip()
+    our_faction_name = str(war_info.get("my_faction_name") or faction_name or "").strip()
 
     if enemy_faction_id and our_faction_id and enemy_faction_id == our_faction_id:
         enemy_faction_id = ""
@@ -1839,13 +1956,14 @@ def api_state():
     if (
         enemy_faction_name
         and our_faction_name
-        and enemy_faction_name.strip().lower() == our_faction_name
+        and enemy_faction_name.strip().lower() == our_faction_name.strip().lower()
         and not enemy_faction_id
         and not raw_enemy_members
     ):
         enemy_faction_name = ""
 
     has_war = bool(war_info.get("has_war"))
+    enemies: List[Dict[str, Any]] = []
 
     if has_war or enemy_faction_id or enemy_faction_name or raw_enemy_members:
         fallback_sides = [x for x in (war_info.get("debug_factions") or []) if isinstance(x, dict)]
@@ -1857,7 +1975,7 @@ def api_state():
 
                 if side_id and our_faction_id and side_id == our_faction_id:
                     continue
-                if side_name and our_faction_name and side_name.lower() == our_faction_name:
+                if side_name and our_faction_name and side_name.lower() == our_faction_name.lower():
                     continue
 
                 if not enemy_faction_id and side_id:
@@ -1882,29 +2000,23 @@ def api_state():
                 if not our_faction_id or fetched_enemy_id != our_faction_id:
                     enemy_faction_id = fetched_enemy_id or enemy_faction_id
                     enemy_faction_name = fetched_enemy_name or enemy_faction_name
-                    raw_enemy_members = enemy_faction_info.get("members") or raw_enemy_members
+                    raw_enemy_members = list(enemy_faction_info.get("members") or raw_enemy_members)
 
-        if raw_enemy_members:
-            our_member_ids = {
-                str(m.get("user_id") or m.get("id") or "").strip()
-                for m in members
-                if str(m.get("user_id") or m.get("id") or "").strip()
-            }
-            seen_enemy_ids = set()
-            filtered_enemy_members = []
+        filtered_enemy_members: List[Dict[str, Any]] = []
+        seen_enemy_ids = set()
 
-            for enemy in raw_enemy_members:
-                enemy_user_id = str(enemy.get("user_id") or enemy.get("id") or "").strip()
-                if enemy_user_id and enemy_user_id in our_member_ids:
-                    continue
-                if enemy_user_id and enemy_user_id in seen_enemy_ids:
-                    continue
-                if enemy_user_id:
-                    seen_enemy_ids.add(enemy_user_id)
-                filtered_enemy_members.append(enemy)
+        for enemy in (raw_enemy_members or []):
+            enemy_user_id = str(enemy.get("user_id") or enemy.get("id") or "").strip()
+            if enemy_user_id and enemy_user_id in our_member_ids:
+                continue
+            if enemy_user_id and enemy_user_id in seen_enemy_ids:
+                continue
+            if enemy_user_id:
+                seen_enemy_ids.add(enemy_user_id)
+            filtered_enemy_members.append(dict(enemy or {}))
 
-            raw_enemy_members = filtered_enemy_members
-            enemies = _merge_enemy_state(raw_enemy_members, war_id)
+        raw_enemy_members = filtered_enemy_members
+        enemies = _merge_enemy_state(raw_enemy_members, war_id) if raw_enemy_members else []
 
     assignments = [_normalize_assignment(x) for x in (list_target_assignments_for_war(war_id) if war_id else [])]
     notes = [_normalize_note(x) for x in (list_war_notes(war_id) if war_id else [])]
@@ -1945,8 +2057,8 @@ def api_state():
     }
 
     our_faction_payload = {
-        "faction_id": str(war_info.get("my_faction_id") or live_faction_id or ""),
-        "name": str(war_info.get("my_faction_name") or live_faction_name or ""),
+        "faction_id": our_faction_id or faction_id,
+        "name": our_faction_name or faction_name,
         "score": _to_int(war_info.get("score_us")),
         "chain": _to_int(war_info.get("chain_us")),
     }
@@ -1973,9 +2085,9 @@ def api_state():
 
     return ok(
         now=utc_now(),
-        members_source_faction_id=faction_id,
-        members_source_faction_name=str((faction_info or {}).get("faction_name") or faction_name or ""),
-        members_source_ok=bool((faction_info or {}).get("verified")),
+        members_source_faction_id=str(strict_members_payload.get("source_faction_id") or faction_id or ""),
+        members_source_faction_name=str(strict_members_payload.get("source_faction_name") or faction_name or ""),
+        members_source_ok=bool(strict_members_payload.get("source_ok")),
         me=me,
         user={
             "user_id": user_id,
@@ -2036,10 +2148,10 @@ def api_state():
             "debug_enemy_fetch": war_info.get("debug_enemy_fetch") or {},
             "source_note": str(war_info.get("source_note") or ""),
             "my_user_id": user_id,
-            "my_faction_id": str(war_info.get("my_faction_id") or ""),
-            "my_faction_name": str(war_info.get("my_faction_name") or ""),
-            "our_faction_id": our_faction_id,
-            "our_faction_name": our_faction_name,
+            "my_faction_id": str(war_info.get("my_faction_id") or faction_id or ""),
+            "my_faction_name": str(war_info.get("my_faction_name") or faction_name or ""),
+            "our_faction_id": our_faction_id or faction_id,
+            "our_faction_name": our_faction_name or faction_name,
             "enemy_faction_id": enemy_faction_id,
             "enemy_faction_name": enemy_faction_name,
             "enemy_members_count": len(raw_enemy_members or []),
@@ -2052,12 +2164,13 @@ def api_state():
             "debug_raw_keys": war_info.get("debug_raw_keys") or [],
             "debug_raw": war_info.get("debug_raw") or {},
             "war_api_key_source": war_api_key_source,
-            "members_source_faction_id": faction_id,
-            "members_source_faction_name": str((faction_info or {}).get("faction_name") or faction_name or ""),
-            "members_source_ok": bool((faction_info or {}).get("verified")),
-            "members_source_error": str((faction_info or {}).get("error") or ""),
+            "members_source_faction_id": str(strict_members_payload.get("source_faction_id") or faction_id or ""),
+            "members_source_faction_name": str(strict_members_payload.get("source_faction_name") or faction_name or ""),
+            "members_source_ok": bool(strict_members_payload.get("source_ok")),
+            "members_source_error": str(strict_members_payload.get("source_error") or ""),
         },
     )
+
 @app.route("/api/war/summary", methods=["GET"])
 @require_session
 def api_war_summary():
