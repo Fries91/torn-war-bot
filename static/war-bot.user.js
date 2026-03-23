@@ -3542,27 +3542,54 @@ if (tab === 'summary') {
     });
     return;
 }
-            if (tab === 'members') {
-                GM_setValue('warhub_members_search', '');
-                GM_setValue('warhub_members_filter', 'all');
-                yield loadState();
-                yield loadFactionMembers(true);
-                renderBody();
-                startMembersCountdownLoop();
-                restartPollingForCurrentTab();
-                return;
-            }
+if (tab === 'members') {
+    GM_setValue('warhub_members_search', '');
+    GM_setValue('warhub_members_filter', 'all');
 
-            if (tab === 'enemies') {
-                GM_setValue('warhub_enemies_search', '');
-                GM_setValue('warhub_enemies_filter', 'all');
-                yield loadLiveSummary(true);
-                yield loadWarEnemiesById(true);
-                renderBody();
-                restartPollingForCurrentTab();
-                return;
-            }
+    renderBody();
+    restartPollingForCurrentTab();
 
+    _asyncToGenerator(function* () {
+        try {
+            yield loadState();
+            if (currentTab !== 'members') return;
+
+            renderBody();
+
+            yield loadFactionMembers(true);
+            if (currentTab !== 'members') return;
+
+            renderBody();
+            startMembersCountdownLoop();
+        } catch (e) {
+            console.warn('War Hub members tab load failed', e);
+            if (currentTab === 'members') renderBody();
+        }
+    })();
+
+    return;
+}
+if (tab === 'enemies') {
+    GM_setValue('warhub_enemies_search', '');
+    GM_setValue('warhub_enemies_filter', 'all');
+
+    renderBody();
+    restartPollingForCurrentTab();
+
+    loadWarEnemiesById(true).then(function () {
+        if (currentTab === 'enemies') renderBody();
+    }).catch(function () {
+        if (currentTab === 'enemies') renderBody();
+    });
+
+    loadLiveSummary(true).then(function () {
+        if (currentTab === 'enemies') renderBody();
+    }).catch(function () {
+        if (currentTab === 'enemies') renderBody();
+    });
+
+    return;
+}
             if (tab === 'hospital') {
                 yield loadState();
                 renderBody();
@@ -4220,61 +4247,26 @@ function _tickCurrentTab() {
 
         loadInFlight = true;
         try {
-                    if (currentTab === 'summary') {
-            yield loadLiveSummary(false);
-            renderBody();
-            return;
-        }
+            if (currentTab === 'summary') {
+                yield loadLiveSummary(false);
+                renderBody();
+                return;
+            }
 
-    if (tab === 'members') {
-    GM_setValue('warhub_members_search', '');
-    GM_setValue('warhub_members_filter', 'all');
-
-    renderBody();
-    restartPollingForCurrentTab();
-
-    _asyncToGenerator(function* () {
-        try {
-            yield loadState();
-            if (currentTab !== 'members') return;
-
-            renderBody();
-
-            yield loadFactionMembers(true);
-            if (currentTab !== 'members') return;
-
-            renderBody();
-            startMembersCountdownLoop();
+            if (currentTab === 'enemies') {
+                yield loadWarEnemiesById(false);
+                yield loadLiveSummary(false);
+                renderBody();
+                return;
+            }
         } catch (e) {
-            console.warn('War Hub members tab load failed', e);
-            if (currentTab === 'members') renderBody();
+            console.warn('War Hub tickCurrentTab failed', e);
+        } finally {
+            loadInFlight = false;
         }
-    })();
-
-    return;
-}
-    if (tab === 'enemies') {
-    GM_setValue('warhub_enemies_search', '');
-    GM_setValue('warhub_enemies_filter', 'all');
-
-    renderBody();
-    restartPollingForCurrentTab();
-
-    loadWarEnemiesById(true).then(function () {
-        if (currentTab === 'enemies') renderBody();
-    }).catch(function () {
-        if (currentTab === 'enemies') renderBody();
     });
-
-    loadLiveSummary(true).then(function () {
-        if (currentTab === 'enemies') renderBody();
-    }).catch(function () {
-        if (currentTab === 'enemies') renderBody();
-    });
-
-    return;
+    return _tickCurrentTab.apply(this, arguments);
 }
-
         if (currentTab === 'hospital') {
             yield loadState();
             renderBody();
