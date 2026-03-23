@@ -1446,6 +1446,13 @@ def _build_live_war_summary(user: Dict[str, Any]) -> Dict[str, Any]:
             "profile_url": member.get("profile_url") or profile_url(member_user_id),
             "attack_url": member.get("attack_url") or attack_url(member_user_id),
             "bounty_url": member.get("bounty_url") or bounty_url(member_user_id),
+            "life_current": _to_int(life.get("current")),
+            "life_max": _to_int(life.get("maximum")),
+            "energy_current": _to_int(energy.get("current")),
+            "energy_max": _to_int(energy.get("maximum")),
+            "nerve_current": _to_int(nerve.get("current")),
+            "nerve_max": _to_int(nerve.get("maximum")),
+            "medical_cooldown": _to_int(live.get("medical_cooldown")),
             "bars": {
                 "life_current": _to_int(life.get("current")),
                 "life_max": _to_int(life.get("maximum")),
