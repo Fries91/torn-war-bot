@@ -51,27 +51,27 @@
     var OWNER_USER_ID = '3679030';
     var PRICE_PER_MEMBER = 3;
 
-    // ============================================================
-    // 03. TAB ORDER
-    // ============================================================
+// ============================================================
+// 03. TAB ORDER
+// ============================================================
 
-    var TAB_ROW_1 = [
+var TAB_ROW_1 = [
     ['overview', 'Overview'],
-    ['chain', 'Chain'],
     ['members', 'Members'],
     ['enemies', 'Enemies'],
     ['hospital', 'Hospital'],
-    ['meddeals', 'Med Deals'],
-    ['targets', 'Targets'],
-    ['settings', 'Settings'],
-    ['instructions', 'Instructions']
+    ['chain', 'Chain'],
+    ['targets', 'Targets']
 ];
 
-    var TAB_ROW_2 = [
-    ['faction', 'Faction'],
-    ['summary', 'Summary'],
+var TAB_ROW_2 = [
+    ['meddeals', 'Med Deals'],
     ['terms', 'Terms'],
-    ['wartop5', 'War Top 5'],
+    ['summary', 'Summary'],
+    ['faction', 'Faction'],
+    ['settings', 'Settings'],
+    ['instructions', 'Help'],
+    ['wartop5', 'Top 5'],
     ['admin', 'Admin']
 ];
 
@@ -260,8 +260,8 @@ var css = "\n\
 .warhub-tab {\n\
   appearance: none !important;\n\
   -webkit-appearance: none !important;\n\
-  border: 1px solid rgba(255,255,255,.16) !important;\n\
-  background: rgba(255,255,255,.10) !important;\n\
+  border: 1px solid rgba(255,255,255,.18) !important;\n\
+  background: rgba(255,255,255,.11) !important;\n\
   color: #ffffff !important;\n\
   border-radius: 10px !important;\n\
   padding: 9px 13px !important;\n\
@@ -275,14 +275,18 @@ var css = "\n\
   box-shadow: inset 0 1px 0 rgba(255,255,255,.06) !important;\n\
   flex: 0 0 auto !important;\n\
   text-shadow: 0 1px 0 rgba(0,0,0,.35) !important;\n\
+  transition: background .15s ease, border-color .15s ease, transform .15s ease !important;\n\
 }\n\
 .warhub-tab:hover {\n\
-  background: rgba(255,255,255,.16) !important;\n\
-  border-color: rgba(255,255,255,.24) !important;\n\
+  background: rgba(255,255,255,.17) !important;\n\
+  border-color: rgba(255,255,255,.26) !important;\n\
+}\n\
+.warhub-tab:active {\n\
+  transform: translateY(1px) !important;\n\
 }\n\
 .warhub-tab.active {\n\
   background: linear-gradient(180deg, rgba(210,51,51,.98), rgba(150,24,24,.98)) !important;\n\
-  border-color: rgba(255,120,120,.60) !important;\n\
+  border-color: rgba(255,120,120,.62) !important;\n\
   color: #fff !important;\n\
   box-shadow: 0 0 0 1px rgba(255,255,255,.05) inset, 0 6px 14px rgba(0,0,0,.22) !important;\n\
 }\n\
@@ -309,8 +313,15 @@ var css = "\n\
   width: 100% !important;\n\
   white-space: nowrap !important;\n\
 }\n\
+.warhub-tabs-row {\n\
+  min-height: 52px !important;\n\
+}\n\
+.warhub-tabs-row:first-child {\n\
+  background: rgba(255,255,255,.02) !important;\n\
+}\n\
 .warhub-tabs-row + .warhub-tabs-row {\n\
-  border-top: 1px solid rgba(255,255,255,.05) !important;\n\
+  border-top: 1px solid rgba(255,255,255,.06) !important;\n\
+  background: rgba(255,255,255,.015) !important;\n\
 }\n\
 \n\
 .warhub-body {\n\
@@ -649,17 +660,17 @@ var css = "\n\
   .warhub-section-scroll {\n\
     max-height: 34vh !important;\n\
   }\n\
-  .warhub-tabs {\n\
-    min-height: 50px !important;\n\
-    max-height: 50px !important;\n\
-    padding: 8px 6px !important;\n\
-    gap: 6px !important;\n\
-  }\n\
-  .warhub-tab {\n\
-    font-size: 12px !important;\n\
-    padding: 8px 10px !important;\n\
-    min-height: 34px !important;\n\
-  }\n\
+        .warhub-tabs {\n\
+        min-height: 50px !important;\n\
+        max-height: 50px !important;\n\
+        padding: 8px 6px !important;\n\
+        gap: 6px !important;\n\
+      }\n\
+      .warhub-tab {\n\
+        font-size: 12px !important;\n\
+        padding: 8px 10px !important;\n\
+        min-height: 34px !important;\n\
+      }\n\
 }\n\
 ";
 
