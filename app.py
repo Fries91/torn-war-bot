@@ -37,7 +37,7 @@ from db import (
     delete_user_exemption,
     get_faction_member_access,
 )
-from torn_api import me_basic, faction_basic, member_live_bars, profile_url, attack_url, bounty_url
+from torn_api import me_basic, faction_basic, ranked_war_summary, member_live_bars, profile_url, attack_url, bounty_url
 from payment_service import (
     activate_faction_member_for_billing,
     confirm_faction_payment_and_renew,
@@ -486,6 +486,50 @@ def _build_live_faction_members(user: Dict[str, Any]) -> List[Dict[str, Any]]:
     return out
 
 
+
+def _build_enemy_member_payload(member: Dict[str, Any], enemy_faction_id: str, enemy_faction_name: str) -> Dict[str, Any]:
+    member_user_id = str(member.get("user_id") or "").strip()
+    return {
+        **member,
+        "user_id": member_user_id,
+        "profile_url": profile_url(member_user_id),
+        "attack_url": attack_url(member_user_id),
+        "bounty_url": bounty_url(member_user_id),
+        "enemy": True,
+        "source": "ranked_war_enemy_faction",
+        "source_faction_id": str(enemy_faction_id or ""),
+        "source_faction_name": str(enemy_faction_name or ""),
+    }
+
+
+def _build_war_and_enemy_payload(user: Dict[str, Any]) -> Dict[str, Any]:
+    user = user or {}
+    api_key = str(user.get("api_key") or "").strip()
+    my_faction_id = str(user.get("faction_id") or "").strip()
+    my_faction_name = str(user.get("faction_name") or "").strip()
+    war = ranked_war_summary(api_key, my_faction_id=my_faction_id, my_faction_name=my_faction_name) or {}
+
+    enemy_faction_id = str(war.get("enemy_faction_id") or "").strip()
+    enemy_faction_name = str(war.get("enemy_faction_name") or "").strip()
+    enemies: List[Dict[str, Any]] = []
+
+    if enemy_faction_id:
+        enemy_faction = faction_basic(api_key, faction_id=enemy_faction_id) or {}
+        if enemy_faction.get("ok"):
+            if not enemy_faction_name:
+                enemy_faction_name = str(enemy_faction.get("faction_name") or "").strip()
+            for member in list(enemy_faction.get("members") or []):
+                enemies.append(_build_enemy_member_payload(member, enemy_faction_id, enemy_faction_name))
+
+    enemies.sort(key=lambda x: (str(x.get("name") or "").lower(), str(x.get("user_id") or "")))
+
+    war["enemy_faction_id"] = enemy_faction_id
+    war["enemy_faction_name"] = enemy_faction_name
+    war["enemy_members_count"] = len(enemies)
+    war["enemy_members"] = enemies
+    return {"war": war, "enemies": enemies}
+
+
 def _build_state_payload(user: Dict[str, Any]) -> Dict[str, Any]:
     user = user or {}
     faction_id = str(user.get("faction_id") or "").strip()
@@ -494,6 +538,7 @@ def _build_state_payload(user: Dict[str, Any]) -> Dict[str, Any]:
         ensure_faction_license_row(faction_id=faction_id, faction_name=faction_name)
     access = _feature_access_for_user(user)
     members = _build_live_faction_members(user)
+    war_payload = _build_war_and_enemy_payload(user) if faction_id else {"war": {}, "enemies": []}
     notifications = list_notifications(str(user.get("user_id") or ""), limit=25)
 
     return {
@@ -510,6 +555,8 @@ def _build_state_payload(user: Dict[str, Any]) -> Dict[str, Any]:
             "member_count": len(members),
         },
         "members": members,
+        "war": war_payload.get("war") or {},
+        "enemies": war_payload.get("enemies") or [],
         "notifications": notifications,
         "access": access,
         "license": access.get("license") or {},
@@ -647,6 +694,42 @@ def api_notifications_seen():
     user = request.user or {}
     mark_notifications_seen(str(user.get("user_id") or ""))
     return ok(message="Notifications marked seen.")
+
+
+@app.route("/api/war", methods=["GET"])
+@require_session
+def api_war():
+    user = request.user or {}
+    faction_id = str(user.get("faction_id") or "").strip()
+    if not faction_id:
+        return ok(war=ranked_war_summary(str(user.get("api_key") or ""), my_faction_id="", my_faction_name=""), enemies=[], count=0)
+    access_error = _require_feature_access()
+    if access_error:
+        return access_error
+    payload = _build_war_and_enemy_payload(user)
+    return ok(war=payload.get("war") or {}, enemies=payload.get("enemies") or [], count=len(payload.get("enemies") or []))
+
+
+@app.route("/api/enemies", methods=["GET"])
+@require_session
+def api_enemies():
+    user = request.user or {}
+    faction_id = str(user.get("faction_id") or "").strip()
+    if not faction_id:
+        return ok(items=[], count=0, faction_id="", faction_name="")
+    access_error = _require_feature_access()
+    if access_error:
+        return access_error
+    payload = _build_war_and_enemy_payload(user)
+    war = payload.get("war") or {}
+    enemies = payload.get("enemies") or []
+    return ok(
+        items=enemies,
+        count=len(enemies),
+        faction_id=str(war.get("enemy_faction_id") or ""),
+        faction_name=str(war.get("enemy_faction_name") or ""),
+        war=war,
+    )
 
 
 @app.route("/api/faction/members", methods=["GET"])
