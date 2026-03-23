@@ -2127,43 +2127,80 @@ function energyText(member) {
     var access = normalizeAccessCache((state && state.access) || accessState);
     var war = (state && state.war) || {};
     var license = (state && state.license) || {};
-    var viewer = (state && state.viewer) || {};
     var ownFaction = (state && state.faction) || {};
     var ownName = String(ownFaction.name || license.faction_name || 'Your Faction');
     var enemyName = String(war.enemy_faction_name || 'No current enemy');
-    var memberCount = arr((state && state.members) || []).length;
-    var enemyCount = arr((state && state.enemies) || []).length;
+
+    var members = arr((state && state.members) || []);
+    var enemies = arr((state && state.enemies) || []);
+    var medDeals = arr((state && state.med_deals) || []);
+    var termsText = String((state && state.terms && state.terms.text) || '').trim();
+
+    var hospitalEnemies = enemies.filter(function (m) {
+        return stateLabel(m) === 'hospital';
+    });
+
+    function previewText(text, emptyText) {
+        var value = String(text || '').trim();
+        if (!value) return emptyText;
+        if (value.length > 180) return esc(value.slice(0, 180)) + '...';
+        return esc(value);
+    }
 
     return [
         '<div class="warhub-grid">',
 
             '<div class="warhub-hero-card">',
-                '<div class="warhub-title">War Overview</div>',
+                '<div class="warhub-title">Overview</div>',
                 '<div class="warhub-sub">' + esc(ownName) + (enemyName && enemyName !== 'No current enemy' ? ' vs ' + esc(enemyName) : '') + '</div>',
             '</div>',
 
-            '<div class="warhub-mini-grid">',
-                '<div class="warhub-card">',
-                    '<h3>Your Faction</h3>',
-                    '<div class="warhub-kv"><div>Name</div><div>' + esc(ownName) + '</div></div>',
-                    '<div class="warhub-kv"><div>Faction ID</div><div>' + esc(String(ownFaction.faction_id || license.faction_id || '—')) + '</div></div>',
-                    '<div class="warhub-kv"><div>Loaded members</div><div>' + esc(String(memberCount)) + '</div></div>',
-                '</div>',
+            '<div class="warhub-card warhub-col">',
+                '<h3>War Overview</h3>',
 
-                '<div class="warhub-card">',
-                    '<h3>Enemy Faction</h3>',
-                    '<div class="warhub-kv"><div>Name</div><div>' + esc(enemyName) + '</div></div>',
-                    '<div class="warhub-kv"><div>Faction ID</div><div>' + esc(String(war.enemy_faction_id || '—')) + '</div></div>',
-                    '<div class="warhub-kv"><div>Loaded enemies</div><div>' + esc(String(enemyCount)) + '</div></div>',
-                '</div>',
-            '</div>',
-
-            '<div class="warhub-card">',
-                '<h3>War Status</h3>',
+                '<div class="warhub-kv"><div>Your Faction</div><div>' + esc(ownName) + '</div></div>',
+                '<div class="warhub-kv"><div>Enemy Faction</div><div>' + esc(enemyName) + '</div></div>',
                 '<div class="warhub-kv"><div>War ID</div><div>' + esc(String(war.war_id || '—')) + '</div></div>',
                 '<div class="warhub-kv"><div>Phase</div><div>' + esc(String(war.war_phase || war.phase || '—')) + '</div></div>',
                 '<div class="warhub-kv"><div>Type</div><div>' + esc(String(war.war_type || '—')) + '</div></div>',
-                '<div class="warhub-kv"><div>Can use features</div><div>' + (canUseFeatures() ? 'Yes' : 'No') + '</div></div>',
+                '<div class="warhub-kv"><div>Members</div><div>' + esc(String(members.length)) + '</div></div>',
+                '<div class="warhub-kv"><div>Enemies</div><div>' + esc(String(enemies.length)) + '</div></div>',
+                '<div class="warhub-kv"><div>Features Active</div><div>' + (canUseFeatures() ? 'Yes' : 'No') + '</div></div>',
+            '</div>',
+
+            '<div class="warhub-card warhub-col">',
+                '<h3>Terms</h3>',
+                '<div class="warhub-spy-box">' + previewText(termsText, 'No war terms saved yet.') + '</div>',
+                '<div class="warhub-row">',
+                    '<button type="button" class="warhub-btn ghost" data-tab="terms">Open Terms</button>',
+                '</div>',
+            '</div>',
+
+            '<div class="warhub-card warhub-col">',
+                '<h3>Med Deals</h3>',
+                '<div class="warhub-kv"><div>Saved Deals</div><div>' + esc(String(medDeals.length)) + '</div></div>',
+                '<div class="warhub-spy-box">' + (
+                    medDeals.length
+                        ? esc(String((medDeals[0] && (medDeals[0].name || medDeals[0].user)) || 'Entry')) +
+                          (medDeals[0] && medDeals[0].amount ? ' — ' + esc(String(medDeals[0].amount)) : '')
+                        : 'No med deals saved.'
+                ) + '</div>',
+                '<div class="warhub-row">',
+                    '<button type="button" class="warhub-btn ghost" data-tab="meddeals">Open Med Deals</button>',
+                '</div>',
+            '</div>',
+
+            '<div class="warhub-card warhub-col">',
+                '<h3>Dibs</h3>',
+                '<div class="warhub-kv"><div>Hospital Targets</div><div>' + esc(String(hospitalEnemies.length)) + '</div></div>',
+                '<div class="warhub-spy-box">' + (
+                    hospitalEnemies.length
+                        ? esc(String(hospitalEnemies[0].name || 'Enemy')) + ' is in hospital.'
+                        : 'No hospital enemies right now.'
+                ) + '</div>',
+                '<div class="warhub-row">',
+                    '<button type="button" class="warhub-btn ghost" data-tab="hospital">Open Dibs</button>',
+                '</div>',
             '</div>',
 
             '<div class="warhub-card">',
@@ -2171,20 +2208,7 @@ function energyText(member) {
                 '<div class="warhub-kv"><div>Status</div><div>' + esc(access.status || '—') + '</div></div>',
                 '<div class="warhub-kv"><div>Message</div><div>' + esc(access.message || '—') + '</div></div>',
                 '<div class="warhub-kv"><div>Leader</div><div>' + (access.is_faction_leader ? 'Yes' : 'No') + '</div></div>',
-                '<div class="warhub-kv"><div>Member enabled</div><div>' + (access.member_enabled ? 'Yes' : 'No') + '</div></div>',
-                '<div class="warhub-kv"><div>User exempt</div><div>' + (access.is_user_exempt ? 'Yes' : 'No') + '</div></div>',
-                '<div class="warhub-kv"><div>Faction exempt</div><div>' + (access.is_faction_exempt ? 'Yes' : 'No') + '</div></div>',
-            '</div>',
-
-            '<div class="warhub-card">',
-                '<h3>Viewer</h3>',
-                '<div class="warhub-kv"><div>Name</div><div>' + esc(String(viewer.name || '—')) + '</div></div>',
-                '<div class="warhub-kv"><div>User ID</div><div>' + esc(String(viewer.user_id || '—')) + '</div></div>',
-                '<div class="warhub-kv"><div>Payment player</div><div>' + esc(String(license.payment_player || PAYMENT_PLAYER)) + '</div></div>',
-                '<div class="warhub-kv"><div>Price per member</div><div>' + esc(String(license.payment_per_member || PRICE_PER_MEMBER)) + ' Xanax</div></div>',
-                '<div class="warhub-kv"><div>Enabled members</div><div>' + esc(String(license.enabled_member_count || 0)) + '</div></div>',
-                '<div class="warhub-kv"><div>Renewal cost</div><div>' + esc(String(license.renewal_cost || 0)) + ' Xanax</div></div>',
-                '<div class="warhub-kv"><div>Paid until</div><div>' + esc(fmtTs(license.paid_until_at)) + '</div></div>',
+                '<div class="warhub-kv"><div>Member Enabled</div><div>' + (access.member_enabled ? 'Yes' : 'No') + '</div></div>',
             '</div>',
 
         '</div>'
