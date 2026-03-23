@@ -55,22 +55,25 @@
     // 03. TAB ORDER
     // ============================================================
 
-    var TAB_ORDER = [
-        ['overview', 'Overview'],
-        ['faction', 'Faction'],
-        ['summary', 'Summary'],
-        ['chain', 'Chain'],
-        ['terms', 'Terms'],
-        ['members', 'Members'],
-        ['enemies', 'Enemies'],
-        ['hospital', 'Hospital'],
-        ['meddeals', 'Med Deals'],
-        ['targets', 'Targets'],
-        ['instructions', 'Instructions'],
-        ['settings', 'Settings'],
-        ['admin', 'Admin'],
-        ['wartop5', 'War Top 5']
-    ];
+    var TAB_ROW_1 = [
+    ['overview', 'Overview'],
+    ['chain', 'Chain'],
+    ['members', 'Members'],
+    ['enemies', 'Enemies'],
+    ['hospital', 'Hospital'],
+    ['meddeals', 'Med Deals'],
+    ['targets', 'Targets'],
+    ['settings', 'Settings'],
+    ['instructions', 'Instructions']
+];
+
+    var TAB_ROW_2 = [
+    ['faction', 'Faction'],
+    ['summary', 'Summary'],
+    ['terms', 'Terms'],
+    ['wartop5', 'War Top 5'],
+    ['admin', 'Admin']
+];
 
     // ============================================================
     // 04. RUNTIME STATE / CACHES
@@ -254,6 +257,14 @@
       min-height: 30px !important;\n\
     }\n\
 \n\
+    .warhub-tabs-wrap {\n\
+      display: flex !important;\n\
+      flex-direction: column !important;\n\
+      gap: 0 !important;\n\
+      border-bottom: 1px solid rgba(255,255,255,.08) !important;\n\
+      background: rgba(255,255,255,.02) !important;\n\
+      width: 100% !important;\n\
+    }\n\
     .warhub-tabs {\n\
       display: flex !important;\n\
       flex: 0 0 auto !important;\n\
@@ -263,39 +274,14 @@
       padding: 8px !important;\n\
       overflow-x: auto !important;\n\
       overflow-y: hidden !important;\n\
-      border-bottom: 1px solid rgba(255,255,255,.08) !important;\n\
-      background: rgba(255,255,255,.02) !important;\n\
       scrollbar-width: thin !important;\n\
       -webkit-overflow-scrolling: touch !important;\n\
       width: 100% !important;\n\
-      min-height: 48px !important;\n\
-      max-height: 48px !important;\n\
       white-space: nowrap !important;\n\
     }\n\
-\n\
-    .warhub-tab {\n\
-      appearance: none !important;\n\
-      -webkit-appearance: none !important;\n\
-      border: 0 !important;\n\
-      border-radius: 999px !important;\n\
-      background: rgba(255,255,255,.07) !important;\n\
-      color: #fff !important;\n\
-      padding: 6px 10px !important;\n\
-      font-size: 11px !important;\n\
-      font-weight: 700 !important;\n\
-      white-space: nowrap !important;\n\
-      cursor: pointer !important;\n\
-      flex: 0 0 auto !important;\n\
-      display: inline-flex !important;\n\
-      align-items: center !important;\n\
-      justify-content: center !important;\n\
-      min-height: 30px !important;\n\
+    .warhub-tabs-row + .warhub-tabs-row {\n\
+      border-top: 1px solid rgba(255,255,255,.05) !important;\n\
     }\n\
-    .warhub-tab.active {\n\
-      background: linear-gradient(180deg, #d23333, #851616) !important;\n\
-      color: #fff !important;\n\
-    }\n\
-\n\
     .warhub-body {\n\
       flex: 1 1 auto !important;\n\
       min-height: 0 !important;\n\
@@ -1818,18 +1804,31 @@ function getEnemyMembersForTab() {
     }
 
  function renderTabs() {
-    var html = TAB_ORDER.map(function (pair) {
-        var key = pair[0];
-        var label = pair[1];
+    function canShowTab(key) {
+        if (key === 'admin' && !canSeeAdmin()) return false;
+        if (key === 'faction' && !canManageFaction()) return false;
+        if (key === 'members' && !isLoggedIn()) return false;
+        return true;
+    }
 
-        if (key === 'admin' && !canSeeAdmin()) return '';
-        if (key === 'faction' && !canManageFaction()) return '';
-        if (key === 'members' && !isLoggedIn()) return '';
+    function renderRow(tabRow) {
+        var html = tabRow.map(function (pair) {
+            var key = pair[0];
+            var label = pair[1];
 
-        return '<button class="warhub-tab ' + (currentTab === key ? 'active' : '') + '" data-tab="' + esc(key) + '">' + esc(label) + '</button>';
-    }).join('');
+            if (!canShowTab(key)) return '';
 
-    return '<div class="warhub-tabs">' + html + '</div>';
+            return '<button class="warhub-tab ' + (currentTab === key ? 'active' : '') + '" data-tab="' + esc(key) + '">' + esc(label) + '</button>';
+        }).join('');
+
+        return '<div class="warhub-tabs warhub-tabs-row">' + html + '</div>';
+    }
+
+    return ''
+        + '<div class="warhub-tabs-wrap">'
+        + renderRow(TAB_ROW_1)
+        + renderRow(TAB_ROW_2)
+        + '</div>';
 }
 
 function renderFactionTab() {
