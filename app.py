@@ -1532,6 +1532,7 @@ def api_war_summary_live():
 
 @app.route("/api/war/enemies", methods=["GET"])
 @require_session
+
 def api_war_enemies():
     blocked = _require_feature_access()
     if blocked:
@@ -1601,59 +1602,25 @@ def api_war_enemies():
             current_war_id=war_id,
         )
 
+    our_faction_id = str(war_info.get("my_faction_id") or faction_id or "").strip()
+    our_faction_name = str(war_info.get("my_faction_name") or faction_name or "").strip()
+
     enemy_faction_id = str(war_info.get("enemy_faction_id") or "").strip()
     enemy_faction_name = str(war_info.get("enemy_faction_name") or "").strip()
-    raw_enemy_members = war_info.get("enemy_members") or []
+    raw_enemy_members = list(war_info.get("enemy_members") or [])
 
-    our_faction_id = str(war_info.get("my_faction_id") or faction_id or "").strip()
-    our_faction_name = str(war_info.get("my_faction_name") or faction_name or "").strip().lower()
+    faction_fetch_key = war_api_key or viewer_war_api_key
 
     if enemy_faction_id and our_faction_id and enemy_faction_id == our_faction_id:
         enemy_faction_id = ""
         enemy_faction_name = ""
         raw_enemy_members = []
 
-    if (
-        enemy_faction_name
-        and our_faction_name
-        and enemy_faction_name.strip().lower() == our_faction_name
-        and not enemy_faction_id
-        and not raw_enemy_members
-    ):
-        enemy_faction_name = ""
-
-    fallback_sides = [x for x in (war_info.get("debug_factions") or []) if isinstance(x, dict)]
-
-    if not enemy_faction_id or not enemy_faction_name:
-        for side in fallback_sides:
-            side_id = str(side.get("faction_id") or "").strip()
-            side_name = str(side.get("faction_name") or "").strip()
-
-            if side_id and our_faction_id and side_id == our_faction_id:
-                continue
-            if side_name and our_faction_name and side_name.lower() == our_faction_name:
-                continue
-
-            if not enemy_faction_id and side_id:
-                enemy_faction_id = side_id
-            if not enemy_faction_name and side_name:
-                enemy_faction_name = side_name
-
-            if enemy_faction_id and enemy_faction_name:
-                break
-
-    faction_fetch_key = war_api_key or viewer_war_api_key
-    if ((not raw_enemy_members) or (not enemy_faction_name)) and enemy_faction_id and faction_fetch_key:
+    if enemy_faction_id and (not raw_enemy_members or not enemy_faction_name) and faction_fetch_key:
         enemy_faction_info = _faction_basic_by_id(faction_fetch_key, enemy_faction_id)
         if enemy_faction_info.get("ok"):
             fetched_enemy_id = str(enemy_faction_info.get("faction_id") or enemy_faction_id or "").strip()
-            fetched_enemy_name = str(
-                enemy_faction_info.get("faction_name")
-                or enemy_faction_name
-                or ((war_info.get("debug_enemy_fetch") or {}).get("enemy_fetch_faction_name"))
-                or ((war_info.get("debug_enemy_fetch") or {}).get("enemy_name"))
-                or ""
-            ).strip()
+            fetched_enemy_name = str(enemy_faction_info.get("faction_name") or enemy_faction_name or "").strip()
 
             if not our_faction_id or fetched_enemy_id != our_faction_id:
                 enemy_faction_id = fetched_enemy_id or enemy_faction_id
@@ -1686,13 +1653,6 @@ def api_war_enemies():
 
     enemies = _merge_enemy_state(raw_enemy_members, war_id) if raw_enemy_members else []
 
-    enemy_faction_name = str(
-        enemy_faction_name
-        or ((war_info.get("debug_enemy_fetch") or {}).get("enemy_fetch_faction_name"))
-        or ((war_info.get("debug_enemy_fetch") or {}).get("enemy_name"))
-        or ""
-    ).strip()
-
     return ok(
         war_id=war_id,
         requested_war_id=requested_war_id,
@@ -1717,7 +1677,8 @@ def api_war_enemies():
             "enemy_members_count": len(enemies),
         },
     )
-    
+
+
 # ============================================================
 # 12. STATE / WAR ROUTES
 # /api/state, /api/war/*, /api/faction/basic, /api/enemies, etc.
