@@ -117,11 +117,11 @@
 
     var accessState = normalizeAccessCache(GM_getValue(K_ACCESS_CACHE, null));
 
-    // ============================================================
-    // 05. STYLES
-    // ============================================================
+// ============================================================
+// 05. STYLES
+// ============================================================
 
-    var css = "\n\
+var css = "\n\
 #warhub-shield {\n\
   position: fixed !important;\n\
   z-index: 2147483647 !important;\n\
@@ -533,16 +533,7 @@
   overflow: auto !important;\n\
 }\n\
 \n\
-@media (max-width: 520px) {\n\
-  #warhub-overlay {\n\
-    width: min(98vw, 520px) !important;\n\
-    right: 1vw !important;\n\
-    top: 160px !important;\n\
-  }\n\
-  .warhub-mini-grid {\n\
-    grid-template-columns: 1fr !important;\n\
-  }\n\
-  .warhub-overview-hero {\n\
+.warhub-overview-hero {\n\
   display: flex !important;\n\
   flex-direction: column !important;\n\
   gap: 10px !important;\n\
@@ -651,6 +642,14 @@
 }\n\
 \n\
 @media (max-width: 520px) {\n\
+  #warhub-overlay {\n\
+    width: min(98vw, 520px) !important;\n\
+    right: 1vw !important;\n\
+    top: 160px !important;\n\
+  }\n\
+  .warhub-mini-grid {\n\
+    grid-template-columns: 1fr !important;\n\
+  }\n\
   .warhub-war-head {\n\
     grid-template-columns: 1fr !important;\n\
   }\n\
@@ -660,7 +659,6 @@
   .warhub-overview-stats {\n\
     grid-template-columns: 1fr 1fr !important;\n\
   }\n\
-}\n\
   .warhub-section-scroll {\n\
     max-height: 34vh !important;\n\
   }\n\
@@ -678,7 +676,7 @@
 }\n\
 ";
 
-    GM_addStyle(css);
+GM_addStyle(css);
 
     // ============================================================
     // 06. BASIC UTILITIES
