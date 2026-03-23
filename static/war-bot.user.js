@@ -1742,105 +1742,49 @@ function canSeeAdmin() {
         };
     }
 
-function getMembers() {
-    return arr(state && state.members);
-}
-
-function getRowId(row) {
-    return String(
-        (row && (row.user_id || row.member_user_id || row.id || row.player_id)) || ''
-    ).trim();
-}
-
-function getLockedMembersForTab() {
-    var liveMembers = getMembers();
-    var factionMembers = getFactionMembers();
-    var byId = {};
-    var out = [];
-
-    // Primary source: backend state.members
-    arr(liveMembers).forEach(function (row) {
-        if (!row || typeof row !== 'object') return;
-
-        var id = getRowId(row);
-        if (!id) return;
-
-        byId[id] = Object.assign({}, byId[id] || {}, row);
-    });
-
-    // Fallback / enrichment only
-    if (!Object.keys(byId).length) {
-        arr(factionMembers).forEach(function (row) {
-            if (!row || typeof row !== 'object') return;
-
-            var id = getRowId(row);
-            if (!id) return;
-
-            byId[id] = Object.assign({}, byId[id] || {}, row);
-        });
-    } else {
-        arr(factionMembers).forEach(function (row) {
-            if (!row || typeof row !== 'object') return;
-
-            var id = getRowId(row);
-            if (!id) return;
-            if (!byId[id]) return;
-
-            byId[id] = Object.assign({}, row, byId[id] || {});
-        });
+    function getMembers() {
+        return arr(state && state.members);
     }
 
-    Object.keys(byId).forEach(function (id) {
-        out.push(byId[id]);
-    });
-
-    return out;
-}
-
-function getUnknownEnemyMembersForTab() {
-    var memberIds = {};
-    var byId = {};
-    var out = [];
-
-    arr(getLockedMembersForTab()).forEach(function (row) {
-        var id = getRowId(row);
-        if (id) memberIds[id] = true;
-    });
-
-    function addRows(rows) {
-        arr(rows).forEach(function (row) {
-            if (!row || typeof row !== 'object') return;
-
-            var id = getRowId(row);
-            if (!id) return;
-            if (memberIds[id]) return;
-            if (byId[id]) return;
-
-            byId[id] = true;
-            out.push(row);
-        });
+    function getRowId(row) {
+        return String(
+            (row && (row.user_id || row.member_user_id || row.id || row.player_id)) || ''
+        ).trim();
     }
 
-    addRows(warEnemiesCache);
-    addRows(state && state.enemy_members);
-    addRows(state && state.enemies);
-    addRows(state && state.enemyMembers);
-    addRows(state && state.war && state.war.enemy_members);
-    addRows(liveSummaryCache && liveSummaryCache.item && liveSummaryCache.item.enemy_members);
+    function getLockedMembersForTab() {
+        return arr(state && state.members);
+    }
 
-    return out;
-}
+    function getUnknownEnemyMembersForTab() {
+        var byId = {};
+        var out = [];
 
-function getEnemyMembersForTab() {
-    return getUnknownEnemyMembersForTab();
-}
-function getEnemyMembersForTab() {
-    return getUnknownEnemyMembersForTab();
-}
+        function addRows(rows) {
+            arr(rows).forEach(function (row) {
+                if (!row || typeof row !== 'object') return;
+
+                var id = getRowId(row);
+                if (!id || byId[id]) return;
+
+                byId[id] = true;
+                out.push(row);
+            });
+        }
+
+        addRows(warEnemiesCache);
+        addRows(state && state.enemy_members);
+        addRows(state && state.enemies);
+        addRows(state && state.enemyMembers);
+        addRows(state && state.war && state.war.enemy_members);
+
+        return out;
+    }
+
     function getEnemyMembersForTab() {
-    return getUnknownEnemyMembersForTab();
-}
-    
+        return getUnknownEnemyMembersForTab();
+    }
+
     function getNotifications() {
         return arr(state && state.notifications);
     }
@@ -2447,7 +2391,7 @@ function renderChainTab() {
     }
 
 function renderMembersTab() {
-    var members = getLockedMembersForTab();
+    var members = arr(getLockedMembersForTab());
 
     var savedSearch = String(GM_getValue('warhub_members_search', '') || '').trim().toLowerCase();
     var savedFilter = String(GM_getValue('warhub_members_filter', 'all') || 'all').trim().toLowerCase();
@@ -2475,18 +2419,18 @@ function renderMembersTab() {
     }
 
     function memberState(member) {
-        var s = String(member.online_state || member.status_class || '').trim().toLowerCase();
+        var s = String(member && (member.online_state || member.status_class || member.state_bucket || '')).trim().toLowerCase();
         if (s === 'online' || s === 'idle' || s === 'travel' || s === 'jail' || s === 'hospital' || s === 'offline') {
             return s;
         }
 
         var combined = [
-            String(member.status || ''),
-            String(member.status_detail || ''),
-            String(member.last_action || ''),
-            String(member.display_status || ''),
-            String(member.last_action_status || ''),
-            String(member.state || '')
+            String((member && member.status) || ''),
+            String((member && member.status_detail) || ''),
+            String((member && member.last_action) || ''),
+            String((member && member.display_status) || ''),
+            String((member && member.last_action_status) || ''),
+            String((member && member.state) || '')
         ].join(' ').toLowerCase();
 
         if (combined.indexOf('hospital') >= 0) return 'hospital';
@@ -2505,7 +2449,12 @@ function renderMembersTab() {
 
     function stateLabel(stateName, member) {
         if (stateName === 'hospital') {
-            var secs = toNum(member.hospital_seconds || member.hospital_time || member.status_until || member.status_cd);
+            var secs = toNum(
+                member.hospital_seconds != null ? member.hospital_seconds :
+                member.hospital_time != null ? member.hospital_time :
+                member.status_until != null ? member.status_until :
+                member.status_cd
+            );
             return secs > 0 ? 'Hospital (' + shortTime(secs) + ')' : 'Hospital';
         }
         if (stateName === 'jail') return 'Jail';
@@ -2602,6 +2551,9 @@ function renderMembersTab() {
         var energyMax = toNum(m.energy_max != null ? m.energy_max : m.max_energy);
         var liveOk = hasLiveStats(m);
 
+        var medBase = toNum(m.medical_cooldown || m.med_cd || m.drug_cd || 0);
+        var statusBase = toNum(m.hospital_seconds || m.hospital_time || m.status_until || m.status_cd || 0);
+
         var profileUrl = String(
             m.profile_url ||
             (userId ? ('https://www.torn.com/profiles.php?XID=' + encodeURIComponent(userId)) : '')
@@ -2613,7 +2565,7 @@ function renderMembersTab() {
         ).trim();
 
         return '\
-      <div class="warhub-card warhub-member-row" style="margin-top:6px;padding:7px 8px;" data-medcd-base="' + esc(String(toNum(m.medical_cooldown || m.med_cd || m.drug_cd || 0))) + '" data-statuscd-base="' + esc(String(toNum(m.hospital_seconds || m.hospital_time || m.status_until || m.status_cd || 0))) + '" data-state-name="' + esc(stateName) + '">\
+      <div class="warhub-card warhub-member-row" style="margin-top:6px;padding:7px 8px;" data-medcd-base="' + esc(String(medBase)) + '" data-statuscd-base="' + esc(String(statusBase)) + '" data-state-name="' + esc(stateName) + '">\
         <div style="display:flex;align-items:center;gap:6px;flex-wrap:nowrap;">\
           <div style="min-width:0;flex:1 1 auto;overflow:hidden;">\
             <div class="warhub-name" style="font-size:12px;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' +
