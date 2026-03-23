@@ -1014,6 +1014,64 @@ function adminReq(method, path, body) {
     function doAction(method, path, body) {
     return _doAction.apply(this, arguments);
 }
+    function loadTargetsFromServer() {
+    return _loadTargetsFromServer.apply(this, arguments);
+}
+
+function _loadTargetsFromServer() {
+    _loadTargetsFromServer = _asyncToGenerator(function* () {
+        var res = yield authedReq('GET', '/api/targets');
+        if (!res.ok) {
+            throw new Error((res && res.error) || 'Failed to load targets.');
+        }
+
+        if (!state || typeof state !== 'object') state = {};
+        state.targets = arr(res.data && res.data.targets);
+        return state.targets;
+    });
+    return _loadTargetsFromServer.apply(this, arguments);
+}
+
+function addTargetToServer(target) {
+    return _addTargetToServer.apply(this, arguments);
+}
+
+function _addTargetToServer() {
+    _addTargetToServer = _asyncToGenerator(function* (target) {
+        var res = yield authedReq('POST', '/api/targets', {
+            target_id: String(target && (target.target_id || target.user_id || target.id) || '').trim(),
+            target_name: String(target && (target.target_name || target.name || target.user_name) || '').trim(),
+            note: String(target && target.note || '').trim()
+        });
+
+        if (!res.ok) {
+            throw new Error((res && res.error) || 'Failed to add target.');
+        }
+
+        if (!state || typeof state !== 'object') state = {};
+        state.targets = arr(res.data && res.data.targets);
+        return state.targets;
+    });
+    return _addTargetToServer.apply(this, arguments);
+}
+
+function removeTargetFromServer(targetId) {
+    return _removeTargetFromServer.apply(this, arguments);
+}
+
+function _removeTargetFromServer() {
+    _removeTargetFromServer = _asyncToGenerator(function* (targetId) {
+        var res = yield authedReq('DELETE', '/api/targets/' + encodeURIComponent(String(targetId || '').trim()));
+        if (!res.ok) {
+            throw new Error((res && res.error) || 'Failed to remove target.');
+        }
+
+        if (!state || typeof state !== 'object') state = {};
+        state.targets = arr(res.data && res.data.targets);
+        return state.targets;
+    });
+    return _removeTargetFromServer.apply(this, arguments);
+}
 
 function _doAction() {
     _doAction = _asyncToGenerator(function* (method, path, body) {
@@ -1262,6 +1320,14 @@ function canSeeAdmin() {
             }
 
             state = res.data;
+
+            try {
+                yield loadTargetsFromServer();
+            } catch (e) {
+                console.warn('War Hub targets load failed:', e);
+            }
+
+            membersLiveStamp = Date.now();
             membersLiveStamp = Date.now();
             if (state && state.access) saveAccessCache(state.access);
             renderBody();
@@ -2995,11 +3061,11 @@ function renderTargetsTab() {
                     var name = esc(m.name || m.user_name || ('Enemy #' + id));
                     var lvl = Number(m.level || m.lvl || 0) || 0;
                     var status = esc(getMemberStatusText(m) || '');
-                    return '<option value="' + esc(id) + '" data-name="' + name + '">' + name + (lvl ? ' • Lv ' + lvl : '') + (status ? ' • ' + status : '') + '</option>';
+                    return '<option value="' + esc(id) + '">' + name + (lvl ? ' • Lv ' + lvl : '') + (status ? ' • ' + status : '') + '</option>';
                 }).join('') : '<option value="" disabled>No enemy members found</option>') + '\
             </select>\
           </div>\
-          <div style="margin-top:6px;opacity:.82;">Selecting a player adds them to your target list.</div>\
+          <div style="margin-top:6px;opacity:.82;">Selecting a player adds them to the saved faction target list.</div>\
         </div>\
       </div>\
 \
@@ -3007,12 +3073,22 @@ function renderTargetsTab() {
         <div class="warhub-section-title"><h3>Targets</h3><span class="warhub-count">' + fmtNum(targets.length) + '</span></div>\
         <div class="warhub-list">' + (targets.length ? targets.map(function (t) {
             var tid = String(t.target_id || t.user_id || t.id || '').trim();
+            var tname = esc(t.name || t.target_name || 'Unknown');
+            var attackUrl = tid ? ('https://www.torn.com/loader.php?sid=attack&user2ID=' + encodeURIComponent(tid)) : '';
+            var profileUrl = tid ? ('https://www.torn.com/profiles.php?XID=' + encodeURIComponent(tid)) : '';
+            var bountyUrl = tid ? ('https://www.torn.com/bounties.php#/!p=add&userID=' + encodeURIComponent(tid)) : '';
+
             return '<div class="warhub-row">\
               <div>\
-                <div class="warhub-name">' + esc(t.name || t.target_name || 'Unknown') + '</div>\
+                <div class="warhub-name">' + tname + '</div>\
                 <div class="warhub-meta">' + esc('ID: ' + tid) + '</div>\
               </div>\
-              <button class="warhub-btn ghost" data-remove-target="' + esc(tid) + '">Remove</button>\
+              <div class="warhub-actions" style="margin-top:8px;">\
+                ' + (attackUrl ? '<a class="warhub-btn small" href="' + esc(attackUrl) + '" target="_blank" rel="noopener noreferrer">Attack</a>' : '') + '\
+                ' + (profileUrl ? '<a class="warhub-btn small" href="' + esc(profileUrl) + '" target="_blank" rel="noopener noreferrer">Profile</a>' : '') + '\
+                ' + (bountyUrl ? '<a class="warhub-btn small" href="' + esc(bountyUrl) + '" target="_blank" rel="noopener noreferrer">Bounty</a>' : '') + '\
+                <button class="warhub-btn warn small" data-remove-target="' + esc(tid) + '">Remove</button>\
+              </div>\
             </div>';
         }).join('') : '<div class="warhub-empty">No targets set.</div>') + '</div>\
       </div>';
@@ -3630,11 +3706,11 @@ if (saveKeysBtn && !saveKeysBtn.__warhubBound) {
         });
     }
 
-    var targetEnemySelect = overlay.querySelector('#warhub-target-enemy-select');
+        var targetEnemySelect = overlay.querySelector('#warhub-target-enemy-select');
     if (targetEnemySelect && !targetEnemySelect.__warhubBound) {
         targetEnemySelect.__warhubBound = true;
 
-        targetEnemySelect.addEventListener('change', function () {
+        targetEnemySelect.addEventListener('change', _asyncToGenerator(function* () {
             var targetId = String(targetEnemySelect.value || '').trim();
             if (!targetId) return;
 
@@ -3644,53 +3720,43 @@ if (saveKeysBtn && !saveKeysBtn.__warhubBound) {
 
             if (!enemy) {
                 setStatus('Could not find selected enemy.', true);
-                return;
-            }
-
-            if (!state || typeof state !== 'object') state = {};
-            if (!Array.isArray(state.targets)) state.targets = [];
-
-            var exists = state.targets.some(function (t) {
-                return String(t.target_id || t.user_id || t.id || '').trim() === targetId;
-            });
-
-            if (exists) {
-                setStatus('Target already added.');
                 targetEnemySelect.value = '';
                 return;
             }
 
-            state.targets.unshift({
-                target_id: targetId,
-                user_id: targetId,
-                id: targetId,
-                name: String(enemy.name || enemy.user_name || ('Enemy #' + targetId)),
-                target_name: String(enemy.name || enemy.user_name || ('Enemy #' + targetId)),
-                level: Number(enemy.level || enemy.lvl || 0) || 0,
-                status: String(getMemberStatusText(enemy) || '')
-            });
-
-            targetEnemySelect.value = '';
-            renderBody();
-            setStatus('Target added.');
-        });
+            try {
+                setStatus('Adding target...');
+                yield addTargetToServer({
+                    target_id: targetId,
+                    target_name: String(enemy.name || enemy.user_name || ('Enemy #' + targetId))
+                });
+                targetEnemySelect.value = '';
+                renderBody();
+                setStatus('Target added.');
+            } catch (e) {
+                targetEnemySelect.value = '';
+                setStatus((e && e.message) ? e.message : 'Failed to add target.', true);
+            }
+        }));
     }
 
     overlay.querySelectorAll('[data-remove-target]').forEach(function (btn) {
         if (btn.__warhubBound) return;
         btn.__warhubBound = true;
 
-        btn.addEventListener('click', function () {
+        btn.addEventListener('click', _asyncToGenerator(function* () {
             var targetId = String(btn.getAttribute('data-remove-target') || '').trim();
-            if (!targetId || !state || !Array.isArray(state.targets)) return;
+            if (!targetId) return;
 
-            state.targets = state.targets.filter(function (t) {
-                return String(t.target_id || t.user_id || t.id || '').trim() !== targetId;
-            });
-
-            renderBody();
-            setStatus('Target removed.');
-        });
+            try {
+                setStatus('Removing target...');
+                yield removeTargetFromServer(targetId);
+                renderBody();
+                setStatus('Target removed.');
+            } catch (e) {
+                setStatus((e && e.message) ? e.message : 'Failed to remove target.', true);
+            }
+        }));
     });
 
     var enemiesFilter = overlay.querySelector('#wh-enemies-filter');
