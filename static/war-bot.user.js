@@ -2972,25 +2972,90 @@ function renderEnemiesTab() {
           </div>';
     }
 
-    function renderTargetsTab() {
-        var targets = getTargets();
-        return '\
-          <div class="warhub-card">\
-            <div class="warhub-section-title"><h3>Targets</h3><span class="warhub-count">' + fmtNum(targets.length) + '</span></div>\
-            <div class="warhub-list">' + (targets.length ? targets.map(function (t) {
-                return '<div class="warhub-row"><div class="warhub-name">' + esc(t.name || t.target_name || 'Unknown') + '</div><div class="warhub-meta">' + esc('ID: ' + String(t.target_id || t.user_id || '')) + '</div></div>';
-            }).join('') : '<div class="warhub-empty">No targets set.</div>') + '</div>\
-          </div>';
-    }
+function renderTargetsTab() {
+    var targets = getTargets();
 
-    function renderInstructionsTab() {
-        return '\
-          <div class="warhub-card">\
-            <div class="warhub-section-title"><h3>Instructions</h3></div>\
-            <div class="warhub-mini">Save your API key, log in, and use the tabs to manage war, faction access, and billing. Owner/Admin can manage exemptions in the Admin tab.</div>\
-          </div>';
-    }
+    var enemies = arr(getEnemyMembersForTab()).slice().sort(function (a, b) {
+        var an = String(a.name || a.user_name || '').toLowerCase();
+        var bn = String(b.name || b.user_name || '').toLowerCase();
+        return an.localeCompare(bn);
+    });
 
+    return '\
+      <div class="warhub-card">\
+        <div class="warhub-section-title"><h3>🎯 Enemy Target</h3></div>\
+        <div class="warhub-mini">\
+          <label class="warhub-label" for="warhub-target-enemy-select">Choose an enemy member</label>\
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">\
+            <div style="font-size:22px;line-height:1;">🎯</div>\
+            <select id="warhub-target-enemy-select" class="warhub-input" style="flex:1;min-width:180px;">\
+              <option value="">Select enemy target...</option>\
+              ' + (enemies.length ? enemies.map(function (m) {
+                    var id = String(m.user_id || m.member_user_id || m.id || '').trim();
+                    var name = esc(m.name || m.user_name || ('Enemy #' + id));
+                    var lvl = Number(m.level || m.lvl || 0) || 0;
+                    var status = esc(getMemberStatusText(m) || '');
+                    return '<option value="' + esc(id) + '" data-name="' + name + '">' + name + (lvl ? ' • Lv ' + lvl : '') + (status ? ' • ' + status : '') + '</option>';
+                }).join('') : '<option value="" disabled>No enemy members found</option>') + '\
+            </select>\
+          </div>\
+          <div style="margin-top:6px;opacity:.82;">Selecting a player adds them to your target list.</div>\
+        </div>\
+      </div>\
+\
+      <div class="warhub-card">\
+        <div class="warhub-section-title"><h3>Targets</h3><span class="warhub-count">' + fmtNum(targets.length) + '</span></div>\
+        <div class="warhub-list">' + (targets.length ? targets.map(function (t) {
+            var tid = String(t.target_id || t.user_id || t.id || '').trim();
+            return '<div class="warhub-row">\
+              <div>\
+                <div class="warhub-name">' + esc(t.name || t.target_name || 'Unknown') + '</div>\
+                <div class="warhub-meta">' + esc('ID: ' + tid) + '</div>\
+              </div>\
+              <button class="warhub-btn ghost" data-remove-target="' + esc(tid) + '">Remove</button>\
+            </div>';
+        }).join('') : '<div class="warhub-empty">No targets set.</div>') + '</div>\
+      </div>';
+}
+function renderInstructionsTab() {
+    return '\
+      <div class="warhub-card">\
+        <div class="warhub-section-title"><h3>📘 How to Use</h3></div>\
+        <div class="warhub-mini">\
+          Save your Torn API key in Settings, then log in to connect your account to War Hub.\
+          Use the tabs to move between Overview, Summary, Members, Enemies, Hospital, Med Deals, Targets, and other faction tools.\
+          Leaders can manage faction access and member activation, while members can view live war information, availability tools, and assigned features based on what their faction has enabled.\
+        </div>\
+      </div>\
+\
+      <div class="warhub-card">\
+        <div class="warhub-section-title"><h3>📜 Terms of Service</h3></div>\
+        <div class="warhub-mini">\
+          War Hub is provided as a faction support tool to help organize war activity, member tracking, and faction management.\
+          By using this hub, you agree to use it at your own risk and to avoid abuse, unauthorized access attempts, or misuse of faction data.\
+          Access may be limited, suspended, or removed if a user or faction breaks these terms, fails billing requirements, or attempts to bypass access controls.\
+        </div>\
+      </div>\
+\
+      <div class="warhub-card">\
+        <div class="warhub-section-title"><h3>🔐 API Storage & Torn Safety</h3></div>\
+        <div class="warhub-mini">\
+          Your Torn API key is stored locally in your userscript storage on your device so the hub can authenticate your account and pull your allowed data.\
+          It is used only for War Hub features such as login, war data, member tools, and faction-linked access checks.\
+          War Hub is designed to work as a helper overlay for Torn gameplay and does not automate gameplay actions or play the game for you.\
+          Always use a limited-permission Torn API key that you trust for external tools.\
+        </div>\
+      </div>\
+\
+      <div class="warhub-card">\
+        <div class="warhub-section-title"><h3>⚔️ What This Hub Can Do</h3></div>\
+        <div class="warhub-mini">\
+          For leaders, War Hub can help manage faction access, enable members, review faction billing status, monitor war progress, and organize war support tools in one place.\
+          For members, it can show live war details, faction activity, enemies, hospital tracking, targets, med deals, and personal availability options depending on faction permissions.\
+          The goal is to keep war coordination faster, cleaner, and easier for both leadership and active fighters.\
+        </div>\
+      </div>';
+}
 function renderSettingsTab() {
     var apiKey = cleanInputValue(GM_getValue(K_API_KEY, ''));
     var me = getMe();
@@ -3564,6 +3629,69 @@ if (saveKeysBtn && !saveKeysBtn.__warhubBound) {
             renderBody();
         });
     }
+
+    var targetEnemySelect = overlay.querySelector('#warhub-target-enemy-select');
+    if (targetEnemySelect && !targetEnemySelect.__warhubBound) {
+        targetEnemySelect.__warhubBound = true;
+
+        targetEnemySelect.addEventListener('change', function () {
+            var targetId = String(targetEnemySelect.value || '').trim();
+            if (!targetId) return;
+
+            var enemy = arr(getEnemyMembersForTab()).find(function (m) {
+                return String(m.user_id || m.member_user_id || m.id || '').trim() === targetId;
+            });
+
+            if (!enemy) {
+                setStatus('Could not find selected enemy.', true);
+                return;
+            }
+
+            if (!state || typeof state !== 'object') state = {};
+            if (!Array.isArray(state.targets)) state.targets = [];
+
+            var exists = state.targets.some(function (t) {
+                return String(t.target_id || t.user_id || t.id || '').trim() === targetId;
+            });
+
+            if (exists) {
+                setStatus('Target already added.');
+                targetEnemySelect.value = '';
+                return;
+            }
+
+            state.targets.unshift({
+                target_id: targetId,
+                user_id: targetId,
+                id: targetId,
+                name: String(enemy.name || enemy.user_name || ('Enemy #' + targetId)),
+                target_name: String(enemy.name || enemy.user_name || ('Enemy #' + targetId)),
+                level: Number(enemy.level || enemy.lvl || 0) || 0,
+                status: String(getMemberStatusText(enemy) || '')
+            });
+
+            targetEnemySelect.value = '';
+            renderBody();
+            setStatus('Target added.');
+        });
+    }
+
+    overlay.querySelectorAll('[data-remove-target]').forEach(function (btn) {
+        if (btn.__warhubBound) return;
+        btn.__warhubBound = true;
+
+        btn.addEventListener('click', function () {
+            var targetId = String(btn.getAttribute('data-remove-target') || '').trim();
+            if (!targetId || !state || !Array.isArray(state.targets)) return;
+
+            state.targets = state.targets.filter(function (t) {
+                return String(t.target_id || t.user_id || t.id || '').trim() !== targetId;
+            });
+
+            renderBody();
+            setStatus('Target removed.');
+        });
+    });
 
     var enemiesFilter = overlay.querySelector('#wh-enemies-filter');
     if (enemiesFilter && !enemiesFilter.__warhubBound) {
