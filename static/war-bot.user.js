@@ -1648,10 +1648,11 @@ function getMe() {
         return state && state.enemy_faction ? state.enemy_faction : {};
     }
 
-    function getFriendlyMembersForTab() {
+function getFriendlyMembersForTab() {
     var byId = {};
     var out = [];
 
+    var myUserId = String((getMe() && getMe().user_id) || '').trim();
     var myFactionId = String(
         (getMe() && getMe().faction_id) ||
         (getFaction() && (getFaction().faction_id || getFaction().id)) ||
@@ -1662,45 +1663,90 @@ function getMe() {
         ''
     ).trim();
 
-    function addRows(rows, requireOwnFaction) {
-        arr(rows).forEach(function (row) {
-            if (!row || typeof row !== 'object') return;
+    function getRowId(row) {
+        return String(row && (row.user_id || row.member_user_id || row.id || '')).trim();
+    }
 
-            var id = String(row.user_id || row.member_user_id || row.id || '').trim();
-            if (!id || byId[id]) return;
-
-            var rowFactionId = String(
+    function getRowFactionId(row) {
+        return String(
+            (row && (
                 row.faction_id ||
                 row.member_faction_id ||
                 row.side_faction_id ||
-                row.fid ||
-                ''
-            ).trim();
+                row.enemy_faction_id ||
+                row.fid
+            )) || ''
+        ).trim();
+    }
 
-            if (requireOwnFaction && myFactionId && rowFactionId && rowFactionId !== myFactionId) {
-                return;
-            }
+    function rowLooksEnemy(row) {
+        if (!row || typeof row !== 'object') return false;
+
+        var rowFactionId = getRowFactionId(row);
+        var enemyFactionId = String(
+            warEnemiesFactionId ||
+            (getEnemyFaction() && (getEnemyFaction().faction_id || getEnemyFaction().id)) ||
+            (state && state.enemy_faction_id) ||
+            (getWar() && getWar().enemy_faction_id) ||
+            ''
+        ).trim();
+
+        if (enemyFactionId && rowFactionId && rowFactionId === enemyFactionId) return true;
+
+        var sideName = String(
+            row.side || row.team || row.member_side || row.side_name || ''
+        ).toLowerCase();
+
+        if (sideName === 'enemy' || sideName === 'enemies') return true;
+
+        return false;
+    }
+
+    function isFriendlyRow(row, source) {
+        if (!row || typeof row !== 'object') return false;
+
+        var rowId = getRowId(row);
+        var rowFactionId = getRowFactionId(row);
+
+        if (!rowId) return false;
+        if (rowLooksEnemy(row)) return false;
+        if (myUserId && rowId === myUserId) return true;
+        if (myFactionId && rowFactionId) return rowFactionId === myFactionId;
+
+        // Only trust faction-member cache as friendly when faction id is missing
+        if (source === 'factionMembers') return true;
+
+        return false;
+    }
+
+    function addRows(rows, source) {
+        arr(rows).forEach(function (row) {
+            if (!row || typeof row !== 'object') return;
+
+            var id = getRowId(row);
+            if (!id || byId[id]) return;
+            if (!isFriendlyRow(row, source)) return;
 
             byId[id] = true;
             out.push(row);
         });
     }
 
-    // Preferred friendly source
-    addRows(getFactionMembers(), false);
+    // Strongest friendly source first
+    addRows(getFactionMembers(), 'factionMembers');
 
-    // Merge only rows explicitly matching my faction
-    addRows(getMembers(), true);
-    addRows(state && state.members, true);
-    addRows((state && state.faction && state.faction.members) || [], true);
-    addRows((state && state.war && state.war.members) || [], true);
+    // Only include rows that can be positively identified as friendly
+    addRows(getMembers(), 'members');
+    addRows(state && state.members, 'stateMembers');
+    addRows((state && state.faction && state.faction.members) || [], 'stateFactionMembers');
+    addRows((state && state.war && state.war.members) || [], 'stateWarMembers');
 
     return out;
 }
 
-    function getMembers() {
-        return arr(state && state.members);
-    }
+function getMembers() {
+    return arr(state && state.members);
+}
 
 function getEnemyMembersForTab() {
     var byId = {};
@@ -1726,10 +1772,25 @@ function getEnemyMembersForTab() {
 
     var ownIds = {};
 
+    function getRowId(row) {
+        return String(row && (row.user_id || row.member_user_id || row.id || '')).trim();
+    }
+
+    function getRowFactionId(row) {
+        return String(
+            (row && (
+                row.faction_id ||
+                row.member_faction_id ||
+                row.side_faction_id ||
+                row.enemy_faction_id ||
+                row.fid
+            )) || ''
+        ).trim();
+    }
+
     function markOwn(rows) {
         arr(rows).forEach(function (m) {
-            if (!m || typeof m !== 'object') return;
-            var id = String(m.user_id || m.member_user_id || m.id || '').trim();
+            var id = getRowId(m);
             if (id) ownIds[id] = true;
         });
     }
@@ -1740,17 +1801,19 @@ function getEnemyMembersForTab() {
     function isOwnRow(row) {
         if (!row || typeof row !== 'object') return false;
 
-        var id = String(row.user_id || row.member_user_id || row.id || '').trim();
-        var rowFactionId = String(
-            row.faction_id ||
-            row.member_faction_id ||
-            row.side_faction_id ||
-            row.fid ||
-            ''
-        ).trim();
+        var id = getRowId(row);
+        var rowFactionId = getRowFactionId(row);
 
         if (id && ownIds[id]) return true;
         if (myFactionId && rowFactionId && rowFactionId === myFactionId) return true;
+
+        var sideName = String(
+            row.side || row.team || row.member_side || row.side_name || ''
+        ).toLowerCase();
+
+        if (sideName === 'friendly' || sideName === 'friends' || sideName === 'our' || sideName === 'ours') {
+            return true;
+        }
 
         return false;
     }
@@ -1758,38 +1821,47 @@ function getEnemyMembersForTab() {
     function isEnemyRow(row) {
         if (!row || typeof row !== 'object') return false;
 
-        var rowFactionId = String(
-            row.faction_id ||
-            row.member_faction_id ||
-            row.side_faction_id ||
-            row.fid ||
-            ''
-        ).trim();
+        var rowFactionId = getRowFactionId(row);
+
+        if (isOwnRow(row)) return false;
 
         if (enemyFactionId && rowFactionId) {
             return rowFactionId === enemyFactionId;
         }
 
-        return !isOwnRow(row);
+        var sideName = String(
+            row.side || row.team || row.member_side || row.side_name || ''
+        ).toLowerCase();
+
+        if (sideName === 'enemy' || sideName === 'enemies') return true;
+
+        // If no faction id is available, only allow rows from enemy-specific sources
+        return false;
     }
 
-    function addRows(rows, requireEnemyMatch) {
+    function addRows(rows, source) {
         arr(rows).forEach(function (row) {
             if (!row || typeof row !== 'object') return;
 
-            var id = String(row.user_id || row.member_user_id || row.id || '').trim();
+            var id = getRowId(row);
             if (!id || byId[id]) return;
             if (isOwnRow(row)) return;
-            if (requireEnemyMatch && !isEnemyRow(row)) return;
+
+            if (source === 'enemyOnly') {
+                if (!isEnemyRow(row) && enemyFactionId) return;
+            } else {
+                if (!isEnemyRow(row)) return;
+            }
 
             byId[id] = true;
             out.push(row);
         });
     }
 
-    addRows(warEnemiesCache, true);
-    addRows(state && state.enemy_members, true);
-    addRows((state && state.war && state.war.enemy_members) || [], true);
+    // Only enemy-specific sources
+    addRows(warEnemiesCache, 'enemyOnly');
+    addRows(state && state.enemy_members, 'enemyOnly');
+    addRows((state && state.war && state.war.enemy_members) || [], 'enemyOnly');
 
     return out;
 }
