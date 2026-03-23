@@ -1253,6 +1253,11 @@ function canSeeAdmin() {
         _loadState = _asyncToGenerator(function* () {
             if (!isLoggedIn()) {
                 state = null;
+                liveSummaryCache = null;
+                liveSummaryLoading = false;
+                liveSummaryError = '';
+                liveSummaryLastAt = 0;
+                resetWarCaches();
                 renderBody();
                 return null;
             }
@@ -1262,15 +1267,36 @@ function canSeeAdmin() {
                 if (res.status === 401 || res.status === 403) {
                     GM_deleteValue(K_SESSION);
                     state = null;
+                    liveSummaryCache = null;
+                    liveSummaryLoading = false;
+                    liveSummaryError = '';
+                    liveSummaryLastAt = 0;
+                    resetWarCaches();
                 }
                 setStatus(res.error || 'Could not load state.', true);
                 renderBody();
                 return null;
             }
 
-            state = res.data;
+            state = res.data || {};
             membersLiveStamp = Date.now();
             if (state && state.access) saveAccessCache(state.access);
+
+            if (state && state.enemy_faction_id) warEnemiesFactionId = String(state.enemy_faction_id || '').trim();
+            if (state && state.enemy_faction_name) warEnemiesFactionName = String(state.enemy_faction_name || '').trim();
+
+            var hasWar = !!(
+                (state && state.has_war) ||
+                (state && state.is_ranked_war) ||
+                (state && state.war_id) ||
+                (state && state.ranked_war_id) ||
+                (state && state.war && (state.war.war_id || state.war.id))
+            );
+
+            if (!hasWar) {
+                resetWarCaches();
+            }
+
             renderBody();
             return state;
         });
@@ -1328,29 +1354,29 @@ function canSeeAdmin() {
     }
 
     function loadFactionMembers(force) {
-    return _loadFactionMembers.apply(this, arguments);
-}
+        return _loadFactionMembers.apply(this, arguments);
+    }
 
-function _loadFactionMembers() {
-    _loadFactionMembers = _asyncToGenerator(function* (force) {
-        if (!isLoggedIn()) return [];
-        if (!canManageFaction()) return [];
+    function _loadFactionMembers() {
+        _loadFactionMembers = _asyncToGenerator(function* (force) {
+            if (!isLoggedIn()) return [];
+            if (!canManageFaction()) return [];
 
-        try {
-            var res = yield authedReq('GET', '/api/faction/members');
-            if (!res.ok) {
+            try {
+                var res = yield authedReq('GET', '/api/faction/members');
+                if (!res.ok) {
+                    currentFactionMembers = [];
+                    return [];
+                }
+                currentFactionMembers = Array.isArray(res.data && res.data.items) ? res.data.items : [];
+                return currentFactionMembers;
+            } catch (e) {
                 currentFactionMembers = [];
                 return [];
             }
-            currentFactionMembers = Array.isArray(res.data && res.data.items) ? res.data.items : [];
-            return currentFactionMembers;
-        } catch (e) {
-            currentFactionMembers = [];
-            return [];
-        }
-    });
-    return _loadFactionMembers.apply(this, arguments);
-}
+        });
+        return _loadFactionMembers.apply(this, arguments);
+    }
 
     function loadAdminPaymentDue() {
         return _asyncToGenerator(function* () {
@@ -1443,205 +1469,261 @@ function _loadFactionMembers() {
 
     function activateFactionMember(memberId, memberName, position) {
         return _activateFactionMember.apply(this, arguments);
-}
+    }
 
-function _activateFactionMember() {
-    _activateFactionMember = _asyncToGenerator(function* (memberId, memberName, position) {
-        if (!memberId) throw new Error('Missing member ID.');
+    function _activateFactionMember() {
+        _activateFactionMember = _asyncToGenerator(function* (memberId, memberName, position) {
+            if (!memberId) throw new Error('Missing member ID.');
 
-        var payload = {
-            member_user_id: String(memberId || ''),
-            member_name: String(memberName || ''),
-            position: String(position || '')
-        };
+            var payload = {
+                member_user_id: String(memberId || ''),
+                member_name: String(memberName || ''),
+                position: String(position || '')
+            };
 
-        var res = yield authedReq('POST', '/api/faction/members', payload);
-        if (!res.ok) {
-            throw new Error(res.error || 'Could not activate member.');
+            var res = yield authedReq('POST', '/api/faction/members', payload);
+            if (!res.ok) {
+                throw new Error(res.error || 'Could not activate member.');
+            }
+
+            if (res.data && res.data.license) {
+                accessState = accessState || {};
+                accessState.license = res.data.license;
+                GM_setValue(K_ACCESS_CACHE, accessState);
+            }
+
+            yield loadFactionMembers(true);
+            return res.data || {};
+        });
+        return _activateFactionMember.apply(this, arguments);
+    }
+
+    function resetWarCaches() {
+        warEnemiesCache = [];
+        warEnemiesFactionName = '';
+        warEnemiesFactionId = '';
+        warEnemiesLoadedAt = 0;
+        setWarEnemyStatsCache([]);
+    }
+
+    function syncWarCachesFromPayload(payload) {
+        var root = (payload && typeof payload === 'object') ? payload : {};
+        var item = (root && typeof root.item === 'object') ? root.item : root;
+        var war = (item && typeof item.war === 'object') ? item.war : {};
+
+        var enemyFactionId = String(
+            item.enemy_faction_id ||
+            war.enemy_faction_id ||
+            (state && state.enemy_faction_id) ||
+            ''
+        ).trim();
+
+        var enemyFactionName = String(
+            item.enemy_faction_name ||
+            war.enemy_faction_name ||
+            (state && state.enemy_faction_name) ||
+            ''
+        ).trim();
+
+        if (enemyFactionId) warEnemiesFactionId = enemyFactionId;
+        if (enemyFactionName) warEnemiesFactionName = enemyFactionName;
+
+        if (Array.isArray(item.enemy_stats)) {
+            setWarEnemyStatsCache(item.enemy_stats);
         }
+    }
 
-        if (res.data && res.data.license) {
-            accessState = accessState || {};
-            accessState.license = res.data.license;
-            GM_setValue(K_ACCESS_CACHE, accessState);
-        }
+    function loadLiveSummary(force) {
+        return _loadLiveSummary.apply(this, arguments);
+    }
 
-        yield loadFactionMembers(true);
-        return res.data || {};
-    });
-    return _activateFactionMember.apply(this, arguments);
-}
-
-function loadLiveSummary(force) {
-    return _loadLiveSummary.apply(this, arguments);
-}
-
-function _loadLiveSummary() {
-    _loadLiveSummary = _asyncToGenerator(function* (force) {
-        if (!isLoggedIn()) {
-            liveSummaryCache = null;
-            liveSummaryLoading = false;
-            liveSummaryError = '';
-            liveSummaryLastAt = 0;
-            return null;
-        }
-
-        var now = Date.now();
-        if (!force && liveSummaryCache && now - liveSummaryLastAt < 5000) {
-            return liveSummaryCache;
-        }
-
-        liveSummaryLoading = true;
-        liveSummaryError = '';
-
-        try {
-            var res = yield authedReq('GET', '/api/war/summary-live');
-            var data = (res && res.data) ? res.data : null;
-
-            if (!res || !res.ok) {
+    function _loadLiveSummary() {
+        _loadLiveSummary = _asyncToGenerator(function* (force) {
+            if (!isLoggedIn()) {
                 liveSummaryCache = null;
-                liveSummaryError = (res && res.error) || (data && (data.error || data.message)) || 'Failed to load live summary.';
-                liveSummaryLastAt = Date.now();
+                liveSummaryLoading = false;
+                liveSummaryError = '';
+                liveSummaryLastAt = 0;
+                resetWarCaches();
                 return null;
             }
 
-            liveSummaryCache = data || null;
+            var now = Date.now();
+            if (!force && liveSummaryCache && now - liveSummaryLastAt < 5000) {
+                return liveSummaryCache;
+            }
+
+            liveSummaryLoading = true;
             liveSummaryError = '';
-            liveSummaryLastAt = Date.now();
-            return liveSummaryCache;
-        } catch (err) {
-            liveSummaryCache = null;
-            liveSummaryError = err && err.message ? err.message : 'Failed to load live summary.';
-            liveSummaryLastAt = Date.now();
-            return null;
-        } finally {
-            liveSummaryLoading = false;
-        }
-    });
-    return _loadLiveSummary.apply(this, arguments);
-}
 
-function loadWarEnemiesById(force) {
-    return _asyncToGenerator(function* () {
-        window.__warEnemyDebug = {
-            war_id: '',
-            ok: false,
-            status: 0,
-            error: 'loader_started',
-            enemy_members_count: 0,
-            raw_enemy_members_length: 0,
-            enemy_faction_name: '',
-            enemy_faction_id: ''
-        };
+            try {
+                var res = yield authedReq('GET', '/api/war/summary-live');
+                var data = (res && res.data) ? res.data : null;
 
-        var warId = getKnownWarId();
-        window.__warEnemyDebug.war_id = warId || '';
+                if (!res || !res.ok) {
+                    liveSummaryCache = null;
+                    liveSummaryError = (res && res.error) || (data && (data.error || data.message)) || 'Failed to load live summary.';
+                    liveSummaryLastAt = Date.now();
+                    return null;
+                }
 
-        if (!warId) {
-            warEnemiesCache = [];
-            warEnemiesFactionName = '';
-            warEnemiesFactionId = '';
-            setWarEnemyStatsCache([]);
-            window.__warEnemyDebug.error = 'missing_war_id_before_request';
-            return [];
-        }
+                liveSummaryCache = data || null;
+                syncWarCachesFromPayload(liveSummaryCache);
 
-        var res;
-        try {
-            res = yield authedReq('GET', '/api/war/enemies?war_id=' + encodeURIComponent(warId));
-        } catch (err) {
-            warEnemiesCache = [];
-            warEnemiesFactionName = '';
-            warEnemiesFactionId = '';
-            setWarEnemyStatsCache([]);
-            window.__warEnemyDebug.error = err && err.message ? err.message : 'request_threw';
-            return [];
-        }
+                var root = (liveSummaryCache && typeof liveSummaryCache === 'object') ? liveSummaryCache : {};
+                var item = (root && typeof root.item === 'object') ? root.item : root;
+                var hasWar = !!(
+                    item && (
+                        item.has_war ||
+                        item.active ||
+                        item.registered ||
+                        item.war_id ||
+                        (item.war && (item.war.war_id || item.war.id))
+                    )
+                );
 
-        if (!res || !res.ok) {
-            warEnemiesCache = [];
-            warEnemiesFactionName = '';
-            warEnemiesFactionId = '';
-            setWarEnemyStatsCache([]);
+                if (!hasWar) {
+                    resetWarCaches();
+                }
 
+                liveSummaryError = '';
+                liveSummaryLastAt = Date.now();
+                return liveSummaryCache;
+            } catch (err) {
+                liveSummaryCache = null;
+                liveSummaryError = err && err.message ? err.message : 'Failed to load live summary.';
+                liveSummaryLastAt = Date.now();
+                return null;
+            } finally {
+                liveSummaryLoading = false;
+            }
+        });
+        return _loadLiveSummary.apply(this, arguments);
+    }
+
+    function loadWarEnemiesById(force) {
+        return _asyncToGenerator(function* () {
             window.__warEnemyDebug = {
-                war_id: warId,
+                war_id: '',
                 ok: false,
-                status: Number((res && res.status) || 0) || 0,
-                error: String((res && res.error) || 'request_failed'),
+                status: 0,
+                error: 'loader_started',
                 enemy_members_count: 0,
                 raw_enemy_members_length: 0,
                 enemy_faction_name: '',
                 enemy_faction_id: ''
             };
-            return [];
-        }
 
-        var data = (res && res.data) ? res.data : {};
-        warEnemiesCache = Array.isArray(data.enemy_members) ? data.enemy_members : [];
-        warEnemiesFactionName = String(data.enemy_faction_name || '');
-        warEnemiesFactionId = String(data.enemy_faction_id || '');
-        warEnemiesLoadedAt = Date.now();
+            var now = Date.now();
+            if (!force && Array.isArray(warEnemiesCache) && warEnemiesCache.length && now - warEnemiesLoadedAt < 5000) {
+                window.__warEnemyDebug = {
+                    war_id: getKnownWarId() || '',
+                    ok: true,
+                    status: 200,
+                    error: '',
+                    enemy_members_count: warEnemiesCache.length,
+                    raw_enemy_members_length: warEnemiesCache.length,
+                    enemy_faction_name: warEnemiesFactionName,
+                    enemy_faction_id: warEnemiesFactionId,
+                    cache_hit: true
+                };
+                return warEnemiesCache;
+            }
 
-        if (Array.isArray(data.enemy_stats)) {
-            setWarEnemyStatsCache(data.enemy_stats);
-        } else {
-            setWarEnemyStatsCache([]);
-        }
+            var liveRoot = (typeof liveSummaryCache === 'object' && liveSummaryCache) ? liveSummaryCache : {};
+            var live = (liveRoot && typeof liveRoot.item === 'object' && liveRoot.item) ? liveRoot.item : liveRoot;
+            var hasWar = !!(live && (live.has_war || live.active || live.registered || live.war_id));
 
-        window.__warEnemyDebug = {
-            war_id: warId,
-            ok: true,
-            status: Number((res && res.status) || 200) || 200,
-            error: '',
-            enemy_members_count: Number(data.enemy_members_count || 0) || 0,
-            raw_enemy_members_length: warEnemiesCache.length,
-            enemy_faction_name: warEnemiesFactionName,
-            enemy_faction_id: warEnemiesFactionId,
-            debug: data.debug || {}
-        };
+            var warId = getKnownWarId();
+            window.__warEnemyDebug.war_id = warId || '';
 
-        return warEnemiesCache;
-    })();
-}
+            if (!hasWar || !warId) {
+                resetWarCaches();
+                window.__warEnemyDebug.error = !hasWar ? 'no_current_war' : 'missing_war_id_before_request';
+                return [];
+            }
 
-    function loadAdminDashboard() {
-        return _loadAdminDashboard.apply(this, arguments);
+            var res;
+            try {
+                res = yield authedReq('GET', '/api/war/enemies?war_id=' + encodeURIComponent(warId));
+            } catch (err) {
+                resetWarCaches();
+                window.__warEnemyDebug.error = err && err.message ? err.message : 'request_threw';
+                return [];
+            }
+
+            if (!res || !res.ok) {
+                resetWarCaches();
+
+                window.__warEnemyDebug = {
+                    war_id: warId,
+                    ok: false,
+                    status: Number((res && res.status) || 0) || 0,
+                    error: String((res && res.error) || 'request_failed'),
+                    enemy_members_count: 0,
+                    raw_enemy_members_length: 0,
+                    enemy_faction_name: '',
+                    enemy_faction_id: ''
+                };
+                return [];
+            }
+
+            var data = (res && res.data) ? res.data : {};
+            var rows = [];
+            if (Array.isArray(data.enemy_members)) rows = data.enemy_members;
+            else if (Array.isArray(data.enemies)) rows = data.enemies;
+
+            warEnemiesCache = rows;
+            warEnemiesFactionName = String(data.enemy_faction_name || warEnemiesFactionName || '').trim();
+            warEnemiesFactionId = String(data.enemy_faction_id || warEnemiesFactionId || '').trim();
+            warEnemiesLoadedAt = Date.now();
+
+            if (Array.isArray(data.enemy_stats)) {
+                setWarEnemyStatsCache(data.enemy_stats);
+            } else {
+                setWarEnemyStatsCache([]);
+            }
+
+            window.__warEnemyDebug = {
+                war_id: warId,
+                ok: true,
+                status: Number((res && res.status) || 200) || 200,
+                error: '',
+                enemy_members_count: Number(data.enemy_members_count || rows.length || 0) || 0,
+                raw_enemy_members_length: rows.length,
+                enemy_faction_name: warEnemiesFactionName,
+                enemy_faction_id: warEnemiesFactionId,
+                debug: data.debug || {}
+            };
+
+            return warEnemiesCache;
+        })();
     }
 
-    function _loadAdminDashboard() {
-        _loadAdminDashboard = _asyncToGenerator(function* () {
-            yield loadAdminPayments();
-            yield loadAdminExemptions();
-            renderBody();
-        });
-        return _loadAdminDashboard.apply(this, arguments);
-    }
-
-     // ============================================================
+    // ============================================================
     // 13. DATA HELPERS / NORMALIZERS
     // ============================================================
 
-function getMe() {
-    var me = (state && state.me) ? state.me : {};
-    var sessionUser = (state && state.user) ? state.user : {};
-    var accessUser = (accessState && accessState.user) ? accessState.user : {};
+    function getMe() {
+        var me = (state && state.me) ? state.me : {};
+        var sessionUser = (state && state.user) ? state.user : {};
+        var accessUser = (accessState && accessState.user) ? accessState.user : {};
 
-    return {
-        user_id: me.user_id || sessionUser.user_id || accessUser.user_id || '',
-        name: me.name || me.user_name || sessionUser.name || sessionUser.user_name || accessUser.name || accessUser.user_name || '',
-        available: me.available != null ? me.available : (
-            sessionUser.available != null ? sessionUser.available : accessUser.available
-        ),
-        chain_sitter: me.chain_sitter != null ? me.chain_sitter : (
-            sessionUser.chain_sitter != null ? sessionUser.chain_sitter : accessUser.chain_sitter
-        ),
-        is_available: me.is_available,
-        is_chain_sitter: me.is_chain_sitter,
-        faction_id: me.faction_id || sessionUser.faction_id || accessUser.faction_id || '',
-        faction_name: me.faction_name || sessionUser.faction_name || accessUser.faction_name || ''
-    };
-}
+        return {
+            user_id: me.user_id || sessionUser.user_id || accessUser.user_id || '',
+            name: me.name || me.user_name || sessionUser.name || sessionUser.user_name || accessUser.name || accessUser.user_name || '',
+            available: me.available != null ? me.available : (
+                sessionUser.available != null ? sessionUser.available : accessUser.available
+            ),
+            chain_sitter: me.chain_sitter != null ? me.chain_sitter : (
+                sessionUser.chain_sitter != null ? sessionUser.chain_sitter : accessUser.chain_sitter
+            ),
+            is_available: me.is_available,
+            is_chain_sitter: me.is_chain_sitter,
+            faction_id: me.faction_id || sessionUser.faction_id || accessUser.faction_id || '',
+            faction_name: me.faction_name || sessionUser.faction_name || accessUser.faction_name || ''
+        };
+    }
 
     function getWar() {
         return state && state.war ? state.war : {};
@@ -1652,56 +1734,56 @@ function getMe() {
     }
 
     function getEnemyFaction() {
-        return state && state.enemy_faction ? state.enemy_faction : {};
+        var stateEnemy = state && state.enemy_faction ? state.enemy_faction : {};
+        var war = getWar();
+        return {
+            faction_id: warEnemiesFactionId || stateEnemy.faction_id || stateEnemy.id || war.enemy_faction_id || '',
+            name: warEnemiesFactionName || stateEnemy.name || stateEnemy.faction_name || war.enemy_faction_name || ''
+        };
     }
 
     function getMembers() {
         return arr(state && state.members);
     }
 
-function getEnemyMembersForTab() {
-    var byId = {};
-    var out = [];
-    var ownIds = {};
+    function getEnemyMembersForTab() {
+        var byId = {};
+        var out = [];
+        var ownIds = {};
 
-    arr(getFactionMembers()).forEach(function (m) {
-        var ownId = String(m.user_id || m.member_user_id || m.id || '').trim();
-        if (ownId) ownIds[ownId] = true;
-    });
-
-    function addRows(rows) {
-        arr(rows).forEach(function (row) {
-            if (!row || typeof row !== 'object') return;
-
-            var id = String(row.user_id || row.member_user_id || row.id || '').trim();
-            if (!id) return;
-            if (ownIds[id]) return;
-            if (byId[id]) return;
-
-            byId[id] = true;
-            out.push(row);
+        arr(getFactionMembers()).forEach(function (m) {
+            var ownId = String(m.user_id || m.member_user_id || m.id || '').trim();
+            if (ownId) ownIds[ownId] = true;
         });
-    }
 
-    addRows(warEnemiesCache);
-    addRows(state && state.enemy_members);
-
-    if (!out.length) {
-        arr(getMembers()).forEach(function (row) {
-            if (!row || typeof row !== 'object') return;
-
-            var id = String(row.user_id || row.member_user_id || row.id || '').trim();
-            if (!id) return;
-            if (ownIds[id]) return;
-            if (byId[id]) return;
-
-            byId[id] = true;
-            out.push(row);
+        arr(getMembers()).forEach(function (m) {
+            var ownId = String(m.user_id || m.member_user_id || m.id || '').trim();
+            if (ownId) ownIds[ownId] = true;
         });
-    }
 
-    return out;
-} 
+        function addRows(rows) {
+            arr(rows).forEach(function (row) {
+                if (!row || typeof row !== 'object') return;
+
+                var id = String(row.user_id || row.member_user_id || row.id || '').trim();
+                if (!id) return;
+                if (ownIds[id]) return;
+                if (byId[id]) return;
+
+                byId[id] = true;
+                out.push(row);
+            });
+        }
+
+        addRows(warEnemiesCache);
+        addRows(state && state.enemy_members);
+        addRows(state && state.enemies);
+        addRows(state && state.enemyMembers);
+        addRows(state && state.war && state.war.enemy_members);
+        addRows(liveSummaryCache && liveSummaryCache.item && liveSummaryCache.item.enemy_members);
+
+        return out;
+    }
 
     function getNotifications() {
         return arr(state && state.notifications);
@@ -3519,17 +3601,14 @@ function bindOverlayEvents() {
             stopPolling();
             stopMembersCountdownLoop();
 
-if (tab === 'summary') {
-    renderBody();
-    restartPollingForCurrentTab();
+            if (tab === 'summary') {
+                yield loadState();
+                yield loadLiveSummary(true);
+                renderBody();
+                restartPollingForCurrentTab();
+                return;
+            }
 
-    loadLiveSummary(true).then(function () {
-        if (currentTab === 'summary') renderBody();
-    }).catch(function () {
-        if (currentTab === 'summary') renderBody();
-    });
-    return;
-}
             if (tab === 'members') {
                 GM_setValue('warhub_members_search', '');
                 GM_setValue('warhub_members_filter', 'all');
@@ -3544,6 +3623,7 @@ if (tab === 'summary') {
             if (tab === 'enemies') {
                 GM_setValue('warhub_enemies_search', '');
                 GM_setValue('warhub_enemies_filter', 'all');
+                yield loadState();
                 yield loadLiveSummary(true);
                 yield loadWarEnemiesById(true);
                 renderBody();
@@ -3553,6 +3633,7 @@ if (tab === 'summary') {
 
             if (tab === 'hospital') {
                 yield loadState();
+                yield loadLiveSummary(true);
                 renderBody();
                 restartPollingForCurrentTab();
                 return;
@@ -3560,6 +3641,15 @@ if (tab === 'summary') {
 
             if (tab === 'wartop5') {
                 yield loadState();
+                yield loadLiveSummary(true);
+                renderBody();
+                restartPollingForCurrentTab();
+                return;
+            }
+
+            if (tab === 'faction') {
+                yield loadState();
+                yield loadLiveSummary(true);
                 renderBody();
                 restartPollingForCurrentTab();
                 return;
@@ -3578,18 +3668,19 @@ if (tab === 'summary') {
      });
 
     var saveKeysBtn = overlay.querySelector('#wh-save-keys');
-if (saveKeysBtn && !saveKeysBtn.__warhubBound) {
-    saveKeysBtn.__warhubBound = true;
-    saveKeysBtn.addEventListener('click', function () {
-        var apiKeyEl = overlay.querySelector('#wh-api-key');
-        var apiKey = cleanInputValue(apiKeyEl ? apiKeyEl.value : '');
+    if (saveKeysBtn && !saveKeysBtn.__warhubBound) {
+        saveKeysBtn.__warhubBound = true;
+        saveKeysBtn.addEventListener('click', function () {
+            var apiKeyEl = overlay.querySelector('#wh-api-key');
+            var apiKey = cleanInputValue(apiKeyEl ? apiKeyEl.value : '');
 
-        GM_setValue(K_API_KEY, apiKey);
+            GM_setValue(K_API_KEY, apiKey);
 
-        setStatus(apiKey ? 'API key saved.' : 'API key cleared.');
-        renderStatus();
-    });
-}
+            setStatus(apiKey ? 'API key saved.' : 'API key cleared.');
+            renderStatus();
+        });
+    }
+
     var loginBtn = overlay.querySelector('#wh-login-btn');
     if (loginBtn && !loginBtn.__warhubBound) {
         loginBtn.__warhubBound = true;
@@ -3612,10 +3703,7 @@ if (saveKeysBtn && !saveKeysBtn.__warhubBound) {
             liveSummaryLoading = false;
             liveSummaryError = '';
             liveSummaryLastAt = 0;
-            warEnemiesCache = [];
-            warEnemiesFactionName = '';
-            warEnemiesFactionId = '';
-            setWarEnemyStatsCache([]);
+            resetWarCaches();
 
             renderBody();
         }));
@@ -4208,35 +4296,17 @@ function _tickCurrentTab() {
 
         loadInFlight = true;
         try {
-                    if (currentTab === 'summary') {
-            yield loadLiveSummary(false);
-            renderBody();
-            return;
-        }
-
-        if (currentTab === 'members') {
-            yield loadState();
-            yield loadFactionMembers(true);
-            renderBody();
-            startMembersCountdownLoop();
-            return;
-        }
-
-        if (currentTab === 'enemies') {
-            yield loadLiveSummary(false);
-            yield loadWarEnemiesById(false);
-            renderBody();
-            return;
-        }
-
-        if (currentTab === 'hospital') {
-            yield loadState();
-            renderBody();
-            return;
-        }
-
-            if (currentTab === 'wartop5') {
+            if (currentTab === 'summary') {
                 yield loadState();
+                yield loadLiveSummary(false);
+                renderBody();
+                return;
+            }
+
+            if (currentTab === 'enemies') {
+                yield loadState();
+                yield loadLiveSummary(false);
+                yield loadWarEnemiesById(false);
                 renderBody();
                 return;
             }
@@ -4258,15 +4328,18 @@ function _tickCurrentTab() {
 
         if (isLoggedIn()) {
             if (currentTab === 'summary') {
-                loadLiveSummary(true).then(function () {
+                _asyncToGenerator(function* () {
+                    yield loadState();
+                    yield loadLiveSummary(true);
                     renderBody();
                     restartPollingForCurrentTab();
-                }).catch(function () {});
+                })();
                 return;
             }
 
             if (currentTab === 'enemies') {
                 _asyncToGenerator(function* () {
+                    yield loadState();
                     yield loadLiveSummary(true);
                     yield loadWarEnemiesById(true);
                     renderBody();
@@ -4284,15 +4357,17 @@ function _tickCurrentTab() {
                     restartPollingForCurrentTab();
                 })();
                 return;
-}
+            }
 
-if (currentTab === 'hospital' || currentTab === 'wartop5' || currentTab === 'overview' || currentTab === 'faction') {
-    loadState().then(function () {
-        renderBody();
-        restartPollingForCurrentTab();
-    }).catch(function () {});
-    return;
-}
+            if (currentTab === 'hospital' || currentTab === 'wartop5' || currentTab === 'overview' || currentTab === 'faction') {
+                _asyncToGenerator(function* () {
+                    yield loadState();
+                    yield loadLiveSummary(true);
+                    renderBody();
+                    restartPollingForCurrentTab();
+                })();
+                return;
+            }
 
             renderBody();
             restartPollingForCurrentTab();
