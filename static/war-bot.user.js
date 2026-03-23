@@ -4226,20 +4226,54 @@ function _tickCurrentTab() {
             return;
         }
 
-        if (currentTab === 'members') {
+    if (tab === 'members') {
+    GM_setValue('warhub_members_search', '');
+    GM_setValue('warhub_members_filter', 'all');
+
+    renderBody();
+    restartPollingForCurrentTab();
+
+    _asyncToGenerator(function* () {
+        try {
             yield loadState();
+            if (currentTab !== 'members') return;
+
+            renderBody();
+
             yield loadFactionMembers(true);
+            if (currentTab !== 'members') return;
+
             renderBody();
             startMembersCountdownLoop();
-            return;
+        } catch (e) {
+            console.warn('War Hub members tab load failed', e);
+            if (currentTab === 'members') renderBody();
         }
+    })();
 
-        if (currentTab === 'enemies') {
-            yield loadLiveSummary(false);
-            yield loadWarEnemiesById(false);
-            renderBody();
-            return;
-        }
+    return;
+}
+    if (tab === 'enemies') {
+    GM_setValue('warhub_enemies_search', '');
+    GM_setValue('warhub_enemies_filter', 'all');
+
+    renderBody();
+    restartPollingForCurrentTab();
+
+    loadWarEnemiesById(true).then(function () {
+        if (currentTab === 'enemies') renderBody();
+    }).catch(function () {
+        if (currentTab === 'enemies') renderBody();
+    });
+
+    loadLiveSummary(true).then(function () {
+        if (currentTab === 'enemies') renderBody();
+    }).catch(function () {
+        if (currentTab === 'enemies') renderBody();
+    });
+
+    return;
+}
 
         if (currentTab === 'hospital') {
             yield loadState();
@@ -4265,51 +4299,79 @@ function _tickCurrentTab() {
     // 19. STARTUP
     // ============================================================
 
-    function boot() {
-        mount();
+function boot() {
+    mount();
+    renderBody();
 
-        if (isLoggedIn()) {
-            if (currentTab === 'summary') {
-                loadLiveSummary(true).then(function () {
-                    renderBody();
-                    restartPollingForCurrentTab();
-                }).catch(function () {});
-                return;
-            }
+    if (!isLoggedIn()) return;
 
-            if (currentTab === 'enemies') {
-                _asyncToGenerator(function* () {
-                    yield loadLiveSummary(true);
-                    yield loadWarEnemiesById(true);
-                    renderBody();
-                    restartPollingForCurrentTab();
-                })();
-                return;
-            }
+    restartPollingForCurrentTab();
 
-            if (currentTab === 'members') {
-                _asyncToGenerator(function* () {
-                    yield loadState();
-                    yield loadFactionMembers(true);
-                    renderBody();
-                    startMembersCountdownLoop();
-                    restartPollingForCurrentTab();
-                })();
-                return;
-}
-
-if (currentTab === 'hospital' || currentTab === 'wartop5' || currentTab === 'overview' || currentTab === 'faction') {
-    loadState().then(function () {
-        renderBody();
-        restartPollingForCurrentTab();
-    }).catch(function () {});
-    return;
-}
-
-            renderBody();
-            restartPollingForCurrentTab();
-        }
+    if (currentTab === 'summary') {
+        loadLiveSummary(true).then(function () {
+            if (currentTab === 'summary') renderBody();
+        }).catch(function () {
+            if (currentTab === 'summary') renderBody();
+        });
+        return;
     }
 
-    boot();
-})();
+    if (currentTab === 'enemies') {
+        loadWarEnemiesById(true).then(function () {
+            if (currentTab === 'enemies') renderBody();
+        }).catch(function () {
+            if (currentTab === 'enemies') renderBody();
+        });
+
+        loadLiveSummary(true).then(function () {
+            if (currentTab === 'enemies') renderBody();
+        }).catch(function () {
+            if (currentTab === 'enemies') renderBody();
+        });
+        return;
+    }
+
+    if (currentTab === 'members') {
+        _asyncToGenerator(function* () {
+            try {
+                yield loadState();
+                if (currentTab !== 'members') return;
+
+                renderBody();
+
+                yield loadFactionMembers(true);
+                if (currentTab !== 'members') return;
+
+                renderBody();
+                startMembersCountdownLoop();
+            } catch (e) {
+                console.warn('War Hub members boot failed', e);
+                if (currentTab === 'members') renderBody();
+            }
+        })();
+        return;
+    }
+
+    if (currentTab === 'hospital' || currentTab === 'wartop5' || currentTab === 'overview' || currentTab === 'faction') {
+        loadState().then(function () {
+            if (
+                currentTab === 'hospital' ||
+                currentTab === 'wartop5' ||
+                currentTab === 'overview' ||
+                currentTab === 'faction'
+            ) {
+                renderBody();
+            }
+        }).catch(function () {
+            if (
+                currentTab === 'hospital' ||
+                currentTab === 'wartop5' ||
+                currentTab === 'overview' ||
+                currentTab === 'faction'
+            ) {
+                renderBody();
+            }
+        });
+        return;
+    }
+}
