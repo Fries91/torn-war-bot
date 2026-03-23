@@ -556,36 +556,59 @@ def _seconds_to_text(seconds: int) -> str:
 
 def _faction_basic_by_id(api_key: str, faction_id: str) -> Dict[str, Any]:
     faction_id = str(faction_id or "").strip()
+    empty = {
+        "ok": False,
+        "faction_id": faction_id,
+        "faction_name": "",
+        "members": [],
+        "requested_faction_id": faction_id,
+        "verified": False,
+    }
+
     if not api_key or not faction_id:
-        return {
-            "ok": False,
-            "faction_id": faction_id,
-            "faction_name": "",
-            "members": [],
-        }
+        return dict(empty)
+
+    data = None
 
     try:
-        data = faction_basic(api_key, faction_id=faction_id)
-        if isinstance(data, dict):
-            return data
+        maybe = faction_basic(api_key, faction_id=faction_id)
+        if isinstance(maybe, dict):
+            data = maybe
     except TypeError:
         pass
     except Exception:
         pass
 
-    try:
-        data = faction_basic(api_key, faction_id)
-        if isinstance(data, dict):
-            return data
-    except Exception:
-        pass
+    if not isinstance(data, dict):
+        try:
+            maybe = faction_basic(api_key, faction_id)
+            if isinstance(maybe, dict):
+                data = maybe
+        except Exception:
+            pass
 
-    return {
-        "ok": False,
-        "faction_id": faction_id,
-        "faction_name": "",
-        "members": [],
-    }
+    if not isinstance(data, dict):
+        return dict(empty)
+
+    built_faction_id = str(data.get("faction_id") or "").strip()
+    members = list(data.get("members") or [])
+
+    if built_faction_id and built_faction_id != faction_id:
+        safe = dict(empty)
+        safe.update({
+            "error": "Faction mismatch from Torn API response.",
+            "resolved_faction_id": built_faction_id,
+            "resolved_faction_name": str(data.get("faction_name") or "").strip(),
+            "ok": False,
+        })
+        return safe
+
+    safe = dict(data)
+    safe["faction_id"] = built_faction_id or faction_id
+    safe["members"] = members
+    safe["requested_faction_id"] = faction_id
+    safe["verified"] = True
+    return safe
 
 
 def _ranked_war_payload_for_user(
@@ -1359,7 +1382,17 @@ def _build_live_war_summary(user: Dict[str, Any]) -> Dict[str, Any]:
     }
 
     faction_fetch_key = war_key or viewer_key
-    faction_info = _faction_basic_by_id(faction_fetch_key, faction_id) if faction_fetch_key else {"ok": False, "members": []}
+    faction_info = _faction_basic_by_id(faction_fetch_key, faction_id) if faction_fetch_key else {"ok": False, "members": [], "verified": False}
+    if str((faction_info or {}).get("faction_id") or "").strip() != faction_id:
+        faction_info = {
+            "ok": False,
+            "faction_id": faction_id,
+            "faction_name": faction_name,
+            "members": [],
+            "requested_faction_id": faction_id,
+            "verified": False,
+            "error": "Faction mismatch while building live summary.",
+        }
     live_members = list((faction_info or {}).get("members") or [])
 
     users_by_faction = get_users_by_faction(faction_id) or []
@@ -1738,7 +1771,17 @@ def api_state():
         war_api_key_source = "leader_user_key"
 
     faction_fetch_key = war_api_key or viewer_war_api_key
-    faction_info = faction_basic(faction_fetch_key, faction_id=faction_id) if faction_fetch_key else {"ok": False, "members": []}
+    faction_info = _faction_basic_by_id(faction_fetch_key, faction_id) if faction_fetch_key else {"ok": False, "members": [], "verified": False}
+    if str((faction_info or {}).get("faction_id") or "").strip() != faction_id:
+        faction_info = {
+            "ok": False,
+            "faction_id": faction_id,
+            "faction_name": faction_name,
+            "members": [],
+            "requested_faction_id": faction_id,
+            "verified": False,
+            "error": "Faction mismatch while building /api/state members.",
+        }
 
     war_info = ranked_war_summary(
         war_api_key,
@@ -1930,6 +1973,9 @@ def api_state():
 
     return ok(
         now=utc_now(),
+        members_source_faction_id=faction_id,
+        members_source_faction_name=str((faction_info or {}).get("faction_name") or faction_name or ""),
+        members_source_ok=bool((faction_info or {}).get("verified")),
         me=me,
         user={
             "user_id": user_id,
@@ -2006,6 +2052,10 @@ def api_state():
             "debug_raw_keys": war_info.get("debug_raw_keys") or [],
             "debug_raw": war_info.get("debug_raw") or {},
             "war_api_key_source": war_api_key_source,
+            "members_source_faction_id": faction_id,
+            "members_source_faction_name": str((faction_info or {}).get("faction_name") or faction_name or ""),
+            "members_source_ok": bool((faction_info or {}).get("verified")),
+            "members_source_error": str((faction_info or {}).get("error") or ""),
         },
     )
 @app.route("/api/war/summary", methods=["GET"])
@@ -2049,7 +2099,17 @@ def api_war_summary():
     payload["is_owner"] = _session_is_owner(user)
     payload["is_admin"] = _session_is_owner(user)
 
-    faction_info = faction_basic(faction_fetch_key, faction_id=faction_id) if (faction_fetch_key and faction_id) else {"ok": False, "members": []}
+    faction_info = _faction_basic_by_id(faction_fetch_key, faction_id) if (faction_fetch_key and faction_id) else {"ok": False, "members": [], "verified": False}
+    if str((faction_info or {}).get("faction_id") or "").strip() != faction_id:
+        faction_info = {
+            "ok": False,
+            "faction_id": faction_id,
+            "faction_name": faction_name,
+            "members": [],
+            "requested_faction_id": faction_id,
+            "verified": False,
+            "error": "Faction mismatch while building /api/war/summary members count.",
+        }
     payload["members_count"] = len((faction_info or {}).get("members") or [])
 
     raw_enemy_members = list((payload.get("enemies") or []))
