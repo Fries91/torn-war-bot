@@ -1746,44 +1746,83 @@ function canSeeAdmin() {
         return arr(state && state.members);
     }
 
-    function getEnemyMembersForTab() {
-        var byId = {};
-        var out = [];
-        var ownIds = {};
+function getRowId(row) {
+    return String(
+        (row && (row.user_id || row.member_user_id || row.id || row.player_id)) || ''
+    ).trim();
+}
 
-        arr(getFactionMembers()).forEach(function (m) {
-            var ownId = String(m.user_id || m.member_user_id || m.id || '').trim();
-            if (ownId) ownIds[ownId] = true;
+function getKnownFactionIdMap() {
+    var map = {};
+
+    arr(getFactionMembers()).forEach(function (row) {
+        var id = getRowId(row);
+        if (id) map[id] = true;
+    });
+
+    return map;
+}
+
+function getLockedMembersForTab() {
+    var knownIds = getKnownFactionIdMap();
+    var byId = {};
+    var out = [];
+
+    function addRows(rows) {
+        arr(rows).forEach(function (row) {
+            if (!row || typeof row !== 'object') return;
+
+            var id = getRowId(row);
+            if (!id) return;
+            if (!knownIds[id]) return;
+
+            byId[id] = Object.assign({}, byId[id] || {}, row);
         });
-
-        arr(getMembers()).forEach(function (m) {
-            var ownId = String(m.user_id || m.member_user_id || m.id || '').trim();
-            if (ownId) ownIds[ownId] = true;
-        });
-
-        function addRows(rows) {
-            arr(rows).forEach(function (row) {
-                if (!row || typeof row !== 'object') return;
-
-                var id = String(row.user_id || row.member_user_id || row.id || '').trim();
-                if (!id) return;
-                if (ownIds[id]) return;
-                if (byId[id]) return;
-
-                byId[id] = true;
-                out.push(row);
-            });
-        }
-
-        addRows(warEnemiesCache);
-        addRows(state && state.enemy_members);
-        addRows(state && state.enemies);
-        addRows(state && state.enemyMembers);
-        addRows(state && state.war && state.war.enemy_members);
-        addRows(liveSummaryCache && liveSummaryCache.item && liveSummaryCache.item.enemy_members);
-
-        return out;
     }
+
+    addRows(getFactionMembers());
+    addRows(getMembers());
+
+    Object.keys(byId).forEach(function (id) {
+        out.push(byId[id]);
+    });
+
+    return out;
+}
+
+function getUnknownEnemyMembersForTab() {
+    var knownIds = getKnownFactionIdMap();
+    var byId = {};
+    var out = [];
+
+    function addRows(rows) {
+        arr(rows).forEach(function (row) {
+            if (!row || typeof row !== 'object') return;
+
+            var id = getRowId(row);
+            if (!id) return;
+            if (knownIds[id]) return;
+            if (byId[id]) return;
+
+            byId[id] = true;
+            out.push(row);
+        });
+    }
+
+    addRows(warEnemiesCache);
+    addRows(state && state.enemy_members);
+    addRows(state && state.enemies);
+    addRows(state && state.enemyMembers);
+    addRows(state && state.war && state.war.enemy_members);
+    addRows(liveSummaryCache && liveSummaryCache.item && liveSummaryCache.item.enemy_members);
+
+    return out;
+}
+
+    function getEnemyMembersForTab() {
+    return getUnknownEnemyMembersForTab();
+}
+    
     function getNotifications() {
         return arr(state && state.notifications);
     }
@@ -2390,20 +2429,23 @@ function renderChainTab() {
     }
 
 function renderMembersTab() {
+    var knownIds = getKnownFactionIdMap();
     var factionMembers = getFactionMembers();
     var liveMembers = getMembers();
     var byId = {};
     var members = [];
 
     arr(factionMembers).forEach(function (m) {
-        var id = String(m && (m.user_id || m.member_user_id || m.id || '')).trim();
+        var id = getRowId(m);
         if (!id) return;
+        if (!knownIds[id]) return;
         byId[id] = Object.assign({}, m);
     });
 
     arr(liveMembers).forEach(function (m) {
-        var id = String(m && (m.user_id || m.member_user_id || m.id || '')).trim();
+        var id = getRowId(m);
         if (!id) return;
+        if (!knownIds[id]) return;
         byId[id] = Object.assign({}, byId[id] || {}, m);
     });
 
@@ -2412,7 +2454,10 @@ function renderMembersTab() {
     });
 
     if (!members.length) {
-        members = liveMembers.length ? liveMembers : factionMembers;
+        members = arr(factionMembers).filter(function (m) {
+            var id = getRowId(m);
+            return !!(id && knownIds[id]);
+        });
     }
 
     var savedSearch = String(GM_getValue('warhub_members_search', '') || '').trim().toLowerCase();
@@ -2579,7 +2624,7 @@ function renderMembersTab() {
             (userId ? ('https://www.torn.com/bounties.php#/!p=add&userID=' + encodeURIComponent(userId)) : '')
         ).trim();
 
-    return '\
+        return '\
       <div class="warhub-card warhub-member-row" style="margin-top:6px;padding:7px 8px;" data-medcd-base="' + esc(String(toNum(m.medical_cooldown || m.med_cd || m.drug_cd || 0))) + '" data-statuscd-base="' + esc(String(toNum(m.hospital_seconds || m.hospital_time || m.status_until || m.status_cd || 0))) + '" data-state-name="' + esc(stateName) + '">\
         <div style="display:flex;align-items:center;gap:6px;flex-wrap:nowrap;">\
           <div style="min-width:0;flex:1 1 auto;overflow:hidden;">\
