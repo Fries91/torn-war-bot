@@ -2984,12 +2984,86 @@ function renderEnemiesTab() {
     }
 
     function renderInstructionsTab() {
-        return '\
-          <div class="warhub-card">\
-            <div class="warhub-section-title"><h3>Instructions</h3></div>\
-            <div class="warhub-mini">Save your API key, log in, and use the tabs to manage war, faction access, and billing. Owner/Admin can manage exemptions in the Admin tab.</div>\
-          </div>';
-    }
+    var me = getMe();
+    var lic = (accessState && accessState.license) ? accessState.license : {};
+    var loggedIn = isLoggedIn();
+
+    var userName = loggedIn ? (me.name || 'Unknown') : 'Not logged in';
+    var factionName = loggedIn ? (me.faction_name || lic.faction_name || 'Unknown Faction') : 'No faction loaded';
+    var roleText = loggedIn
+        ? ((accessState && accessState.is_faction_leader) ? 'Leader' : ((accessState && accessState.is_admin) ? 'Admin' : 'Member'))
+        : 'Guest';
+
+    var activeText = loggedIn
+        ? (canUseFeatures() ? 'Active' : 'Limited')
+        : 'Logged Out';
+
+    var leaderActivatedText = loggedIn
+        ? ((accessState && accessState.member_enabled) ? 'Yes' : 'No')
+        : '—';
+
+    return '\
+      <div class="warhub-card">\
+        <div class="warhub-section-title"><h3>Instructions</h3></div>\
+        <div class="warhub-mini">War Hub helps you manage war tools, members, enemies, hospital tracking, med deals, targets, access, and account status from one draggable overlay.</div>\
+      </div>\
+\
+      <div class="warhub-card">\
+        <div class="warhub-section-title"><h3>What this hub can do</h3></div>\
+        <div class="warhub-grid two">\
+          <div class="warhub-metric"><div class="k">Summary</div><div class="v">Live war overview, score, chain, terms, and notifications.</div></div>\
+          <div class="warhub-metric"><div class="k">Members</div><div class="v">View your faction roster with status, role, and quick actions.</div></div>\
+          <div class="warhub-metric"><div class="k">Enemies</div><div class="v">Track enemy war members with attack-focused quick access.</div></div>\
+          <div class="warhub-metric"><div class="k">Hospital</div><div class="v">See hospitalized players and monitor timers more easily.</div></div>\
+          <div class="warhub-metric"><div class="k">Med Deals</div><div class="v">Store and review med deal notes and shared info.</div></div>\
+          <div class="warhub-metric"><div class="k">Targets</div><div class="v">Keep attack targets organized in one place.</div></div>\
+          <div class="warhub-metric"><div class="k">Settings</div><div class="v">Save your API key, log in, and view account activation status.</div></div>\
+          <div class="warhub-metric"><div class="k">Admin</div><div class="v">Owner/Admin tools for exemptions, access control, and hub management.</div></div>\
+        </div>\
+      </div>\
+\
+      <div class="warhub-card">\
+        <div class="warhub-section-title"><h3>How to use</h3></div>\
+        <div class="warhub-list">\
+          <div class="warhub-row"><div class="warhub-name">1. Save your API key</div><div class="warhub-meta">Open Settings, paste your Torn API key, and press Save Key.</div></div>\
+          <div class="warhub-row"><div class="warhub-name">2. Log in</div><div class="warhub-meta">Press Login so the hub can load your account, faction, and access level.</div></div>\
+          <div class="warhub-row"><div class="warhub-name">3. Check your status</div><div class="warhub-meta">Settings shows your user, faction, role, active status, and whether the leader has activated you.</div></div>\
+          <div class="warhub-row"><div class="warhub-name">4. Use the tabs</div><div class="warhub-meta">Switch between Summary, Members, Enemies, Hospital, Med Deals, Targets, Settings, and Admin tools.</div></div>\
+          <div class="warhub-row"><div class="warhub-name">5. Admin controls</div><div class="warhub-meta">Owner/Admin can manage exemptions and faction-level access where enabled.</div></div>\
+          <div class="warhub-row"><div class="warhub-name">6. Log out when needed</div><div class="warhub-meta">Use Logout in Settings to clear your active session from the hub display.</div></div>\
+        </div>\
+      </div>\
+\
+      <div class="warhub-card">\
+        <div class="warhub-section-title"><h3>API key storage</h3></div>\
+        <div class="warhub-mini">Your API key is stored locally in your userscript storage on your device/browser so the hub can reuse it between sessions. The input stays hidden as a password field with stars when viewed in Settings.</div>\
+        <div class="warhub-mini" style="margin-top:8px;">Use a limited-access Torn API key whenever possible. Do not share your key with anyone you do not trust.</div>\
+      </div>\
+\
+      <div class="warhub-card">\
+        <div class="warhub-section-title"><h3>Terms of Service</h3></div>\
+        <div class="warhub-list">\
+          <div class="warhub-row"><div class="warhub-name">Use at your own risk</div><div class="warhub-meta">This hub is provided as-is without any guarantee of uptime, accuracy, or availability.</div></div>\
+          <div class="warhub-row"><div class="warhub-name">Account responsibility</div><div class="warhub-meta">You are responsible for your API key, account security, and any actions taken while using the hub.</div></div>\
+          <div class="warhub-row"><div class="warhub-name">Access control</div><div class="warhub-meta">Some features may be restricted based on your faction status, license state, leader activation, or admin permissions.</div></div>\
+          <div class="warhub-row"><div class="warhub-name">Fair use</div><div class="warhub-meta">Do not use the hub to abuse, overload, interfere with, or attempt unauthorized access to systems or faction tools.</div></div>\
+          <div class="warhub-row"><div class="warhub-name">Changes</div><div class="warhub-meta">Features, layout, permissions, and availability may change at any time without notice.</div></div>\
+          <div class="warhub-row"><div class="warhub-name">Acceptance</div><div class="warhub-meta">By saving your key, logging in, or using the hub, you accept these terms.</div></div>\
+        </div>\
+      </div>\
+\
+      <div class="warhub-card">\
+        <div class="warhub-section-title"><h3>Current hub status</h3></div>\
+        <div class="warhub-grid two">\
+          <div class="warhub-metric"><div class="k">User</div><div class="v">' + esc(userName) + '</div></div>\
+          <div class="warhub-metric"><div class="k">Faction</div><div class="v">' + esc(factionName) + '</div></div>\
+          <div class="warhub-metric"><div class="k">Role</div><div class="v">' + esc(roleText) + '</div></div>\
+          <div class="warhub-metric"><div class="k">Hub Access</div><div class="v">' + esc(activeText) + '</div></div>\
+          <div class="warhub-metric"><div class="k">Leader Activated</div><div class="v">' + esc(leaderActivatedText) + '</div></div>\
+          <div class="warhub-metric"><div class="k">Login State</div><div class="v">' + (loggedIn ? 'Logged In' : 'Logged Out') + '</div></div>\
+        </div>\
+      </div>';
+}
 
 function renderSettingsTab() {
     var apiKey = cleanInputValue(GM_getValue(K_API_KEY, ''));
