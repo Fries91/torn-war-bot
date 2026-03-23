@@ -1742,7 +1742,7 @@ function canSeeAdmin() {
         };
     }
 
-    function getMembers() {
+function getMembers() {
     return arr(state && state.members);
 }
 
@@ -1753,12 +1753,12 @@ function getRowId(row) {
 }
 
 function getLockedMembersForTab() {
-    var factionMembers = getFactionMembers();
     var liveMembers = getMembers();
+    var factionMembers = getFactionMembers();
     var byId = {};
     var out = [];
 
-    // Start with live data first
+    // Primary source: backend state.members
     arr(liveMembers).forEach(function (row) {
         if (!row || typeof row !== 'object') return;
 
@@ -1768,49 +1768,43 @@ function getLockedMembersForTab() {
         byId[id] = Object.assign({}, byId[id] || {}, row);
     });
 
-    // Merge faction roster in, but keep live fields when present
-    arr(factionMembers).forEach(function (row) {
-        if (!row || typeof row !== 'object') return;
-
-        var id = getRowId(row);
-        if (!id) return;
-
-        byId[id] = Object.assign({}, row, byId[id] || {});
-    });
-
-    // Faction roster is the source of truth for Members tab
-    if (arr(factionMembers).length) {
+    // Fallback / enrichment only
+    if (!Object.keys(byId).length) {
         arr(factionMembers).forEach(function (row) {
+            if (!row || typeof row !== 'object') return;
+
             var id = getRowId(row);
             if (!id) return;
-            out.push(byId[id] || row);
+
+            byId[id] = Object.assign({}, byId[id] || {}, row);
         });
-        return out;
+    } else {
+        arr(factionMembers).forEach(function (row) {
+            if (!row || typeof row !== 'object') return;
+
+            var id = getRowId(row);
+            if (!id) return;
+            if (!byId[id]) return;
+
+            byId[id] = Object.assign({}, row, byId[id] || {});
+        });
     }
 
-    // Fallback only if faction roster has not loaded yet
-    arr(liveMembers).forEach(function (row) {
-        if (!row || typeof row !== 'object') return;
-
-        var id = getRowId(row);
-        if (!id) return;
-        if (out.some(function (x) { return getRowId(x) === id; })) return;
-
-        out.push(row);
+    Object.keys(byId).forEach(function (id) {
+        out.push(byId[id]);
     });
 
     return out;
 }
 
 function getUnknownEnemyMembersForTab() {
-    var factionIds = {};
+    var memberIds = {};
     var byId = {};
     var out = [];
 
-    // Lock your own faction IDs so enemies cannot bleed into Members
-    arr(getFactionMembers()).forEach(function (row) {
+    arr(getLockedMembersForTab()).forEach(function (row) {
         var id = getRowId(row);
-        if (id) factionIds[id] = true;
+        if (id) memberIds[id] = true;
     });
 
     function addRows(rows) {
@@ -1819,7 +1813,7 @@ function getUnknownEnemyMembersForTab() {
 
             var id = getRowId(row);
             if (!id) return;
-            if (factionIds[id]) return;
+            if (memberIds[id]) return;
             if (byId[id]) return;
 
             byId[id] = true;
@@ -1837,6 +1831,9 @@ function getUnknownEnemyMembersForTab() {
     return out;
 }
 
+function getEnemyMembersForTab() {
+    return getUnknownEnemyMembersForTab();
+}
 function getEnemyMembersForTab() {
     return getUnknownEnemyMembersForTab();
 }
