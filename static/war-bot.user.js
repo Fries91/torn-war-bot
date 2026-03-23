@@ -542,6 +542,125 @@
   .warhub-mini-grid {\n\
     grid-template-columns: 1fr !important;\n\
   }\n\
+  .warhub-overview-hero {\n\
+  display: flex !important;\n\
+  flex-direction: column !important;\n\
+  gap: 10px !important;\n\
+}\n\
+\n\
+.warhub-war-head {\n\
+  display: grid !important;\n\
+  grid-template-columns: 1fr auto 1fr !important;\n\
+  gap: 10px !important;\n\
+  align-items: center !important;\n\
+}\n\
+\n\
+.warhub-war-side {\n\
+  min-width: 0 !important;\n\
+  border-radius: 12px !important;\n\
+  background: rgba(255,255,255,.05) !important;\n\
+  border: 1px solid rgba(255,255,255,.08) !important;\n\
+  padding: 10px !important;\n\
+}\n\
+\n\
+.warhub-war-side.right {\n\
+  text-align: right !important;\n\
+}\n\
+\n\
+.warhub-war-side-label {\n\
+  font-size: 11px !important;\n\
+  opacity: .72 !important;\n\
+  margin-bottom: 4px !important;\n\
+}\n\
+\n\
+.warhub-war-side-name {\n\
+  font-size: 14px !important;\n\
+  font-weight: 800 !important;\n\
+  color: #fff !important;\n\
+  line-height: 1.25 !important;\n\
+  word-break: break-word !important;\n\
+}\n\
+\n\
+.warhub-war-vs {\n\
+  font-size: 12px !important;\n\
+  font-weight: 900 !important;\n\
+  letter-spacing: .8px !important;\n\
+  opacity: .78 !important;\n\
+}\n\
+\n\
+.warhub-overview-stats {\n\
+  display: grid !important;\n\
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;\n\
+  gap: 8px !important;\n\
+}\n\
+\n\
+.warhub-stat-card {\n\
+  border-radius: 12px !important;\n\
+  background: rgba(255,255,255,.05) !important;\n\
+  border: 1px solid rgba(255,255,255,.08) !important;\n\
+  padding: 10px !important;\n\
+}\n\
+\n\
+.warhub-stat-card.good {\n\
+  border-color: rgba(90,200,120,.22) !important;\n\
+  background: linear-gradient(180deg, rgba(90,200,120,.10), rgba(255,255,255,.04)) !important;\n\
+}\n\
+\n\
+.warhub-stat-card.bad {\n\
+  border-color: rgba(220,90,90,.22) !important;\n\
+  background: linear-gradient(180deg, rgba(220,90,90,.10), rgba(255,255,255,.04)) !important;\n\
+}\n\
+\n\
+.warhub-stat-label {\n\
+  font-size: 11px !important;\n\
+  opacity: .74 !important;\n\
+  margin-bottom: 5px !important;\n\
+}\n\
+\n\
+.warhub-stat-value {\n\
+  font-size: 22px !important;\n\
+  line-height: 1 !important;\n\
+  font-weight: 900 !important;\n\
+  color: #fff !important;\n\
+}\n\
+\n\
+.warhub-overview-link-card {\n\
+  min-height: 152px !important;\n\
+  display: flex !important;\n\
+  flex-direction: column !important;\n\
+}\n\
+\n\
+.warhub-overview-link-card .warhub-spy-box {\n\
+  flex: 1 1 auto !important;\n\
+}\n\
+\n\
+.warhub-overview-link-card .warhub-row {\n\
+  margin-top: auto !important;\n\
+}\n\
+\n\
+.warhub-overview-link-card.terms {\n\
+  border-color: rgba(255,255,255,.10) !important;\n\
+}\n\
+\n\
+.warhub-overview-link-card.meddeals {\n\
+  border-color: rgba(90,200,120,.18) !important;\n\
+}\n\
+\n\
+.warhub-overview-link-card.dibs {\n\
+  border-color: rgba(220,90,90,.18) !important;\n\
+}\n\
+\n\
+@media (max-width: 520px) {\n\
+  .warhub-war-head {\n\
+    grid-template-columns: 1fr !important;\n\
+  }\n\
+  .warhub-war-vs {\n\
+    text-align: center !important;\n\
+  }\n\
+  .warhub-overview-stats {\n\
+    grid-template-columns: 1fr 1fr !important;\n\
+  }\n\
+}\n\
   .warhub-section-scroll {\n\
     max-height: 34vh !important;\n\
   }\n\
@@ -2124,91 +2243,147 @@ function energyText(member) {
     }
 
     function renderOverviewTab() {
-    var access = normalizeAccessCache((state && state.access) || accessState);
     var war = (state && state.war) || {};
     var license = (state && state.license) || {};
     var ownFaction = (state && state.faction) || {};
-    var ownName = String(ownFaction.name || license.faction_name || 'Your Faction');
-    var enemyName = String(war.enemy_faction_name || 'No current enemy');
 
-    var members = arr((state && state.members) || []);
-    var enemies = arr((state && state.enemies) || []);
+    var ownName = String(
+        ownFaction.name ||
+        war.our_faction_name ||
+        war.faction_name ||
+        license.faction_name ||
+        'Your Faction'
+    );
+
+    var enemyName = String(
+        war.enemy_faction_name ||
+        'No current enemy'
+    );
+
+    var yourChain = Number(
+        war.chain_us ||
+        war.our_chain ||
+        war.faction_chain ||
+        war.us_chain ||
+        0
+    ) || 0;
+
+    var enemyChain = Number(
+        war.chain_them ||
+        war.enemy_chain ||
+        war.them_chain ||
+        0
+    ) || 0;
+
+    var yourScore = Number(
+        war.score_us ||
+        war.our_score ||
+        war.faction_score ||
+        war.us_score ||
+        0
+    ) || 0;
+
+    var enemyScore = Number(
+        war.score_them ||
+        war.enemy_score ||
+        war.them_score ||
+        0
+    ) || 0;
+
     var medDeals = arr((state && state.med_deals) || []);
     var termsText = String((state && state.terms && state.terms.text) || '').trim();
-
+    var enemies = arr((state && state.enemies) || []);
     var hospitalEnemies = enemies.filter(function (m) {
         return stateLabel(m) === 'hospital';
     });
 
-    function previewText(text, emptyText) {
+    function previewText(text, emptyText, maxLen) {
         var value = String(text || '').trim();
+        var limit = Number(maxLen || 140);
         if (!value) return emptyText;
-        if (value.length > 180) return esc(value.slice(0, 180)) + '...';
-        return esc(value);
+        return value.length > limit ? esc(value.slice(0, limit)) + '...' : esc(value);
+    }
+
+    function statCard(label, value, cls) {
+        return [
+            '<div class="warhub-stat-card ' + esc(cls || '') + '">',
+                '<div class="warhub-stat-label">' + esc(label) + '</div>',
+                '<div class="warhub-stat-value">' + esc(fmtNum(value)) + '</div>',
+            '</div>'
+        ].join('');
+    }
+
+    var medPreview = 'No med deals saved.';
+    if (medDeals.length) {
+        var firstDeal = medDeals[0] || {};
+        var who = String(firstDeal.name || firstDeal.user || firstDeal.member_name || 'Entry');
+        var amount = String(firstDeal.amount || firstDeal.cost || firstDeal.price || '').trim();
+        medPreview = amount ? who + ' — ' + amount : who;
+    }
+
+    var dibsPreview = 'No hospital enemies right now.';
+    if (hospitalEnemies.length) {
+        var firstEnemy = hospitalEnemies[0] || {};
+        dibsPreview = String(firstEnemy.name || 'Enemy') + ' is in hospital.';
     }
 
     return [
         '<div class="warhub-grid">',
 
-            '<div class="warhub-hero-card">',
-                '<div class="warhub-title">Overview</div>',
-                '<div class="warhub-sub">' + esc(ownName) + (enemyName && enemyName !== 'No current enemy' ? ' vs ' + esc(enemyName) : '') + '</div>',
-            '</div>',
+            '<div class="warhub-hero-card warhub-overview-hero">',
+                '<div>',
+                    '<div class="warhub-title">War Overview</div>',
+                    '<div class="warhub-sub">Live war snapshot</div>',
+                '</div>',
 
-            '<div class="warhub-card warhub-col">',
-                '<h3>War Overview</h3>',
+                '<div class="warhub-war-head">',
+                    '<div class="warhub-war-side">',
+                        '<div class="warhub-war-side-label">Your Faction</div>',
+                        '<div class="warhub-war-side-name">' + esc(ownName) + '</div>',
+                    '</div>',
 
-                '<div class="warhub-kv"><div>Your Faction</div><div>' + esc(ownName) + '</div></div>',
-                '<div class="warhub-kv"><div>Enemy Faction</div><div>' + esc(enemyName) + '</div></div>',
-                '<div class="warhub-kv"><div>War ID</div><div>' + esc(String(war.war_id || '—')) + '</div></div>',
-                '<div class="warhub-kv"><div>Phase</div><div>' + esc(String(war.war_phase || war.phase || '—')) + '</div></div>',
-                '<div class="warhub-kv"><div>Type</div><div>' + esc(String(war.war_type || '—')) + '</div></div>',
-                '<div class="warhub-kv"><div>Members</div><div>' + esc(String(members.length)) + '</div></div>',
-                '<div class="warhub-kv"><div>Enemies</div><div>' + esc(String(enemies.length)) + '</div></div>',
-                '<div class="warhub-kv"><div>Features Active</div><div>' + (canUseFeatures() ? 'Yes' : 'No') + '</div></div>',
-            '</div>',
+                    '<div class="warhub-war-vs">VS</div>',
 
-            '<div class="warhub-card warhub-col">',
-                '<h3>Terms</h3>',
-                '<div class="warhub-spy-box">' + previewText(termsText, 'No war terms saved yet.') + '</div>',
-                '<div class="warhub-row">',
-                    '<button type="button" class="warhub-btn ghost" data-tab="terms">Open Terms</button>',
+                    '<div class="warhub-war-side right">',
+                        '<div class="warhub-war-side-label">Enemy Faction</div>',
+                        '<div class="warhub-war-side-name">' + esc(enemyName) + '</div>',
+                    '</div>',
                 '</div>',
             '</div>',
 
-            '<div class="warhub-card warhub-col">',
-                '<h3>Med Deals</h3>',
-                '<div class="warhub-kv"><div>Saved Deals</div><div>' + esc(String(medDeals.length)) + '</div></div>',
-                '<div class="warhub-spy-box">' + (
-                    medDeals.length
-                        ? esc(String((medDeals[0] && (medDeals[0].name || medDeals[0].user)) || 'Entry')) +
-                          (medDeals[0] && medDeals[0].amount ? ' — ' + esc(String(medDeals[0].amount)) : '')
-                        : 'No med deals saved.'
-                ) + '</div>',
-                '<div class="warhub-row">',
-                    '<button type="button" class="warhub-btn ghost" data-tab="meddeals">Open Med Deals</button>',
+            '<div class="warhub-overview-stats">',
+                statCard('⛓ Your Chain', yourChain, 'good'),
+                statCard('⛓ Enemy Chain', enemyChain, 'bad'),
+                statCard('🏆 Your Score', yourScore, 'good'),
+                statCard('🏆 Enemy Score', enemyScore, 'bad'),
+            '</div>',
+
+            '<div class="warhub-mini-grid">',
+                '<div class="warhub-card warhub-overview-link-card terms">',
+                    '<h3>Terms</h3>',
+                    '<div class="warhub-spy-box">' + previewText(termsText, 'No war terms saved yet.', 180) + '</div>',
+                    '<div class="warhub-row">',
+                        '<button type="button" class="warhub-btn ghost" data-tab="terms">Open Terms</button>',
+                    '</div>',
+                '</div>',
+
+                '<div class="warhub-card warhub-overview-link-card meddeals">',
+                    '<h3>Med Deals</h3>',
+                    '<div class="warhub-spy-box">' + previewText(medPreview, 'No med deals saved.', 180) + '</div>',
+                    '<div class="warhub-row">',
+                        '<span class="warhub-pill good">Saved ' + esc(String(medDeals.length)) + '</span>',
+                        '<button type="button" class="warhub-btn ghost" data-tab="meddeals">Open Med Deals</button>',
+                    '</div>',
                 '</div>',
             '</div>',
 
-            '<div class="warhub-card warhub-col">',
+            '<div class="warhub-card warhub-overview-link-card dibs">',
                 '<h3>Dibs</h3>',
-                '<div class="warhub-kv"><div>Hospital Targets</div><div>' + esc(String(hospitalEnemies.length)) + '</div></div>',
-                '<div class="warhub-spy-box">' + (
-                    hospitalEnemies.length
-                        ? esc(String(hospitalEnemies[0].name || 'Enemy')) + ' is in hospital.'
-                        : 'No hospital enemies right now.'
-                ) + '</div>',
+                '<div class="warhub-spy-box">' + previewText(dibsPreview, 'No hospital enemies right now.', 180) + '</div>',
                 '<div class="warhub-row">',
+                    '<span class="warhub-pill bad">Hospital ' + esc(String(hospitalEnemies.length)) + '</span>',
                     '<button type="button" class="warhub-btn ghost" data-tab="hospital">Open Dibs</button>',
                 '</div>',
-            '</div>',
-
-            '<div class="warhub-card">',
-                '<h3>Access</h3>',
-                '<div class="warhub-kv"><div>Status</div><div>' + esc(access.status || '—') + '</div></div>',
-                '<div class="warhub-kv"><div>Message</div><div>' + esc(access.message || '—') + '</div></div>',
-                '<div class="warhub-kv"><div>Leader</div><div>' + (access.is_faction_leader ? 'Yes' : 'No') + '</div></div>',
-                '<div class="warhub-kv"><div>Member Enabled</div><div>' + (access.member_enabled ? 'Yes' : 'No') + '</div></div>',
             '</div>',
 
         '</div>'
