@@ -622,8 +622,9 @@ def faction_basic(api_key: str, faction_id: str = "") -> Dict[str, Any]:
 
 
 
+
 def _find_war_container(data: Dict[str, Any]) -> Tuple[str, Any]:
-    for key in ("rankedwars", "wars"):
+    for key in ("warfare", "rankedwars", "wars"):
         value = data.get(key)
         if isinstance(value, dict) and value:
             return key, value
@@ -632,42 +633,38 @@ def _find_war_container(data: Dict[str, Any]) -> Tuple[str, Any]:
     return "", {}
 
 
-def _extract_factions_from_war(war: Dict[str, Any]) -> Any:
-    for key in ("factions", "sides", "teams"):
-        factions = war.get(key)
-        if isinstance(factions, dict) and factions:
-            return factions
-        if isinstance(factions, list) and factions:
-            return factions
-
-        nested_war = war.get("war")
-        if isinstance(nested_war, dict):
-            for nested_key in ("factions", "sides", "teams"):
-                nested_factions = nested_war.get(nested_key)
-                if isinstance(nested_factions, dict) and nested_factions:
-                    return nested_factions
-                if isinstance(nested_factions, list) and nested_factions:
-                    return nested_factions
-
-    return {}
-
-
 def _war_phase(war: Dict[str, Any]) -> str:
     raw = " ".join([
         str(war.get("status") or ""),
         str(war.get("state") or ""),
+        str(war.get("phase") or ""),
     ]).strip().lower()
 
     if any(x in raw for x in ["ended", "finished", "complete", "completed", "expired"]):
         return "finished"
     if any(x in raw for x in ["active", "running", "ongoing", "started", "live", "in progress"]):
         return "active"
-    if any(x in raw for x in ["pending", "matching", "matched", "upcoming", "scheduled", "registered"]):
+    if any(x in raw for x in ["pending", "matching", "matched", "upcoming", "scheduled", "registered", "pair", "paired"]):
         return "registered"
 
     now_ts = int(time.time())
-    start_val = _to_int(war.get("start") or war.get("start_time") or war.get("started"), 0)
-    end_val = _to_int(war.get("end") or war.get("end_time") or war.get("ends"), 0)
+    start_val = _to_int(
+        war.get("start")
+        or war.get("start_time")
+        or war.get("started")
+        or war.get("starts")
+        or war.get("begin")
+        or 0,
+        0,
+    )
+    end_val = _to_int(
+        war.get("end")
+        or war.get("end_time")
+        or war.get("ended")
+        or war.get("ends")
+        or 0,
+        0,
+    )
 
     if end_val > 0 and end_val <= now_ts:
         return "finished"
@@ -741,59 +738,287 @@ def _side_chain(side_data: Dict[str, Any]) -> int:
     return 0
 
 
+def _normalize_war_side(side: Any, fallback_id: str = "", fallback_name: str = "") -> Dict[str, Any]:
+    if not isinstance(side, dict):
+        return {
+            "faction_id": str(fallback_id or "").strip(),
+            "faction_name": str(fallback_name or "").strip(),
+            "score": 0,
+            "chain": 0,
+            "raw": {},
+        }
+
+    side_id = str(
+        side.get("id")
+        or side.get("faction_id")
+        or side.get("ID")
+        or fallback_id
+        or ""
+    ).strip()
+
+    side_name = str(
+        side.get("name")
+        or side.get("faction_name")
+        or fallback_name
+        or ""
+    ).strip()
+
+    return {
+        "faction_id": side_id,
+        "faction_name": side_name,
+        "score": _side_score(side),
+        "chain": _side_chain(side),
+        "raw": side,
+    }
+
+
+def _coerce_warfare_rows(payload: Any) -> List[Dict[str, Any]]:
+    if isinstance(payload, list):
+        return [x for x in payload if isinstance(x, dict)]
+
+    if isinstance(payload, dict):
+        if "warfare" in payload and isinstance(payload.get("warfare"), list):
+            return [x for x in payload.get("warfare") if isinstance(x, dict)]
+
+        rows: List[Dict[str, Any]] = []
+        for key, value in payload.items():
+            if isinstance(value, dict):
+                row = dict(value)
+                if "war_id" not in row and "id" not in row:
+                    row["_container_key"] = str(key)
+                rows.append(row)
+        return rows
+
+    return []
+
+
+def _extract_warfare_sides(row: Dict[str, Any]) -> List[Dict[str, Any]]:
+    sides: List[Dict[str, Any]] = []
+
+    direct_pairs = [
+        ("aggressor", "aggressor_name"),
+        ("defender", "defender_name"),
+        ("attacker", "attacker_name"),
+        ("faction_1", "faction_1_name"),
+        ("faction_2", "faction_2_name"),
+    ]
+
+    for key, name_key in direct_pairs:
+        value = row.get(key)
+        if isinstance(value, dict):
+            sides.append(_normalize_war_side(value, fallback_name=str(row.get(name_key) or "")))
+
+    for key in ("factions", "sides", "teams"):
+        value = row.get(key)
+        if isinstance(value, dict):
+            for fid, obj in value.items():
+                if isinstance(obj, dict):
+                    sides.append(_normalize_war_side(obj, fallback_id=str(fid)))
+        elif isinstance(value, list):
+            for obj in value:
+                if isinstance(obj, dict):
+                    sides.append(_normalize_war_side(obj))
+
+    nested = row.get("war")
+    if isinstance(nested, dict):
+        for key in ("aggressor", "defender", "attacker", "faction_1", "faction_2"):
+            value = nested.get(key)
+            if isinstance(value, dict):
+                sides.append(_normalize_war_side(value))
+
+        for key in ("factions", "sides", "teams"):
+            value = nested.get(key)
+            if isinstance(value, dict):
+                for fid, obj in value.items():
+                    if isinstance(obj, dict):
+                        sides.append(_normalize_war_side(obj, fallback_id=str(fid)))
+            elif isinstance(value, list):
+                for obj in value:
+                    if isinstance(obj, dict):
+                        sides.append(_normalize_war_side(obj))
+
+    deduped: List[Dict[str, Any]] = []
+    seen = set()
+
+    for side in sides:
+        sid = str(side.get("faction_id") or "").strip()
+        sname = str(side.get("faction_name") or "").strip().lower()
+        key = sid or sname
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        deduped.append(side)
+
+    return deduped
+
+
+def _build_war_entry(war_id: str, row: Dict[str, Any], war_type: str = "") -> Dict[str, Any]:
+    raw_war = row.get("war") if isinstance(row.get("war"), dict) else {}
+    merged: Dict[str, Any] = {}
+    if isinstance(raw_war, dict):
+        merged.update(raw_war)
+    merged.update(row)
+
+    phase = _war_phase(merged)
+    start_ts = _to_int(
+        merged.get("start")
+        or merged.get("start_time")
+        or merged.get("started")
+        or merged.get("starts")
+        or 0,
+        0,
+    )
+    end_ts = _to_int(
+        merged.get("end")
+        or merged.get("end_time")
+        or merged.get("ended")
+        or merged.get("ends")
+        or 0,
+        0,
+    )
+
+    return {
+        "war_id": str(
+            war_id
+            or merged.get("war_id")
+            or merged.get("id")
+            or row.get("_container_key")
+            or ""
+        ).strip(),
+        "war_type": str(
+            war_type
+            or merged.get("war_type")
+            or merged.get("type")
+            or merged.get("category")
+            or "ranked"
+        ).strip(),
+        "phase": phase,
+        "active": phase == "active",
+        "registered": phase in {"registered", "active"},
+        "finished": phase == "finished",
+        "start": start_ts,
+        "end": end_ts,
+        "target_score": _to_int(
+            merged.get("target")
+            or merged.get("target_score")
+            or merged.get("goal")
+            or merged.get("score_target")
+            or 0,
+            0,
+        ),
+        "factions": _extract_warfare_sides(merged),
+        "raw": merged,
+        "status_text": str(merged.get("status") or merged.get("state") or "").strip(),
+    }
+
+
 def faction_wars(api_key: str, faction_id: str = "") -> Dict[str, Any]:
+    api_key = str(api_key or "").strip()
     faction_id = str(faction_id or "").strip()
-    tries = ["rankedwars", "wars"]
-    chosen_container_name = ""
-    chosen_container: Any = {}
+
+    if not api_key:
+        return {
+            "ok": False,
+            "wars": [],
+            "source_ok": False,
+            "source_note": "Missing API key.",
+            "error": "Missing API key.",
+        }
+
+    attempts: List[Tuple[str, str, Dict[str, Any], str]] = []
+
+    if faction_id:
+        attempts.extend([
+            (
+                "warfare",
+                f"{API_BASE}/faction/{faction_id}",
+                {"selections": "warfare", "key": api_key},
+                f"faction_warfare_direct_{faction_id}",
+            ),
+            (
+                "warfare",
+                f"{API_BASE}/faction/",
+                {"selections": "warfare", "key": api_key, "ID": faction_id},
+                f"faction_warfare_upper_{faction_id}",
+            ),
+            (
+                "warfare",
+                f"{API_BASE}/faction/",
+                {"selections": "warfare", "key": api_key, "id": faction_id},
+                f"faction_warfare_lower_{faction_id}",
+            ),
+        ])
+
+    attempts.extend([
+        (
+            "warfare",
+            f"{API_BASE}/faction/",
+            {"selections": "warfare", "key": api_key},
+            "faction_warfare_self",
+        ),
+        (
+            "rankedwars",
+            f"{API_BASE}/faction/{faction_id}" if faction_id else f"{API_BASE}/faction/",
+            {"selections": "rankedwars", "key": api_key},
+            f"faction_rankedwars_direct_{faction_id or 'self'}",
+        ),
+        (
+            "wars",
+            f"{API_BASE}/faction/{faction_id}" if faction_id else f"{API_BASE}/faction/",
+            {"selections": "wars", "key": api_key},
+            f"faction_wars_direct_{faction_id or 'self'}",
+        ),
+    ])
+
+    chosen_source = ""
+    chosen_rows: List[Dict[str, Any]] = []
     last_note = ""
 
-    for selection in tries:
-        attempts = []
+    for selection, url, params, prefix in attempts:
+        res = _safe_get(
+            url,
+            params,
+            cache_seconds=CACHE_TTL_FACTION_WARS,
+            cache_prefix=prefix,
+        )
+        if not res.get("ok"):
+            last_note = str(res.get("error", "Unknown Torn API error"))
+            continue
 
-        if faction_id:
-            attempts.append((
-                f"{API_BASE}/faction/{faction_id}",
-                {"selections": selection, "key": api_key},
-                f"faction_{selection}_direct_{faction_id}",
-            ))
+        data = res.get("data") or {}
 
-        attempts.append((
-            f"{API_BASE}/faction/",
-            {"selections": selection, "key": api_key, "ID": faction_id} if faction_id else {"selections": selection, "key": api_key},
-            f"faction_{selection}_upper_{faction_id or 'self'}",
-        ))
+        if selection == "warfare":
+            rows = _coerce_warfare_rows(data.get("warfare") if isinstance(data, dict) and "warfare" in data else data)
+            if rows:
+                chosen_rows = rows
+                chosen_source = "warfare"
+                break
+            last_note = f"No warfare rows found. Raw keys: {list(data.keys()) if isinstance(data, dict) else []}"
+            continue
 
-        attempts.append((
-            f"{API_BASE}/faction/",
-            {"selections": selection, "key": api_key, "id": faction_id} if faction_id else {"selections": selection, "key": api_key},
-            f"faction_{selection}_lower_{faction_id or 'self'}",
-        ))
+        container_name, container = _find_war_container(data)
+        if container_name and container:
+            if isinstance(container, dict):
+                rows = []
+                for war_id, war in container.items():
+                    if isinstance(war, dict):
+                        row = dict(war)
+                        if "war_id" not in row and "id" not in row:
+                            row["_container_key"] = str(war_id)
+                        rows.append(row)
+            elif isinstance(container, list):
+                rows = [x for x in container if isinstance(x, dict)]
+            else:
+                rows = []
 
-        for url, params, prefix in attempts:
-            res = _safe_get(
-                url,
-                params,
-                cache_seconds=CACHE_TTL_FACTION_WARS,
-                cache_prefix=prefix,
-            )
-            if not res.get("ok"):
-                last_note = str(res.get("error", "Unknown Torn API error"))
-                continue
-
-            data = res.get("data") or {}
-            container_name, container = _find_war_container(data)
-            if container_name and container:
-                chosen_container_name = container_name
-                chosen_container = container
+            if rows:
+                chosen_rows = rows
+                chosen_source = container_name
                 break
 
-            last_note = f"No war container in selection '{selection}'. Raw keys: {list(data.keys())}"
+        last_note = f"No war container in selection '{selection}'. Raw keys: {list(data.keys()) if isinstance(data, dict) else []}"
 
-        if chosen_container:
-            break
-
-    if not chosen_container:
+    if not chosen_rows:
         return {
             "ok": True,
             "wars": [],
@@ -802,217 +1027,9 @@ def faction_wars(api_key: str, faction_id: str = "") -> Dict[str, Any]:
         }
 
     wars: List[Dict[str, Any]] = []
-
-    if isinstance(chosen_container, dict):
-        iterable = chosen_container.items()
-    elif isinstance(chosen_container, list):
-        iterable = [(str(i), war) for i, war in enumerate(chosen_container)]
-    else:
-        iterable = []
-
-    for war_id, war in iterable:
-        if not isinstance(war, dict):
-            continue
-
-        parsed_factions: List[Dict[str, Any]] = []
-
-        def add_side(fid: Any, fdata: Dict[str, Any], fallback_name: str = ""):
-            if not isinstance(fdata, dict):
-                return
-
-            side_id = str(
-                fdata.get("id")
-                or fdata.get("faction_id")
-                or fdata.get("ID")
-                or fid
-                or ""
-            ).strip()
-
-            side_name = str(
-                fdata.get("name")
-                or fdata.get("faction_name")
-                or fallback_name
-                or ""
-            ).strip()
-
-            score = _side_score(fdata)
-            chain = _side_chain(fdata)
-
-            if not side_id and not side_name:
-                return
-
-            for existing in parsed_factions:
-                ex_id = str(existing.get("faction_id") or "").strip()
-                ex_name = str(existing.get("faction_name") or "").strip().lower()
-
-                if side_id and ex_id and side_id == ex_id:
-                    existing["score"] = score if score else existing.get("score", 0)
-                    existing["chain"] = chain if chain else existing.get("chain", 0)
-
-                    existing_raw = existing.get("raw") or {}
-                    merged_raw = dict(existing_raw) if isinstance(existing_raw, dict) else {}
-                    merged_raw.update(fdata)
-                    existing["raw"] = merged_raw
-
-                    if side_name and not existing.get("faction_name"):
-                        existing["faction_name"] = side_name
-                    return
-
-                if side_name and ex_name and side_name.lower() == ex_name:
-                    existing["score"] = score if score else existing.get("score", 0)
-                    existing["chain"] = chain if chain else existing.get("chain", 0)
-
-                    existing_raw = existing.get("raw") or {}
-                    merged_raw = dict(existing_raw) if isinstance(existing_raw, dict) else {}
-                    merged_raw.update(fdata)
-                    existing["raw"] = merged_raw
-
-                    if side_id and not existing.get("faction_id"):
-                        existing["faction_id"] = side_id
-                    return
-
-            parsed_factions.append({
-                "faction_id": side_id,
-                "faction_name": side_name,
-                "score": score,
-                "chain": chain,
-                "raw": fdata,
-            })
-
-        factions_raw = _extract_factions_from_war(war)
-
-        if isinstance(factions_raw, dict):
-            for fid, fdata in factions_raw.items():
-                if isinstance(fdata, dict):
-                    add_side(fid, fdata)
-        elif isinstance(factions_raw, list):
-            for idx, fdata in enumerate(factions_raw):
-                if isinstance(fdata, dict):
-                    fid = fdata.get("faction_id") or fdata.get("id") or str(idx)
-                    add_side(fid, fdata)
-
-        raw_war = war.get("war") if isinstance(war.get("war"), dict) else {}
-
-        for key in ("faction_1", "faction1", "team_1", "team1", "attacker", "attackers", "red", "side_1", "side1"):
-            side = war.get(key)
-            if isinstance(side, dict):
-                add_side(None, side)
-            nested_side = raw_war.get(key)
-            if isinstance(nested_side, dict):
-                add_side(None, nested_side)
-
-        for key in ("faction_2", "faction2", "team_2", "team2", "defender", "defenders", "blue", "side_2", "side2"):
-            side = war.get(key)
-            if isinstance(side, dict):
-                add_side(None, side)
-            nested_side = raw_war.get(key)
-            if isinstance(nested_side, dict):
-                add_side(None, nested_side)
-
-        attacker_id = str(
-            war.get("attacker_id")
-            or war.get("attacking_faction")
-            or raw_war.get("attacker_id")
-            or raw_war.get("attacking_faction")
-            or ""
-        ).strip()
-        attacker_name = str(
-            war.get("attacker_name")
-            or war.get("attacking_faction_name")
-            or raw_war.get("attacker_name")
-            or raw_war.get("attacking_faction_name")
-            or ""
-        ).strip()
-        defender_id = str(
-            war.get("defender_id")
-            or war.get("defending_faction")
-            or raw_war.get("defender_id")
-            or raw_war.get("defending_faction")
-            or ""
-        ).strip()
-        defender_name = str(
-            war.get("defender_name")
-            or war.get("defending_faction_name")
-            or raw_war.get("defender_name")
-            or raw_war.get("defending_faction_name")
-            or ""
-        ).strip()
-
-        if attacker_id or attacker_name:
-            add_side(attacker_id, {
-                "faction_id": attacker_id,
-                "name": attacker_name,
-                "score": war.get("attacker_score") or raw_war.get("attacker_score"),
-                "chain": war.get("attacker_chain") or raw_war.get("attacker_chain"),
-            }, attacker_name)
-
-        if defender_id or defender_name:
-            add_side(defender_id, {
-                "faction_id": defender_id,
-                "name": defender_name,
-                "score": war.get("defender_score") or raw_war.get("defender_score"),
-                "chain": war.get("defender_chain") or raw_war.get("defender_chain"),
-            }, defender_name)
-
-        phase = _war_phase(war)
-
-        winner = raw_war.get("winner") or war.get("winner")
-        end_ts = _to_int(
-            war.get("end")
-            or war.get("end_time")
-            or war.get("ends")
-            or raw_war.get("end")
-            or raw_war.get("end_time")
-            or 0,
-            0,
-        )
-        start_ts = _to_int(
-            war.get("start")
-            or war.get("start_time")
-            or war.get("started")
-            or raw_war.get("start")
-            or raw_war.get("start_time")
-            or 0,
-            0,
-        )
-        now_ts = int(time.time())
-
-        if winner or (end_ts and end_ts < now_ts):
-            phase = "finished"
-        elif phase == "unknown":
-            if start_ts and start_ts > now_ts:
-                phase = "registered"
-            elif start_ts and (end_ts == 0 or start_ts <= now_ts <= end_ts):
-                phase = "active"
-            elif parsed_factions:
-                phase = "active"
-            else:
-                phase = "finished"
-
-        wars.append({
-            "war_id": str(war.get("id") or raw_war.get("id") or war_id),
-            "war_type": str(war.get("war_type") or raw_war.get("war_type") or chosen_container_name),
-            "status_text": str(war.get("status") or war.get("state") or raw_war.get("status") or raw_war.get("state") or ""),
-            "phase": phase,
-            "active": phase == "active",
-            "registered": phase in {"registered", "active"},
-            "finished": phase == "finished",
-            "start": start_ts,
-            "end": end_ts,
-            "target_score": _to_int(
-                war.get("target")
-                or war.get("target_score")
-                or war.get("goal")
-                or war.get("score_target")
-                or raw_war.get("target")
-                or raw_war.get("target_score")
-                or raw_war.get("goal")
-                or 0,
-                0,
-            ),
-            "factions": parsed_factions,
-            "raw": war,
-        })
+    for idx, row in enumerate(chosen_rows):
+        war_id = str(row.get("war_id") or row.get("id") or row.get("_container_key") or idx)
+        wars.append(_build_war_entry(war_id, row, war_type="ranked"))
 
     wars.sort(
         key=lambda x: (
@@ -1026,7 +1043,7 @@ def faction_wars(api_key: str, faction_id: str = "") -> Dict[str, Any]:
         "ok": True,
         "wars": wars,
         "source_ok": True,
-        "source_note": f"Loaded from faction {chosen_container_name}.",
+        "source_note": f"Loaded from faction {chosen_source}.",
     }
 
 
@@ -1038,9 +1055,9 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
     if not my_faction_id or not my_faction_name:
         me = me_basic(api_key) or {}
 
-    resolved_my_faction_id = str(my_faction_id or me.get("faction_id") or "").strip()
-    resolved_my_faction_name = str(my_faction_name or me.get("faction_name") or "").strip()
-    my_name_lower = resolved_my_faction_name.lower().strip()
+    my_id = str(my_faction_id or me.get("faction_id") or "").strip()
+    my_name = str(my_faction_name or me.get("faction_name") or "").strip()
+    my_name_lower = my_name.lower().strip()
 
     default = {
         "ok": True,
@@ -1050,8 +1067,8 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
         "phase": "none",
         "war_id": "",
         "war_type": "",
-        "my_faction_id": resolved_my_faction_id,
-        "my_faction_name": resolved_my_faction_name,
+        "my_faction_id": my_id,
+        "my_faction_name": my_name,
         "enemy_faction_id": "",
         "enemy_faction_name": "",
         "enemy_members": [],
@@ -1074,7 +1091,7 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
         "debug_enemy_fetch": {},
     }
 
-    wars_res = faction_wars(api_key, faction_id=resolved_my_faction_id)
+    wars_res = faction_wars(api_key, faction_id=my_id)
     if not wars_res.get("ok"):
         out = dict(default)
         out["source_note"] = str(wars_res.get("error", out["source_note"]))
@@ -1087,464 +1104,85 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
         out["source_note"] = str(wars_res.get("source_note") or out["source_note"])
         return out
 
-    def _fid(side: Dict[str, Any]) -> str:
-        return str((side or {}).get("faction_id") or "").strip()
-
-    def _fname(side: Dict[str, Any]) -> str:
-        return str((side or {}).get("faction_name") or "").strip()
-
-    def _fname_lower(side: Dict[str, Any]) -> str:
-        return _fname(side).lower()
-
-    def _same_side(a: Dict[str, Any], b: Dict[str, Any]) -> bool:
-        a_id = _fid(a)
-        b_id = _fid(b)
-        if a_id and b_id and a_id == b_id:
-            return True
-        a_name = _fname_lower(a)
-        b_name = _fname_lower(b)
-        return bool(a_name and b_name and a_name == b_name)
-
-    def _is_me(side: Dict[str, Any]) -> bool:
-        sid = _fid(side)
-        sname = _fname_lower(side)
-        if resolved_my_faction_id and sid and sid == resolved_my_faction_id:
-            return True
-        if my_name_lower and sname and sname == my_name_lower:
-            return True
-        return False
-
-    def _raw_side(
-        raw: Dict[str, Any],
-        key_names: List[str],
-        id_keys: List[str],
-        name_keys: List[str],
-        score_keys: List[str],
-        chain_keys: List[str],
-    ) -> Dict[str, Any]:
-        for key in key_names:
-            obj = raw.get(key)
-            if isinstance(obj, dict) and obj:
-                score = _side_score(obj)
-                chain = _side_chain(obj)
-
-                if not score:
-                    for sk in score_keys:
-                        score = _to_int(raw.get(sk), score)
-                        if score:
-                            break
-
-                if not chain:
-                    for ck in chain_keys:
-                        chain = _to_int(raw.get(ck), chain)
-                        if chain:
-                            break
-
-                return {
-                    "faction_id": str(obj.get("id") or obj.get("faction_id") or obj.get("ID") or "").strip(),
-                    "faction_name": str(obj.get("name") or obj.get("faction_name") or "").strip(),
-                    "score": score,
-                    "chain": chain,
-                    "raw": obj,
-                }
-
-        nested_war = raw.get("war") if isinstance(raw.get("war"), dict) else {}
-        for key in key_names:
-            obj = nested_war.get(key)
-            if isinstance(obj, dict) and obj:
-                return {
-                    "faction_id": str(obj.get("id") or obj.get("faction_id") or obj.get("ID") or "").strip(),
-                    "faction_name": str(obj.get("name") or obj.get("faction_name") or "").strip(),
-                    "score": _side_score(obj),
-                    "chain": _side_chain(obj),
-                    "raw": obj,
-                }
-
-        out = {
-            "faction_id": "",
-            "faction_name": "",
-            "score": 0,
-            "chain": 0,
-            "raw": {},
-        }
-
-        all_id_keys = list(id_keys)
-        all_name_keys = list(name_keys)
-        all_score_keys = list(score_keys)
-        all_chain_keys = list(chain_keys)
-
-        for key in all_id_keys:
-            val = raw.get(key)
-            if val not in (None, ""):
-                out["faction_id"] = str(val).strip()
-                break
-
-        if not out["faction_id"]:
-            for key in all_id_keys:
-                val = nested_war.get(key)
-                if val not in (None, ""):
-                    out["faction_id"] = str(val).strip()
-                    break
-
-        for key in all_name_keys:
-            val = raw.get(key)
-            if val not in (None, ""):
-                out["faction_name"] = str(val).strip()
-                break
-
-        if not out["faction_name"]:
-            for key in all_name_keys:
-                val = nested_war.get(key)
-                if val not in (None, ""):
-                    out["faction_name"] = str(val).strip()
-                    break
-
-        for key in all_score_keys:
-            out["score"] = _to_int(raw.get(key), out["score"])
-            if out["score"]:
-                break
-
-        if not out["score"]:
-            for key in all_score_keys:
-                out["score"] = _to_int(nested_war.get(key), out["score"])
-                if out["score"]:
-                    break
-
-        for key in all_chain_keys:
-            out["chain"] = _to_int(raw.get(key), out["chain"])
-            if out["chain"]:
-                break
-
-        if not out["chain"]:
-            for key in all_chain_keys:
-                out["chain"] = _to_int(nested_war.get(key), out["chain"])
-                if out["chain"]:
-                    break
-
-        return out
-
-    def _raw_factions_map_sides(raw: Dict[str, Any]) -> List[Dict[str, Any]]:
-        out: List[Dict[str, Any]] = []
-
-        for fmap in [
-            raw.get("factions"),
-            (raw.get("war") or {}).get("factions") if isinstance(raw.get("war"), dict) else {},
-        ]:
-            if not isinstance(fmap, dict):
-                continue
-
-            for fid, obj in fmap.items():
-                if not isinstance(obj, dict):
-                    continue
-
-                side = {
-                    "faction_id": str(obj.get("id") or obj.get("faction_id") or fid or "").strip(),
-                    "faction_name": str(obj.get("name") or obj.get("faction_name") or "").strip(),
-                    "score": _side_score(obj),
-                    "chain": _side_chain(obj),
-                    "raw": obj,
-                }
-
-                duplicate = False
-                for existing in out:
-                    if _same_side(existing, side):
-                        duplicate = True
-                        if _side_score(side) > _side_score(existing):
-                            existing["score"] = _side_score(side)
-                        if _side_chain(side) > _side_chain(existing):
-                            existing["chain"] = _side_chain(side)
-                        if side.get("faction_id") and not existing.get("faction_id"):
-                            existing["faction_id"] = side.get("faction_id")
-                        if side.get("faction_name") and not existing.get("faction_name"):
-                            existing["faction_name"] = side.get("faction_name")
-                        break
-
-                if not duplicate:
-                    out.append(side)
-
-        return out
-
-    def _find_pairing_side(raw: Dict[str, Any], parsed_factions: List[Dict[str, Any]]):
-        attacker = _raw_side(
-            raw,
-            ["attacker", "attackers", "faction1", "faction_1", "team1", "team_1", "side1", "side_1", "red"],
-            ["attacker_id", "attacking_faction"],
-            ["attacker_name", "attacking_faction_name"],
-            ["attacker_score"],
-            ["attacker_chain"],
-        )
-        defender = _raw_side(
-            raw,
-            ["defender", "defenders", "faction2", "faction_2", "team2", "team_2", "side2", "side_2", "blue"],
-            ["defender_id", "defending_faction"],
-            ["defender_name", "defending_faction_name"],
-            ["defender_score"],
-            ["defender_chain"],
-        )
-
-        raw_map_sides = _raw_factions_map_sides(raw)
-
-        if (not attacker.get("faction_id") and not attacker.get("faction_name")) and raw_map_sides:
-            attacker = dict(raw_map_sides[0])
-
-        if (not defender.get("faction_id") and not defender.get("faction_name")) and len(raw_map_sides) > 1:
-            defender = dict(raw_map_sides[1])
-
-        if not attacker.get("faction_id") and not attacker.get("faction_name") and len(parsed_factions) > 0:
-            attacker = dict(parsed_factions[0])
-
-        if not defender.get("faction_id") and not defender.get("faction_name") and len(parsed_factions) > 1:
-            defender = dict(parsed_factions[1])
-
-        return attacker, defender, raw_map_sides
-
-    def _war_has_my_faction(war: Dict[str, Any]) -> bool:
-        factions = [x for x in (war.get("factions") or []) if isinstance(x, dict)]
-        raw_local = war.get("raw") or {}
-
-        for faction in factions:
-            if _is_me(faction):
-                return True
-
-        attacker, defender, raw_map = _find_pairing_side(raw_local, factions)
-
-        for side in [attacker, defender] + raw_map:
-            if _is_me(side):
-                return True
-
-        return False
-
-    def _war_priority(war: Dict[str, Any]) -> tuple:
-        phase = str(war.get("phase") or "").lower()
-        raw_local = war.get("raw") or {}
-        raw_war_local = raw_local.get("war") if isinstance(raw_local.get("war"), dict) else {}
-        winner = raw_war_local.get("winner") or raw_local.get("winner")
-        start_ts = _to_int(war.get("start"), 0)
-        end_ts = _to_int(war.get("end"), 0)
-
-        if winner:
-            phase_rank = 3
-        elif phase == "active":
-            phase_rank = 0
-        elif phase == "registered":
-            phase_rank = 1
-        else:
-            phase_rank = 2
-
-        return (
-            0 if _war_has_my_faction(war) else 1,
-            phase_rank,
-            -start_ts,
-            -end_ts,
-            str(war.get("war_id") or ""),
-        )
-
-    chosen_war = sorted(wars, key=_war_priority)[0]
-    factions = [x for x in (chosen_war.get("factions") or []) if isinstance(x, dict)]
-    raw = chosen_war.get("raw") or {}
-    raw_war = raw.get("war") if isinstance(raw.get("war"), dict) else {}
-
-    attacker_side, defender_side, raw_map_sides = _find_pairing_side(raw, factions)
-
-    candidate_sides: List[Dict[str, Any]] = []
-    for side in [attacker_side, defender_side] + raw_map_sides + factions:
-        if not isinstance(side, dict):
+    chosen_war = None
+    for war in wars:
+        sides = [x for x in (war.get("factions") or []) if isinstance(x, dict)]
+        if not sides:
             continue
 
-        sid = _fid(side)
-        sname = _fname_lower(side)
-
-        duplicate = False
-        for existing in candidate_sides:
-            if _same_side(existing, side):
-                duplicate = True
-                if _side_score(side) > _side_score(existing):
-                    existing["score"] = _side_score(side)
-                if _side_chain(side) > _side_chain(existing):
-                    existing["chain"] = _side_chain(side)
-                if sid and not _fid(existing):
-                    existing["faction_id"] = sid
-                if sname and not _fname_lower(existing):
-                    existing["faction_name"] = _fname(side)
-                existing_raw = existing.get("raw") or {}
-                merged_raw = dict(existing_raw) if isinstance(existing_raw, dict) else {}
-                side_raw = side.get("raw") or {}
-                if isinstance(side_raw, dict):
-                    merged_raw.update(side_raw)
-                existing["raw"] = merged_raw
+        matched = False
+        for side in sides:
+            sid = str(side.get("faction_id") or "").strip()
+            sname = str(side.get("faction_name") or "").strip().lower()
+            if my_id and sid == my_id:
+                matched = True
+                break
+            if my_name_lower and sname and sname == my_name_lower:
+                matched = True
                 break
 
-        if not duplicate and (sid or sname):
-            candidate_sides.append(dict(side))
+        if matched:
+            chosen_war = war
+            break
 
-    def _pick_best_my_side(candidates: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-        matches = [x for x in candidates if _is_me(x)]
-        if not matches:
-            return None
-        matches.sort(
-            key=lambda x: (
-                0 if _fid(x) == resolved_my_faction_id and resolved_my_faction_id else 1,
-                0 if _fname_lower(x) == my_name_lower and my_name_lower else 1,
-                -_side_score(x),
-                -_side_chain(x),
-            )
-        )
-        return matches[0]
+    if not chosen_war:
+        out = dict(default)
+        out["source_ok"] = bool(wars_res.get("source_ok"))
+        out["source_note"] = str(wars_res.get("source_note") or out["source_note"])
+        return out
 
-    def _pick_best_enemy_side(candidates: List[Dict[str, Any]], my_side_local: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-        enemy_candidates: List[Dict[str, Any]] = []
+    candidate_sides = [x for x in (chosen_war.get("factions") or []) if isinstance(x, dict)]
+    raw = chosen_war.get("raw") or {}
 
-        for side in candidates:
-            if not isinstance(side, dict):
-                continue
-            if _is_me(side):
-                continue
-            if my_side_local and _same_side(side, my_side_local):
-                continue
-            if _fid(side) or _fname(side):
-                enemy_candidates.append(side)
+    my_side: Dict[str, Any] = {}
+    enemy_side: Dict[str, Any] = {}
 
-        if not enemy_candidates:
-            return None
+    for side in candidate_sides:
+        side_id = str(side.get("faction_id") or "").strip()
+        side_name = str(side.get("faction_name") or "").strip()
+        if my_id and side_id == my_id:
+            my_side = side
+        elif my_name_lower and side_name.lower() == my_name_lower:
+            my_side = side
 
-        def _enemy_rank(side: Dict[str, Any]) -> tuple:
-            sid = _fid(side)
-            sname = _fname_lower(side)
-            return (
-                0 if sid else 1,
-                0 if sname else 1,
-                -_side_score(side),
-                -_side_chain(side),
-                sname,
-                sid,
-            )
+    for side in candidate_sides:
+        if my_side and side is my_side:
+            continue
+        side_id = str(side.get("faction_id") or "").strip()
+        side_name = str(side.get("faction_name") or "").strip().lower()
+        if my_id and side_id == my_id:
+            continue
+        if my_name_lower and side_name == my_name_lower:
+            continue
+        enemy_side = side
+        break
 
-        enemy_candidates.sort(key=_enemy_rank)
-        return enemy_candidates[0]
+    enemy_id = str(enemy_side.get("faction_id") or "").strip()
+    enemy_name = str(enemy_side.get("faction_name") or "").strip()
 
-    my_side = _pick_best_my_side(candidate_sides)
-    enemy_side = _pick_best_enemy_side(candidate_sides, my_side)
-
-    if not enemy_side and my_side and len(candidate_sides) == 2:
-        other = [x for x in candidate_sides if not _same_side(x, my_side)]
-        if other:
-            enemy_side = other[0]
-
-    if not my_side and resolved_my_faction_id:
-        my_side = {
-            "faction_id": resolved_my_faction_id,
-            "faction_name": resolved_my_faction_name,
-            "score": 0,
-            "chain": 0,
-            "raw": {},
-        }
-
-    my_id = str((my_side or {}).get("faction_id") or resolved_my_faction_id or "").strip()
-    my_name = str((my_side or {}).get("faction_name") or resolved_my_faction_name or "").strip()
-    enemy_id = str((enemy_side or {}).get("faction_id") or "").strip()
-    enemy_name = str((enemy_side or {}).get("faction_name") or "").strip()
-
-    score_us = _side_score(my_side or {})
-    score_them = _side_score(enemy_side or {})
-    chain_us = _side_chain(my_side or {})
-    chain_them = _side_chain(enemy_side or {})
-
-    if my_side is None and len(candidate_sides) == 2 and enemy_side:
-        for side in candidate_sides:
-            if not _same_side(side, enemy_side):
-                my_side = side
-                my_id = str(side.get("faction_id") or my_id or "").strip()
-                my_name = str(side.get("faction_name") or my_name or "").strip()
-                score_us = _side_score(side)
-                chain_us = _side_chain(side)
-                break
-
-    if my_side and ((not enemy_id and not enemy_name) or (enemy_id and my_id and enemy_id == my_id)):
-        other_sides = [x for x in candidate_sides if not _same_side(x, my_side)]
-        if other_sides:
-            fallback_enemy = other_sides[0]
-            fallback_enemy_id = str(fallback_enemy.get("faction_id") or "").strip()
-            fallback_enemy_name = str(fallback_enemy.get("faction_name") or "").strip()
-            if fallback_enemy_id and not enemy_id:
-                enemy_id = fallback_enemy_id
-            if fallback_enemy_name and not enemy_name:
-                enemy_name = fallback_enemy_name
-
-    if enemy_id and my_id and enemy_id == my_id:
-        enemy_id = ""
-        if enemy_name and my_name and enemy_name.lower() == my_name.lower():
-            enemy_name = ""
-
-    if enemy_name and my_name and enemy_name.lower() == my_name.lower() and not enemy_id:
-        keep_name = False
-        if my_side:
-            for side in candidate_sides:
-                if _same_side(side, my_side):
-                    continue
-                if _fname(side) and _fname_lower(side) == enemy_name.lower():
-                    keep_name = True
-                    break
-        if not keep_name:
-            enemy_name = ""
-
-    if not my_id:
-        my_id = resolved_my_faction_id
-    if not my_name:
-        my_name = resolved_my_faction_name
-
-    lead = score_us - score_them
+    score_us = _to_int(my_side.get("score"), 0)
+    score_them = _to_int(enemy_side.get("score"), 0)
+    chain_us = _to_int(my_side.get("chain"), 0)
+    chain_them = _to_int(enemy_side.get("chain"), 0)
     target_score = _to_int(chosen_war.get("target_score"), 0)
-    remaining_to_target = max(0, target_score - score_us) if target_score else 0
+    lead = score_us - score_them
+    remaining_to_target = max(0, target_score - max(score_us, score_them)) if target_score > 0 else 0
+    phase = str(chosen_war.get("phase") or "none")
+    is_active = bool(chosen_war.get("active"))
+    is_registered = bool(chosen_war.get("registered"))
 
-    winner = raw_war.get("winner") or raw.get("winner")
-    phase = str(chosen_war.get("phase") or "").lower()
-    if winner:
-        phase = "finished"
-    elif phase not in {"active", "registered"}:
-        phase = "registered" if (enemy_id or enemy_name) else "none"
-
-    is_active = phase == "active"
-    is_registered = phase in {"registered", "active"}
-
-    enemy_members: List[Dict[str, Any]] = []
-    debug_enemy_fetch = {
-        "enemy_id": enemy_id,
-        "enemy_name": enemy_name,
-        "enemy_fetch_ok": False,
-        "enemy_fetch_member_count": 0,
-        "enemy_fetch_error": "",
-        "enemy_fetch_faction_id": "",
-        "enemy_fetch_faction_name": "",
+    debug_enemy_fetch: Dict[str, Any] = {
+        "war_source_note": str(wars_res.get("source_note") or ""),
+        "matched_by_faction_id": bool(my_id),
+        "candidate_sides_count": len(candidate_sides),
+        "phase": phase,
     }
 
-    if not enemy_id and my_side and len(candidate_sides) == 2:
-        other_sides = [x for x in candidate_sides if not _same_side(x, my_side)]
-        if other_sides:
-            fallback_enemy = other_sides[0]
-            fallback_enemy_id = str(fallback_enemy.get("faction_id") or "").strip()
-            fallback_enemy_name = str(fallback_enemy.get("faction_name") or "").strip()
-            if fallback_enemy_id:
-                enemy_id = fallback_enemy_id
-            if fallback_enemy_name and not enemy_name:
-                enemy_name = fallback_enemy_name
-            debug_enemy_fetch["enemy_id"] = enemy_id
-            debug_enemy_fetch["enemy_name"] = enemy_name
-
-    if not enemy_id or (my_id and enemy_id == my_id):
-        enemy_id = ""
-        enemy_name = ""
-        enemy_members = []
-        debug_enemy_fetch["enemy_id"] = enemy_id
-        debug_enemy_fetch["enemy_name"] = enemy_name
-        debug_enemy_fetch["enemy_fetch_error"] = "Enemy faction not resolved or matched own faction."
-    elif is_registered:
-        enemy_faction = faction_basic(api_key, faction_id=enemy_id)
+    enemy_members: List[Dict[str, Any]] = []
+    if enemy_id and enemy_id != my_id:
+        enemy_faction = faction_basic(api_key, faction_id=enemy_id) or {}
         debug_enemy_fetch["enemy_fetch_ok"] = bool(enemy_faction.get("ok"))
-        debug_enemy_fetch["enemy_fetch_error"] = str(enemy_faction.get("error") or "")
-        debug_enemy_fetch["enemy_fetch_member_count"] = len(enemy_faction.get("members") or [])
-        debug_enemy_fetch["enemy_fetch_faction_id"] = str(enemy_faction.get("faction_id") or "")
-        debug_enemy_fetch["enemy_fetch_faction_name"] = str(enemy_faction.get("faction_name") or "")
-        debug_enemy_fetch["enemy_fetch_attempts"] = enemy_faction.get("debug_attempts") or []
+        debug_enemy_fetch["enemy_fetch_source_faction_id"] = str(enemy_id)
 
         if enemy_faction.get("ok"):
             fetched_enemy_id = str(enemy_faction.get("faction_id") or enemy_id or "").strip()
@@ -1562,8 +1200,6 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
                 debug_enemy_fetch["enemy_id"] = enemy_id
                 debug_enemy_fetch["enemy_name"] = enemy_name
                 debug_enemy_fetch["enemy_fetch_member_count"] = len(enemy_members)
-        else:
-            enemy_members = []
 
     status_text = str(chosen_war.get("status_text") or "")
     if not status_text:
