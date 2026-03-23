@@ -1301,12 +1301,17 @@ def member_live_bars(api_key: str, user_id: str = "") -> Dict[str, Any]:
         last_action = data.get("last_action") or {}
 
         resolved_user_id = str(
-            user_id
-            or data.get("player_id")
+            data.get("player_id")
             or data.get("playerID")
             or data.get("user_id")
             or ""
         ).strip()
+
+        if user_id and resolved_user_id and resolved_user_id != user_id:
+            last_error = f"API key/user mismatch. Requested {user_id}, got {resolved_user_id}."
+            continue
+
+        resolved_user_id = user_id or resolved_user_id
 
         personalstats = data.get("personalstats") or {}
         cooldowns = data.get("cooldowns") or {}
@@ -1349,27 +1354,14 @@ def member_live_bars(api_key: str, user_id: str = "") -> Dict[str, Any]:
                     "fulltime": _to_int((happy or {}).get("fulltime"), 0),
                 },
             },
-            "states": {
-                "status": str((status or {}).get("state") or ""),
-                "description": str((status or {}).get("description") or ""),
-                "details": str((status or {}).get("details") or ""),
-                "color": str((status or {}).get("color") or ""),
-                "last_action": str(
-                    (last_action or {}).get("status")
-                    or (last_action or {}).get("relative")
-                    or ""
-                ),
-            },
             "status": status if isinstance(status, dict) else {},
+            "last_action": last_action if isinstance(last_action, dict) else {},
         }
 
     return {
         "ok": False,
         "error": last_error,
         "user_id": user_id,
-        "personalstats": {},
-        "cooldowns": {},
-        "medical_cooldown": 0,
         "bars": {},
         "states": {},
         "status": {},
