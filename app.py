@@ -1001,6 +1001,37 @@ def _delete_med_deal_compat(faction_id: str, deal_id: int):
     except TypeError:
         return delete_med_deal(faction_id, int(deal_id))
 
+def _add_target_compat(
+    *,
+    faction_id: str,
+    target_id: str,
+    target_name: str,
+    added_by_user_id: str = "",
+    note: str = "",
+):
+    try:
+        return add_target(
+            faction_id=faction_id,
+            target_id=target_id,
+            target_name=target_name,
+            added_by_user_id=added_by_user_id,
+            note=note,
+        )
+    except TypeError:
+        try:
+            return add_target(faction_id, target_id, target_name, added_by_user_id, note)
+        except TypeError:
+            return add_target(faction_id, target_id, target_name)
+
+
+def _delete_target_compat(faction_id: str, target_id: str):
+    try:
+        return delete_target(faction_id=faction_id, target_id=str(target_id))
+    except TypeError:
+        try:
+            return delete_target(faction_id, str(target_id))
+        except TypeError:
+            return delete_target(str(target_id))
 
 def _add_dib_compat(
     *,
@@ -1870,7 +1901,7 @@ def api_state():
     dibs = [_normalize_dib(x) for x in (list_dibs_for_faction(faction_id, war_id=war_id) if faction_id else [])]
 
     med_deals = list_med_deals_for_faction(faction_id) if faction_id else []
-    targets = list_targets(user_id) if user_id else []
+    targets = list_targets(faction_id) if faction_id else []
     bounties = list_bounties(user_id) if user_id else []
     notifications = list_notifications(user_id)
     mark_notifications_seen(user_id)
@@ -2174,6 +2205,78 @@ def api_set_availability():
     )
     return ok(message="Availability updated.", available=available)
 
+@app.route("/api/targets", methods=["GET", "POST"])
+@require_session
+def api_targets():
+    blocked = _require_feature_access()
+    if blocked:
+        return blocked
+
+    user = request.user or {}
+    faction_id = str(user.get("faction_id") or "").strip()
+    user_id = str(user.get("user_id") or "").strip()
+
+    if not faction_id:
+        return err("No faction found for this user.", 400)
+
+    if request.method == "GET":
+        items = list_targets(faction_id) or []
+        return ok(targets=items, count=len(items))
+
+    data = _require_json()
+
+    target_id = str(
+        data.get("target_id")
+        or data.get("user_id")
+        or data.get("id")
+        or ""
+    ).strip()
+
+    target_name = str(
+        data.get("target_name")
+        or data.get("name")
+        or data.get("user_name")
+        or ""
+    ).strip()
+
+    note = str(data.get("note") or "").strip()
+
+    if not target_id:
+        return err("Missing target_id.", 400)
+
+    _add_target_compat(
+        faction_id=faction_id,
+        target_id=target_id,
+        target_name=target_name,
+        added_by_user_id=user_id,
+        note=note,
+    )
+
+    items = list_targets(faction_id) or []
+    return ok(message="Target added.", targets=items, count=len(items))
+
+
+@app.route("/api/targets/<target_id>", methods=["DELETE"])
+@require_session
+def api_target_delete(target_id: str):
+    blocked = _require_feature_access()
+    if blocked:
+        return blocked
+
+    user = request.user or {}
+    faction_id = str(user.get("faction_id") or "").strip()
+
+    if not faction_id:
+        return err("No faction found for this user.", 400)
+
+    target_id = str(target_id or "").strip()
+    if not target_id:
+        return err("Missing target_id.", 400)
+
+    _delete_target_compat(faction_id, target_id)
+
+    items = list_targets(faction_id) or []
+    return ok(message="Target removed.", targets=items, count=len(items))
 
 @app.route("/api/chain-sitter", methods=["POST"])
 @require_session
