@@ -1812,23 +1812,46 @@
     // 17. COMMON FORMAT HELPERS
     // ============================================================
 
-    function stateLabel(member) {
-        var s = String(
-            member && (
-                member.presence ||
-                member.status_state ||
-                member.status ||
-                member.state
-            ) || ''
-        ).toLowerCase();
+function stateLabel(member) {
+    var s = String(
+        member && (
+            member.online_state ||
+            member.status_class ||
+            member.state_bucket ||
+            member.presence ||
+            member.status_state ||
+            member.state ||
+            ''
+        )
+    ).trim().toLowerCase();
 
-        if (s.indexOf('online') >= 0) return 'online';
-        if (s.indexOf('idle') >= 0) return 'idle';
-        if (s.indexOf('travel') >= 0) return 'travel';
-        if (s.indexOf('jail') >= 0) return 'jail';
-        if (s.indexOf('hospital') >= 0) return 'hospital';
-        return 'offline';
+    if (s === 'online' || s === 'idle' || s === 'travel' || s === 'jail' || s === 'hospital' || s === 'offline') {
+        return s;
     }
+
+    var combined = [
+        String((member && member.status) || ''),
+        String((member && member.status_detail) || ''),
+        String((member && member.last_action) || ''),
+        String((member && member.display_status) || ''),
+        String((member && member.last_action_status) || ''),
+        String((member && member.state) || '')
+    ].join(' ').toLowerCase();
+
+    if (combined.indexOf('hospital') >= 0) return 'hospital';
+    if (combined.indexOf('jail') >= 0 || combined.indexOf('jailed') >= 0) return 'jail';
+    if (
+        combined.indexOf('travel') >= 0 ||
+        combined.indexOf('travelling') >= 0 ||
+        combined.indexOf('traveling') >= 0 ||
+        combined.indexOf('abroad') >= 0 ||
+        combined.indexOf('flying') >= 0
+    ) return 'travel';
+    if (combined.indexOf('idle') >= 0) return 'idle';
+    if (combined.indexOf('online') >= 0 || combined.indexOf('okay') >= 0 || combined.indexOf('active') >= 0) return 'online';
+
+    return 'offline';
+}
 
     function humanStateLabel(key) {
         key = String(key || '').toLowerCase();
@@ -1903,12 +1926,44 @@
         ) || 0;
     }
 
-    function lifeText(member) {
-        var cur = Number(member && (member.life_current || member.life || member.hp || 0)) || 0;
-        var max = Number(member && (member.life_max || member.max_life || 0)) || 0;
-        if (max > 0) return cur.toLocaleString() + '/' + max.toLocaleString();
-        return cur > 0 ? cur.toLocaleString() : '—';
-    }
+function lifeText(member) {
+    var lifeObj = member && member.life && typeof member.life === 'object' ? member.life : null;
+
+    var cur = Number(
+        (lifeObj && (lifeObj.current != null ? lifeObj.current : lifeObj.amount)) ||
+        (member && (member.life_current != null ? member.life_current : member.life)) ||
+        (member && member.hp) ||
+        0
+    ) || 0;
+
+    var max = Number(
+        (lifeObj && (lifeObj.maximum != null ? lifeObj.maximum : lifeObj.max)) ||
+        (member && (member.life_max != null ? member.life_max : member.max_life)) ||
+        0
+    ) || 0;
+
+    if (max > 0) return cur.toLocaleString() + '/' + max.toLocaleString();
+    return cur > 0 ? cur.toLocaleString() : '—';
+}
+
+function energyText(member) {
+    var energyObj = member && member.energy && typeof member.energy === 'object' ? member.energy : null;
+
+    var cur = Number(
+        (energyObj && (energyObj.current != null ? energyObj.current : energyObj.amount)) ||
+        (member && (member.energy_current != null ? member.energy_current : member.energy)) ||
+        0
+    ) || 0;
+
+    var max = Number(
+        (energyObj && (energyObj.maximum != null ? energyObj.maximum : energyObj.max)) ||
+        (member && member.energy_max) ||
+        0
+    ) || 0;
+
+    if (max > 0) return cur.toLocaleString() + '/' + max.toLocaleString();
+    return cur > 0 ? cur.toLocaleString() : '—';
+}
 
     function energyText(member) {
         var cur = Number(member && (member.energy_current || member.energy || 0)) || 0;
@@ -1993,21 +2048,16 @@
     ].join('');
 }
     function renderMemberRow(member) {
-    var id = getMemberId(member);
     var name = getMemberName(member);
-    var st = stateLabel(member);
     var med = medCdValue(member);
     var statusCd = statusCountdownValue(member);
-    var pos = String(member && (member.position || member.role || '') || '').trim();
+    var st = stateLabel(member);
 
     return [
         '<div class="warhub-member-row" data-state-name="' + esc(st) + '" data-medcd-base="' + esc(String(med)) + '" data-statuscd-base="' + esc(String(statusCd)) + '">',
             '<div class="warhub-member-main">',
                 '<div class="warhub-row">',
                     '<a class="warhub-member-name" href="' + esc(profileUrl(member)) + '" target="_blank" rel="noopener noreferrer">' + esc(name) + '</a>',
-                    id ? '<span class="warhub-pill neutral">#' + esc(id) + '</span>' : '',
-                    pos ? '<span class="warhub-pill neutral">' + esc(pos) + '</span>' : '',
-                    '<span class="warhub-pill ' + esc(st) + '" data-statuscd>' + esc(humanStateLabel(st)) + '</span>',
                 '</div>',
                 '<div class="warhub-row">',
                     '<a class="warhub-btn ghost" href="' + esc(bountyUrl(member)) + '" target="_blank" rel="noopener noreferrer">Bounty</a>',
@@ -2021,7 +2071,6 @@
         '</div>'
     ].join('');
 }
-
     function renderEnemyRow(member) {
         var id = getMemberId(member);
         var name = getMemberName(member);
