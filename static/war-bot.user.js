@@ -1975,50 +1975,52 @@
     }
 
     function renderGroupBlock(key, items, renderRowFn, defaultOpen) {
-        var list = arr(items);
-        var open = isGroupOpen(key, defaultOpen);
+    var list = arr(items);
+    var open = isGroupOpen(key, defaultOpen);
+    var labelKey = String(key || '').replace(/^members_/, '').replace(/^enemies_/, '').replace(/^hospital_/, '');
 
-        return [
-            '<div class="warhub-member-group">',
-                '<div class="warhub-member-group-head" data-group-toggle="' + esc(key) + '">',
-                    '<div class="warhub-row">',
-                        '<span class="warhub-pill ' + esc(key) + '">' + esc(humanStateLabel(key)) + '</span>',
-                        '<span class="warhub-muted">' + esc(String(list.length)) + '</span>',
-                    '</div>',
-                    '<div class="warhub-muted">' + (open ? 'Hide' : 'Show') + '</div>',
+    return [
+        '<div class="warhub-member-group">',
+            '<div class="warhub-member-group-head" data-group-toggle="' + esc(key) + '">',
+                '<div class="warhub-row">',
+                    '<span class="warhub-pill ' + esc(labelKey) + '">' + esc(humanStateLabel(labelKey)) + '</span>',
+                    '<span class="warhub-muted">' + esc(String(list.length)) + '</span>',
                 '</div>',
-                open ? '<div class="warhub-member-list">' + list.map(renderRowFn).join('') + '</div>' : '',
-            '</div>'
-        ].join('');
-    }
-
+                '<div class="warhub-muted">' + (open ? 'Hide' : 'Show') + '</div>',
+            '</div>',
+            open ? '<div class="warhub-member-list">' + list.map(renderRowFn).join('') + '</div>' : '',
+        '</div>'
+    ].join('');
+}
     function renderMemberRow(member) {
-        var id = getMemberId(member);
-        var name = getMemberName(member);
-        var st = stateLabel(member);
-        var med = medCdValue(member);
-        var statusCd = statusCountdownValue(member);
+    var id = getMemberId(member);
+    var name = getMemberName(member);
+    var st = stateLabel(member);
+    var med = medCdValue(member);
+    var statusCd = statusCountdownValue(member);
+    var pos = String(member && (member.position || member.role || '') || '').trim();
 
-        return [
-            '<div class="warhub-member-row" data-state-name="' + esc(st) + '" data-medcd-base="' + esc(String(med)) + '" data-statuscd-base="' + esc(String(statusCd)) + '">',
-                '<div class="warhub-member-main">',
-                    '<div class="warhub-row">',
-                        '<a class="warhub-member-name" href="' + esc(profileUrl(member)) + '" target="_blank" rel="noopener noreferrer">' + esc(name) + '</a>',
-                        id ? '<span class="warhub-pill neutral">#' + esc(id) + '</span>' : '',
-                        '<span class="warhub-pill ' + esc(st) + '" data-statuscd>' + esc(humanStateLabel(st)) + '</span>',
-                    '</div>',
-                    '<div class="warhub-row">',
-                        '<a class="warhub-btn ghost" href="' + esc(bountyUrl(member)) + '" target="_blank" rel="noopener noreferrer">Bounty</a>',
-                    '</div>',
+    return [
+        '<div class="warhub-member-row" data-state-name="' + esc(st) + '" data-medcd-base="' + esc(String(med)) + '" data-statuscd-base="' + esc(String(statusCd)) + '">',
+            '<div class="warhub-member-main">',
+                '<div class="warhub-row">',
+                    '<a class="warhub-member-name" href="' + esc(profileUrl(member)) + '" target="_blank" rel="noopener noreferrer">' + esc(name) + '</a>',
+                    id ? '<span class="warhub-pill neutral">#' + esc(id) + '</span>' : '',
+                    pos ? '<span class="warhub-pill neutral">' + esc(pos) + '</span>' : '',
+                    '<span class="warhub-pill ' + esc(st) + '" data-statuscd>' + esc(humanStateLabel(st)) + '</span>',
                 '</div>',
-                '<div class="warhub-statline">',
-                    '<span>⚡ ' + esc(energyText(member)) + '</span>',
-                    '<span>✚ ' + esc(lifeText(member)) + '</span>',
-                    '<span>💊 <span data-medcd>' + esc(shortCd(med, 'Ready')) + '</span></span>',
+                '<div class="warhub-row">',
+                    '<a class="warhub-btn ghost" href="' + esc(bountyUrl(member)) + '" target="_blank" rel="noopener noreferrer">Bounty</a>',
                 '</div>',
-            '</div>'
-        ].join('');
-    }
+            '</div>',
+            '<div class="warhub-statline">',
+                '<span>⚡ ' + esc(energyText(member)) + '</span>',
+                '<span>✚ ' + esc(lifeText(member)) + '</span>',
+                '<span>💊 <span data-medcd>' + esc(shortCd(med, 'Ready')) + '</span></span>',
+            '</div>',
+        '</div>'
+    ].join('');
+}
 
     function renderEnemyRow(member) {
         var id = getMemberId(member);
@@ -2073,97 +2075,117 @@
     }
 
     function renderOverviewTab() {
-        var access = normalizeAccessCache((state && state.access) || accessState);
-        var war = (state && state.war) || {};
-        var license = (state && state.license) || {};
-        var viewer = (state && state.viewer) || {};
-        var ownName = String((state && state.faction && state.faction.name) || license.faction_name || 'Your Faction');
-        var enemyName = String(war.enemy_faction_name || 'No current enemy');
+    var access = normalizeAccessCache((state && state.access) || accessState);
+    var war = (state && state.war) || {};
+    var license = (state && state.license) || {};
+    var viewer = (state && state.viewer) || {};
+    var ownFaction = (state && state.faction) || {};
+    var ownName = String(ownFaction.name || license.faction_name || 'Your Faction');
+    var enemyName = String(war.enemy_faction_name || 'No current enemy');
+    var memberCount = arr((state && state.members) || []).length;
+    var enemyCount = arr((state && state.enemies) || []).length;
 
-        return [
-            '<div class="warhub-grid">',
-                '<div class="warhub-hero-card">',
-                    '<div class="warhub-title">War Overview</div>',
-                    '<div class="warhub-sub">' + esc(ownName) + (enemyName && enemyName !== 'No current enemy' ? ' vs ' + esc(enemyName) : '') + '</div>',
+    return [
+        '<div class="warhub-grid">',
+
+            '<div class="warhub-hero-card">',
+                '<div class="warhub-title">War Overview</div>',
+                '<div class="warhub-sub">' + esc(ownName) + (enemyName && enemyName !== 'No current enemy' ? ' vs ' + esc(enemyName) : '') + '</div>',
+            '</div>',
+
+            '<div class="warhub-mini-grid">',
+                '<div class="warhub-card">',
+                    '<h3>Your Faction</h3>',
+                    '<div class="warhub-kv"><div>Name</div><div>' + esc(ownName) + '</div></div>',
+                    '<div class="warhub-kv"><div>Faction ID</div><div>' + esc(String(ownFaction.faction_id || license.faction_id || '—')) + '</div></div>',
+                    '<div class="warhub-kv"><div>Loaded members</div><div>' + esc(String(memberCount)) + '</div></div>',
                 '</div>',
 
                 '<div class="warhub-card">',
-                    '<h3>Access</h3>',
-                    '<div class="warhub-kv"><div>Status</div><div>' + esc(access.status || '—') + '</div></div>',
-                    '<div class="warhub-kv"><div>Message</div><div>' + esc(access.message || '—') + '</div></div>',
-                    '<div class="warhub-kv"><div>Features</div><div>' + (canUseFeatures() ? 'Enabled' : 'Locked') + '</div></div>',
-                    '<div class="warhub-kv"><div>Leader</div><div>' + (access.is_faction_leader ? 'Yes' : 'No') + '</div></div>',
-                    '<div class="warhub-kv"><div>Member enabled</div><div>' + (access.member_enabled ? 'Yes' : 'No') + '</div></div>',
-                    '<div class="warhub-kv"><div>User exempt</div><div>' + (access.is_user_exempt ? 'Yes' : 'No') + '</div></div>',
-                    '<div class="warhub-kv"><div>Faction exempt</div><div>' + (access.is_faction_exempt ? 'Yes' : 'No') + '</div></div>',
+                    '<h3>Enemy Faction</h3>',
+                    '<div class="warhub-kv"><div>Name</div><div>' + esc(enemyName) + '</div></div>',
+                    '<div class="warhub-kv"><div>Faction ID</div><div>' + esc(String(war.enemy_faction_id || '—')) + '</div></div>',
+                    '<div class="warhub-kv"><div>Loaded enemies</div><div>' + esc(String(enemyCount)) + '</div></div>',
                 '</div>',
+            '</div>',
 
-                '<div class="warhub-card">',
-                    '<h3>Viewer</h3>',
-                    '<div class="warhub-kv"><div>Name</div><div>' + esc(String(viewer.name || '—')) + '</div></div>',
-                    '<div class="warhub-kv"><div>User ID</div><div>' + esc(String(viewer.user_id || '—')) + '</div></div>',
-                    '<div class="warhub-kv"><div>Faction</div><div>' + esc(ownName) + '</div></div>',
-                '</div>',
+            '<div class="warhub-card">',
+                '<h3>War Status</h3>',
+                '<div class="warhub-kv"><div>War ID</div><div>' + esc(String(war.war_id || '—')) + '</div></div>',
+                '<div class="warhub-kv"><div>Phase</div><div>' + esc(String(war.war_phase || war.phase || '—')) + '</div></div>',
+                '<div class="warhub-kv"><div>Type</div><div>' + esc(String(war.war_type || '—')) + '</div></div>',
+                '<div class="warhub-kv"><div>Can use features</div><div>' + (canUseFeatures() ? 'Yes' : 'No') + '</div></div>',
+            '</div>',
 
-                '<div class="warhub-card">',
-                    '<h3>War</h3>',
-                    '<div class="warhub-kv"><div>War ID</div><div>' + esc(String(war.war_id || '—')) + '</div></div>',
-                    '<div class="warhub-kv"><div>Phase</div><div>' + esc(String(war.war_phase || war.phase || '—')) + '</div></div>',
-                    '<div class="warhub-kv"><div>Type</div><div>' + esc(String(war.war_type || '—')) + '</div></div>',
-                    '<div class="warhub-kv"><div>Enemy faction</div><div>' + esc(enemyName) + '</div></div>',
-                    '<div class="warhub-kv"><div>Enemy faction ID</div><div>' + esc(String(war.enemy_faction_id || '—')) + '</div></div>',
-                    '<div class="warhub-kv"><div>Enemy members loaded</div><div>' + esc(String(arr(state && state.enemies).length || 0)) + '</div></div>',
-                '</div>',
+            '<div class="warhub-card">',
+                '<h3>Access</h3>',
+                '<div class="warhub-kv"><div>Status</div><div>' + esc(access.status || '—') + '</div></div>',
+                '<div class="warhub-kv"><div>Message</div><div>' + esc(access.message || '—') + '</div></div>',
+                '<div class="warhub-kv"><div>Leader</div><div>' + (access.is_faction_leader ? 'Yes' : 'No') + '</div></div>',
+                '<div class="warhub-kv"><div>Member enabled</div><div>' + (access.member_enabled ? 'Yes' : 'No') + '</div></div>',
+                '<div class="warhub-kv"><div>User exempt</div><div>' + (access.is_user_exempt ? 'Yes' : 'No') + '</div></div>',
+                '<div class="warhub-kv"><div>Faction exempt</div><div>' + (access.is_faction_exempt ? 'Yes' : 'No') + '</div></div>',
+            '</div>',
 
-                '<div class="warhub-card">',
-                    '<h3>License / Billing</h3>',
-                    '<div class="warhub-kv"><div>Payment player</div><div>' + esc(String(license.payment_player || PAYMENT_PLAYER)) + '</div></div>',
-                    '<div class="warhub-kv"><div>Price per member</div><div>' + esc(String(license.payment_per_member || PRICE_PER_MEMBER)) + ' Xanax</div></div>',
-                    '<div class="warhub-kv"><div>Enabled members</div><div>' + esc(String(license.enabled_member_count || 0)) + '</div></div>',
-                    '<div class="warhub-kv"><div>Renewal cost</div><div>' + esc(String(license.renewal_cost || 0)) + ' Xanax</div></div>',
-                    '<div class="warhub-kv"><div>Paid until</div><div>' + esc(fmtTs(license.paid_until_at)) + '</div></div>',
-                '</div>',
-            '</div>'
-        ].join('');
-    }
+            '<div class="warhub-card">',
+                '<h3>Viewer</h3>',
+                '<div class="warhub-kv"><div>Name</div><div>' + esc(String(viewer.name || '—')) + '</div></div>',
+                '<div class="warhub-kv"><div>User ID</div><div>' + esc(String(viewer.user_id || '—')) + '</div></div>',
+                '<div class="warhub-kv"><div>Payment player</div><div>' + esc(String(license.payment_player || PAYMENT_PLAYER)) + '</div></div>',
+                '<div class="warhub-kv"><div>Price per member</div><div>' + esc(String(license.payment_per_member || PRICE_PER_MEMBER)) + ' Xanax</div></div>',
+                '<div class="warhub-kv"><div>Enabled members</div><div>' + esc(String(license.enabled_member_count || 0)) + '</div></div>',
+                '<div class="warhub-kv"><div>Renewal cost</div><div>' + esc(String(license.renewal_cost || 0)) + ' Xanax</div></div>',
+                '<div class="warhub-kv"><div>Paid until</div><div>' + esc(fmtTs(license.paid_until_at)) + '</div></div>',
+            '</div>',
 
+        '</div>'
+    ].join('');
+}
     function renderMembersTab() {
-        var members = arr((state && state.members) || currentFactionMembers || factionMembersCache || []);
-        var search = String(GM_getValue('warhub_members_search', '') || '').trim().toLowerCase();
+    var members = arr((state && state.members) || currentFactionMembers || factionMembersCache || []);
+    var search = String(GM_getValue('warhub_members_search', '') || '').trim().toLowerCase();
 
-        var filtered = members.filter(function (m) {
-            if (!search) return true;
-            return memberSearchText(m).indexOf(search) >= 0;
-        });
+    var filtered = members.filter(function (m) {
+        if (!search) return true;
+        return memberSearchText(m).indexOf(search) >= 0;
+    });
 
-        var grouped = groupMembers(filtered);
+    var grouped = groupMembers(filtered);
 
-        return [
-            '<div class="warhub-grid">',
-                '<div class="warhub-hero-card">',
-                    '<div class="warhub-title">Members</div>',
-                    '<div class="warhub-sub">Own faction only</div>',
+    return [
+        '<div class="warhub-grid">',
+
+            '<div class="warhub-hero-card">',
+                '<div class="warhub-title">Members</div>',
+                '<div class="warhub-sub">Own faction only</div>',
+            '</div>',
+
+            '<div class="warhub-card">',
+                '<div class="warhub-row">',
+                    '<input id="warhub-members-search" class="warhub-input" type="text" value="' + esc(search) + '" placeholder="Search name, ID, status, position" />',
+                    '<button type="button" class="warhub-btn ghost" data-action="members-refresh">Refresh</button>',
                 '</div>',
-
-                '<div class="warhub-card">',
-                    '<div class="warhub-row">',
-                        '<input id="warhub-members-search" class="warhub-input" type="text" value="' + esc(search) + '" placeholder="Search name, ID, status, position" />',
-                        '<button type="button" class="warhub-btn ghost" data-action="members-refresh">Refresh</button>',
-                    '</div>',
+                '<div class="warhub-space"></div>',
+                '<div class="warhub-row">',
+                    '<span class="warhub-pill online">Online ' + esc(String(grouped.online.length)) + '</span>',
+                    '<span class="warhub-pill idle">Idle ' + esc(String(grouped.idle.length)) + '</span>',
+                    '<span class="warhub-pill travel">Travel ' + esc(String(grouped.travel.length)) + '</span>',
+                    '<span class="warhub-pill jail">Jail ' + esc(String(grouped.jail.length)) + '</span>',
+                    '<span class="warhub-pill hospital">Hospital ' + esc(String(grouped.hospital.length)) + '</span>',
+                    '<span class="warhub-pill offline">Offline ' + esc(String(grouped.offline.length)) + '</span>',
                 '</div>',
+            '</div>',
 
-                '<div class="warhub-grid">',
-                    renderGroupBlock('members_online', grouped.online, renderMemberRow, true),
-                    renderGroupBlock('members_idle', grouped.idle, renderMemberRow, true),
-                    renderGroupBlock('members_travel', grouped.travel, renderMemberRow, false),
-                    renderGroupBlock('members_jail', grouped.jail, renderMemberRow, false),
-                    renderGroupBlock('members_hospital', grouped.hospital, renderMemberRow, true),
-                    renderGroupBlock('members_offline', grouped.offline, renderMemberRow, false),
-                '</div>',
-            '</div>'
-        ].join('');
-    }
+            renderGroupBlock('members_online', grouped.online, renderMemberRow, true),
+            renderGroupBlock('members_idle', grouped.idle, renderMemberRow, true),
+            renderGroupBlock('members_travel', grouped.travel, renderMemberRow, false),
+            renderGroupBlock('members_jail', grouped.jail, renderMemberRow, false),
+            renderGroupBlock('members_hospital', grouped.hospital, renderMemberRow, true),
+            renderGroupBlock('members_offline', grouped.offline, renderMemberRow, false),
 
+        '</div>'
+    ].join('');
+}
     function renderEnemiesTab() {
         var enemies = arr((state && state.enemies) || warEnemiesCache || []);
         var war = (state && state.war) || {};
