@@ -1784,7 +1784,6 @@ function canSeeAdmin() {
 
         return out;
     }
-
     function getNotifications() {
         return arr(state && state.notifications);
     }
@@ -3601,7 +3600,7 @@ function bindOverlayEvents() {
             stopPolling();
             stopMembersCountdownLoop();
 
-            if (tab === 'summary') {
+                        if (tab === 'summary') {
                 yield loadState();
                 yield loadLiveSummary(true);
                 renderBody();
@@ -3631,14 +3630,13 @@ function bindOverlayEvents() {
                 return;
             }
 
-            if (tab === 'hospital') {
+            if (tab === 'hospital' || tab === 'wartop5' || tab === 'overview' || tab === 'faction') {
                 yield loadState();
                 yield loadLiveSummary(true);
                 renderBody();
                 restartPollingForCurrentTab();
                 return;
             }
-
             if (tab === 'wartop5') {
                 yield loadState();
                 yield loadLiveSummary(true);
