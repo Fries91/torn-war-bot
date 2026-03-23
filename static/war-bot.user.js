@@ -1648,7 +1648,7 @@ function getMe() {
         return state && state.enemy_faction ? state.enemy_faction : {};
     }
 
-function getFriendlyMembersForTab() {
+    function getFriendlyMembersForTab() {
     var byId = {};
     var out = [];
 
@@ -1673,50 +1673,9 @@ function getFriendlyMembersForTab() {
                 row.faction_id ||
                 row.member_faction_id ||
                 row.side_faction_id ||
-                row.enemy_faction_id ||
                 row.fid
             )) || ''
         ).trim();
-    }
-
-    function rowLooksEnemy(row) {
-        if (!row || typeof row !== 'object') return false;
-
-        var rowFactionId = getRowFactionId(row);
-        var enemyFactionId = String(
-            warEnemiesFactionId ||
-            (getEnemyFaction() && (getEnemyFaction().faction_id || getEnemyFaction().id)) ||
-            (state && state.enemy_faction_id) ||
-            (getWar() && getWar().enemy_faction_id) ||
-            ''
-        ).trim();
-
-        if (enemyFactionId && rowFactionId && rowFactionId === enemyFactionId) return true;
-
-        var sideName = String(
-            row.side || row.team || row.member_side || row.side_name || ''
-        ).toLowerCase();
-
-        if (sideName === 'enemy' || sideName === 'enemies') return true;
-
-        return false;
-    }
-
-    function isFriendlyRow(row, source) {
-        if (!row || typeof row !== 'object') return false;
-
-        var rowId = getRowId(row);
-        var rowFactionId = getRowFactionId(row);
-
-        if (!rowId) return false;
-        if (rowLooksEnemy(row)) return false;
-        if (myUserId && rowId === myUserId) return true;
-        if (myFactionId && rowFactionId) return rowFactionId === myFactionId;
-
-        // Only trust faction-member cache as friendly when faction id is missing
-        if (source === 'factionMembers') return true;
-
-        return false;
     }
 
     function addRows(rows, source) {
@@ -1724,18 +1683,35 @@ function getFriendlyMembersForTab() {
             if (!row || typeof row !== 'object') return;
 
             var id = getRowId(row);
+            var rowFactionId = getRowFactionId(row);
             if (!id || byId[id]) return;
-            if (!isFriendlyRow(row, source)) return;
 
-            byId[id] = true;
-            out.push(row);
+            if (myUserId && id === myUserId) {
+                byId[id] = true;
+                out.push(row);
+                return;
+            }
+
+            if (myFactionId && rowFactionId && rowFactionId === myFactionId) {
+                byId[id] = true;
+                out.push(row);
+                return;
+            }
+
+            // Only trust factionMembers cache if no better source exists AND row is not tagged enemy
+            if (
+                source === 'factionMembers' &&
+                !rowFactionId &&
+                String(row.side || row.team || row.member_side || row.side_name || '').toLowerCase() !== 'enemy' &&
+                String(row.side || row.team || row.member_side || row.side_name || '').toLowerCase() !== 'enemies'
+            ) {
+                byId[id] = true;
+                out.push(row);
+            }
         });
     }
 
-    // Strongest friendly source first
     addRows(getFactionMembers(), 'factionMembers');
-
-    // Only include rows that can be positively identified as friendly
     addRows(getMembers(), 'members');
     addRows(state && state.members, 'stateMembers');
     addRows((state && state.faction && state.faction.members) || [], 'stateFactionMembers');
@@ -1743,7 +1719,6 @@ function getFriendlyMembersForTab() {
 
     return out;
 }
-
 function getMembers() {
     return arr(state && state.members);
 }
