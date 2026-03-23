@@ -1743,8 +1743,8 @@ function canSeeAdmin() {
     }
 
     function getMembers() {
-        return arr(state && state.members);
-    }
+    return arr(state && state.members);
+}
 
 function getRowId(row) {
     return String(
@@ -1752,48 +1752,66 @@ function getRowId(row) {
     ).trim();
 }
 
-function getKnownFactionIdMap() {
-    var map = {};
-
-    arr(getFactionMembers()).forEach(function (row) {
-        var id = getRowId(row);
-        if (id) map[id] = true;
-    });
-
-    return map;
-}
-
 function getLockedMembersForTab() {
-    var knownIds = getKnownFactionIdMap();
+    var factionMembers = getFactionMembers();
+    var liveMembers = getMembers();
     var byId = {};
     var out = [];
 
-    function addRows(rows) {
-        arr(rows).forEach(function (row) {
-            if (!row || typeof row !== 'object') return;
+    // Start with live data first
+    arr(liveMembers).forEach(function (row) {
+        if (!row || typeof row !== 'object') return;
 
+        var id = getRowId(row);
+        if (!id) return;
+
+        byId[id] = Object.assign({}, byId[id] || {}, row);
+    });
+
+    // Merge faction roster in, but keep live fields when present
+    arr(factionMembers).forEach(function (row) {
+        if (!row || typeof row !== 'object') return;
+
+        var id = getRowId(row);
+        if (!id) return;
+
+        byId[id] = Object.assign({}, row, byId[id] || {});
+    });
+
+    // Faction roster is the source of truth for Members tab
+    if (arr(factionMembers).length) {
+        arr(factionMembers).forEach(function (row) {
             var id = getRowId(row);
             if (!id) return;
-            if (!knownIds[id]) return;
-
-            byId[id] = Object.assign({}, byId[id] || {}, row);
+            out.push(byId[id] || row);
         });
+        return out;
     }
 
-    addRows(getFactionMembers());
-    addRows(getMembers());
+    // Fallback only if faction roster has not loaded yet
+    arr(liveMembers).forEach(function (row) {
+        if (!row || typeof row !== 'object') return;
 
-    Object.keys(byId).forEach(function (id) {
-        out.push(byId[id]);
+        var id = getRowId(row);
+        if (!id) return;
+        if (out.some(function (x) { return getRowId(x) === id; })) return;
+
+        out.push(row);
     });
 
     return out;
 }
 
 function getUnknownEnemyMembersForTab() {
-    var knownIds = getKnownFactionIdMap();
+    var factionIds = {};
     var byId = {};
     var out = [];
+
+    // Lock your own faction IDs so enemies cannot bleed into Members
+    arr(getFactionMembers()).forEach(function (row) {
+        var id = getRowId(row);
+        if (id) factionIds[id] = true;
+    });
 
     function addRows(rows) {
         arr(rows).forEach(function (row) {
@@ -1801,7 +1819,7 @@ function getUnknownEnemyMembersForTab() {
 
             var id = getRowId(row);
             if (!id) return;
-            if (knownIds[id]) return;
+            if (factionIds[id]) return;
             if (byId[id]) return;
 
             byId[id] = true;
@@ -1819,6 +1837,9 @@ function getUnknownEnemyMembersForTab() {
     return out;
 }
 
+function getEnemyMembersForTab() {
+    return getUnknownEnemyMembersForTab();
+}
     function getEnemyMembersForTab() {
     return getUnknownEnemyMembersForTab();
 }
@@ -2429,35 +2450,7 @@ function renderChainTab() {
     }
 
 function renderMembersTab() {
-    var factionMembers = getFactionMembers();
-    var liveMembers = getMembers();
-    var byId = {};
-    var members = [];
-
-    // Start with live members first
-    arr(liveMembers).forEach(function (m) {
-        var id = getRowId(m);
-        if (!id) return;
-        byId[id] = Object.assign({}, byId[id] || {}, m);
-    });
-
-    // Merge faction roster in, but keep live values when present
-    arr(factionMembers).forEach(function (m) {
-        var id = getRowId(m);
-        if (!id) return;
-        byId[id] = Object.assign({}, m, byId[id] || {});
-    });
-
-    // Only show your faction roster when it exists
-    if (arr(factionMembers).length) {
-        members = arr(factionMembers).map(function (m) {
-            var id = getRowId(m);
-            return id && byId[id] ? byId[id] : m;
-        }).filter(Boolean);
-    } else {
-        // Fallback only if faction roster has not loaded yet
-        members = arr(liveMembers).slice();
-    }
+    var members = getLockedMembersForTab();
 
     var savedSearch = String(GM_getValue('warhub_members_search', '') || '').trim().toLowerCase();
     var savedFilter = String(GM_getValue('warhub_members_filter', 'all') || 'all').trim().toLowerCase();
@@ -2478,7 +2471,7 @@ function renderMembersTab() {
         var mins = Math.floor((total % 3600) / 60);
         var remSecs = total % 60;
 
-        if (days > 0) return days + 'd ' + (hours > 0 ? ' ' + hours + 'h' : '');
+        if (days > 0) return days + 'd' + (hours > 0 ? ' ' + hours + 'h' : '');
         if (hours > 0) return hours + 'h' + (mins > 0 ? ' ' + mins + 'm' : '');
         if (mins > 0) return mins + 'm' + (remSecs > 0 ? ' ' + remSecs + 's' : '');
         return remSecs + 's';
@@ -2509,13 +2502,13 @@ function renderMembersTab() {
             combined.indexOf('flying') >= 0
         ) return 'travel';
         if (combined.indexOf('idle') >= 0) return 'idle';
-        if (combined.indexOf('online') >= 0) return 'online';
+        if (combined.indexOf('online') >= 0 || combined.indexOf('okay') >= 0) return 'online';
         return 'offline';
     }
 
     function stateLabel(stateName, member) {
         if (stateName === 'hospital') {
-            var secs = toNum(member.hospital_seconds || member.hospital_time || member.status_until);
+            var secs = toNum(member.hospital_seconds || member.hospital_time || member.status_until || member.status_cd);
             return secs > 0 ? 'Hospital (' + shortTime(secs) + ')' : 'Hospital';
         }
         if (stateName === 'jail') return 'Jail';
@@ -2574,7 +2567,6 @@ function renderMembersTab() {
 
         var aOrder = order[aState] || 99;
         var bOrder = order[bState] || 99;
-
         if (aOrder !== bOrder) return aOrder - bOrder;
 
         var aName = String(a.name || a.user_name || a.member_name || '').toLowerCase();
@@ -2607,10 +2599,10 @@ function renderMembersTab() {
         var pillClass = statePillClass(stateName);
         var pillText = stateLabel(stateName, m);
 
-        var lifeCurrent = toNum(m.life_current || m.life);
-        var lifeMax = toNum(m.life_max || m.max_life);
-        var energyCurrent = toNum(m.energy_current || m.energy);
-        var energyMax = toNum(m.energy_max || m.max_energy);
+        var lifeCurrent = toNum(m.life_current != null ? m.life_current : m.life);
+        var lifeMax = toNum(m.life_max != null ? m.life_max : m.max_life);
+        var energyCurrent = toNum(m.energy_current != null ? m.energy_current : m.energy);
+        var energyMax = toNum(m.energy_max != null ? m.energy_max : m.max_energy);
         var liveOk = hasLiveStats(m);
 
         var profileUrl = String(
