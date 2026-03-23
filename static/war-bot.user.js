@@ -2991,31 +2991,53 @@ function renderEnemiesTab() {
           </div>';
     }
 
-    function renderSettingsTab() {
-        var apiKey = cleanInputValue(GM_getValue(K_API_KEY, ''));
-        var adminKey = cleanInputValue(GM_getValue(K_ADMIN_KEY, ''));
-        var ownerToken = cleanInputValue(GM_getValue(K_OWNER_TOKEN, ''));
-        var refreshMs = Number(GM_getValue(K_REFRESH, 30000)) || 30000;
+function renderSettingsTab() {
+    var apiKey = cleanInputValue(GM_getValue(K_API_KEY, ''));
+    var me = getMe();
+    var lic = (accessState && accessState.license) ? accessState.license : {};
 
-        return '\
-          <div class="warhub-card">\
-            <h3>Keys</h3>\
-            <label class="warhub-label">Your Torn API Key</label>\
-            <input class="warhub-input" id="wh-api-key" value="' + esc(apiKey) + '" placeholder="Paste your API key">\
-            <label class="warhub-label" style="margin-top:8px;">Admin Key</label>\
-            <input class="warhub-input" id="wh-admin-key" value="' + esc(adminKey) + '" placeholder="Optional admin key">\
-            <label class="warhub-label" style="margin-top:8px;">Owner Token</label>\
-            <input class="warhub-input" id="wh-owner-token" value="' + esc(ownerToken) + '" placeholder="Owner token">\
-            <label class="warhub-label" style="margin-top:8px;">Refresh (ms)</label>\
-            <input class="warhub-input" id="wh-refresh-ms" value="' + esc(String(refreshMs)) + '" placeholder="30000">\
-            <div class="warhub-actions" style="margin-top:8px;">\
-              <button class="warhub-btn primary" id="wh-save-keys">Save Keys</button>\
-              <button class="warhub-btn" id="wh-login-btn">Login</button>\
-              <button class="warhub-btn warn" id="wh-logout-btn">Logout</button>\
-            </div>\
-          </div>';
-    }
+    var loggedIn = isLoggedIn();
+    var userName = loggedIn ? (me.name || 'Unknown') : '—';
+    var userId = loggedIn ? String(me.user_id || '—') : '—';
 
+    var activePill = loggedIn
+        ? '<span class="warhub-pill ' + (canUseFeatures() ? 'good' : 'bad') + '">' + (canUseFeatures() ? 'Active' : 'Limited') + '</span>'
+        : '<span class="warhub-pill neutral">Logged Out</span>';
+
+    var leaderActivated = loggedIn
+        ? '<span class="warhub-pill ' + ((accessState && accessState.member_enabled) ? 'good' : 'bad') + '">' + ((accessState && accessState.member_enabled) ? 'Activated' : 'Not Activated') + '</span>'
+        : '<span class="warhub-pill neutral">—</span>';
+
+    var rolePill = loggedIn
+        ? '<span class="warhub-pill ' + ((accessState && accessState.is_faction_leader) ? 'leader' : 'neutral') + '">' + ((accessState && accessState.is_faction_leader) ? 'Leader' : 'Member') + '</span>'
+        : '<span class="warhub-pill neutral">—</span>';
+
+    var factionName = loggedIn ? (me.faction_name || lic.faction_name || '—') : '—';
+
+    return '\
+      <div class="warhub-card">\
+        <div class="warhub-section-title"><h3>Account</h3></div>\
+        <div class="warhub-grid two">\
+          <div class="warhub-metric"><div class="k">User</div><div class="v">' + esc(userName) + '</div></div>\
+          <div class="warhub-metric"><div class="k">User ID</div><div class="v">' + esc(userId) + '</div></div>\
+          <div class="warhub-metric"><div class="k">Faction</div><div class="v">' + esc(factionName) + '</div></div>\
+          <div class="warhub-metric"><div class="k">Role</div><div class="v">' + rolePill + '</div></div>\
+          <div class="warhub-metric"><div class="k">Status</div><div class="v">' + activePill + '</div></div>\
+          <div class="warhub-metric"><div class="k">Leader Activated</div><div class="v">' + leaderActivated + '</div></div>\
+        </div>\
+      </div>\
+      <div class="warhub-card">\
+        <div class="warhub-section-title"><h3>Login</h3></div>\
+        <label class="warhub-label">Your Torn API Key</label>\
+        <input class="warhub-input" id="wh-api-key" type="password" value="' + esc(apiKey) + '" placeholder="Paste your API key" autocomplete="off" spellcheck="false">\
+        <div class="warhub-mini" style="margin-top:6px;">Saved key stays hidden with stars.</div>\
+        <div class="warhub-actions" style="margin-top:8px;">\
+          <button class="warhub-btn primary" id="wh-save-keys">Save Key</button>\
+          <button class="warhub-btn" id="wh-login-btn">Login</button>\
+          <button class="warhub-btn warn" id="wh-logout-btn">Logout</button>\
+        </div>\
+      </div>';
+}
 function renderEnemyDebugCard() {
     var dbg = (state && state.debug && typeof state.debug === 'object') ? state.debug : {};
     var enemyFetch = (dbg.debug_enemy_fetch && typeof dbg.debug_enemy_fetch === 'object') ? dbg.debug_enemy_fetch : {};
@@ -3462,31 +3484,18 @@ if (tab === 'summary') {
      });
 
     var saveKeysBtn = overlay.querySelector('#wh-save-keys');
-    if (saveKeysBtn && !saveKeysBtn.__warhubBound) {
-        saveKeysBtn.__warhubBound = true;
-        saveKeysBtn.addEventListener('click', function () {
-            var apiKeyEl = overlay.querySelector('#wh-api-key');
-            var adminKeyEl = overlay.querySelector('#wh-admin-key');
-            var ownerTokenEl = overlay.querySelector('#wh-owner-token');
-            var refreshEl = overlay.querySelector('#wh-refresh-ms');
+if (saveKeysBtn && !saveKeysBtn.__warhubBound) {
+    saveKeysBtn.__warhubBound = true;
+    saveKeysBtn.addEventListener('click', function () {
+        var apiKeyEl = overlay.querySelector('#wh-api-key');
+        var apiKey = cleanInputValue(apiKeyEl ? apiKeyEl.value : '');
 
-            var apiKey = cleanInputValue(apiKeyEl ? apiKeyEl.value : '');
-            var adminKey = cleanInputValue(adminKeyEl ? adminKeyEl.value : '');
-            var ownerToken = cleanInputValue(ownerTokenEl ? ownerTokenEl.value : '');
-            var refreshMs = Number(refreshEl ? refreshEl.value : 30000) || 30000;
-            if (refreshMs < 5000) refreshMs = 5000;
+        GM_setValue(K_API_KEY, apiKey);
 
-            GM_setValue(K_API_KEY, apiKey);
-            GM_setValue(K_ADMIN_KEY, adminKey);
-            GM_setValue(K_OWNER_TOKEN, ownerToken);
-            GM_setValue(K_REFRESH, refreshMs);
-
-            restartPollingForCurrentTab();
-            setStatus(apiKey ? 'Keys saved.' : 'API key cleared.');
-            renderStatus();
-        });
-    }
-
+        setStatus(apiKey ? 'API key saved.' : 'API key cleared.');
+        renderStatus();
+    });
+}
     var loginBtn = overlay.querySelector('#wh-login-btn');
     if (loginBtn && !loginBtn.__warhubBound) {
         loginBtn.__warhubBound = true;
