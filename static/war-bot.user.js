@@ -3597,13 +3597,11 @@ function bindOverlayEvents() {
                 GM_setValue('warhub_members_search', '');
                 GM_setValue('warhub_members_filter', 'all');
                 yield loadState();
-                yield loadFactionMembers(true);
                 renderBody();
                 startMembersCountdownLoop();
                 restartPollingForCurrentTab();
                 return;
             }
-
             if (tab === 'enemies') {
                 GM_setValue('warhub_enemies_search', '');
                 GM_setValue('warhub_enemies_filter', 'all');
@@ -4333,11 +4331,10 @@ function _tickCurrentTab() {
 
             if (currentTab === 'members') {
                 _asyncToGenerator(function* () {
-                    yield loadState();
-                    yield loadFactionMembers(true);
-                    renderBody();
-                    startMembersCountdownLoop();
-                    restartPollingForCurrentTab();
+                yield loadState();
+                renderBody();
+                startMembersCountdownLoop();
+                restartPollingForCurrentTab();
                 })();
                 return;
             }
