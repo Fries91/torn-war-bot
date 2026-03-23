@@ -117,543 +117,553 @@
 
     var accessState = normalizeAccessCache(GM_getValue(K_ACCESS_CACHE, null));
 
-    // ============================================================
-    // 05. STYLES
-    // ============================================================
+// ============================================================
+// 05. STYLES
+// ============================================================
 
-    var css = "\n\
-    #warhub-shield {\n\
-      position: fixed !important;\n\
-      z-index: 2147483647 !important;\n\
-      width: 42px !important;\n\
-      height: 42px !important;\n\
-      border-radius: 12px !important;\n\
-      display: flex !important;\n\
-      align-items: center !important;\n\
-      justify-content: center !important;\n\
-      font-size: 22px !important;\n\
-      line-height: 1 !important;\n\
-      cursor: grab !important;\n\
-      user-select: none !important;\n\
-      -webkit-user-select: none !important;\n\
-      -webkit-touch-callout: none !important;\n\
-      touch-action: none !important;\n\
-      box-shadow: 0 8px 24px rgba(0,0,0,.45) !important;\n\
-      border: 1px solid rgba(255,255,255,.10) !important;\n\
-      background: radial-gradient(circle at 30% 20%, rgba(220,75,75,.98), rgba(110,12,12,.98) 55%, rgba(48,6,6,.98)) !important;\n\
-      color: #fff !important;\n\
-      top: 120px !important;\n\
-      right: 14px !important;\n\
-      left: auto !important;\n\
-      bottom: auto !important;\n\
-      opacity: 1 !important;\n\
-      visibility: visible !important;\n\
-      pointer-events: auto !important;\n\
-    }\n\
-    #warhub-shield.dragging { cursor: grabbing !important; }\n\
+var css = "\n\
+#warhub-shield {\n\
+  position: fixed !important;\n\
+  z-index: 2147483647 !important;\n\
+  width: 42px !important;\n\
+  height: 42px !important;\n\
+  border-radius: 12px !important;\n\
+  display: flex !important;\n\
+  align-items: center !important;\n\
+  justify-content: center !important;\n\
+  font-size: 22px !important;\n\
+  line-height: 1 !important;\n\
+  cursor: grab !important;\n\
+  user-select: none !important;\n\
+  -webkit-user-select: none !important;\n\
+  -webkit-touch-callout: none !important;\n\
+  touch-action: none !important;\n\
+  box-shadow: 0 8px 24px rgba(0,0,0,.45) !important;\n\
+  border: 1px solid rgba(255,255,255,.10) !important;\n\
+  background: radial-gradient(circle at 30% 20%, rgba(220,75,75,.98), rgba(110,12,12,.98) 55%, rgba(48,6,6,.98)) !important;\n\
+  color: #fff !important;\n\
+  top: 120px !important;\n\
+  right: 14px !important;\n\
+  left: auto !important;\n\
+  bottom: auto !important;\n\
+  opacity: 1 !important;\n\
+  visibility: visible !important;\n\
+  pointer-events: auto !important;\n\
+}\n\
+#warhub-shield.dragging { cursor: grabbing !important; }\n\
 \n\
-    #warhub-badge {\n\
-      position: fixed !important;\n\
-      z-index: 2147483647 !important;\n\
-      min-width: 16px !important;\n\
-      height: 16px !important;\n\
-      padding: 0 4px !important;\n\
-      border-radius: 999px !important;\n\
-      background: #ffd54a !important;\n\
-      color: #111 !important;\n\
-      font-size: 10px !important;\n\
-      line-height: 16px !important;\n\
-      text-align: center !important;\n\
-      font-weight: 800 !important;\n\
-      box-shadow: 0 3px 12px rgba(0,0,0,.45) !important;\n\
-      display: none !important;\n\
-      pointer-events: none !important;\n\
-    }\n\
+#warhub-badge {\n\
+  position: fixed !important;\n\
+  z-index: 2147483647 !important;\n\
+  min-width: 16px !important;\n\
+  height: 16px !important;\n\
+  padding: 0 4px !important;\n\
+  border-radius: 999px !important;\n\
+  background: #ffd54a !important;\n\
+  color: #111 !important;\n\
+  font-size: 10px !important;\n\
+  line-height: 16px !important;\n\
+  text-align: center !important;\n\
+  font-weight: 800 !important;\n\
+  box-shadow: 0 3px 12px rgba(0,0,0,.45) !important;\n\
+  display: none !important;\n\
+  pointer-events: none !important;\n\
+}\n\
 \n\
-    #warhub-overlay {\n\
-      position: fixed !important;\n\
-      z-index: 2147483646 !important;\n\
-      right: 12px !important;\n\
-      top: 170px !important;\n\
-      width: min(96vw, 520px) !important;\n\
-      height: min(88vh, 900px) !important;\n\
-      max-height: 88vh !important;\n\
-      min-height: 420px !important;\n\
-      overflow: hidden !important;\n\
-      border-radius: 14px !important;\n\
-      background: linear-gradient(180deg, #171717, #0c0c0c) !important;\n\
-      color: #f2f2f2 !important;\n\
-      border: 1px solid rgba(255,255,255,.08) !important;\n\
-      box-shadow: 0 16px 38px rgba(0,0,0,.54) !important;\n\
-      display: none !important;\n\
-      font-family: -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif !important;\n\
-      left: auto !important;\n\
-      bottom: auto !important;\n\
-      flex-direction: column !important;\n\
-      box-sizing: border-box !important;\n\
-      opacity: 1 !important;\n\
-      visibility: visible !important;\n\
-    }\n\
-    #warhub-overlay.open { display: flex !important; }\n\
+#warhub-overlay {\n\
+  position: fixed !important;\n\
+  z-index: 2147483646 !important;\n\
+  right: 12px !important;\n\
+  top: 170px !important;\n\
+  width: min(96vw, 520px) !important;\n\
+  height: min(88vh, 900px) !important;\n\
+  max-height: 88vh !important;\n\
+  min-height: 420px !important;\n\
+  overflow: hidden !important;\n\
+  border-radius: 14px !important;\n\
+  background: linear-gradient(180deg, #171717, #0c0c0c) !important;\n\
+  color: #f2f2f2 !important;\n\
+  border: 1px solid rgba(255,255,255,.08) !important;\n\
+  box-shadow: 0 16px 38px rgba(0,0,0,.54) !important;\n\
+  display: none !important;\n\
+  font-family: -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif !important;\n\
+  left: auto !important;\n\
+  bottom: auto !important;\n\
+  flex-direction: column !important;\n\
+  box-sizing: border-box !important;\n\
+  opacity: 1 !important;\n\
+  visibility: visible !important;\n\
+}\n\
+#warhub-overlay.open { display: flex !important; }\n\
 \n\
-    #warhub-overlay *,\n\
-    #warhub-overlay *::before,\n\
-    #warhub-overlay *::after {\n\
-      box-sizing: border-box !important;\n\
-    }\n\
+#warhub-overlay *,\n\
+#warhub-overlay *::before,\n\
+#warhub-overlay *::after {\n\
+  box-sizing: border-box !important;\n\
+}\n\
 \n\
-    .warhub-head {\n\
-      padding: 10px 12px 9px !important;\n\
-      border-bottom: 1px solid rgba(255,255,255,.08) !important;\n\
-      background: linear-gradient(180deg, rgba(170,18,18,.30), rgba(20,20,20,.20)) !important;\n\
-      cursor: grab !important;\n\
-      user-select: none !important;\n\
-      -webkit-user-select: none !important;\n\
-      -webkit-touch-callout: none !important;\n\
-      touch-action: none !important;\n\
-      flex: 0 0 auto !important;\n\
-      display: block !important;\n\
-      width: 100% !important;\n\
-      min-height: 54px !important;\n\
-    }\n\
-    .warhub-head.dragging { cursor: grabbing !important; }\n\
+.warhub-head {\n\
+  padding: 10px 12px 9px !important;\n\
+  border-bottom: 1px solid rgba(255,255,255,.08) !important;\n\
+  background: linear-gradient(180deg, rgba(170,18,18,.30), rgba(20,20,20,.20)) !important;\n\
+  cursor: grab !important;\n\
+  user-select: none !important;\n\
+  -webkit-user-select: none !important;\n\
+  -webkit-touch-callout: none !important;\n\
+  touch-action: none !important;\n\
+  flex: 0 0 auto !important;\n\
+  display: block !important;\n\
+  width: 100% !important;\n\
+  min-height: 54px !important;\n\
+}\n\
+.warhub-head.dragging { cursor: grabbing !important; }\n\
 \n\
-    .warhub-toprow {\n\
-      display: flex !important;\n\
-      align-items: center !important;\n\
-      justify-content: space-between !important;\n\
-      gap: 10px !important;\n\
-      width: 100% !important;\n\
-    }\n\
+.warhub-toprow {\n\
+  display: flex !important;\n\
+  align-items: center !important;\n\
+  justify-content: space-between !important;\n\
+  gap: 10px !important;\n\
+  width: 100% !important;\n\
+}\n\
 \n\
-    .warhub-title {\n\
-      font-weight: 800 !important;\n\
-      font-size: 16px !important;\n\
-      letter-spacing: .2px !important;\n\
-      color: #fff !important;\n\
-    }\n\
-    .warhub-sub {\n\
-      opacity: .72 !important;\n\
-      font-size: 11px !important;\n\
-      margin-top: 2px !important;\n\
-      color: #fff !important;\n\
-    }\n\
+.warhub-title {\n\
+  font-weight: 800 !important;\n\
+  font-size: 16px !important;\n\
+  letter-spacing: .2px !important;\n\
+  color: #fff !important;\n\
+}\n\
+.warhub-sub {\n\
+  opacity: .72 !important;\n\
+  font-size: 11px !important;\n\
+  margin-top: 2px !important;\n\
+  color: #fff !important;\n\
+}\n\
 \n\
-    .warhub-close {\n\
-      appearance: none !important;\n\
-      -webkit-appearance: none !important;\n\
-      border: 0 !important;\n\
-      border-radius: 9px !important;\n\
-      background: rgba(255,255,255,.08) !important;\n\
-      color: #fff !important;\n\
-      padding: 5px 9px !important;\n\
-      font-weight: 700 !important;\n\
-      cursor: pointer !important;\n\
-      font-size: 12px !important;\n\
-      flex: 0 0 auto !important;\n\
-      display: inline-flex !important;\n\
-      align-items: center !important;\n\
-      justify-content: center !important;\n\
-      min-height: 30px !important;\n\
-    }\n\
+.warhub-close {\n\
+  appearance: none !important;\n\
+  -webkit-appearance: none !important;\n\
+  border: 0 !important;\n\
+  border-radius: 9px !important;\n\
+  background: rgba(255,255,255,.08) !important;\n\
+  color: #fff !important;\n\
+  padding: 5px 9px !important;\n\
+  font-weight: 700 !important;\n\
+  cursor: pointer !important;\n\
+  font-size: 12px !important;\n\
+  flex: 0 0 auto !important;\n\
+  display: inline-flex !important;\n\
+  align-items: center !important;\n\
+  justify-content: center !important;\n\
+  min-height: 30px !important;\n\
+}\n\
 \n\
-    .warhub-tabs-wrap {\n\
-      display: flex !important;\n\
-      flex-direction: column !important;\n\
-      gap: 0 !important;\n\
-      border-bottom: 1px solid rgba(255,255,255,.08) !important;\n\
-      background: rgba(255,255,255,.02) !important;\n\
-      width: 100% !important;\n\
-    }\n\
-    .warhub-tabs {\n\
-      display: flex !important;\n\
-      flex: 0 0 auto !important;\n\
-      flex-wrap: nowrap !important;\n\
-      align-items: center !important;\n\
-      gap: 6px !important;\n\
-      padding: 8px !important;\n\
-      overflow-x: auto !important;\n\
-      overflow-y: hidden !important;\n\
-      scrollbar-width: thin !important;\n\
-      -webkit-overflow-scrolling: touch !important;\n\
-      width: 100% !important;\n\
-      white-space: nowrap !important;\n\
-    }\n\
-    .warhub-tabs-row + .warhub-tabs-row {\n\
-      border-top: 1px solid rgba(255,255,255,.05) !important;\n\
-    }\n\
-    .warhub-body {\n\
-      flex: 1 1 auto !important;\n\
-      min-height: 0 !important;\n\
-      overflow-y: auto !important;\n\
-      overflow-x: hidden !important;\n\
-      -webkit-overflow-scrolling: touch !important;\n\
-      padding: 10px !important;\n\
-      display: block !important;\n\
-    }\n\
+.warhub-tab {\n\
+  appearance: none !important;\n\
+  -webkit-appearance: none !important;\n\
+  border: 1px solid rgba(255,255,255,.16) !important;\n\
+  background: rgba(255,255,255,.10) !important;\n\
+  color: #ffffff !important;\n\
+  border-radius: 10px !important;\n\
+  padding: 9px 13px !important;\n\
+  min-height: 36px !important;\n\
+  font-size: 13px !important;\n\
+  font-weight: 800 !important;\n\
+  letter-spacing: .2px !important;\n\
+  line-height: 1 !important;\n\
+  white-space: nowrap !important;\n\
+  cursor: pointer !important;\n\
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.06) !important;\n\
+  flex: 0 0 auto !important;\n\
+  text-shadow: 0 1px 0 rgba(0,0,0,.35) !important;\n\
+}\n\
+.warhub-tab:hover {\n\
+  background: rgba(255,255,255,.16) !important;\n\
+  border-color: rgba(255,255,255,.24) !important;\n\
+}\n\
+.warhub-tab.active {\n\
+  background: linear-gradient(180deg, rgba(210,51,51,.98), rgba(150,24,24,.98)) !important;\n\
+  border-color: rgba(255,120,120,.60) !important;\n\
+  color: #fff !important;\n\
+  box-shadow: 0 0 0 1px rgba(255,255,255,.05) inset, 0 6px 14px rgba(0,0,0,.22) !important;\n\
+}\n\
 \n\
-    .warhub-card {\n\
-      border: 1px solid rgba(255,255,255,.07) !important;\n\
-      border-radius: 12px !important;\n\
-      padding: 10px !important;\n\
-      margin-bottom: 10px !important;\n\
-      background: rgba(255,255,255,.035) !important;\n\
-    }\n\
-    .warhub-hero-card {\n\
-      border: 1px solid rgba(210,51,51,.45) !important;\n\
-      background: linear-gradient(180deg, rgba(210,51,51,.16), rgba(255,255,255,.04)) !important;\n\
-      box-shadow: 0 10px 30px rgba(0,0,0,.22) !important;\n\
-    }\n\
+.warhub-tabs-wrap {\n\
+  display: flex !important;\n\
+  flex-direction: column !important;\n\
+  gap: 0 !important;\n\
+  border-bottom: 1px solid rgba(255,255,255,.08) !important;\n\
+  background: rgba(255,255,255,.02) !important;\n\
+  width: 100% !important;\n\
+}\n\
+.warhub-tabs {\n\
+  display: flex !important;\n\
+  flex: 0 0 auto !important;\n\
+  flex-wrap: nowrap !important;\n\
+  align-items: center !important;\n\
+  gap: 6px !important;\n\
+  padding: 8px !important;\n\
+  overflow-x: auto !important;\n\
+  overflow-y: hidden !important;\n\
+  scrollbar-width: thin !important;\n\
+  -webkit-overflow-scrolling: touch !important;\n\
+  width: 100% !important;\n\
+  white-space: nowrap !important;\n\
+}\n\
+.warhub-tabs-row + .warhub-tabs-row {\n\
+  border-top: 1px solid rgba(255,255,255,.05) !important;\n\
+}\n\
 \n\
-    .warhub-hero-vs {\n\
-      font-size: 14px !important;\n\
-      font-weight: 800 !important;\n\
-      color: #fff !important;\n\
-      margin-bottom: 10px !important;\n\
-      line-height: 1.35 !important;\n\
-    }\n\
-    .warhub-hero-vs span {\n\
-      opacity: .7 !important;\n\
-      font-weight: 600 !important;\n\
-      margin: 0 4px !important;\n\
-    }\n\
+.warhub-body {\n\
+  flex: 1 1 auto !important;\n\
+  min-height: 0 !important;\n\
+  overflow-y: auto !important;\n\
+  overflow-x: hidden !important;\n\
+  -webkit-overflow-scrolling: touch !important;\n\
+  padding: 10px !important;\n\
+  display: block !important;\n\
+}\n\
 \n\
-    .warhub-grid {\n\
-      display: grid !important;\n\
-      gap: 8px !important;\n\
-    }\n\
-    .warhub-grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }\n\
-    .warhub-grid.three { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }\n\
+.warhub-card {\n\
+  border: 1px solid rgba(255,255,255,.07) !important;\n\
+  border-radius: 12px !important;\n\
+  padding: 10px !important;\n\
+  margin-bottom: 10px !important;\n\
+  background: rgba(255,255,255,.035) !important;\n\
+}\n\
+.warhub-hero-card {\n\
+  border: 1px solid rgba(210,51,51,.45) !important;\n\
+  background: linear-gradient(180deg, rgba(210,51,51,.16), rgba(255,255,255,.04)) !important;\n\
+  box-shadow: 0 10px 30px rgba(0,0,0,.22) !important;\n\
+}\n\
 \n\
-    .warhub-metric {\n\
-      border: 1px solid rgba(255,255,255,.06) !important;\n\
-      border-radius: 10px !important;\n\
-      padding: 8px !important;\n\
-      background: rgba(255,255,255,.03) !important;\n\
-    }\n\
-    .warhub-metric .k {\n\
-      font-size: 11px !important;\n\
-      opacity: .72 !important;\n\
-      margin-bottom: 4px !important;\n\
-      color: #fff !important;\n\
-    }\n\
-    .warhub-metric .v {\n\
-      font-weight: 800 !important;\n\
-      font-size: 14px !important;\n\
-      color: #fff !important;\n\
-    }\n\
+.warhub-hero-vs {\n\
+  font-size: 14px !important;\n\
+  font-weight: 800 !important;\n\
+  color: #fff !important;\n\
+  margin-bottom: 10px !important;\n\
+  line-height: 1.35 !important;\n\
+}\n\
+.warhub-hero-vs span {\n\
+  opacity: .7 !important;\n\
+  font-weight: 600 !important;\n\
+  margin: 0 4px !important;\n\
+}\n\
 \n\
-    .warhub-list {\n\
-      display: flex !important;\n\
-      flex-direction: column !important;\n\
-      gap: 8px !important;\n\
-    }\n\
-    .warhub-list-item,\n\
-    .warhub-row {\n\
-      border: 1px solid rgba(255,255,255,.07) !important;\n\
-      border-radius: 10px !important;\n\
-      padding: 8px !important;\n\
-      background: rgba(255,255,255,.03) !important;\n\
-    }\n\
-    .warhub-list-item {\n\
-      transition: transform .15s ease, border-color .15s ease !important;\n\
-    }\n\
-    .warhub-list-item:hover {\n\
-      transform: translateY(-1px) !important;\n\
-      border-color: rgba(210,51,51,.35) !important;\n\
-    }\n\
+.warhub-grid {\n\
+  display: grid !important;\n\
+  gap: 8px !important;\n\
+}\n\
+.warhub-grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }\n\
+.warhub-grid.three { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }\n\
 \n\
-    .warhub-name {\n\
-      font-weight: 700 !important;\n\
-      color: #fff !important;\n\
-    }\n\
-    .warhub-meta {\n\
-      font-size: 11px !important;\n\
-      opacity: .75 !important;\n\
-      margin-top: 3px !important;\n\
-      color: #fff !important;\n\
-    }\n\
+.warhub-metric {\n\
+  border: 1px solid rgba(255,255,255,.06) !important;\n\
+  border-radius: 10px !important;\n\
+  padding: 8px !important;\n\
+  background: rgba(255,255,255,.03) !important;\n\
+}\n\
+.warhub-metric .k {\n\
+  font-size: 11px !important;\n\
+  opacity: .72 !important;\n\
+  margin-bottom: 4px !important;\n\
+  color: #fff !important;\n\
+}\n\
+.warhub-metric .v {\n\
+  font-weight: 800 !important;\n\
+  font-size: 14px !important;\n\
+  color: #fff !important;\n\
+}\n\
 \n\
-    .warhub-actions {\n\
-      display: flex !important;\n\
-      flex-wrap: wrap !important;\n\
-      gap: 8px !important;\n\
-      margin-top: 8px !important;\n\
-    }\n\
+.warhub-list {\n\
+  display: flex !important;\n\
+  flex-direction: column !important;\n\
+  gap: 8px !important;\n\
+}\n\
+.warhub-list-item,\n\
+.warhub-row {\n\
+  border: 1px solid rgba(255,255,255,.07) !important;\n\
+  border-radius: 10px !important;\n\
+  padding: 8px !important;\n\
+  background: rgba(255,255,255,.03) !important;\n\
+}\n\
+.warhub-list-item {\n\
+  transition: transform .15s ease, border-color .15s ease !important;\n\
+}\n\
+.warhub-list-item:hover {\n\
+  transform: translateY(-1px) !important;\n\
+  border-color: rgba(210,51,51,.35) !important;\n\
+}\n\
 \n\
-    .warhub-btn {\n\
-      appearance: none !important;\n\
-      -webkit-appearance: none !important;\n\
-      border: 0 !important;\n\
-      border-radius: 10px !important;\n\
-      padding: 8px 10px !important;\n\
-      font-size: 12px !important;\n\
-      font-weight: 700 !important;\n\
-      cursor: pointer !important;\n\
-      background: rgba(255,255,255,.08) !important;\n\
-      color: #fff !important;\n\
-    }\n\
-    .warhub-btn.primary {\n\
-      background: linear-gradient(180deg, #d23333, #831515) !important;\n\
-    }\n\
-    .warhub-btn.warn {\n\
-      background: rgba(185,45,45,.85) !important;\n\
-    }\n\
-    .warhub-btn.small {\n\
-      padding: 6px 8px !important;\n\
-      font-size: 11px !important;\n\
-    }\n\
+.warhub-name {\n\
+  font-weight: 700 !important;\n\
+  color: #fff !important;\n\
+}\n\
+.warhub-meta {\n\
+  font-size: 11px !important;\n\
+  opacity: .75 !important;\n\
+  margin-top: 3px !important;\n\
+  color: #fff !important;\n\
+}\n\
 \n\
-    .warhub-input,\n\
-    .warhub-select,\n\
-    .warhub-textarea {\n\
-      width: 100% !important;\n\
-      border: 1px solid rgba(255,255,255,.10) !important;\n\
-      border-radius: 10px !important;\n\
-      padding: 8px 10px !important;\n\
-      background: rgba(0,0,0,.22) !important;\n\
-      color: #fff !important;\n\
-      font-size: 13px !important;\n\
-    }\n\
+.warhub-actions {\n\
+  display: flex !important;\n\
+  flex-wrap: wrap !important;\n\
+  gap: 8px !important;\n\
+  margin-top: 8px !important;\n\
+}\n\
 \n\
-    .warhub-label {\n\
-      display: block !important;\n\
-      font-size: 11px !important;\n\
-      opacity: .8 !important;\n\
-      margin-bottom: 5px !important;\n\
-      color: #fff !important;\n\
-    }\n\
+.warhub-btn {\n\
+  appearance: none !important;\n\
+  -webkit-appearance: none !important;\n\
+  border: 0 !important;\n\
+  border-radius: 10px !important;\n\
+  padding: 8px 10px !important;\n\
+  font-size: 12px !important;\n\
+  font-weight: 700 !important;\n\
+  cursor: pointer !important;\n\
+  background: rgba(255,255,255,.08) !important;\n\
+  color: #fff !important;\n\
+}\n\
+.warhub-btn.primary {\n\
+  background: linear-gradient(180deg, #d23333, #831515) !important;\n\
+}\n\
+.warhub-btn.warn {\n\
+  background: rgba(185,45,45,.85) !important;\n\
+}\n\
+.warhub-btn.small {\n\
+  padding: 6px 8px !important;\n\
+  font-size: 11px !important;\n\
+}\n\
 \n\
-    .warhub-empty {\n\
-      font-size: 12px !important;\n\
-      opacity: .75 !important;\n\
-      color: #fff !important;\n\
-    }\n\
+.warhub-input,\n\
+.warhub-select,\n\
+.warhub-textarea {\n\
+  width: 100% !important;\n\
+  border: 1px solid rgba(255,255,255,.10) !important;\n\
+  border-radius: 10px !important;\n\
+  padding: 8px 10px !important;\n\
+  background: rgba(0,0,0,.22) !important;\n\
+  color: #fff !important;\n\
+  font-size: 13px !important;\n\
+}\n\
 \n\
-    .warhub-section-title {\n\
-      display: flex !important;\n\
-      align-items: center !important;\n\
-      justify-content: space-between !important;\n\
-      gap: 8px !important;\n\
-      margin-bottom: 8px !important;\n\
-    }\n\
-    .warhub-section-title h3 {\n\
-      margin: 0 !important;\n\
-      font-size: 14px !important;\n\
-      color: #fff !important;\n\
-    }\n\
-    .warhub-mini {\n\
-      font-size: 12px !important;\n\
-      line-height: 1.45 !important;\n\
-      color: #fff !important;\n\
-      opacity: .88 !important;\n\
-    }\n\
-    .warhub-count {\n\
-      opacity: .75 !important;\n\
-      font-size: 11px !important;\n\
-      color: #fff !important;\n\
-    }\n\
-            .warhub-hero-card {\n\
-      border: 1px solid rgba(210,51,51,.45) !important;\n\
-      background: linear-gradient(180deg, rgba(210,51,51,.16), rgba(255,255,255,.04)) !important;\n\
-      box-shadow: 0 10px 30px rgba(0,0,0,.22) !important;\n\
-    }\n\
-    .warhub-hero-vs {\n\
-      font-size: 14px !important;\n\
-      font-weight: 800 !important;\n\
-      color: #fff !important;\n\
-      margin-bottom: 10px !important;\n\
-      line-height: 1.35 !important;\n\
-    }\n\
-    .warhub-hero-vs span {\n\
-      opacity: .7 !important;\n\
-      font-weight: 600 !important;\n\
-      margin: 0 4px !important;\n\
-    }\n\
-    .warhub-mini {\n\
-      font-size: 12px !important;\n\
-      line-height: 1.45 !important;\n\
-      color: #fff !important;\n\
-      opacity: .88 !important;\n\
-    }\n\
-    .warhub-list-item {\n\
-      transition: transform .15s ease, border-color .15s ease !important;\n\
-    }\n\
-    .warhub-list-item:hover {\n\
-      transform: translateY(-1px) !important;\n\
-      border-color: rgba(210,51,51,.35) !important;\n\
-    }\n\
-    .warhub-faction-member-row {\n\
-      display: flex !important;\n\
-      align-items: center !important;\n\
-      justify-content: space-between !important;\n\
-      gap: 10px !important;\n\
-    }\n\
-    .warhub-faction-member-main {\n\
-      min-width: 0 !important;\n\
-      flex: 1 1 auto !important;\n\
-    }\n\
-    .warhub-faction-member-action {\n\
-      flex: 0 0 auto !important;\n\
-      display: flex !important;\n\
-      align-items: center !important;\n\
-      justify-content: flex-end !important;\n\
-    }\n\
+.warhub-label {\n\
+  display: block !important;\n\
+  font-size: 11px !important;\n\
+  opacity: .8 !important;\n\
+  margin-bottom: 5px !important;\n\
+  color: #fff !important;\n\
+}\n\
 \n\
-    .warhub-pill {\n\
-      display: inline-flex !important;\n\
-      align-items: center !important;\n\
-      justify-content: center !important;\n\
-      padding: 3px 8px !important;\n\
-      border-radius: 999px !important;\n\
-      border: 1px solid rgba(255,255,255,.10) !important;\n\
-      font-size: 11px !important;\n\
-      font-weight: 700 !important;\n\
-    }\n\
+.warhub-empty {\n\
+  font-size: 12px !important;\n\
+  opacity: .75 !important;\n\
+  color: #fff !important;\n\
+}\n\
 \n\
-    .warhub-pill.online {\n\
-      background: rgba(40,140,90,.20) !important;\n\
-      color: #b7ffd5 !important;\n\
-    }\n\
-    .warhub-pill.idle {\n\
-      background: rgba(197,141,46,.22) !important;\n\
-      color: #ffe3a5 !important;\n\
-    }\n\
-    .warhub-pill.offline {\n\
-      background: rgba(113,113,113,.20) !important;\n\
-      color: #dadada !important;\n\
-    }\n\
-    .warhub-pill.hosp {\n\
-      background: rgba(181,62,62,.24) !important;\n\
-      color: #ffd0d0 !important;\n\
-    }\n\
-    .warhub-pill.travel {\n\
-      background: rgba(53,110,190,.24) !important;\n\
-      color: #d5e7ff !important;\n\
-    }\n\
-    .warhub-pill.jail {\n\
-      background: rgba(110,68,175,.24) !important;\n\
-      color: #e5d8ff !important;\n\
-    }\n\
-    .warhub-pill.leader {\n\
-      background: rgba(66,110,185,.24) !important;\n\
-      color: #d3e3ff !important;\n\
-    }\n\
-    .warhub-pill.enabled {\n\
-      background: rgba(35,140,82,.22) !important;\n\
-      color: #b7ffd5 !important;\n\
-    }\n\
-    .warhub-pill.disabled {\n\
-      background: rgba(145,37,37,.24) !important;\n\
-      color: #ffd0d0 !important;\n\
-    }\n\
-    .warhub-pill.good {\n\
-      background: rgba(34,197,94,.18) !important;\n\
-      border-color: rgba(34,197,94,.45) !important;\n\
-      color: #bbf7d0 !important;\n\
-    }\n\
-    .warhub-pill.bad {\n\
-      background: rgba(239,68,68,.18) !important;\n\
-      border-color: rgba(239,68,68,.45) !important;\n\
-      color: #fecaca !important;\n\
-    }\n\
-    .warhub-pill.neutral {\n\
-      background: rgba(148,163,184,.16) !important;\n\
-      border-color: rgba(148,163,184,.35) !important;\n\
-      color: #e2e8f0 !important;\n\
-    }\n\
+.warhub-section-title {\n\
+  display: flex !important;\n\
+  align-items: center !important;\n\
+  justify-content: space-between !important;\n\
+  gap: 8px !important;\n\
+  margin-bottom: 8px !important;\n\
+}\n\
+.warhub-section-title h3 {\n\
+  margin: 0 !important;\n\
+  font-size: 14px !important;\n\
+  color: #fff !important;\n\
+}\n\
+.warhub-mini {\n\
+  font-size: 11px !important;\n\
+  line-height: 1.45 !important;\n\
+  color: #fff !important;\n\
+  opacity: .88 !important;\n\
+}\n\
+.warhub-count {\n\
+  opacity: .75 !important;\n\
+  font-size: 11px !important;\n\
+  color: #fff !important;\n\
+}\n\
 \n\
-    .warhub-pos { color: #86efac !important; }\n\
-    .warhub-neg { color: #fca5a5 !important; }\n\
+.warhub-faction-member-row {\n\
+  display: flex !important;\n\
+  align-items: center !important;\n\
+  justify-content: space-between !important;\n\
+  gap: 10px !important;\n\
+}\n\
+.warhub-faction-member-main {\n\
+  min-width: 0 !important;\n\
+  flex: 1 1 auto !important;\n\
+}\n\
+.warhub-faction-member-action {\n\
+  flex: 0 0 auto !important;\n\
+  display: flex !important;\n\
+  align-items: center !important;\n\
+  justify-content: flex-end !important;\n\
+}\n\
 \n\
-    .warhub-divider {\n\
-      height: 1px !important;\n\
-      background: rgba(255,255,255,.07) !important;\n\
-      margin: 8px 0 !important;\n\
-    }\n\
-    .warhub-mini {\n\
-      font-size: 11px !important;\n\
-      opacity: .78 !important;\n\
-      color: #fff !important;\n\
-    }\n\
-    .warhub-link {\n\
-      color: #fff !important;\n\
-      text-decoration: none !important;\n\
-    }\n\
+.warhub-pill {\n\
+  display: inline-flex !important;\n\
+  align-items: center !important;\n\
+  justify-content: center !important;\n\
+  padding: 3px 8px !important;\n\
+  border-radius: 999px !important;\n\
+  border: 1px solid rgba(255,255,255,.10) !important;\n\
+  font-size: 11px !important;\n\
+  font-weight: 700 !important;\n\
+}\n\
+.warhub-pill.online {\n\
+  background: rgba(40,140,90,.20) !important;\n\
+  color: #b7ffd5 !important;\n\
+}\n\
+.warhub-pill.idle {\n\
+  background: rgba(197,141,46,.22) !important;\n\
+  color: #ffe3a5 !important;\n\
+}\n\
+.warhub-pill.offline {\n\
+  background: rgba(113,113,113,.20) !important;\n\
+  color: #dadada !important;\n\
+}\n\
+.warhub-pill.hosp {\n\
+  background: rgba(181,62,62,.24) !important;\n\
+  color: #ffd0d0 !important;\n\
+}\n\
+.warhub-pill.travel {\n\
+  background: rgba(53,110,190,.24) !important;\n\
+  color: #d5e7ff !important;\n\
+}\n\
+.warhub-pill.jail {\n\
+  background: rgba(110,68,175,.24) !important;\n\
+  color: #e5d8ff !important;\n\
+}\n\
+.warhub-pill.leader {\n\
+  background: rgba(66,110,185,.24) !important;\n\
+  color: #d3e3ff !important;\n\
+}\n\
+.warhub-pill.enabled {\n\
+  background: rgba(35,140,82,.22) !important;\n\
+  color: #b7ffd5 !important;\n\
+}\n\
+.warhub-pill.disabled {\n\
+  background: rgba(145,37,37,.24) !important;\n\
+  color: #ffd0d0 !important;\n\
+}\n\
+.warhub-pill.good {\n\
+  background: rgba(34,197,94,.18) !important;\n\
+  border-color: rgba(34,197,94,.45) !important;\n\
+  color: #bbf7d0 !important;\n\
+}\n\
+.warhub-pill.bad {\n\
+  background: rgba(239,68,68,.18) !important;\n\
+  border-color: rgba(239,68,68,.45) !important;\n\
+  color: #fecaca !important;\n\
+}\n\
+.warhub-pill.neutral {\n\
+  background: rgba(148,163,184,.16) !important;\n\
+  border-color: rgba(148,163,184,.35) !important;\n\
+  color: #e2e8f0 !important;\n\
+}\n\
 \n\
-    .warhub-section-scroll {\n\
-      max-height: 52vh !important;\n\
-      overflow-y: auto !important;\n\
-      overflow-x: hidden !important;\n\
-      -webkit-overflow-scrolling: touch !important;\n\
-      padding-right: 2px !important;\n\
-    }\n\
+.warhub-pos { color: #86efac !important; }\n\
+.warhub-neg { color: #fca5a5 !important; }\n\
 \n\
-    .warhub-payment-line {\n\
-      padding: 8px 10px !important;\n\
-      border-radius: 10px !important;\n\
-      background: rgba(255,255,255,.06) !important;\n\
-      font-weight: 800 !important;\n\
-      text-align: center !important;\n\
-      margin-top: 8px !important;\n\
-    }\n\
+.warhub-divider {\n\
+  height: 1px !important;\n\
+  background: rgba(255,255,255,.07) !important;\n\
+  margin: 8px 0 !important;\n\
+}\n\
+.warhub-link {\n\
+  color: #fff !important;\n\
+  text-decoration: none !important;\n\
+}\n\
 \n\
-    .warhub-table {\n\
-      width: 100% !important;\n\
-      border-collapse: collapse !important;\n\
-      background: #ffffff !important;\n\
-      color: #111111 !important;\n\
-      border-radius: 10px !important;\n\
-      overflow: hidden !important;\n\
-    }\n\
-    .warhub-table thead {\n\
-      background: #f3f4f6 !important;\n\
-    }\n\
-    .warhub-table th {\n\
-      color: #111111 !important;\n\
-      font-size: 12px !important;\n\
-      font-weight: 800 !important;\n\
-      text-align: left !important;\n\
-      padding: 10px 8px !important;\n\
-      border-bottom: 1px solid #d1d5db !important;\n\
-      white-space: nowrap !important;\n\
-    }\n\
-    .warhub-table td {\n\
-      color: #111111 !important;\n\
-      font-size: 12px !important;\n\
-      padding: 9px 8px !important;\n\
-      border-bottom: 1px solid #e5e7eb !important;\n\
-      background: #ffffff !important;\n\
-    }\n\
-    .warhub-table tbody tr:nth-child(even) td {\n\
-      background: #f9fafb !important;\n\
-    }\n\
-    @media (max-width: 700px) {\n\
-      #warhub-overlay {\n\
-        width: 98vw !important;\n\
-        height: 88vh !important;\n\
-        min-height: 360px !important;\n\
-        top: 56px !important;\n\
-        left: 1vw !important;\n\
-        right: 1vw !important;\n\
-        border-radius: 12px !important;\n\
-      }\n\
-      .warhub-grid.two, .warhub-grid.three { grid-template-columns: 1fr !important; }\n\
-      .warhub-body { padding-bottom: 18px !important; }\n\
-      #warhub-shield {\n\
-        width: 40px !important;\n\
-        height: 40px !important;\n\
-        font-size: 21px !important;\n\
-      }\n\
-      .warhub-section-scroll { max-height: 34vh !important; }\n\
-      .warhub-tabs {\n\
-        min-height: 44px !important;\n\
-        max-height: 44px !important;\n\
-      }\n\
-    }\n\
-  ";
+.warhub-section-scroll {\n\
+  max-height: 52vh !important;\n\
+  overflow-y: auto !important;\n\
+  overflow-x: hidden !important;\n\
+  -webkit-overflow-scrolling: touch !important;\n\
+  padding-right: 2px !important;\n\
+}\n\
+\n\
+.warhub-payment-line {\n\
+  padding: 8px 10px !important;\n\
+  border-radius: 10px !important;\n\
+  background: rgba(255,255,255,.06) !important;\n\
+  font-weight: 800 !important;\n\
+  text-align: center !important;\n\
+  margin-top: 8px !important;\n\
+}\n\
+\n\
+.warhub-table {\n\
+  width: 100% !important;\n\
+  border-collapse: collapse !important;\n\
+  background: #ffffff !important;\n\
+  color: #111111 !important;\n\
+  border-radius: 10px !important;\n\
+  overflow: hidden !important;\n\
+}\n\
+.warhub-table thead {\n\
+  background: #f3f4f6 !important;\n\
+}\n\
+.warhub-table th {\n\
+  color: #111111 !important;\n\
+  font-size: 12px !important;\n\
+  font-weight: 800 !important;\n\
+  text-align: left !important;\n\
+  padding: 10px 8px !important;\n\
+  border-bottom: 1px solid #d1d5db !important;\n\
+  white-space: nowrap !important;\n\
+}\n\
+.warhub-table td {\n\
+  color: #111111 !important;\n\
+  font-size: 12px !important;\n\
+  padding: 9px 8px !important;\n\
+  border-bottom: 1px solid #e5e7eb !important;\n\
+  background: #ffffff !important;\n\
+}\n\
+.warhub-table tbody tr:nth-child(even) td {\n\
+  background: #f9fafb !important;\n\
+}\n\
+\n\
+@media (max-width: 700px) {\n\
+  #warhub-overlay {\n\
+    width: 98vw !important;\n\
+    height: 88vh !important;\n\
+    min-height: 360px !important;\n\
+    top: 56px !important;\n\
+    left: 1vw !important;\n\
+    right: 1vw !important;\n\
+    border-radius: 12px !important;\n\
+  }\n\
+  .warhub-grid.two, .warhub-grid.three {\n\
+    grid-template-columns: 1fr !important;\n\
+  }\n\
+  .warhub-body {\n\
+    padding-bottom: 18px !important;\n\
+  }\n\
+  #warhub-shield {\n\
+    width: 40px !important;\n\
+    height: 40px !important;\n\
+    font-size: 21px !important;\n\
+  }\n\
+  .warhub-section-scroll {\n\
+    max-height: 34vh !important;\n\
+  }\n\
+  .warhub-tabs {\n\
+    min-height: 50px !important;\n\
+    max-height: 50px !important;\n\
+    padding: 8px 6px !important;\n\
+    gap: 6px !important;\n\
+  }\n\
+  .warhub-tab {\n\
+    font-size: 12px !important;\n\
+    padding: 8px 10px !important;\n\
+    min-height: 34px !important;\n\
+  }\n\
+}\n\
+";
 
-    GM_addStyle(css);
+GM_addStyle(css);
 
 // ============================================================
 // 06. BASIC UTILITIES
