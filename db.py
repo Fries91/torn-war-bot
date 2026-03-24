@@ -246,7 +246,8 @@ def init_db():
         )
         """
     )
-        cur.execute(
+
+    cur.execute(
         """
         CREATE TABLE IF NOT EXISTS faction_terms_summary (
             faction_id TEXT PRIMARY KEY,
