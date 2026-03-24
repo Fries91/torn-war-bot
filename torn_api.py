@@ -17,6 +17,7 @@ try:
 except Exception:
     def cache_get(_cache_key: str):
         return None
+
     def cache_set(_payload_key: str, _payload_text: str, _ttl_seconds: int):
         return None
 
@@ -104,10 +105,21 @@ def _extract_hospital_seconds_from_text(text: str) -> int:
 
 
 def _extract_hospital_until_ts(member: Dict[str, Any], fallback_seconds: int = 0) -> int:
-    candidates = [member.get("until"), member.get("hospital_until"), member.get("hospital_timestamp"), member.get("hospital_time"), member.get("timestamp")]
+    candidates = [
+        member.get("until"),
+        member.get("hospital_until"),
+        member.get("hospital_timestamp"),
+        member.get("hospital_time"),
+        member.get("timestamp"),
+    ]
     status = member.get("status")
     if isinstance(status, dict):
-        candidates.extend([status.get("until"), status.get("until_timestamp"), status.get("timestamp"), status.get("time")])
+        candidates.extend([
+            status.get("until"),
+            status.get("until_timestamp"),
+            status.get("timestamp"),
+            status.get("time"),
+        ])
     now = int(time.time())
     for value in candidates:
         if isinstance(value, (int, float)) and int(value) > 0:
@@ -144,7 +156,13 @@ def _extract_medical_cooldown_seconds(payload: Dict[str, Any]) -> int:
     if isinstance(cooldowns, dict):
         medical = cooldowns.get("medical")
         if isinstance(medical, dict):
-            candidates.extend([medical.get("remaining"), medical.get("cooldown"), medical.get("seconds"), medical.get("time"), medical.get("until")])
+            candidates.extend([
+                medical.get("remaining"),
+                medical.get("cooldown"),
+                medical.get("seconds"),
+                medical.get("time"),
+                medical.get("until"),
+            ])
         else:
             candidates.append(medical)
     for key in ("medical_cooldown", "medicalCooldown", "cooldown_medical", "med_cooldown", "medCooldown"):
@@ -167,7 +185,12 @@ def _extract_medical_cooldown_seconds(payload: Dict[str, Any]) -> int:
 def _normalize_member(uid: Any, member: Dict[str, Any]) -> Dict[str, Any]:
     last_action_raw = member.get("last_action")
     if isinstance(last_action_raw, dict):
-        last_action = str(last_action_raw.get("status") or last_action_raw.get("relative") or last_action_raw.get("timestamp") or "")
+        last_action = str(
+            last_action_raw.get("status")
+            or last_action_raw.get("relative")
+            or last_action_raw.get("timestamp")
+            or ""
+        )
     else:
         last_action = str(last_action_raw or "")
 
@@ -220,19 +243,43 @@ def _normalize_member(uid: Any, member: Dict[str, Any]) -> Dict[str, Any]:
 def me_basic(api_key: str) -> Dict[str, Any]:
     api_key = str(api_key or "").strip()
     if not api_key:
-        return {"ok": False, "error": "Missing API key.", "user_id": "", "name": "", "level": "", "faction_id": "", "faction_name": ""}
+        return {
+            "ok": False,
+            "error": "Missing API key.",
+            "user_id": "",
+            "name": "",
+            "level": "",
+            "faction_id": "",
+            "faction_name": "",
+        }
 
     res = _safe_get(f"{API_BASE}/user", {"selections": "profile", "key": api_key}, cache_seconds=0, cache_prefix="")
     if not res.get("ok"):
         res = _safe_get(f"{API_BASE}/user/", {"selections": "profile", "key": api_key}, cache_seconds=0, cache_prefix="")
     if not res.get("ok"):
-        return {"ok": False, "error": res.get("error", "Could not load user profile."), "user_id": "", "name": "", "level": "", "faction_id": "", "faction_name": ""}
+        return {
+            "ok": False,
+            "error": res.get("error", "Could not load user profile."),
+            "user_id": "",
+            "name": "",
+            "level": "",
+            "faction_id": "",
+            "faction_name": "",
+        }
 
     data = res.get("data") or {}
     faction = data.get("faction") or {}
     player_id = str(data.get("player_id") or data.get("playerID") or data.get("user_id") or "")
     if not player_id:
-        return {"ok": False, "error": "Could not resolve player_id from Torn response.", "user_id": "", "name": "", "level": "", "faction_id": "", "faction_name": ""}
+        return {
+            "ok": False,
+            "error": "Could not resolve player_id from Torn response.",
+            "user_id": "",
+            "name": "",
+            "level": "",
+            "faction_id": "",
+            "faction_name": "",
+        }
 
     return {
         "ok": True,
@@ -248,7 +295,14 @@ def faction_basic(api_key: str, faction_id: str = "") -> Dict[str, Any]:
     api_key = str(api_key or "").strip()
     faction_id = str(faction_id or "").strip()
     if not api_key:
-        return {"ok": False, "faction_id": faction_id, "faction_name": "", "members": [], "error": "Missing API key.", "debug_attempts": []}
+        return {
+            "ok": False,
+            "faction_id": faction_id,
+            "faction_name": "",
+            "members": [],
+            "error": "Missing API key.",
+            "debug_attempts": [],
+        }
 
     attempts = []
     if faction_id:
@@ -296,11 +350,15 @@ def faction_basic(api_key: str, faction_id: str = "") -> Dict[str, Any]:
             best_error = str(res.get("error") or best_error)
             debug_attempts.append({"source": prefix, "ok": False, "error": best_error})
             continue
+
         payload = res.get("data") or {}
         root = _extract_root(payload)
         members = _extract_members(payload)
-        resolved_faction_id = str(root.get("ID") or root.get("id") or root.get("faction_id") or root.get("factionID") or faction_id or "").strip()
+        resolved_faction_id = str(
+            root.get("ID") or root.get("id") or root.get("faction_id") or root.get("factionID") or faction_id or ""
+        ).strip()
         resolved_faction_name = str(root.get("name") or root.get("faction_name") or root.get("factionName") or "").strip()
+
         built = {
             "ok": True,
             "faction_id": resolved_faction_id,
@@ -310,23 +368,140 @@ def faction_basic(api_key: str, faction_id: str = "") -> Dict[str, Any]:
             "source": prefix,
             "params": {k: v for k, v in params.items() if k != "key"},
         }
-        debug_attempts.append({"source": prefix, "ok": True, "faction_id": resolved_faction_id, "faction_name": resolved_faction_name, "member_count": len(members)})
+
+        debug_attempts.append({
+            "source": prefix,
+            "ok": True,
+            "faction_id": resolved_faction_id,
+            "faction_name": resolved_faction_name,
+            "member_count": len(members),
+        })
+
         if resolved_faction_id and faction_id and resolved_faction_id != faction_id:
             continue
+
         if members:
             built["debug_attempts"] = debug_attempts
             return built
+
         if best is None:
             best = built
 
     if best is not None:
         best["debug_attempts"] = debug_attempts
         return best
-    return {"ok": False, "faction_id": faction_id, "faction_name": "", "members": [], "error": best_error, "debug_attempts": debug_attempts}
+
+    return {
+        "ok": False,
+        "faction_id": faction_id,
+        "faction_name": "",
+        "members": [],
+        "error": best_error,
+        "debug_attempts": debug_attempts,
+    }
 
 
 def _stringify_lower(value: Any) -> str:
     return str(value or "").strip().lower()
+
+
+def _as_dict(value: Any) -> Dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _as_list(value: Any) -> List[Any]:
+    return value if isinstance(value, list) else []
+
+
+def _extract_nested_int(node: Dict[str, Any], keys: List[str], default: int = 0) -> int:
+    current: Any = node
+    for key in keys:
+        if not isinstance(current, dict):
+            return default
+        current = current.get(key)
+    return _to_int(current, default)
+
+
+def _extract_side_score(value: Dict[str, Any]) -> int:
+    value = _as_dict(value)
+
+    direct_keys = [
+        "score",
+        "points",
+        "respect",
+        "faction_score",
+        "war_score",
+        "current_score",
+    ]
+    for key in direct_keys:
+        score = _to_int(value.get(key), None)
+        if score is not None:
+            return score
+
+    nested_paths = [
+        ["score", "current"],
+        ["score", "value"],
+        ["points", "current"],
+        ["stats", "score"],
+        ["stats", "points"],
+        ["stats", "respect"],
+    ]
+    for path in nested_paths:
+        score = _extract_nested_int(value, path, default=None)
+        if score is not None:
+            return score
+
+    return 0
+
+
+def _extract_side_chain(value: Dict[str, Any]) -> int:
+    value = _as_dict(value)
+
+    direct_keys = [
+        "chain",
+        "chain_count",
+        "current_chain",
+        "chainCount",
+    ]
+    for key in direct_keys:
+        chain = _to_int(value.get(key), None)
+        if chain is not None:
+            return chain
+
+    nested_paths = [
+        ["chain", "current"],
+        ["chain", "value"],
+        ["stats", "chain"],
+    ]
+    for path in nested_paths:
+        chain = _extract_nested_int(value, path, default=None)
+        if chain is not None:
+            return chain
+
+    return 0
+
+
+def _extract_side_id(value: Dict[str, Any], fallback_key: Any = "") -> str:
+    value = _as_dict(value)
+    return str(
+        value.get("id")
+        or value.get("faction_id")
+        or value.get("factionID")
+        or value.get("team_id")
+        or fallback_key
+        or ""
+    ).strip()
+
+
+def _extract_side_name(value: Dict[str, Any]) -> str:
+    value = _as_dict(value)
+    return str(
+        value.get("name")
+        or value.get("faction_name")
+        or value.get("factionName")
+        or value.get("team_name")
+        or ""
+    ).strip()
 
 
 def _candidate_war_nodes(payload: Any) -> List[Dict[str, Any]]:
@@ -337,8 +512,11 @@ def _candidate_war_nodes(payload: Any) -> List[Dict[str, Any]]:
             lowered_keys = {str(k).lower() for k in node.keys()}
             has_war_shape = (
                 any(k in lowered_keys for k in {"war_id", "warid", "start", "end", "target", "winner", "ranked", "rankedwarid"})
-                or ("factions" in lowered_keys and any(k in lowered_keys for k in {"status", "state", "phase"}))
-                or ("teams" in lowered_keys and any(k in lowered_keys for k in {"status", "state", "phase"}))
+                or ("factions" in lowered_keys)
+                or ("teams" in lowered_keys)
+                or ("war" in lowered_keys)
+                or ("rankedwars" in lowered_keys)
+                or ("ranked_wars" in lowered_keys)
             )
             if has_war_shape:
                 found.append(node)
@@ -353,49 +531,145 @@ def _candidate_war_nodes(payload: Any) -> List[Dict[str, Any]]:
 
 
 def _parse_war_factions(node: Dict[str, Any]) -> List[Dict[str, Any]]:
-    raw = node.get("factions")
-    if not raw:
-        raw = node.get("teams")
+    possible_roots = [
+        node.get("factions"),
+        node.get("teams"),
+        _as_dict(node.get("war")).get("factions"),
+        _as_dict(node.get("war")).get("teams"),
+    ]
+
     out: List[Dict[str, Any]] = []
-    if isinstance(raw, dict):
-        for key, value in raw.items():
-            if isinstance(value, dict):
-                faction_id = str(value.get("id") or value.get("faction_id") or value.get("factionID") or key or "").strip()
-                name = str(value.get("name") or value.get("faction_name") or value.get("factionName") or "").strip()
-                score = _to_int(value.get("score") or value.get("points") or value.get("respect"), 0)
-                chain = _to_int(value.get("chain") or value.get("chain_count"), 0)
-                out.append({"faction_id": faction_id, "name": name, "score": score, "chain": chain, "raw": value})
-    elif isinstance(raw, list):
-        for value in raw:
-            if isinstance(value, dict):
-                faction_id = str(value.get("id") or value.get("faction_id") or value.get("factionID") or "").strip()
-                name = str(value.get("name") or value.get("faction_name") or value.get("factionName") or "").strip()
-                score = _to_int(value.get("score") or value.get("points") or value.get("respect"), 0)
-                chain = _to_int(value.get("chain") or value.get("chain_count"), 0)
-                out.append({"faction_id": faction_id, "name": name, "score": score, "chain": chain, "raw": value})
+
+    for raw in possible_roots:
+        if isinstance(raw, dict):
+            for key, value in raw.items():
+                if isinstance(value, dict):
+                    out.append({
+                        "faction_id": _extract_side_id(value, fallback_key=key),
+                        "name": _extract_side_name(value),
+                        "score": _extract_side_score(value),
+                        "chain": _extract_side_chain(value),
+                        "raw": value,
+                    })
+            if out:
+                return out
+
+        if isinstance(raw, list):
+            for value in raw:
+                if isinstance(value, dict):
+                    out.append({
+                        "faction_id": _extract_side_id(value),
+                        "name": _extract_side_name(value),
+                        "score": _extract_side_score(value),
+                        "chain": _extract_side_chain(value),
+                        "raw": value,
+                    })
+            if out:
+                return out
+
     return out
 
 
+def _extract_node_phase(node: Dict[str, Any]) -> str:
+    war_node = _as_dict(node.get("war"))
+    candidates = [
+        node.get("phase"),
+        node.get("state"),
+        node.get("status"),
+        node.get("war_status"),
+        war_node.get("phase"),
+        war_node.get("state"),
+        war_node.get("status"),
+    ]
+    for value in candidates:
+        s = str(value or "").strip().lower()
+        if s:
+            return s
+    return "none"
+
+
+def _extract_node_war_type(node: Dict[str, Any]) -> str:
+    war_node = _as_dict(node.get("war"))
+    candidates = [
+        node.get("war_type"),
+        node.get("type"),
+        node.get("mode"),
+        war_node.get("war_type"),
+        war_node.get("type"),
+        war_node.get("mode"),
+    ]
+    for value in candidates:
+        s = str(value or "").strip().lower()
+        if s:
+            return s
+    return ""
+
+
+def _extract_node_war_id(node: Dict[str, Any]) -> str:
+    war_node = _as_dict(node.get("war"))
+    candidates = [
+        node.get("war_id"),
+        node.get("warID"),
+        node.get("rankedwarid"),
+        node.get("id"),
+        war_node.get("war_id"),
+        war_node.get("warID"),
+        war_node.get("rankedwarid"),
+        war_node.get("id"),
+    ]
+    for value in candidates:
+        s = str(value or "").strip()
+        if s:
+            return s
+    return ""
+
+
+def _extract_node_target_score(node: Dict[str, Any]) -> int:
+    war_node = _as_dict(node.get("war"))
+    candidates = [
+        node.get("target"),
+        node.get("target_score"),
+        node.get("score_target"),
+        war_node.get("target"),
+        war_node.get("target_score"),
+        war_node.get("score_target"),
+    ]
+    for value in candidates:
+        if value not in (None, ""):
+            return _to_int(value, 0)
+    return 0
+
+
 def _is_current_ranked_war(node: Dict[str, Any], my_faction_id: str = "", my_faction_name: str = "") -> bool:
-    text = " ".join([
-        str(node.get("status") or ""),
-        str(node.get("state") or ""),
-        str(node.get("phase") or ""),
-        str(node.get("war_type") or ""),
-        str(node.get("type") or ""),
-    ]).lower()
+    phase = _extract_node_phase(node)
+    war_type = _extract_node_war_type(node)
+    text = f"{phase} {war_type}".lower()
+
     factions = _parse_war_factions(node)
+
     if my_faction_id and factions and not any(str(x.get("faction_id") or "") == my_faction_id for x in factions):
         return False
     if my_faction_name and factions and not any(_stringify_lower(x.get("name")) == _stringify_lower(my_faction_name) for x in factions):
         return False
-    if any(flag in text for flag in ["ranked", "active", "attacking", "defending", "ongoing", "confirmed", "register", "registered", "prewar"]):
+
+    if any(flag in text for flag in ["ranked", "active", "attacking", "defending", "ongoing", "confirmed", "register", "registered", "prewar", "matchup"]):
         return True
+
     start = _to_int(node.get("start") or node.get("start_timestamp") or node.get("starts"), 0)
     end = _to_int(node.get("end") or node.get("end_timestamp") or node.get("ends"), 0)
+    war_node = _as_dict(node.get("war"))
+    if not start:
+        start = _to_int(war_node.get("start") or war_node.get("start_timestamp") or war_node.get("starts"), 0)
+    if not end:
+        end = _to_int(war_node.get("end") or war_node.get("end_timestamp") or war_node.get("ends"), 0)
+
     now_ts = int(time.time())
     if start and start <= now_ts and (not end or end > now_ts):
         return True
+
+    if len(factions) >= 2 and (my_faction_id or my_faction_name):
+        return True
+
     return False
 
 
@@ -408,23 +682,27 @@ def _build_ranked_war_response(node: Dict[str, Any], source_note: str, my_factio
         my_side = next((x for x in factions if str(x.get("faction_id") or "") == str(my_faction_id)), None)
     if my_side is None and my_faction_name:
         my_side = next((x for x in factions if _stringify_lower(x.get("name")) == _stringify_lower(my_faction_name)), None)
+
     if factions:
         enemy_side = next((x for x in factions if x is not my_side), None)
-    phase = str(node.get("phase") or node.get("state") or node.get("status") or "none").strip().lower() or "none"
-    war_type = str(node.get("war_type") or node.get("type") or ("ranked" if "ranked" in source_note.lower() else "")).strip().lower()
+
+    phase = _extract_node_phase(node)
+    war_type = _extract_node_war_type(node) or ("rankedwars" if "ranked" in source_note.lower() else "")
+    war_id = _extract_node_war_id(node)
     active = phase in {"active", "ongoing", "attacking", "defending"} or "active" in phase or "ongoing" in phase
-    registered = phase in {"registered", "registering", "confirmed", "prewar"} or "register" in phase or "confirm" in phase
+    registered = phase in {"registered", "registering", "confirmed", "prewar"} or "register" in phase or "confirm" in phase or "prewar" in phase
+
     if not active and not registered:
         combined = f"{phase} {war_type}".lower()
         active = any(x in combined for x in ["active", "ongoing"])
-        registered = any(x in combined for x in ["register", "confirmed", "prewar"])
+        registered = any(x in combined for x in ["register", "confirmed", "prewar", "matchup"])
 
     return {
         "has_war": bool(factions or node),
         "active": bool(active),
         "registered": bool(registered),
         "phase": phase or "none",
-        "war_id": str(node.get("war_id") or node.get("warID") or node.get("id") or node.get("rankedwarid") or "").strip(),
+        "war_id": war_id,
         "war_type": war_type or "rankedwars",
         "my_faction_id": str((my_side or {}).get("faction_id") or my_faction_id or "").strip(),
         "my_faction_name": str((my_side or {}).get("name") or my_faction_name or "").strip(),
@@ -435,7 +713,7 @@ def _build_ranked_war_response(node: Dict[str, Any], source_note: str, my_factio
         "score_them": _to_int((enemy_side or {}).get("score"), 0),
         "chain_us": _to_int((my_side or {}).get("chain"), 0),
         "chain_them": _to_int((enemy_side or {}).get("chain"), 0),
-        "target_score": _to_int(node.get("target") or node.get("target_score") or node.get("score_target"), 0),
+        "target_score": _extract_node_target_score(node),
         "source_note": source_note,
         "debug_factions": [{k: v for k, v in x.items() if k != "raw"} for x in factions],
         "debug_raw_keys": sorted(list(node.keys())),
@@ -443,10 +721,37 @@ def _build_ranked_war_response(node: Dict[str, Any], source_note: str, my_factio
     }
 
 
+def _war_quality_score(war: Dict[str, Any], my_faction_id: str = "", my_faction_name: str = "") -> int:
+    score = 0
+
+    if war.get("enemy_faction_id"):
+        score += 100
+    if war.get("enemy_faction_name"):
+        score += 60
+    if war.get("war_id"):
+        score += 20
+    if war.get("active"):
+        score += 25
+    if war.get("registered"):
+        score += 15
+    if war.get("score_us") or war.get("score_them"):
+        score += 10
+    if war.get("chain_us") or war.get("chain_them"):
+        score += 10
+
+    if my_faction_id and str(war.get("my_faction_id") or "") == my_faction_id:
+        score += 25
+    if my_faction_name and _stringify_lower(war.get("my_faction_name")) == _stringify_lower(my_faction_name):
+        score += 15
+
+    return score
+
+
 def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: str = "") -> Dict[str, Any]:
     api_key = str(api_key or "").strip()
     my_faction_id = str(my_faction_id or "").strip()
     my_faction_name = str(my_faction_name or "").strip()
+
     base = {
         "has_war": False,
         "active": False,
@@ -469,6 +774,7 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
         "debug_raw_keys": [],
         "debug_raw": {},
     }
+
     if not api_key:
         base["source_note"] = "Missing API key."
         return base
@@ -484,23 +790,44 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
     attempts.append((f"{API_BASE}/faction/", {"selections": "rankedwars", "key": api_key, "striptags": "true"}, "v1_faction_rankedwars_self"))
 
     best_error = "Could not load ranked wars."
+    best_match = None
+    best_score = -1
+
     for url, params, prefix in attempts:
         res = _safe_get(url, params, cache_seconds=CACHE_TTL_WAR_SUMMARY, cache_prefix=prefix)
         if not res.get("ok"):
             best_error = str(res.get("error") or best_error)
             continue
+
         payload = res.get("data") or {}
         nodes = _candidate_war_nodes(payload)
         if not nodes and isinstance(payload, dict):
             nodes = [payload]
+
         for node in nodes:
             if not isinstance(node, dict):
                 continue
             if not _is_current_ranked_war(node, my_faction_id=my_faction_id, my_faction_name=my_faction_name):
                 continue
-            built = _build_ranked_war_response(node, source_note=f"Loaded from {prefix}.", my_faction_id=my_faction_id, my_faction_name=my_faction_name)
-            if built.get("enemy_faction_id") or built.get("registered") or built.get("active"):
+
+            built = _build_ranked_war_response(
+                node,
+                source_note=f"Loaded from {prefix}.",
+                my_faction_id=my_faction_id,
+                my_faction_name=my_faction_name,
+            )
+
+            quality = _war_quality_score(built, my_faction_id=my_faction_id, my_faction_name=my_faction_name)
+
+            if quality > best_score:
+                best_score = quality
+                best_match = built
+
+            if built.get("enemy_faction_id") and (built.get("registered") or built.get("active") or built.get("war_id")):
                 return built
+
+    if best_match:
+        return best_match
 
     base["source_note"] = best_error or base["source_note"]
     return base
@@ -539,11 +866,14 @@ def member_live_bars(api_key: str, user_id: str = "") -> Dict[str, Any]:
         status = data.get("status") or {}
         last_action = data.get("last_action") or {}
         resolved_user_id = str(data.get("player_id") or data.get("playerID") or data.get("user_id") or "").strip()
+
         if user_id and resolved_user_id and resolved_user_id != user_id:
             last_error = f"API key/user mismatch. Requested {user_id}, got {resolved_user_id}."
             continue
+
         resolved_user_id = user_id or resolved_user_id
         medical_cooldown = _extract_medical_cooldown_seconds(data)
+
         return {
             "ok": True,
             "user_id": resolved_user_id,
@@ -570,4 +900,5 @@ def member_live_bars(api_key: str, user_id: str = "") -> Dict[str, Any]:
             "status": status if isinstance(status, dict) else {},
             "last_action": last_action if isinstance(last_action, dict) else {},
         }
+
     return {"ok": False, "error": last_error, "user_id": user_id, "bars": {}, "status": {}, "last_action": {}}
