@@ -1089,160 +1089,213 @@ GM_addStyle(css);
     // ============================================================
 
     function getViewport() {
-        return {
-            w: Math.max(document.documentElement.clientWidth || 0, window.innerWidth || 0),
-            h: Math.max(document.documentElement.clientHeight || 0, window.innerHeight || 0)
-        };
+    var de = document.documentElement || {};
+    return {
+        w: Math.max(de.clientWidth || 0, window.innerWidth || 0, 320),
+        h: Math.max(de.clientHeight || 0, window.innerHeight || 0, 320)
+    };
+}
+
+function clamp(n, min, max) {
+    n = Number(n || 0);
+    if (!isFinite(n)) n = 0;
+    return Math.max(min, Math.min(max, n));
+}
+
+function loadPos(key, fallback) {
+    var raw = GM_getValue(key, null);
+
+    if (!raw) return { left: fallback.left, top: fallback.top };
+
+    if (typeof raw === 'string') {
+        try {
+            raw = JSON.parse(raw);
+        } catch (e) {
+            return { left: fallback.left, top: fallback.top };
+        }
     }
 
-    function clamp(n, min, max) {
-        return Math.max(min, Math.min(max, n));
+    if (!raw || typeof raw !== 'object') {
+        return { left: fallback.left, top: fallback.top };
     }
 
-    function loadPos(key, fallback) {
-        var raw = GM_getValue(key, null);
-        if (!raw || typeof raw !== 'object') return Object.assign({}, fallback);
-        return {
-            left: Number.isFinite(Number(raw.left)) ? Number(raw.left) : fallback.left,
-            top: Number.isFinite(Number(raw.top)) ? Number(raw.top) : fallback.top
-        };
+    return {
+        left: isFinite(Number(raw.left)) ? Number(raw.left) : fallback.left,
+        top: isFinite(Number(raw.top)) ? Number(raw.top) : fallback.top
+    };
+}
+
+function savePos(key, pos) {
+    GM_setValue(key, {
+        left: Math.round(Number(pos.left || 0)),
+        top: Math.round(Number(pos.top || 0))
+    });
+}
+
+function applyShieldPos() {
+    if (!shield) return;
+
+    var vp = getViewport();
+    var pos = loadPos(K_SHIELD_POS, { left: vp.w - 56, top: 120 });
+    var left = clamp(pos.left, 6, Math.max(6, vp.w - 48));
+    var top = clamp(pos.top, 6, Math.max(6, vp.h - 48));
+
+    shield.style.left = left + 'px';
+    shield.style.top = top + 'px';
+    shield.style.right = 'auto';
+    shield.style.bottom = 'auto';
+
+    savePos(K_SHIELD_POS, { left: left, top: top });
+    positionBadge();
+}
+
+function applyOverlayPos() {
+    if (!overlay) return;
+
+    var vp = getViewport();
+    var fallback = {
+        left: Math.max(6, vp.w - Math.min(vp.w * 0.96, 520) - 12),
+        top: 170
+    };
+    var pos = loadPos(K_OVERLAY_POS, fallback);
+
+    var width = overlay.offsetWidth || Math.min(vp.w * 0.96, 520);
+    var height = overlay.offsetHeight || Math.min(vp.h * 0.88, 900);
+
+    var left = clamp(pos.left, 4, Math.max(4, vp.w - width - 4));
+    var top = clamp(pos.top, 4, Math.max(4, vp.h - height - 4));
+
+    overlay.style.left = left + 'px';
+    overlay.style.top = top + 'px';
+    overlay.style.right = 'auto';
+    overlay.style.bottom = 'auto';
+
+    savePos(K_OVERLAY_POS, { left: left, top: top });
+}
+
+function positionBadge() {
+    if (!badge || !shield) return;
+
+    var rect = shield.getBoundingClientRect();
+    badge.style.left = Math.round(rect.right - 6) + 'px';
+    badge.style.top = Math.round(rect.top - 6) + 'px';
+}
+
+function makeDraggable(handle, target, key, options) {
+    if (!handle || !target) return;
+
+    options = options || {};
+
+    var dragging = false;
+    var moved = false;
+    var startX = 0;
+    var startY = 0;
+    var startLeft = 0;
+    var startTop = 0;
+
+    function shouldIgnoreStart(evt) {
+        var t = evt && evt.target;
+        if (!t || !t.closest) return false;
+        return !!t.closest('button, a, input, textarea, select, [data-tab], [data-action]');
     }
 
-    function savePos(key, pos) {
-        GM_setValue(key, {
-            left: Math.round(Number(pos.left || 0)),
-            top: Math.round(Number(pos.top || 0))
-        });
+    function onStart(clientX, clientY) {
+        dragging = true;
+        moved = false;
+        startX = clientX;
+        startY = clientY;
+
+        var rect = target.getBoundingClientRect();
+        startLeft = rect.left;
+        startTop = rect.top;
+
+        handle.classList.add('dragging');
+        target.classList.add('dragging');
     }
 
-    function applyShieldPos() {
-        if (!shield) return;
+    function onMove(clientX, clientY) {
+        if (!dragging) return;
+
+        var dx = clientX - startX;
+        var dy = clientY - startY;
+
+        if (Math.abs(dx) > 3 || Math.abs(dy) > 3) moved = true;
+
         var vp = getViewport();
-        var pos = loadPos(K_SHIELD_POS, { left: vp.w - 56, top: 120 });
-        var left = clamp(pos.left, 6, vp.w - 48);
-        var top = clamp(pos.top, 6, vp.h - 48);
+        var width = target.offsetWidth || 40;
+        var height = target.offsetHeight || 40;
 
-        shield.style.left = left + 'px';
-        shield.style.top = top + 'px';
-        shield.style.right = 'auto';
-        shield.style.bottom = 'auto';
+        var left = clamp(startLeft + dx, 4, Math.max(4, vp.w - width - 4));
+        var top = clamp(startTop + dy, 4, Math.max(4, vp.h - height - 4));
 
-        savePos(K_SHIELD_POS, { left: left, top: top });
-        positionBadge();
+        target.style.left = left + 'px';
+        target.style.top = top + 'px';
+        target.style.right = 'auto';
+        target.style.bottom = 'auto';
+
+        if (key) savePos(key, { left: left, top: top });
+        if (target === shield) positionBadge();
     }
 
-    function applyOverlayPos() {
-        if (!overlay) return;
-        var vp = getViewport();
-        var fallback = { left: Math.max(6, vp.w - Math.min(vp.w * 0.96, 520) - 12), top: 170 };
-        var pos = loadPos(K_OVERLAY_POS, fallback);
+    function onEnd() {
+        if (!dragging) return;
 
-        var width = overlay.offsetWidth || Math.min(vp.w * 0.96, 520);
-        var height = overlay.offsetHeight || Math.min(vp.h * 0.88, 900);
+        dragging = false;
+        handle.classList.remove('dragging');
+        target.classList.remove('dragging');
 
-        var left = clamp(pos.left, 4, Math.max(4, vp.w - width - 4));
-        var top = clamp(pos.top, 4, Math.max(4, vp.h - height - 4));
+        if (target === shield) positionBadge();
 
-        overlay.style.left = left + 'px';
-        overlay.style.top = top + 'px';
-        overlay.style.right = 'auto';
-        overlay.style.bottom = 'auto';
-
-        savePos(K_OVERLAY_POS, { left: left, top: top });
+        setTimeout(function () {
+            moved = false;
+        }, 0);
     }
 
-    function positionBadge() {
-        if (!badge || !shield) return;
-        var rect = shield.getBoundingClientRect();
-        badge.style.left = Math.round(rect.right - 6) + 'px';
-        badge.style.top = Math.round(rect.top - 6) + 'px';
-    }
+    handle.addEventListener('mousedown', function (e) {
+        if (e.button !== 0) return;
+        if (shouldIgnoreStart(e)) return;
 
-    function makeDraggable(handle, target, key) {
-        if (!handle || !target) return;
+        onStart(e.clientX, e.clientY);
+        e.preventDefault();
+    });
 
-        var dragging = false;
-        var startX = 0;
-        var startY = 0;
-        var startLeft = 0;
-        var startTop = 0;
+    document.addEventListener('mousemove', function (e) {
+        onMove(e.clientX, e.clientY);
+    });
 
-        function onStart(clientX, clientY) {
-            dragging = true;
-            dragMoved = false;
-            startX = clientX;
-            startY = clientY;
+    document.addEventListener('mouseup', function () {
+        onEnd();
+    });
 
-            var rect = target.getBoundingClientRect();
-            startLeft = rect.left;
-            startTop = rect.top;
+    handle.addEventListener('touchstart', function (e) {
+        if (shouldIgnoreStart(e)) return;
+        if (!e.touches || !e.touches.length) return;
 
-            handle.classList.add('dragging');
+        var t = e.touches[0];
+        onStart(t.clientX, t.clientY);
+    }, { passive: true });
+
+    document.addEventListener('touchmove', function (e) {
+        if (!e.touches || !e.touches.length) return;
+
+        var t = e.touches[0];
+        onMove(t.clientX, t.clientY);
+    }, { passive: true });
+
+    document.addEventListener('touchend', function () {
+        onEnd();
+    });
+
+    document.addEventListener('touchcancel', function () {
+        onEnd();
+    });
+
+    return {
+        didMove: function () {
+            return moved;
         }
-
-        function onMove(clientX, clientY) {
-            if (!dragging) return;
-
-            var dx = clientX - startX;
-            var dy = clientY - startY;
-
-            if (Math.abs(dx) > 3 || Math.abs(dy) > 3) dragMoved = true;
-
-            var vp = getViewport();
-            var width = target.offsetWidth || 40;
-            var height = target.offsetHeight || 40;
-
-            var left = clamp(startLeft + dx, 4, Math.max(4, vp.w - width - 4));
-            var top = clamp(startTop + dy, 4, Math.max(4, vp.h - height - 4));
-
-            target.style.left = left + 'px';
-            target.style.top = top + 'px';
-            target.style.right = 'auto';
-            target.style.bottom = 'auto';
-
-            if (key) savePos(key, { left: left, top: top });
-            if (target === shield) positionBadge();
-        }
-
-        function onEnd() {
-            if (!dragging) return;
-            dragging = false;
-            handle.classList.remove('dragging');
-            setTimeout(function () {
-                dragMoved = false;
-            }, 0);
-        }
-
-        handle.addEventListener('mousedown', function (e) {
-            if (e.button !== 0) return;
-            onStart(e.clientX, e.clientY);
-            e.preventDefault();
-        });
-
-        document.addEventListener('mousemove', function (e) {
-            onMove(e.clientX, e.clientY);
-        });
-
-        document.addEventListener('mouseup', function () {
-            onEnd();
-        });
-
-        handle.addEventListener('touchstart', function (e) {
-            if (!e.touches || !e.touches.length) return;
-            var t = e.touches[0];
-            onStart(t.clientX, t.clientY);
-        }, { passive: true });
-
-        document.addEventListener('touchmove', function (e) {
-            if (!e.touches || !e.touches.length) return;
-            var t = e.touches[0];
-            onMove(t.clientX, t.clientY);
-        }, { passive: true });
-
-        document.addEventListener('touchend', function () {
-            onEnd();
-        });
-    }
+    };
+}
 
     // ============================================================
     // 11. AUTH / LOGIN
@@ -1683,138 +1736,144 @@ GM_addStyle(css);
         return _handleTabClick.apply(this, arguments);
     }
 
-    // ============================================================
-    // 14. OVERLAY MOUNT / DOM
-    // ============================================================
+// ============================================================
+// 14. OVERLAY MOUNT / DOM
+// ============================================================
 
-    function mount() {
-        if (mounted) return;
+function mount() {
+    if (mounted) return;
 
-        shield = document.createElement('div');
-        shield.id = 'warhub-shield';
-        shield.textContent = '⚔️';
-        shield.setAttribute('aria-label', 'Open War Hub');
-        shield.setAttribute('title', 'War Hub');
+    shield = document.createElement('div');
+    shield.id = 'warhub-shield';
+    shield.textContent = '⚔️';
+    shield.setAttribute('aria-label', 'Open War Hub');
+    shield.setAttribute('title', 'War Hub');
 
-        badge = document.createElement('div');
-        badge.id = 'warhub-badge';
+    badge = document.createElement('div');
+    badge.id = 'warhub-badge';
 
-        overlay = document.createElement('div');
-        overlay.id = 'warhub-overlay';
-        overlay.innerHTML = [
-            '<div class="warhub-head" id="warhub-head">',
-                '<div class="warhub-toprow">',
-                    '<div>',
-                        '<div class="warhub-title">War Hub ⚔️</div>',
-                        '<div class="warhub-sub">Faction tools, payments, access, and war data</div>',
-                    '</div>',
-                    '<button class="warhub-close" id="warhub-close" type="button">Close</button>',
+    overlay = document.createElement('div');
+    overlay.id = 'warhub-overlay';
+    overlay.innerHTML = [
+        '<div class="warhub-head" id="warhub-head">',
+            '<div class="warhub-toprow">',
+                '<div>',
+                    '<div class="warhub-title">War Hub ⚔️</div>',
+                    '<div class="warhub-sub">Faction tools, payments, access, and war data</div>',
                 '</div>',
+                '<button class="warhub-close" id="warhub-close" type="button">Close</button>',
             '</div>',
-            '<div class="warhub-tabs" id="warhub-tabs-row-1"></div>',
-            '<div class="warhub-tabs" id="warhub-tabs-row-2"></div>',
-            '<div class="warhub-body" id="warhub-body">',
-                '<div class="warhub-status-wrap"><div id="warhub-status" style="display:none;"></div></div>',
-                '<div id="warhub-content"></div>',
-            '</div>'
-        ].join('');
+        '</div>',
+        '<div class="warhub-tabs" id="warhub-tabs-row-1"></div>',
+        '<div class="warhub-tabs" id="warhub-tabs-row-2"></div>',
+        '<div class="warhub-body" id="warhub-body">',
+            '<div class="warhub-status-wrap"><div id="warhub-status" style="display:none;"></div></div>',
+            '<div id="warhub-content"></div>',
+        '</div>'
+    ].join('');
 
-        document.body.appendChild(shield);
-        document.body.appendChild(badge);
-        document.body.appendChild(overlay);
+    document.body.appendChild(shield);
+    document.body.appendChild(badge);
+    document.body.appendChild(overlay);
 
+    applyShieldPos();
+    applyOverlayPos();
+    updateBadge();
+    positionBadge();
+
+    var shieldDrag = makeDraggable(shield, shield, K_SHIELD_POS);
+    makeDraggable(overlay.querySelector('#warhub-head'), overlay, K_OVERLAY_POS);
+
+    shield.addEventListener('click', function (e) {
+        if (shieldDrag && shieldDrag.didMove && shieldDrag.didMove()) {
+            e.preventDefault();
+            e.stopPropagation();
+            return;
+        }
+        toggleOverlay();
+    });
+
+    overlay.querySelector('#warhub-close').addEventListener('click', function () {
+        setOverlayOpen(false);
+    });
+
+    overlay.addEventListener('click', function (e) {
+        var tabBtn = e.target.closest('[data-tab]');
+        if (tabBtn) {
+            handleTabClick(tabBtn.getAttribute('data-tab'));
+            return;
+        }
+
+        var act = e.target.closest('[data-action]');
+        if (act) {
+            handleActionClick(act);
+            return;
+        }
+
+        var groupHead = e.target.closest('[data-group-toggle]');
+        if (groupHead) {
+            var key = groupHead.getAttribute('data-group-toggle');
+            toggleGroup(key);
+            return;
+        }
+    });
+
+    overlay.addEventListener('change', function (e) {
+        var t = e.target;
+
+        if (t && t.id === 'warhub-api-key') {
+            GM_setValue(K_API_KEY, cleanInputValue(t.value));
+        }
+        if (t && t.id === 'warhub-owner-token') {
+            GM_setValue(K_OWNER_TOKEN, cleanInputValue(t.value));
+        }
+    });
+
+    overlay.addEventListener('input', function (e) {
+        var t = e.target;
+
+        if (t && t.id === 'warhub-api-key') {
+            GM_setValue(K_API_KEY, cleanInputValue(t.value));
+        }
+        if (t && t.id === 'warhub-owner-token') {
+            GM_setValue(K_OWNER_TOKEN, cleanInputValue(t.value));
+        }
+    });
+
+    window.addEventListener('resize', function () {
         applyShieldPos();
         applyOverlayPos();
-        updateBadge();
+        positionBadge();
+    });
 
-        makeDraggable(shield, shield, K_SHIELD_POS);
-        makeDraggable(overlay.querySelector('#warhub-head'), overlay, K_OVERLAY_POS);
+    mounted = true;
+    setOverlayOpen(isOpen);
+    renderBody();
+}
 
-        shield.addEventListener('click', function () {
-            if (dragMoved) return;
-            toggleOverlay();
-        });
+function setOverlayOpen(open) {
+    isOpen = !!open;
+    GM_setValue(K_OPEN, isOpen);
 
-        overlay.querySelector('#warhub-close').addEventListener('click', function () {
-            setOverlayOpen(false);
-        });
+    if (!overlay) return;
 
-        overlay.addEventListener('click', function (e) {
-            var tabBtn = e.target.closest('[data-tab]');
-            if (tabBtn) {
-                handleTabClick(tabBtn.getAttribute('data-tab'));
-                return;
-            }
-
-            var act = e.target.closest('[data-action]');
-            if (act) {
-                handleActionClick(act);
-                return;
-            }
-
-            var groupHead = e.target.closest('[data-group-toggle]');
-            if (groupHead) {
-                var key = groupHead.getAttribute('data-group-toggle');
-                toggleGroup(key);
-                return;
-            }
-        });
-
-        overlay.addEventListener('change', function (e) {
-            var t = e.target;
-
-            if (t && t.id === 'warhub-api-key') {
-                GM_setValue(K_API_KEY, cleanInputValue(t.value));
-            }
-            if (t && t.id === 'warhub-owner-token') {
-                GM_setValue(K_OWNER_TOKEN, cleanInputValue(t.value));
-            }
-        });
-
-        overlay.addEventListener('input', function (e) {
-            var t = e.target;
-
-            if (t && t.id === 'warhub-api-key') {
-                GM_setValue(K_API_KEY, cleanInputValue(t.value));
-            }
-            if (t && t.id === 'warhub-owner-token') {
-                GM_setValue(K_OWNER_TOKEN, cleanInputValue(t.value));
-            }
-        });
-
-        window.addEventListener('resize', function () {
-            applyShieldPos();
-            applyOverlayPos();
-            positionBadge();
-        });
-
-        mounted = true;
-        setOverlayOpen(isOpen);
+    overlay.classList.toggle('open', isOpen);
+    if (isOpen) {
+        applyOverlayPos();
+        positionBadge();
         renderBody();
     }
+}
 
-    function setOverlayOpen(open) {
-        isOpen = !!open;
-        GM_setValue(K_OPEN, isOpen);
+function toggleOverlay() {
+    setOverlayOpen(!isOpen);
+}
 
-        if (!overlay) return;
-
-        overlay.classList.toggle('open', isOpen);
-        if (isOpen) {
-            applyOverlayPos();
-            renderBody();
-        }
+function ensureMounted() {
+    if (document.body && !mounted) {
+        mount();
     }
-
-    function toggleOverlay() {
-        setOverlayOpen(!isOpen);
-    }
-
-    function ensureMounted() {
-        if (document.body && !mounted) {
-            mount();
-        }
-    }
+}
 
     // ============================================================
     // 15. GROUP COLLAPSE STATE
