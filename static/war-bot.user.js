@@ -1442,26 +1442,73 @@ function _loadEnemies() {
         if (!res.ok || !res.json) return warEnemiesCache || [];
 
         var payload = res.json || {};
-
-        // backend returns items, not enemies
-        var enemies = arr(payload.items || payload.enemies || []);
-
-        // backend returns faction_id/faction_name, and also war{}
         var war = (payload.war && typeof payload.war === 'object') ? payload.war : {};
 
-        warEnemiesCache = enemies.slice();
-        warEnemiesFactionId = String(
+        var ownFactionId = String(
+            (state && state.faction && state.faction.id) ||
+            (state && state.faction && state.faction.faction_id) ||
+            (state && state.me && state.me.faction_id) ||
+            (state && state.license && state.license.faction_id) ||
+            war.my_faction_id ||
+            ''
+        ).trim();
+
+        var ownFactionName = String(
+            (state && state.faction && state.faction.name) ||
+            (state && state.me && state.me.faction_name) ||
+            (state && state.license && state.license.faction_name) ||
+            war.my_faction_name ||
+            ''
+        ).trim().toLowerCase();
+
+        var rawEnemyFactionId = String(
             payload.faction_id ||
             war.enemy_faction_id ||
-            warEnemiesFactionId ||
             ''
-        );
-        warEnemiesFactionName = String(
+        ).trim();
+
+        var rawEnemyFactionName = String(
             payload.faction_name ||
             war.enemy_faction_name ||
-            warEnemiesFactionName ||
             ''
+        ).trim();
+
+        var ownMembers = arr(
+            (state && state.members) ||
+            currentFactionMembers ||
+            factionMembersCache ||
+            []
         );
+
+        var ownIds = {};
+        ownMembers.forEach(function (m) {
+            var id = String((m && (m.user_id || m.id)) || '').trim();
+            if (id) ownIds[id] = true;
+        });
+
+        var enemies = arr(payload.items || payload.enemies || []).filter(function (m) {
+            var id = String((m && (m.user_id || m.id)) || '').trim();
+            if (!id) return false;
+            if (ownIds[id]) return false;
+            return true;
+        });
+
+        var enemyFactionId = rawEnemyFactionId;
+        var enemyFactionName = rawEnemyFactionName;
+
+        if (
+            !enemyFactionId ||
+            (ownFactionId && enemyFactionId === ownFactionId) ||
+            (enemyFactionName && ownFactionName && enemyFactionName.trim().toLowerCase() === ownFactionName)
+        ) {
+            enemyFactionId = '';
+            enemyFactionName = '';
+            enemies = [];
+        }
+
+        warEnemiesCache = enemies.slice();
+        warEnemiesFactionId = enemyFactionId;
+        warEnemiesFactionName = enemyFactionName;
         warEnemiesLoadedAt = Date.now();
 
         state = state || {};
