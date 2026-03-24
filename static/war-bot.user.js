@@ -2956,10 +2956,10 @@ function renderAdminTab() {
                         '</div>',
                         '<div class="warhub-row" style="flex-wrap:wrap;justify-content:flex-end;">',
                             active
-                                ? '<span class="warhub-pill green">Active</span>'
-                                : '<span class="warhub-pill gray">Inactive</span>',
+                                ? '<span class="warhub-pill good">Active</span>'
+                                : '<span class="warhub-pill bad">Inactive</span>',
                             exemptFaction
-                                ? '<span class="warhub-pill purple">Exempt</span>'
+                                ? '<span class="warhub-pill neutral">Exempt</span>'
                                 : '',
                             '<span class="warhub-pill neutral">Days Left: ' + esc(String(daysLeft)) + '</span>',
                         '</div>',
@@ -2979,6 +2979,9 @@ function renderAdminTab() {
                             : '',
                         factionId
                             ? '<button type="button" class="warhub-btn gray" data-action="admin-expire" data-faction-id="' + esc(factionId) + '">Expire</button>'
+                            : '',
+                        factionId
+                            ? '<button type="button" class="warhub-btn warn" data-action="admin-faction-exempt-add" data-faction-id="' + esc(factionId) + '" data-faction-name="' + esc(factionName) + '">Exempt Faction</button>'
                             : '',
                     '</div>',
                 '</div>'
@@ -3002,6 +3005,40 @@ function renderAdminTab() {
                 statCard('Active Licenses', dash.active_licenses || 0),
                 statCard('Exempt Users', dash.user_exemptions || 0),
                 statCard('Exempt Factions', dash.faction_exemptions || 0),
+            '</div>',
+
+            '<div class="warhub-card warhub-col">',
+                '<h3>Faction Exemption</h3>',
+                '<label class="warhub-label" for="warhub-admin-faction-id">Faction ID</label>',
+                '<input id="warhub-admin-faction-id" class="warhub-input" type="text" placeholder="Faction ID" />',
+                '<label class="warhub-label" for="warhub-admin-faction-name">Faction Name (optional)</label>',
+                '<input id="warhub-admin-faction-name" class="warhub-input" type="text" placeholder="Faction name" />',
+                '<label class="warhub-label" for="warhub-admin-faction-note">Note (optional)</label>',
+                '<textarea id="warhub-admin-faction-note" class="warhub-textarea" placeholder="Reason for exemption"></textarea>',
+                '<div class="warhub-row">',
+                    '<button type="button" class="warhub-btn green" data-action="admin-faction-exempt-save">Save Faction Exemption</button>',
+                    '<button type="button" class="warhub-btn gray" data-action="admin-faction-exempt-delete">Delete Faction Exemption</button>',
+                '</div>',
+                '<div class="warhub-sub">Faction exemption = no pay required and all faction members can use member features.</div>',
+            '</div>',
+
+            '<div class="warhub-card warhub-col">',
+                '<h3>Player Exemption</h3>',
+                '<label class="warhub-label" for="warhub-admin-user-id">Player ID</label>',
+                '<input id="warhub-admin-user-id" class="warhub-input" type="text" placeholder="Player ID" />',
+                '<label class="warhub-label" for="warhub-admin-user-name">Player Name (optional)</label>',
+                '<input id="warhub-admin-user-name" class="warhub-input" type="text" placeholder="Player name" />',
+                '<label class="warhub-label" for="warhub-admin-user-faction-id">Faction ID (optional)</label>',
+                '<input id="warhub-admin-user-faction-id" class="warhub-input" type="text" placeholder="Faction ID" />',
+                '<label class="warhub-label" for="warhub-admin-user-faction-name">Faction Name (optional)</label>',
+                '<input id="warhub-admin-user-faction-name" class="warhub-input" type="text" placeholder="Faction name" />',
+                '<label class="warhub-label" for="warhub-admin-user-note">Note (optional)</label>',
+                '<textarea id="warhub-admin-user-note" class="warhub-textarea" placeholder="Reason for exemption"></textarea>',
+                '<div class="warhub-row">',
+                    '<button type="button" class="warhub-btn green" data-action="admin-user-exempt-save">Save Player Exemption</button>',
+                    '<button type="button" class="warhub-btn gray" data-action="admin-user-exempt-delete">Delete Player Exemption</button>',
+                '</div>',
+                '<div class="warhub-sub">Player exemption = script free and member features unlocked for that player.</div>',
             '</div>',
 
             '<div class="warhub-card warhub-col">',
@@ -3038,6 +3075,143 @@ function renderAdminTab() {
                     yield doLogin();
                     return;
                 }
+                if (action === 'admin-faction-exempt-save') {
+    var factionIdEl = overlay && overlay.querySelector('#warhub-admin-faction-id');
+    var factionNameEl = overlay && overlay.querySelector('#warhub-admin-faction-name');
+    var factionNoteEl = overlay && overlay.querySelector('#warhub-admin-faction-note');
+
+    var factionId = cleanInputValue(factionIdEl && factionIdEl.value);
+    var factionName = String((factionNameEl && factionNameEl.value) || '').trim();
+    var note = String((factionNoteEl && factionNoteEl.value) || '').trim();
+
+    if (!factionId) {
+        setStatus('Enter a faction ID first.', true);
+        return;
+    }
+
+    var saveFactionExemptRes = yield adminReq('POST', '/api/admin/exemptions/factions', {
+        faction_id: factionId,
+        faction_name: factionName,
+        note: note
+    });
+
+    if (!saveFactionExemptRes.ok) {
+        setStatus((saveFactionExemptRes.json && saveFactionExemptRes.json.error) || 'Failed to save faction exemption.', true);
+        return;
+    }
+
+    yield loadAdminDashboard(true);
+    setStatus('Faction exemption saved.', false);
+    renderBody();
+    return;
+}
+
+if (action === 'admin-faction-exempt-delete') {
+    var deleteFactionIdEl = overlay && overlay.querySelector('#warhub-admin-faction-id');
+    var deleteFactionId = cleanInputValue(deleteFactionIdEl && deleteFactionIdEl.value);
+
+    if (!deleteFactionId) {
+        setStatus('Enter a faction ID to delete.', true);
+        return;
+    }
+
+    var deleteFactionExemptRes = yield adminReq('DELETE', '/api/admin/exemptions/factions/' + encodeURIComponent(deleteFactionId), null);
+
+    if (!deleteFactionExemptRes.ok) {
+        setStatus((deleteFactionExemptRes.json && deleteFactionExemptRes.json.error) || 'Failed to delete faction exemption.', true);
+        return;
+    }
+
+    yield loadAdminDashboard(true);
+    setStatus('Faction exemption deleted.', false);
+    renderBody();
+    return;
+}
+
+if (action === 'admin-user-exempt-save') {
+    var userIdEl = overlay && overlay.querySelector('#warhub-admin-user-id');
+    var userNameEl = overlay && overlay.querySelector('#warhub-admin-user-name');
+    var userFactionIdEl = overlay && overlay.querySelector('#warhub-admin-user-faction-id');
+    var userFactionNameEl = overlay && overlay.querySelector('#warhub-admin-user-faction-name');
+    var userNoteEl = overlay && overlay.querySelector('#warhub-admin-user-note');
+
+    var userId = cleanInputValue(userIdEl && userIdEl.value);
+    var userName = String((userNameEl && userNameEl.value) || '').trim();
+    var userFactionId = cleanInputValue(userFactionIdEl && userFactionIdEl.value);
+    var userFactionName = String((userFactionNameEl && userFactionNameEl.value) || '').trim();
+    var userNote = String((userNoteEl && userNoteEl.value) || '').trim();
+
+    if (!userId) {
+        setStatus('Enter a player ID first.', true);
+        return;
+    }
+
+    var saveUserExemptRes = yield adminReq('POST', '/api/admin/exemptions/users', {
+        user_id: userId,
+        user_name: userName,
+        faction_id: userFactionId,
+        faction_name: userFactionName,
+        note: userNote
+    });
+
+    if (!saveUserExemptRes.ok) {
+        setStatus((saveUserExemptRes.json && saveUserExemptRes.json.error) || 'Failed to save player exemption.', true);
+        return;
+    }
+
+    yield loadAdminDashboard(true);
+    setStatus('Player exemption saved.', false);
+    renderBody();
+    return;
+}
+
+if (action === 'admin-user-exempt-delete') {
+    var deleteUserIdEl = overlay && overlay.querySelector('#warhub-admin-user-id');
+    var deleteUserId = cleanInputValue(deleteUserIdEl && deleteUserIdEl.value);
+
+    if (!deleteUserId) {
+        setStatus('Enter a player ID to delete.', true);
+        return;
+    }
+
+    var deleteUserExemptRes = yield adminReq('DELETE', '/api/admin/exemptions/users/' + encodeURIComponent(deleteUserId), null);
+
+    if (!deleteUserExemptRes.ok) {
+        setStatus((deleteUserExemptRes.json && deleteUserExemptRes.json.error) || 'Failed to delete player exemption.', true);
+        return;
+    }
+
+    yield loadAdminDashboard(true);
+    setStatus('Player exemption deleted.', false);
+    renderBody();
+    return;
+}
+
+if (action === 'admin-faction-exempt-add') {
+    var quickFactionId = cleanInputValue(el.getAttribute('data-faction-id'));
+    var quickFactionName = String(el.getAttribute('data-faction-name') || '').trim();
+
+    if (!quickFactionId) {
+        setStatus('Missing faction ID.', true);
+        return;
+    }
+
+    var quickFactionExemptRes = yield adminReq('POST', '/api/admin/exemptions/factions', {
+        faction_id: quickFactionId,
+        faction_name: quickFactionName,
+        note: 'Added from Admin faction license card'
+    });
+
+    if (!quickFactionExemptRes.ok) {
+        setStatus((quickFactionExemptRes.json && quickFactionExemptRes.json.error) || 'Failed to exempt faction.', true);
+        return;
+    }
+
+    yield loadAdminDashboard(true);
+    setStatus('Faction marked exempt.', false);
+    renderBody();
+    return;
+}
 
                 if (action === 'logout') {
                     doLogout();
