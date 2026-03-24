@@ -125,15 +125,15 @@ var css = "\n\
 #warhub-shield {\n\
   position: fixed !important;\n\
   z-index: 2147483647 !important;\n\
-  width: 42px !important;\n\
-  height: 42px !important;\n\
-  border-radius: 12px !important;\n\
+  width: 36px !important;\n\
+  height: 36px !important;\n\
+  border-radius: 10px !important;\n\
   display: flex !important;\n\
   align-items: center !important;\n\
   justify-content: center !important;\n\
-  font-size: 22px !important;\n\
+  font-size: 19px !important;\n\
   line-height: 1 !important;\n\
-  cursor: grab !important;\n\
+  cursor: pointer !important;\n\
   user-select: none !important;\n\
   -webkit-user-select: none !important;\n\
   -webkit-touch-callout: none !important;\n\
@@ -150,19 +150,21 @@ var css = "\n\
   visibility: visible !important;\n\
   pointer-events: auto !important;\n\
 }\n\
-#warhub-shield.dragging { cursor: grabbing !important; }\n\
+#warhub-shield.dragging {\n\
+  cursor: grabbing !important;\n\
+}\n\
 \n\
 #warhub-badge {\n\
   position: fixed !important;\n\
   z-index: 2147483647 !important;\n\
-  min-width: 16px !important;\n\
-  height: 16px !important;\n\
+  min-width: 15px !important;\n\
+  height: 15px !important;\n\
   padding: 0 4px !important;\n\
   border-radius: 999px !important;\n\
   background: #ffd54a !important;\n\
   color: #111 !important;\n\
   font-size: 10px !important;\n\
-  line-height: 16px !important;\n\
+  line-height: 15px !important;\n\
   text-align: center !important;\n\
   font-weight: 800 !important;\n\
   box-shadow: 0 3px 12px rgba(0,0,0,.45) !important;\n\
@@ -173,26 +175,27 @@ var css = "\n\
 #warhub-overlay {\n\
   position: fixed !important;\n\
   z-index: 2147483646 !important;\n\
-  right: 12px !important;\n\
-  top: 12px !important;\n\
-  width: min(96vw, 520px) !important;\n\
-  height: auto !important;\n\
-  max-height: calc(100dvh - 24px) !important;\n\
-  min-height: 320px !important;\n\
-  overflow: hidden !important;\n\
+  left: 8px !important;\n\
+  right: 8px !important;\n\
+  top: 8px !important;\n\
+  bottom: 8px !important;\n\
+  width: auto !important;\n\
+  max-width: 520px !important;\n\
+  margin: 0 auto !important;\n\
   border-radius: 14px !important;\n\
   background: linear-gradient(180deg, #171717, #0c0c0c) !important;\n\
   color: #f2f2f2 !important;\n\
   border: 1px solid rgba(255,255,255,.08) !important;\n\
   box-shadow: 0 16px 38px rgba(0,0,0,.54) !important;\n\
   display: none !important;\n\
-  font-family: -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif !important;\n\
-  left: auto !important;\n\
-  bottom: auto !important;\n\
   flex-direction: column !important;\n\
   box-sizing: border-box !important;\n\
+  overflow: hidden !important;\n\
   opacity: 1 !important;\n\
   visibility: visible !important;\n\
+}\n\
+#warhub-overlay.open {\n\
+  display: flex !important;\n\
 }\n\
 #warhub-overlay.open { display: flex !important; }\n\
 \n\
@@ -203,19 +206,12 @@ var css = "\n\
 }\n\
 \n\
 .warhub-head {\n\
-  padding: 10px 12px 9px !important;\n\
-  border-bottom: 1px solid rgba(255,255,255,.08) !important;\n\
-  background: linear-gradient(180deg, rgba(170,18,18,.30), rgba(20,20,20,.20)) !important;\n\
-  cursor: grab !important;\n\
-  user-select: none !important;\n\
-  -webkit-user-select: none !important;\n\
-  -webkit-touch-callout: none !important;\n\
-  touch-action: none !important;\n\
   flex: 0 0 auto !important;\n\
-  display: block !important;\n\
-  width: 100% !important;\n\
-  min-height: 54px !important;\n\
+  padding: 12px 12px 10px !important;\n\
+  border-bottom: 1px solid rgba(255,255,255,.08) !important;\n\
+  background: rgba(255,255,255,.03) !important;\n\
 }\n\
+\n\
 .warhub-head.dragging { cursor: grabbing !important; }\n\
 \n\
 .warhub-toprow {\n\
@@ -301,8 +297,10 @@ var css = "\n\
 .warhub-body {\n\
   flex: 1 1 auto !important;\n\
   min-height: 0 !important;\n\
-  overflow: auto !important;\n\
-  padding: 10px !important;\n\
+  overflow-y: auto !important;\n\
+  overflow-x: hidden !important;\n\
+  -webkit-overflow-scrolling: touch !important;\n\
+  padding: 12px !important;\n\
 }\n\
 \n\
 .warhub-status-wrap {\n\
@@ -643,13 +641,14 @@ var css = "\n\
 \n\
 @media (max-width: 520px) {\n\
   #warhub-overlay {\n\
-    width: min(98vw, 520px) !important;\n\
-    left: 1vw !important;\n\
-    right: 1vw !important;\n\
-    top: 8px !important;\n\
-    max-height: calc(100dvh - 16px) !important;\n\
-    min-height: 0 !important;\n\
+    left: 6px !important;\n\
+    right: 6px !important;\n\
+    top: 6px !important;\n\
+    bottom: 6px !important;\n\
+    max-width: none !important;\n\
+    border-radius: 12px !important;\n\
   }\n\
+}\n\
   .warhub-mini-grid {\n\
     grid-template-columns: 1fr !important;\n\
   }\n\
@@ -1139,9 +1138,12 @@ function applyShieldPos() {
     if (!shield) return;
 
     var vp = getViewport();
-    var pos = loadPos(K_SHIELD_POS, { left: vp.w - 56, top: 120 });
-    var left = clamp(pos.left, 6, Math.max(6, vp.w - 48));
-    var top = clamp(pos.top, 6, Math.max(6, vp.h - 48));
+    var pos = loadPos(K_SHIELD_POS, { left: vp.w - 50, top: 120 });
+    var width = shield.offsetWidth || 36;
+    var height = shield.offsetHeight || 36;
+
+    var left = clamp(pos.left, 6, Math.max(6, vp.w - width - 6));
+    var top = clamp(pos.top, 6, Math.max(6, vp.h - height - 6));
 
     shield.style.left = left + 'px';
     shield.style.top = top + 'px';
@@ -1155,57 +1157,45 @@ function applyShieldPos() {
 function applyOverlayPos() {
     if (!overlay) return;
 
-    var vp = getViewport();
-    var fallback = {
-        left: Math.max(4, vp.w - Math.min(vp.w * 0.96, 520) - 8),
-        top: 8
-    };
-    var pos = loadPos(K_OVERLAY_POS, fallback);
-
-    var width = overlay.offsetWidth || Math.min(vp.w * 0.96, 520);
-    var height = overlay.offsetHeight || Math.min(vp.h - 16, 900);
-
-    var left = clamp(pos.left, 4, Math.max(4, vp.w - width - 4));
-    var top = clamp(pos.top, 4, Math.max(4, vp.h - height - 4));
-
-    overlay.style.left = left + 'px';
-    overlay.style.top = top + 'px';
-    overlay.style.right = 'auto';
-    overlay.style.bottom = 'auto';
-
-    savePos(K_OVERLAY_POS, { left: left, top: top });
+    overlay.style.left = '8px';
+    overlay.style.right = '8px';
+    overlay.style.top = '8px';
+    overlay.style.bottom = '8px';
 }
 
 function positionBadge() {
     if (!badge || !shield) return;
 
     var rect = shield.getBoundingClientRect();
-    badge.style.left = Math.round(rect.right - 6) + 'px';
-    badge.style.top = Math.round(rect.top - 6) + 'px';
+    badge.style.left = Math.round(rect.right - 5) + 'px';
+    badge.style.top = Math.round(rect.top - 5) + 'px';
 }
 
-function makeDraggable(handle, target, key, options) {
-    if (!handle || !target) return;
-
-    options = options || {};
+function makeHoldDraggable(handle, target, key) {
+    if (!handle || !target) return { didMove: function () { return false; } };
 
     var dragging = false;
     var moved = false;
+    var pressTimer = null;
+    var pressActive = false;
     var startX = 0;
     var startY = 0;
     var startLeft = 0;
     var startTop = 0;
-    var DRAG_THRESHOLD = 10;
+    var HOLD_MS = 260;
+    var DRAG_THRESHOLD = 8;
 
-    function shouldIgnoreStart(evt) {
-        var t = evt && evt.target;
-        if (!t || !t.closest) return false;
-        return !!t.closest('button, a, input, textarea, select, [data-tab], [data-action]');
+    function clearPressTimer() {
+        if (pressTimer) {
+            clearTimeout(pressTimer);
+            pressTimer = null;
+        }
     }
 
-    function onStart(clientX, clientY) {
-        dragging = true;
+    function beginPress(clientX, clientY) {
         moved = false;
+        dragging = false;
+        pressActive = true;
         startX = clientX;
         startY = clientY;
 
@@ -1213,97 +1203,101 @@ function makeDraggable(handle, target, key, options) {
         startLeft = rect.left;
         startTop = rect.top;
 
-        handle.classList.add('dragging');
-        target.classList.add('dragging');
+        clearPressTimer();
+        pressTimer = setTimeout(function () {
+            if (!pressActive) return;
+            dragging = true;
+            target.classList.add('dragging');
+        }, HOLD_MS);
     }
 
-    function onMove(clientX, clientY) {
-        if (!dragging) return;
+    function moveAt(clientX, clientY) {
+        if (!pressActive) return;
 
         var dx = clientX - startX;
         var dy = clientY - startY;
 
-        if (Math.abs(dx) < DRAG_THRESHOLD && Math.abs(dy) < DRAG_THRESHOLD) {
+        if (!dragging) {
+            if (Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD) {
+                clearPressTimer();
+            }
             return;
         }
 
         moved = true;
 
         var vp = getViewport();
-        var width = target.offsetWidth || 40;
-        var height = target.offsetHeight || 40;
+        var width = target.offsetWidth || 36;
+        var height = target.offsetHeight || 36;
 
-        var left = clamp(startLeft + dx, 4, Math.max(4, vp.w - width - 4));
-        var top = clamp(startTop + dy, 4, Math.max(4, vp.h - height - 4));
+        var left = clamp(startLeft + dx, 6, Math.max(6, vp.w - width - 6));
+        var top = clamp(startTop + dy, 6, Math.max(6, vp.h - height - 6));
 
         target.style.left = left + 'px';
         target.style.top = top + 'px';
         target.style.right = 'auto';
         target.style.bottom = 'auto';
 
-        if (key) savePos(key, { left: left, top: top });
-        if (target === shield) positionBadge();
+        savePos(key, { left: left, top: top });
+        positionBadge();
     }
 
-    function onEnd() {
-        if (!dragging) return;
+    function endPress() {
+        clearPressTimer();
+        pressActive = false;
 
-        dragging = false;
-        handle.classList.remove('dragging');
-        target.classList.remove('dragging');
+        if (dragging) {
+            dragging = false;
+            target.classList.remove('dragging');
+            setTimeout(function () {
+                moved = false;
+            }, 120);
+            return true;
+        }
 
-        if (target === shield) positionBadge();
-
-        setTimeout(function () {
-            moved = false;
-        }, 120);
+        return false;
     }
 
     handle.addEventListener('mousedown', function (e) {
         if (e.button !== 0) return;
-        if (shouldIgnoreStart(e)) return;
-
-        onStart(e.clientX, e.clientY);
-        e.preventDefault();
+        beginPress(e.clientX, e.clientY);
     });
 
     document.addEventListener('mousemove', function (e) {
-        onMove(e.clientX, e.clientY);
+        moveAt(e.clientX, e.clientY);
     });
 
     document.addEventListener('mouseup', function () {
-        onEnd();
+        endPress();
     });
 
     handle.addEventListener('touchstart', function (e) {
-        if (shouldIgnoreStart(e)) return;
         if (!e.touches || !e.touches.length) return;
-
         var t = e.touches[0];
-        onStart(t.clientX, t.clientY);
+        beginPress(t.clientX, t.clientY);
     }, { passive: true });
 
     document.addEventListener('touchmove', function (e) {
-        if (!dragging) return;
-        if (!e.touches || !e.touches.length) return;
-
+        if (!pressActive || !e.touches || !e.touches.length) return;
         var t = e.touches[0];
-        onMove(t.clientX, t.clientY);
-
-        if (moved) e.preventDefault();
+        moveAt(t.clientX, t.clientY);
+        if (dragging) e.preventDefault();
     }, { passive: false });
 
     document.addEventListener('touchend', function () {
-        onEnd();
+        endPress();
     });
 
     document.addEventListener('touchcancel', function () {
-        onEnd();
+        endPress();
     });
 
     return {
         didMove: function () {
             return moved;
+        },
+        isDragging: function () {
+            return dragging;
         }
     };
 }
@@ -1791,17 +1785,24 @@ function mount() {
     updateBadge();
     positionBadge();
 
-var shieldDrag = makeDraggable(shield, shield, K_SHIELD_POS);
-makeDraggable(overlay.querySelector('#warhub-head'), overlay, K_OVERLAY_POS);
+    var shieldDrag = makeHoldDraggable(shield, shield, K_SHIELD_POS);
 
-shield.addEventListener('click', function (e) {
-    if (shieldDrag && shieldDrag.didMove && shieldDrag.didMove()) {
-        e.preventDefault();
-        e.stopPropagation();
-        return;
-    }
-    toggleOverlay();
-});
+    shield.addEventListener('click', function (e) {
+        if (shieldDrag && shieldDrag.isDragging && shieldDrag.isDragging()) {
+            e.preventDefault();
+            e.stopPropagation();
+            return;
+        }
+        toggleOverlay();
+    });
+
+    shield.addEventListener('touchend', function (e) {
+        if (shieldDrag && shieldDrag.didMove && shieldDrag.didMove()) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+    }, { passive: false });
+
     overlay.querySelector('#warhub-close').addEventListener('click', function () {
         setOverlayOpen(false);
     });
@@ -1867,6 +1868,7 @@ function setOverlayOpen(open) {
     if (!overlay) return;
 
     overlay.classList.toggle('open', isOpen);
+
     if (isOpen) {
         applyOverlayPos();
         positionBadge();
@@ -1876,12 +1878,6 @@ function setOverlayOpen(open) {
 
 function toggleOverlay() {
     setOverlayOpen(!isOpen);
-}
-
-function ensureMounted() {
-    if (document.body && !mounted) {
-        mount();
-    }
 }
 
     // ============================================================
