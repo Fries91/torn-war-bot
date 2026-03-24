@@ -1000,19 +1000,15 @@
     // ============================================================
 
     function getViewport() {
-    var vv = window.visualViewport;
     var de = document.documentElement || {};
-
-    var w = vv && vv.width ? vv.width : Math.max(de.clientWidth || 0, window.innerWidth || 0, 320);
-    var h = vv && vv.height ? vv.height : Math.max(de.clientHeight || 0, window.innerHeight || 0, 320);
-    var left = vv && Number.isFinite(vv.offsetLeft) ? vv.offsetLeft : 0;
-    var top = vv && Number.isFinite(vv.offsetTop) ? vv.offsetTop : 0;
+    var w = Math.max(de.clientWidth || 0, window.innerWidth || 0, 320);
+    var h = Math.max(de.clientHeight || 0, window.innerHeight || 0, 320);
 
     return {
         w: Math.max(320, Math.round(w)),
         h: Math.max(320, Math.round(h)),
-        left: Math.round(left),
-        top: Math.round(top)
+        left: 0,
+        top: 0
     };
 }
 
@@ -1061,16 +1057,16 @@
     var margin = 8;
 
     var fallback = {
-        left: vp.left + Math.max(margin, vp.w - width - 14),
-        top: vp.top + Math.max(margin, Math.round((vp.h - height) / 2))
+        left: Math.max(margin, vp.w - width - 14),
+        top: Math.max(margin, Math.round((vp.h - height) / 2))
     };
 
     var pos = loadPos(K_SHIELD_POS, fallback);
 
-    var minLeft = vp.left + margin;
-    var maxLeft = vp.left + Math.max(margin, vp.w - width - margin);
-    var minTop = vp.top + margin;
-    var maxTop = vp.top + Math.max(margin, vp.h - height - margin);
+    var minLeft = margin;
+    var maxLeft = Math.max(margin, vp.w - width - margin);
+    var minTop = margin;
+    var maxTop = Math.max(margin, vp.h - height - margin);
 
     var left = clamp(pos.left, minLeft, maxLeft);
     var top = clamp(pos.top, minTop, maxTop);
@@ -1079,6 +1075,9 @@
     shield.style.top = top + 'px';
     shield.style.right = 'auto';
     shield.style.bottom = 'auto';
+    shield.style.display = 'flex';
+    shield.style.visibility = 'visible';
+    shield.style.opacity = '1';
 
     savePos(K_SHIELD_POS, { left: left, top: top });
     positionBadge();
@@ -1866,19 +1865,29 @@ if (window.visualViewport) {
     }
 
     function setOverlayOpen(open) {
-        isOpen = !!open;
-        GM_setValue(K_OPEN, isOpen);
+    isOpen = !!open;
+    GM_setValue(K_OPEN, isOpen);
 
-        if (!overlay) return;
+    if (!overlay) return;
+    if (!shield) shield = document.getElementById('warhub-shield');
 
-        overlay.classList.toggle('open', isOpen);
+    overlay.classList.toggle('open', isOpen);
 
-        if (isOpen) {
-            applyOverlayPos();
-            positionBadge();
-            renderBody();
-        }
+    if (shield) {
+        shield.style.display = 'flex';
+        shield.style.visibility = 'visible';
+        shield.style.opacity = '1';
     }
+
+    if (isOpen) {
+        applyOverlayPos();
+        positionBadge();
+        renderBody();
+    } else {
+        applyShieldPos();
+        positionBadge();
+    }
+}
 
     function toggleOverlay() {
         setOverlayOpen(!isOpen);
