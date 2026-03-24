@@ -1426,42 +1426,56 @@
         return _loadWarData.apply(this, arguments);
     }
 
-    function loadEnemies(force) {
-        return _loadEnemies.apply(this, arguments);
-    }
+function loadEnemies(force) {
+    return _loadEnemies.apply(this, arguments);
+}
 
-    function _loadEnemies() {
-        _loadEnemies = _asyncToGenerator(function* (force) {
-            if (!isLoggedIn()) return [];
+function _loadEnemies() {
+    _loadEnemies = _asyncToGenerator(function* (force) {
+        if (!isLoggedIn()) return [];
 
-            if (!force && warEnemiesCache && warEnemiesCache.length && (Date.now() - warEnemiesLoadedAt) < 15000) {
-                return warEnemiesCache;
-            }
-
-            var res = yield authedReq('GET', '/api/enemies');
-            if (!res.ok || !res.json) return warEnemiesCache || [];
-
-            var payload = res.json || {};
-            var enemies = arr(payload.enemies);
-
-            warEnemiesCache = enemies.slice();
-            warEnemiesFactionId = String(payload.enemy_faction_id || warEnemiesFactionId || '');
-            warEnemiesFactionName = String(payload.enemy_faction_name || warEnemiesFactionName || '');
-            warEnemiesLoadedAt = Date.now();
-
-            state = state || {};
-            state.enemies = enemies.slice();
-            state.war = Object.assign({}, state.war || {}, {
-                enemy_faction_id: warEnemiesFactionId,
-                enemy_faction_name: warEnemiesFactionName
-            });
-
+        if (!force && warEnemiesCache && warEnemiesCache.length && (Date.now() - warEnemiesLoadedAt) < 15000) {
             return warEnemiesCache;
+        }
+
+        var res = yield authedReq('GET', '/api/enemies');
+        if (!res.ok || !res.json) return warEnemiesCache || [];
+
+        var payload = res.json || {};
+
+        // backend returns items, not enemies
+        var enemies = arr(payload.items || payload.enemies || []);
+
+        // backend returns faction_id/faction_name, and also war{}
+        var war = (payload.war && typeof payload.war === 'object') ? payload.war : {};
+
+        warEnemiesCache = enemies.slice();
+        warEnemiesFactionId = String(
+            payload.faction_id ||
+            war.enemy_faction_id ||
+            warEnemiesFactionId ||
+            ''
+        );
+        warEnemiesFactionName = String(
+            payload.faction_name ||
+            war.enemy_faction_name ||
+            warEnemiesFactionName ||
+            ''
+        );
+        warEnemiesLoadedAt = Date.now();
+
+        state = state || {};
+        state.enemies = enemies.slice();
+        state.war = Object.assign({}, state.war || {}, war, {
+            enemy_faction_id: warEnemiesFactionId,
+            enemy_faction_name: warEnemiesFactionName
         });
 
-        return _loadEnemies.apply(this, arguments);
-    }
+        return warEnemiesCache;
+    });
 
+    return _loadEnemies.apply(this, arguments);
+}
     function loadLiveSummary(force) {
         return _loadLiveSummary.apply(this, arguments);
     }
