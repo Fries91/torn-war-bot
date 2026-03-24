@@ -2316,7 +2316,7 @@ function renderOverviewTab() {
     var chainUs = Number(war.chain_us || 0);
     var chainThem = Number(war.chain_them || 0);
 
-    var termsText = String((state && state.terms && state.terms.text) || '');
+    var termsText = String((state && state.terms_summary && state.terms_summary.text) || '');
     var medDealsText = String((state && state.med_deals && state.med_deals.text) || '');
     var dibsText = String((state && state.dibs && state.dibs.text) || '');
 
@@ -2361,9 +2361,9 @@ function renderOverviewTab() {
             '<div class="warhub-mini-grid">',
                 '<div class="warhub-card warhub-overview-link-card terms">',
                     '<div class="warhub-row" style="justify-content:space-between;">',
-                        '<h3>📜 War Terms</h3>',
+                        '<h3>📜 Terms / Summary</h3>',
                     '</div>',
-                    '<div class="warhub-spy-box">' + esc(termsText || 'No war terms added yet.') + '</div>',
+                    '<div class="warhub-spy-box">' + esc(termsText || 'No terms / summary added yet.') + '</div>',
                 '</div>',
 
                 '<div class="warhub-card warhub-overview-link-card meddeals">',
@@ -2642,34 +2642,22 @@ function renderEnemiesTab() {
     }
 
 function renderTermsTab() {
-    var terms = (state && state.terms) || {};
-    var summary = (state && state.summary_notes) || {};
-
-    var termsText = String(terms.text || '');
-    var summaryText = String(summary.text || '');
+    var box = (state && state.terms_summary) || {};
+    var text = String(box.text || '');
 
     return [
         '<div class="warhub-grid">',
             '<div class="warhub-hero-card">',
                 '<div class="warhub-title">Terms</div>',
-                '<div class="warhub-sub">Leader shared war terms and summary notes</div>',
+                '<div class="warhub-sub">Leader shared Terms / Summary box for the whole faction</div>',
             '</div>',
 
             '<div class="warhub-card warhub-col">',
-                '<label class="warhub-label" for="warhub-terms-text">War terms</label>',
-                '<textarea id="warhub-terms-text" class="warhub-textarea" placeholder="Write war terms here...">' + esc(termsText) + '</textarea>',
+                '<label class="warhub-label" for="warhub-terms-summary-text">Terms / Summary</label>',
+                '<textarea id="warhub-terms-summary-text" class="warhub-textarea" placeholder="Write terms, summary, instructions, or improvements here...">' + esc(text) + '</textarea>',
                 '<div class="warhub-row">',
-                    '<button type="button" class="warhub-btn" data-action="terms-save">Save</button>',
-                    '<button type="button" class="warhub-btn gray" data-action="terms-clear">Delete</button>',
-                '</div>',
-            '</div>',
-
-            '<div class="warhub-card warhub-col">',
-                '<label class="warhub-label" for="warhub-summary-text">War summary / improvements</label>',
-                '<textarea id="warhub-summary-text" class="warhub-textarea" placeholder="Write war summary and improvements here...">' + esc(summaryText) + '</textarea>',
-                '<div class="warhub-row">',
-                    '<button type="button" class="warhub-btn" data-action="summary-notes-save">Save</button>',
-                    '<button type="button" class="warhub-btn gray" data-action="summary-notes-clear">Delete</button>',
+                    '<button type="button" class="warhub-btn" data-action="terms-summary-save">Save</button>',
+                    '<button type="button" class="warhub-btn gray" data-action="terms-summary-clear">Delete</button>',
                 '</div>',
             '</div>',
         '</div>'
@@ -3061,448 +3049,411 @@ function renderAdminTab() {
     // 22. ACTION HANDLERS
     // ============================================================
 
-    function handleActionClick(el) {
-        return _handleActionClick.apply(this, arguments);
-    }
-
-    function _handleActionClick() {
-        _handleActionClick = _asyncToGenerator(function* (el) {
-            var action = el && el.getAttribute('data-action');
-            if (!action) return;
-
-            try {
-                if (action === 'login') {
-                    yield doLogin();
-                    return;
-                }
-                if (action === 'admin-faction-exempt-save') {
-    var factionIdEl = overlay && overlay.querySelector('#warhub-admin-faction-id');
-    var factionNameEl = overlay && overlay.querySelector('#warhub-admin-faction-name');
-    var factionNoteEl = overlay && overlay.querySelector('#warhub-admin-faction-note');
-
-    var factionId = cleanInputValue(factionIdEl && factionIdEl.value);
-    var factionName = String((factionNameEl && factionNameEl.value) || '').trim();
-    var note = String((factionNoteEl && factionNoteEl.value) || '').trim();
-
-    if (!factionId) {
-        setStatus('Enter a faction ID first.', true);
-        return;
-    }
-
-    var saveFactionExemptRes = yield adminReq('POST', '/api/admin/exemptions/factions', {
-        faction_id: factionId,
-        faction_name: factionName,
-        note: note
-    });
-
-    if (!saveFactionExemptRes.ok) {
-        setStatus((saveFactionExemptRes.json && saveFactionExemptRes.json.error) || 'Failed to save faction exemption.', true);
-        return;
-    }
-
-    yield loadAdminDashboard(true);
-    setStatus('Faction exemption saved.', false);
-    renderBody();
-    return;
+function handleActionClick(el) {
+    return _handleActionClick.apply(this, arguments);
 }
 
-if (action === 'admin-faction-exempt-delete') {
-    var deleteFactionIdEl = overlay && overlay.querySelector('#warhub-admin-faction-id');
-    var deleteFactionId = cleanInputValue(deleteFactionIdEl && deleteFactionIdEl.value);
-
-    if (!deleteFactionId) {
-        setStatus('Enter a faction ID to delete.', true);
-        return;
-    }
-
-    var deleteFactionExemptRes = yield adminReq('DELETE', '/api/admin/exemptions/factions/' + encodeURIComponent(deleteFactionId), null);
-
-    if (!deleteFactionExemptRes.ok) {
-        setStatus((deleteFactionExemptRes.json && deleteFactionExemptRes.json.error) || 'Failed to delete faction exemption.', true);
-        return;
-    }
-
-    yield loadAdminDashboard(true);
-    setStatus('Faction exemption deleted.', false);
-    renderBody();
-    return;
-}
-
-if (action === 'admin-user-exempt-save') {
-    var userIdEl = overlay && overlay.querySelector('#warhub-admin-user-id');
-    var userNameEl = overlay && overlay.querySelector('#warhub-admin-user-name');
-    var userFactionIdEl = overlay && overlay.querySelector('#warhub-admin-user-faction-id');
-    var userFactionNameEl = overlay && overlay.querySelector('#warhub-admin-user-faction-name');
-    var userNoteEl = overlay && overlay.querySelector('#warhub-admin-user-note');
-
-    var userId = cleanInputValue(userIdEl && userIdEl.value);
-    var userName = String((userNameEl && userNameEl.value) || '').trim();
-    var userFactionId = cleanInputValue(userFactionIdEl && userFactionIdEl.value);
-    var userFactionName = String((userFactionNameEl && userFactionNameEl.value) || '').trim();
-    var userNote = String((userNoteEl && userNoteEl.value) || '').trim();
-
-    if (!userId) {
-        setStatus('Enter a player ID first.', true);
-        return;
-    }
-
-    var saveUserExemptRes = yield adminReq('POST', '/api/admin/exemptions/users', {
-        user_id: userId,
-        user_name: userName,
-        faction_id: userFactionId,
-        faction_name: userFactionName,
-        note: userNote
-    });
-
-    if (!saveUserExemptRes.ok) {
-        setStatus((saveUserExemptRes.json && saveUserExemptRes.json.error) || 'Failed to save player exemption.', true);
-        return;
-    }
-
-    yield loadAdminDashboard(true);
-    setStatus('Player exemption saved.', false);
-    renderBody();
-    return;
-}
-
-if (action === 'admin-user-exempt-delete') {
-    var deleteUserIdEl = overlay && overlay.querySelector('#warhub-admin-user-id');
-    var deleteUserId = cleanInputValue(deleteUserIdEl && deleteUserIdEl.value);
-
-    if (!deleteUserId) {
-        setStatus('Enter a player ID to delete.', true);
-        return;
-    }
-
-    var deleteUserExemptRes = yield adminReq('DELETE', '/api/admin/exemptions/users/' + encodeURIComponent(deleteUserId), null);
-
-    if (!deleteUserExemptRes.ok) {
-        setStatus((deleteUserExemptRes.json && deleteUserExemptRes.json.error) || 'Failed to delete player exemption.', true);
-        return;
-    }
-
-    yield loadAdminDashboard(true);
-    setStatus('Player exemption deleted.', false);
-    renderBody();
-    return;
-}
-
-if (action === 'admin-faction-exempt-add') {
-    var quickFactionId = cleanInputValue(el.getAttribute('data-faction-id'));
-    var quickFactionName = String(el.getAttribute('data-faction-name') || '').trim();
-
-    if (!quickFactionId) {
-        setStatus('Missing faction ID.', true);
-        return;
-    }
-
-    var quickFactionExemptRes = yield adminReq('POST', '/api/admin/exemptions/factions', {
-        faction_id: quickFactionId,
-        faction_name: quickFactionName,
-        note: 'Added from Admin faction license card'
-    });
-
-    if (!quickFactionExemptRes.ok) {
-        setStatus((quickFactionExemptRes.json && quickFactionExemptRes.json.error) || 'Failed to exempt faction.', true);
-        return;
-    }
-
-    yield loadAdminDashboard(true);
-    setStatus('Faction marked exempt.', false);
-    renderBody();
-    return;
-}
-
-                if (action === 'logout') {
-                    doLogout();
-                    return;
-                }
-
-                if (action === 'members-refresh') {
-                    setStatus('Refreshing members...', false);
-                    yield loadFactionMembers(true);
-                    membersLiveStamp = Date.now();
-                    renderBody();
-                    setStatus('Members refreshed.', false);
-                    return;
-                }
-
-                if (action === 'enemies-refresh') {
-                    setStatus('Refreshing enemies...', false);
-                    yield loadWarData(true);
-                    yield loadEnemies(true);
-                    renderBody();
-                    setStatus('Enemies refreshed.', false);
-                    return;
-                }
-
-                if (action === 'meddeals-save') {
-                    var medDealsTextEl = overlay && overlay.querySelector('#warhub-meddeals-text');
-                    var medDealsText = String((medDealsTextEl && medDealsTextEl.value) || '');
-
-                    var saveMedDealsRes = yield authedReq('POST', '/api/meddeals', {
-                        text: medDealsText
-                    });
-
-                    if (!saveMedDealsRes.ok) {
-                        setStatus((saveMedDealsRes.json && saveMedDealsRes.json.error) || 'Failed to save med deals.', true);
-                        return;
-                    }
-
-                    state = state || {};
-                    state.med_deals = state.med_deals || {};
-                    state.med_deals.text = medDealsText;
-                    renderBody();
-                    setStatus('Med deals saved.', false);
-                    return;
-                }
-
-                if (action === 'meddeals-clear') {
-                    var clearMedDealsRes = yield authedReq('POST', '/api/meddeals', {
-                        text: ''
-                    });
-
-                    if (!clearMedDealsRes.ok) {
-                        setStatus((clearMedDealsRes.json && clearMedDealsRes.json.error) || 'Failed to clear med deals.', true);
-                        return;
-                    }
-
-                    state = state || {};
-                    state.med_deals = state.med_deals || {};
-                    state.med_deals.text = '';
-                    renderBody();
-                    setStatus('Med deals cleared.', false);
-                    return;
-                }
-
-                if (action === 'terms-save') {
-                    var termsTextEl = overlay && overlay.querySelector('#warhub-terms-text');
-                    var termsText = String((termsTextEl && termsTextEl.value) || '');
-
-                    var saveTermsRes = yield authedReq('POST', '/api/terms', {
-                        text: termsText
-                    });
-
-                    if (!saveTermsRes.ok) {
-                        setStatus((saveTermsRes.json && saveTermsRes.json.error) || 'Failed to save war terms.', true);
-                        return;
-                    }
-
-                    state = state || {};
-                    state.terms = state.terms || {};
-                    state.terms.text = termsText;
-                    renderBody();
-                    setStatus('War terms saved.', false);
-                    return;
-                }
-
-                if (action === 'terms-clear') {
-                    var clearTermsRes = yield authedReq('POST', '/api/terms', {
-                        text: ''
-                    });
-
-                    if (!clearTermsRes.ok) {
-                        setStatus((clearTermsRes.json && clearTermsRes.json.error) || 'Failed to clear war terms.', true);
-                        return;
-                    }
-
-                    state = state || {};
-                    state.terms = state.terms || {};
-                    state.terms.text = '';
-                    renderBody();
-                    setStatus('War terms cleared.', false);
-                    return;
-                }
-
-                if (action === 'summary-notes-save') {
-                    var summaryTextEl = overlay && overlay.querySelector('#warhub-summary-text');
-                    var summaryText = String((summaryTextEl && summaryTextEl.value) || '');
-
-                    var saveSummaryRes = yield authedReq('POST', '/api/summary-notes', {
-                        text: summaryText
-                    });
-
-                    if (!saveSummaryRes.ok) {
-                        setStatus((saveSummaryRes.json && saveSummaryRes.json.error) || 'Failed to save summary notes.', true);
-                        return;
-                    }
-
-                    state = state || {};
-                    state.summary_notes = state.summary_notes || {};
-                    state.summary_notes.text = summaryText;
-                    renderBody();
-                    setStatus('Summary notes saved.', false);
-                    return;
-                }
-
-                if (action === 'summary-notes-clear') {
-                    var clearSummaryRes = yield authedReq('POST', '/api/summary-notes', {
-                        text: ''
-                    });
-
-                    if (!clearSummaryRes.ok) {
-                        setStatus((clearSummaryRes.json && clearSummaryRes.json.error) || 'Failed to clear summary notes.', true);
-                        return;
-                    }
-
-                    state = state || {};
-                    state.summary_notes = state.summary_notes || {};
-                    state.summary_notes.text = '';
-                    renderBody();
-                    setStatus('Summary notes cleared.', false);
-                    return;
-                }
-
-                if (action === 'target-save') {
-                    var targetNameEl = overlay && overlay.querySelector('#warhub-target-name');
-                    var targetIdEl = overlay && overlay.querySelector('#warhub-target-id');
-                    var targetNoteEl = overlay && overlay.querySelector('#warhub-target-note');
-
-                    var targetPayload = {
-                        name: String((targetNameEl && targetNameEl.value) || ''),
-                        user_id: cleanInputValue(targetIdEl && targetIdEl.value),
-                        note: String((targetNoteEl && targetNoteEl.value) || '')
-                    };
-
-                    var targetRes = yield authedReq('POST', '/api/targets', targetPayload);
-                    if (!targetRes.ok) {
-                        setStatus((targetRes.json && targetRes.json.error) || 'Failed to save target.', true);
-                        return;
-                    }
-
-                    yield loadState();
-                    renderBody();
-                    setStatus('Target saved.', false);
-                    return;
-                }
-
-                if (action === 'activate-member') {
-                    var activateUserId = el.getAttribute('data-user-id');
-                    if (!activateUserId) return;
-
-                    var activateRes = yield authedReq('POST', '/api/faction/members/' + encodeURIComponent(activateUserId) + '/activate', {});
-                    if (!activateRes.ok) {
-                        setStatus((activateRes.json && activateRes.json.error) || 'Failed to activate member.', true);
-                        return;
-                    }
-
-                    yield loadFactionMembers(true);
-                    yield refreshFactionPaymentData();
-                    renderBody();
-                    setStatus('Member activated.', false);
-                    return;
-                }
-
-                if (action === 'remove-member') {
-                    var removeUserId = el.getAttribute('data-user-id');
-                    if (!removeUserId) return;
-
-                    var removeRes = yield authedReq('POST', '/api/faction/members/' + encodeURIComponent(removeUserId) + '/remove', {});
-                    if (!removeRes.ok) {
-                        setStatus((removeRes.json && removeRes.json.error) || 'Failed to remove member.', true);
-                        return;
-                    }
-
-                    yield loadFactionMembers(true);
-                    yield refreshFactionPaymentData();
-                    renderBody();
-                    setStatus('Member removed.', false);
-                    return;
-                }
-
-                if (action === 'admin-history') {
-                    var historyFactionId = el.getAttribute('data-faction-id');
-                    if (!historyFactionId) return;
-
-                    var historyRes = yield adminReq('GET', '/api/admin/factions/' + encodeURIComponent(historyFactionId) + '/history');
-                    if (!historyRes.ok) {
-                        setStatus((historyRes.json && historyRes.json.error) || 'Failed to load history.', true);
-                        return;
-                    }
-
-                    var items = arr(historyRes.json && historyRes.json.items);
-                    pushLocalNotification('info', 'History loaded for faction ' + historyFactionId + ' (' + items.length + ' rows).');
-                    updateBadge();
-                    setStatus('History loaded. See notifications.', false);
-                    return;
-                }
-
-                if (action === 'admin-renew') {
-                    var renewFactionId = el.getAttribute('data-faction-id');
-                    if (!renewFactionId) return;
-
-                    var renewRes = yield adminReq('POST', '/api/admin/factions/' + encodeURIComponent(renewFactionId) + '/renew', {});
-                    if (!renewRes.ok) {
-                        setStatus((renewRes.json && renewRes.json.error) || 'Failed to renew faction.', true);
-                        return;
-                    }
-
-                    yield loadAdminDashboard(true);
-                    renderBody();
-                    setStatus('Faction renewed.', false);
-                    return;
-                }
-
-                if (action === 'admin-expire') {
-                    var expireFactionId = el.getAttribute('data-faction-id');
-                    if (!expireFactionId) return;
-
-                    var expireRes = yield adminReq('POST', '/api/admin/factions/' + encodeURIComponent(expireFactionId) + '/expire', {});
-                    if (!expireRes.ok) {
-                        setStatus((expireRes.json && expireRes.json.error) || 'Failed to expire faction.', true);
-                        return;
-                    }
-
-                    yield loadAdminDashboard(true);
-                    renderBody();
-                    setStatus('Faction expired.', false);
-                    return;
-                }
-
-                if (action === 'chain-available') {
-                    var chainAvailableRes = yield authedReq('POST', '/api/chain', { available: true });
-                    if (!chainAvailableRes.ok) {
-                        setStatus((chainAvailableRes.json && chainAvailableRes.json.error) || 'Failed to update chain.', true);
-                        return;
-                    }
-                    yield loadState();
-                    renderBody();
-                    setStatus('Chain marked available.', false);
-                    return;
-                }
-
-                if (action === 'chain-unavailable') {
-                    var chainUnavailableRes = yield authedReq('POST', '/api/chain', { available: false });
-                    if (!chainUnavailableRes.ok) {
-                        setStatus((chainUnavailableRes.json && chainUnavailableRes.json.error) || 'Failed to update chain.', true);
-                        return;
-                    }
-                    yield loadState();
-                    renderBody();
-                    setStatus('Chain marked unavailable.', false);
-                    return;
-                }
-
-                if (action === 'chain-toggle-sitter') {
-                    var current = !!(state && state.chain && state.chain.sitter_enabled);
-                    var chainSitterRes = yield authedReq('POST', '/api/chain/sitter', { enabled: !current });
-                    if (!chainSitterRes.ok) {
-                        setStatus((chainSitterRes.json && chainSitterRes.json.error) || 'Failed to update chain sitter.', true);
-                        return;
-                    }
-                    yield loadState();
-                    renderBody();
-                    setStatus('Chain sitter updated.', false);
-                    return;
-                }
-            } catch (err) {
-                console.error('War Hub action error:', action, err);
-                setStatus('Action failed: ' + action, true);
+function _handleActionClick() {
+    _handleActionClick = _asyncToGenerator(function* (el) {
+        var action = el && el.getAttribute('data-action');
+        if (!action) return;
+
+        try {
+            if (action === 'login') {
+                yield doLogin();
+                return;
             }
-        });
-        return _handleActionClick.apply(this, arguments);
-    }
 
+            if (action === 'admin-faction-exempt-save') {
+                var factionIdEl = overlay && overlay.querySelector('#warhub-admin-faction-id');
+                var factionNameEl = overlay && overlay.querySelector('#warhub-admin-faction-name');
+                var factionNoteEl = overlay && overlay.querySelector('#warhub-admin-faction-note');
+
+                var factionId = cleanInputValue(factionIdEl && factionIdEl.value);
+                var factionName = String((factionNameEl && factionNameEl.value) || '').trim();
+                var note = String((factionNoteEl && factionNoteEl.value) || '').trim();
+
+                if (!factionId) {
+                    setStatus('Enter a faction ID first.', true);
+                    return;
+                }
+
+                var saveFactionExemptRes = yield adminReq('POST', '/api/admin/exemptions/factions', {
+                    faction_id: factionId,
+                    faction_name: factionName,
+                    note: note
+                });
+
+                if (!saveFactionExemptRes.ok) {
+                    setStatus((saveFactionExemptRes.json && saveFactionExemptRes.json.error) || 'Failed to save faction exemption.', true);
+                    return;
+                }
+
+                yield loadAdminDashboard(true);
+                setStatus('Faction exemption saved.', false);
+                renderBody();
+                return;
+            }
+
+            if (action === 'admin-faction-exempt-delete') {
+                var deleteFactionIdEl = overlay && overlay.querySelector('#warhub-admin-faction-id');
+                var deleteFactionId = cleanInputValue(deleteFactionIdEl && deleteFactionIdEl.value);
+
+                if (!deleteFactionId) {
+                    setStatus('Enter a faction ID to delete.', true);
+                    return;
+                }
+
+                var deleteFactionExemptRes = yield adminReq('DELETE', '/api/admin/exemptions/factions/' + encodeURIComponent(deleteFactionId), null);
+
+                if (!deleteFactionExemptRes.ok) {
+                    setStatus((deleteFactionExemptRes.json && deleteFactionExemptRes.json.error) || 'Failed to delete faction exemption.', true);
+                    return;
+                }
+
+                yield loadAdminDashboard(true);
+                setStatus('Faction exemption deleted.', false);
+                renderBody();
+                return;
+            }
+
+            if (action === 'admin-user-exempt-save') {
+                var userIdEl = overlay && overlay.querySelector('#warhub-admin-user-id');
+                var userNameEl = overlay && overlay.querySelector('#warhub-admin-user-name');
+                var userFactionIdEl = overlay && overlay.querySelector('#warhub-admin-user-faction-id');
+                var userFactionNameEl = overlay && overlay.querySelector('#warhub-admin-user-faction-name');
+                var userNoteEl = overlay && overlay.querySelector('#warhub-admin-user-note');
+
+                var userId = cleanInputValue(userIdEl && userIdEl.value);
+                var userName = String((userNameEl && userNameEl.value) || '').trim();
+                var userFactionId = cleanInputValue(userFactionIdEl && userFactionIdEl.value);
+                var userFactionName = String((userFactionNameEl && userFactionNameEl.value) || '').trim();
+                var userNote = String((userNoteEl && userNoteEl.value) || '').trim();
+
+                if (!userId) {
+                    setStatus('Enter a player ID first.', true);
+                    return;
+                }
+
+                var saveUserExemptRes = yield adminReq('POST', '/api/admin/exemptions/users', {
+                    user_id: userId,
+                    user_name: userName,
+                    faction_id: userFactionId,
+                    faction_name: userFactionName,
+                    note: userNote
+                });
+
+                if (!saveUserExemptRes.ok) {
+                    setStatus((saveUserExemptRes.json && saveUserExemptRes.json.error) || 'Failed to save player exemption.', true);
+                    return;
+                }
+
+                yield loadAdminDashboard(true);
+                setStatus('Player exemption saved.', false);
+                renderBody();
+                return;
+            }
+
+            if (action === 'admin-user-exempt-delete') {
+                var deleteUserIdEl = overlay && overlay.querySelector('#warhub-admin-user-id');
+                var deleteUserId = cleanInputValue(deleteUserIdEl && deleteUserIdEl.value);
+
+                if (!deleteUserId) {
+                    setStatus('Enter a player ID to delete.', true);
+                    return;
+                }
+
+                var deleteUserExemptRes = yield adminReq('DELETE', '/api/admin/exemptions/users/' + encodeURIComponent(deleteUserId), null);
+
+                if (!deleteUserExemptRes.ok) {
+                    setStatus((deleteUserExemptRes.json && deleteUserExemptRes.json.error) || 'Failed to delete player exemption.', true);
+                    return;
+                }
+
+                yield loadAdminDashboard(true);
+                setStatus('Player exemption deleted.', false);
+                renderBody();
+                return;
+            }
+
+            if (action === 'admin-faction-exempt-add') {
+                var quickFactionId = cleanInputValue(el.getAttribute('data-faction-id'));
+                var quickFactionName = String(el.getAttribute('data-faction-name') || '').trim();
+
+                if (!quickFactionId) {
+                    setStatus('Missing faction ID.', true);
+                    return;
+                }
+
+                var quickFactionExemptRes = yield adminReq('POST', '/api/admin/exemptions/factions', {
+                    faction_id: quickFactionId,
+                    faction_name: quickFactionName,
+                    note: 'Added from Admin faction license card'
+                });
+
+                if (!quickFactionExemptRes.ok) {
+                    setStatus((quickFactionExemptRes.json && quickFactionExemptRes.json.error) || 'Failed to exempt faction.', true);
+                    return;
+                }
+
+                yield loadAdminDashboard(true);
+                setStatus('Faction marked exempt.', false);
+                renderBody();
+                return;
+            }
+
+            if (action === 'logout') {
+                doLogout();
+                return;
+            }
+
+            if (action === 'members-refresh') {
+                setStatus('Refreshing members...', false);
+                yield loadFactionMembers(true);
+                membersLiveStamp = Date.now();
+                renderBody();
+                setStatus('Members refreshed.', false);
+                return;
+            }
+
+            if (action === 'enemies-refresh') {
+                setStatus('Refreshing enemies...', false);
+                yield loadWarData(true);
+                yield loadEnemies(true);
+                renderBody();
+                setStatus('Enemies refreshed.', false);
+                return;
+            }
+
+            if (action === 'meddeals-save') {
+                var medDealsTextEl = overlay && overlay.querySelector('#warhub-meddeals-text');
+                var medDealsText = String((medDealsTextEl && medDealsTextEl.value) || '');
+
+                var saveMedDealsRes = yield authedReq('POST', '/api/meddeals', {
+                    text: medDealsText
+                });
+
+                if (!saveMedDealsRes.ok) {
+                    setStatus((saveMedDealsRes.json && saveMedDealsRes.json.error) || 'Failed to save med deals.', true);
+                    return;
+                }
+
+                state = state || {};
+                state.med_deals = state.med_deals || {};
+                state.med_deals.text = medDealsText;
+                renderBody();
+                setStatus('Med deals saved.', false);
+                return;
+            }
+
+            if (action === 'meddeals-clear') {
+                var clearMedDealsRes = yield authedReq('POST', '/api/meddeals', {
+                    text: ''
+                });
+
+                if (!clearMedDealsRes.ok) {
+                    setStatus((clearMedDealsRes.json && clearMedDealsRes.json.error) || 'Failed to clear med deals.', true);
+                    return;
+                }
+
+                state = state || {};
+                state.med_deals = state.med_deals || {};
+                state.med_deals.text = '';
+                renderBody();
+                setStatus('Med deals cleared.', false);
+                return;
+            }
+
+            if (action === 'terms-summary-save') {
+                var boxEl = overlay && overlay.querySelector('#warhub-terms-summary-text');
+                var boxText = String((boxEl && boxEl.value) || '');
+
+                var saveBoxRes = yield authedReq('POST', '/api/terms-summary', {
+                    text: boxText
+                });
+
+                if (!saveBoxRes.ok) {
+                    setStatus((saveBoxRes.json && saveBoxRes.json.error) || 'Failed to save Terms / Summary.', true);
+                    return;
+                }
+
+                state = state || {};
+                state.terms_summary = state.terms_summary || {};
+                state.terms_summary.text = boxText;
+
+                renderBody();
+                setStatus('Terms / Summary saved.', false);
+                return;
+            }
+
+            if (action === 'terms-summary-clear') {
+                var clearBoxRes = yield authedReq('POST', '/api/terms-summary', {
+                    text: ''
+                });
+
+                if (!clearBoxRes.ok) {
+                    setStatus((clearBoxRes.json && clearBoxRes.json.error) || 'Failed to clear Terms / Summary.', true);
+                    return;
+                }
+
+                state = state || {};
+                state.terms_summary = state.terms_summary || {};
+                state.terms_summary.text = '';
+
+                renderBody();
+                setStatus('Terms / Summary cleared.', false);
+                return;
+            }
+
+            if (action === 'target-save') {
+                var targetNameEl = overlay && overlay.querySelector('#warhub-target-name');
+                var targetIdEl = overlay && overlay.querySelector('#warhub-target-id');
+                var targetNoteEl = overlay && overlay.querySelector('#warhub-target-note');
+
+                var targetPayload = {
+                    name: String((targetNameEl && targetNameEl.value) || ''),
+                    user_id: cleanInputValue(targetIdEl && targetIdEl.value),
+                    note: String((targetNoteEl && targetNoteEl.value) || '')
+                };
+
+                var targetRes = yield authedReq('POST', '/api/targets', targetPayload);
+                if (!targetRes.ok) {
+                    setStatus((targetRes.json && targetRes.json.error) || 'Failed to save target.', true);
+                    return;
+                }
+
+                yield loadState();
+                renderBody();
+                setStatus('Target saved.', false);
+                return;
+            }
+
+            if (action === 'activate-member') {
+                var activateUserId = el.getAttribute('data-user-id');
+                if (!activateUserId) return;
+
+                var activateRes = yield authedReq('POST', '/api/faction/members/' + encodeURIComponent(activateUserId) + '/activate', {});
+                if (!activateRes.ok) {
+                    setStatus((activateRes.json && activateRes.json.error) || 'Failed to activate member.', true);
+                    return;
+                }
+
+                yield loadFactionMembers(true);
+                yield refreshFactionPaymentData();
+                renderBody();
+                setStatus('Member activated.', false);
+                return;
+            }
+
+            if (action === 'remove-member') {
+                var removeUserId = el.getAttribute('data-user-id');
+                if (!removeUserId) return;
+
+                var removeRes = yield authedReq('POST', '/api/faction/members/' + encodeURIComponent(removeUserId) + '/remove', {});
+                if (!removeRes.ok) {
+                    setStatus((removeRes.json && removeRes.json.error) || 'Failed to remove member.', true);
+                    return;
+                }
+
+                yield loadFactionMembers(true);
+                yield refreshFactionPaymentData();
+                renderBody();
+                setStatus('Member removed.', false);
+                return;
+            }
+
+            if (action === 'admin-history') {
+                var historyFactionId = el.getAttribute('data-faction-id');
+                if (!historyFactionId) return;
+
+                var historyRes = yield adminReq('GET', '/api/admin/factions/' + encodeURIComponent(historyFactionId) + '/history');
+                if (!historyRes.ok) {
+                    setStatus((historyRes.json && historyRes.json.error) || 'Failed to load history.', true);
+                    return;
+                }
+
+                var items = arr(historyRes.json && historyRes.json.items);
+                pushLocalNotification('info', 'History loaded for faction ' + historyFactionId + ' (' + items.length + ' rows).');
+                updateBadge();
+                setStatus('History loaded. See notifications.', false);
+                return;
+            }
+
+            if (action === 'admin-renew') {
+                var renewFactionId = el.getAttribute('data-faction-id');
+                if (!renewFactionId) return;
+
+                var renewRes = yield adminReq('POST', '/api/admin/factions/' + encodeURIComponent(renewFactionId) + '/renew', {});
+                if (!renewRes.ok) {
+                    setStatus((renewRes.json && renewRes.json.error) || 'Failed to renew faction.', true);
+                    return;
+                }
+
+                yield loadAdminDashboard(true);
+                renderBody();
+                setStatus('Faction renewed.', false);
+                return;
+            }
+
+            if (action === 'admin-expire') {
+                var expireFactionId = el.getAttribute('data-faction-id');
+                if (!expireFactionId) return;
+
+                var expireRes = yield adminReq('POST', '/api/admin/factions/' + encodeURIComponent(expireFactionId) + '/expire', {});
+                if (!expireRes.ok) {
+                    setStatus((expireRes.json && expireRes.json.error) || 'Failed to expire faction.', true);
+                    return;
+                }
+
+                yield loadAdminDashboard(true);
+                renderBody();
+                setStatus('Faction expired.', false);
+                return;
+            }
+
+            if (action === 'chain-available') {
+                var chainAvailableRes = yield authedReq('POST', '/api/chain', { available: true });
+                if (!chainAvailableRes.ok) {
+                    setStatus((chainAvailableRes.json && chainAvailableRes.json.error) || 'Failed to update chain.', true);
+                    return;
+                }
+                yield loadState();
+                renderBody();
+                setStatus('Chain marked available.', false);
+                return;
+            }
+
+            if (action === 'chain-unavailable') {
+                var chainUnavailableRes = yield authedReq('POST', '/api/chain', { available: false });
+                if (!chainUnavailableRes.ok) {
+                    setStatus((chainUnavailableRes.json && chainUnavailableRes.json.error) || 'Failed to update chain.', true);
+                    return;
+                }
+                yield loadState();
+                renderBody();
+                setStatus('Chain marked unavailable.', false);
+                return;
+            }
+
+            if (action === 'chain-toggle-sitter') {
+                var current = !!(state && state.chain && state.chain.sitter_enabled);
+                var chainSitterRes = yield authedReq('POST', '/api/chain/sitter', { enabled: !current });
+                if (!chainSitterRes.ok) {
+                    setStatus((chainSitterRes.json && chainSitterRes.json.error) || 'Failed to update chain sitter.', true);
+                    return;
+                }
+                yield loadState();
+                renderBody();
+                setStatus('Chain sitter updated.', false);
+                return;
+            }
+        } catch (err) {
+            console.error('War Hub action error:', action, err);
+            setStatus('Action failed: ' + action, true);
+        }
+    });
+    return _handleActionClick.apply(this, arguments);
+}
     // ============================================================
     // 23. MAIN RENDER / INPUT BINDINGS
     // ============================================================
