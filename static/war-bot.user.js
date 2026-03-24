@@ -1113,158 +1113,164 @@
         badge.style.top = Math.round(rect.top - 6) + 'px';
     }
 
-    function makeHoldDraggable(handle, target, key) {
-        if (!handle || !target) {
-            return {
-                didMove: function () { return false; },
-                isDragging: function () { return false; }
-            };
-        }
-
-        var dragging = false;
-        var moved = false;
-        var pressTimer = null;
-        var pressActive = false;
-        var startX = 0;
-        var startY = 0;
-        var startLeft = 0;
-        var startTop = 0;
-        var HOLD_MS = 260;
-        var DRAG_THRESHOLD = 8;
-
-        function clearPressTimer() {
-            if (pressTimer) {
-                clearTimeout(pressTimer);
-                pressTimer = null;
-            }
-        }
-
-        function resetPress() {
-            clearPressTimer();
-            pressActive = false;
-            if (dragging) {
-                dragging = false;
-                target.classList.remove('dragging');
-                handle.classList.remove('dragging');
-            }
-        }
-
-        function beginPress(clientX, clientY) {
-            moved = false;
-            dragging = false;
-            pressActive = true;
-            startX = clientX;
-            startY = clientY;
-
-            var rect = target.getBoundingClientRect();
-            startLeft = rect.left;
-            startTop = rect.top;
-
-            clearPressTimer();
-            pressTimer = setTimeout(function () {
-                if (!pressActive) return;
-                dragging = true;
-                target.classList.add('dragging');
-                handle.classList.add('dragging');
-            }, HOLD_MS);
-        }
-
-        function moveAt(clientX, clientY) {
-            if (!pressActive) return;
-
-            var dx = clientX - startX;
-            var dy = clientY - startY;
-
-            if (!dragging) {
-                if (Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD) {
-                    clearPressTimer();
-                    pressActive = false;
-                }
-                return;
-            }
-
-            moved = true;
-
-            var vp = getViewport();
-            var width = target.offsetWidth || 42;
-            var height = target.offsetHeight || 42;
-
-            var left = clamp(startLeft + dx, 6, Math.max(6, vp.w - width - 6));
-            var top = clamp(startTop + dy, 6, Math.max(6, vp.h - height - 6));
-
-            target.style.left = left + 'px';
-            target.style.top = top + 'px';
-            target.style.right = 'auto';
-            target.style.bottom = 'auto';
-
-            savePos(key, { left: left, top: top });
-            positionBadge();
-        }
-
-        function endPress() {
-            clearPressTimer();
-
-            var wasDragging = dragging;
-
-            pressActive = false;
-            dragging = false;
-            target.classList.remove('dragging');
-            handle.classList.remove('dragging');
-
-            if (wasDragging) {
-                setTimeout(function () {
-                    moved = false;
-                }, 120);
-                return true;
-            }
-
-            return false;
-        }
-
-        handle.addEventListener('mousedown', function (e) {
-            if (e.button !== 0) return;
-            beginPress(e.clientX, e.clientY);
-        });
-
-        document.addEventListener('mousemove', function (e) {
-            moveAt(e.clientX, e.clientY);
-        });
-
-        document.addEventListener('mouseup', function () {
-            endPress();
-        });
-
-        handle.addEventListener('touchstart', function (e) {
-            if (!e.touches || !e.touches.length) return;
-            var t = e.touches[0];
-            beginPress(t.clientX, t.clientY);
-        }, { passive: true });
-
-        document.addEventListener('touchmove', function (e) {
-            if (!pressActive || !e.touches || !e.touches.length) return;
-            var t = e.touches[0];
-            moveAt(t.clientX, t.clientY);
-            if (dragging && e.cancelable) e.preventDefault();
-        }, { passive: false });
-
-        document.addEventListener('touchend', function () {
-            endPress();
-        });
-
-        document.addEventListener('touchcancel', function () {
-            resetPress();
-        });
-
+function makeHoldDraggable(handle, target, key) {
+    if (!handle || !target) {
         return {
-            didMove: function () {
-                return moved;
-            },
-            isDragging: function () {
-                return dragging;
-            }
+            didMove: function () { return false; },
+            isDragging: function () { return false; }
         };
     }
 
+    var dragging = false;
+    var moved = false;
+    var pressTimer = null;
+    var pressActive = false;
+    var startX = 0;
+    var startY = 0;
+    var startLeft = 0;
+    var startTop = 0;
+    var HOLD_MS = 260;
+    var DRAG_THRESHOLD = 8;
+
+    function clearPressTimer() {
+        if (pressTimer) {
+            clearTimeout(pressTimer);
+            pressTimer = null;
+        }
+    }
+
+    function resetPress() {
+        clearPressTimer();
+        pressActive = false;
+
+        if (dragging) {
+            dragging = false;
+            target.classList.remove('dragging');
+            handle.classList.remove('dragging');
+        }
+    }
+
+    function beginPress(clientX, clientY) {
+        moved = false;
+        dragging = false;
+        pressActive = true;
+        startX = clientX;
+        startY = clientY;
+
+        var rect = target.getBoundingClientRect();
+        startLeft = rect.left;
+        startTop = rect.top;
+
+        clearPressTimer();
+        pressTimer = setTimeout(function () {
+            if (!pressActive) return;
+            dragging = true;
+            target.classList.add('dragging');
+            handle.classList.add('dragging');
+        }, HOLD_MS);
+    }
+
+    function moveAt(clientX, clientY) {
+        if (!pressActive) return;
+
+        var dx = clientX - startX;
+        var dy = clientY - startY;
+
+        if (!dragging) {
+            if (Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD) {
+                clearPressTimer();
+                pressActive = false;
+            }
+            return;
+        }
+
+        moved = true;
+
+        var vp = getViewport();
+        var width = target.offsetWidth || 42;
+        var height = target.offsetHeight || 42;
+        var margin = 8;
+
+        var minLeft = vp.left + margin;
+        var maxLeft = vp.left + Math.max(margin, vp.w - width - margin);
+        var minTop = vp.top + margin;
+        var maxTop = vp.top + Math.max(margin, vp.h - height - margin);
+
+        var left = clamp(startLeft + dx, minLeft, maxLeft);
+        var top = clamp(startTop + dy, minTop, maxTop);
+
+        target.style.left = left + 'px';
+        target.style.top = top + 'px';
+        target.style.right = 'auto';
+        target.style.bottom = 'auto';
+
+        savePos(key, { left: left, top: top });
+        positionBadge();
+    }
+
+    function endPress() {
+        clearPressTimer();
+
+        var wasDragging = dragging;
+
+        pressActive = false;
+        dragging = false;
+        target.classList.remove('dragging');
+        handle.classList.remove('dragging');
+
+        if (wasDragging) {
+            setTimeout(function () {
+                moved = false;
+            }, 120);
+            return true;
+        }
+
+        return false;
+    }
+
+    handle.addEventListener('mousedown', function (e) {
+        if (e.button !== 0) return;
+        beginPress(e.clientX, e.clientY);
+    });
+
+    document.addEventListener('mousemove', function (e) {
+        moveAt(e.clientX, e.clientY);
+    });
+
+    document.addEventListener('mouseup', function () {
+        endPress();
+    });
+
+    handle.addEventListener('touchstart', function (e) {
+        if (!e.touches || !e.touches.length) return;
+        var t = e.touches[0];
+        beginPress(t.clientX, t.clientY);
+    }, { passive: true });
+
+    document.addEventListener('touchmove', function (e) {
+        if (!pressActive || !e.touches || !e.touches.length) return;
+        var t = e.touches[0];
+        moveAt(t.clientX, t.clientY);
+        if (dragging && e.cancelable) e.preventDefault();
+    }, { passive: false });
+
+    document.addEventListener('touchend', function () {
+        endPress();
+    });
+
+    document.addEventListener('touchcancel', function () {
+        resetPress();
+    });
+
+    return {
+        didMove: function () {
+            return moved;
+        },
+        isDragging: function () {
+            return dragging;
+        }
+    };
+}
     // ============================================================
     // 11. AUTH / LOGIN
     // ============================================================
@@ -1771,10 +1777,8 @@
         document.body.appendChild(badge);
         document.body.appendChild(overlay);
 
-        applyShieldPos();
-        applyOverlayPos();
+        refreshFloatingUiPositions();
         updateBadge();
-        positionBadge();
 
         var shieldDrag = makeHoldDraggable(shield, shield, K_SHIELD_POS);
 
