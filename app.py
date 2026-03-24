@@ -36,6 +36,8 @@ from db import (
     delete_faction_exemption,
     delete_user_exemption,
     get_faction_member_access,
+    get_faction_terms_summary,
+    upsert_faction_terms_summary,
 )
 from torn_api import me_basic, faction_basic, ranked_war_summary, member_live_bars, profile_url, attack_url, bounty_url
 from payment_service import (
@@ -648,6 +650,7 @@ def _build_state_payload(user: Dict[str, Any]) -> Dict[str, Any]:
         "enemy_total": 0,
     }
     notifications = list_notifications(str(user.get("user_id") or ""), limit=25)
+    terms_summary_row = get_faction_terms_summary(faction_id) if faction_id else {}
 
     return {
         "app_name": APP_NAME,
@@ -675,6 +678,12 @@ def _build_state_payload(user: Dict[str, Any]) -> Dict[str, Any]:
             "is_owner": bool(access.get("is_owner")),
             "show_admin": bool(access.get("show_admin")),
         },
+            "terms_summary": {
+            "text": str((terms_summary_row or {}).get("text") or ""),
+            "updated_by_user_id": str((terms_summary_row or {}).get("updated_by_user_id") or ""),
+            "updated_by_name": str((terms_summary_row or {}).get("updated_by_name") or ""),
+            "updated_at": str((terms_summary_row or {}).get("updated_at") or ""),
+        },
         "payment": {
             "payment_player": PAYMENT_PLAYER,
             "payment_per_member": FACTION_MEMBER_PRICE,
@@ -682,7 +691,56 @@ def _build_state_payload(user: Dict[str, Any]) -> Dict[str, Any]:
         },
         "refresh_seconds": DEFAULT_REFRESH_SECONDS,
     }
+    
+@app.route("/api/terms-summary", methods=["GET"])
+@require_session
+def api_terms_summary_get():
+    user = request.user or {}
+    faction_id = str(user.get("faction_id") or "").strip()
+    if not faction_id:
+        return ok(item={"text": "", "updated_by_user_id": "", "updated_by_name": "", "updated_at": ""})
 
+    row = get_faction_terms_summary(faction_id) or {}
+    return ok(
+        item={
+            "text": str(row.get("text") or ""),
+            "updated_by_user_id": str(row.get("updated_by_user_id") or ""),
+            "updated_by_name": str(row.get("updated_by_name") or ""),
+            "updated_at": str(row.get("updated_at") or ""),
+        }
+    )
+
+
+@app.route("/api/terms-summary", methods=["POST"])
+@require_leader_session
+def api_terms_summary_save():
+    user = request.user or {}
+    faction_id = str(user.get("faction_id") or "").strip()
+    faction_name = str(user.get("faction_name") or "").strip()
+
+    if not faction_id:
+        return err("No faction found.", 400)
+
+    data = _require_json()
+    text = str(data.get("text") or "")
+
+    row = upsert_faction_terms_summary(
+        faction_id=faction_id,
+        faction_name=faction_name,
+        text=text,
+        updated_by_user_id=str(user.get("user_id") or ""),
+        updated_by_name=str(user.get("name") or ""),
+    )
+
+    return ok(
+        message="Terms / Summary saved.",
+        item={
+            "text": str(row.get("text") or ""),
+            "updated_by_user_id": str(row.get("updated_by_user_id") or ""),
+            "updated_by_name": str(row.get("updated_by_name") or ""),
+            "updated_at": str(row.get("updated_at") or ""),
+        }
+    )
 
 @app.route("/health", methods=["GET"])
 def health():
