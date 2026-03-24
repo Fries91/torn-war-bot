@@ -2503,41 +2503,40 @@ function renderOverviewTab() {
         ].join('');
     }
 
-    function renderTermsTab() {
-        var terms = (state && state.terms) || {};
-        var summary = (state && state.summary_notes) || {};
+function renderTermsTab() {
+    var terms = (state && state.terms) || {};
+    var summary = (state && state.summary_notes) || {};
 
-        var termsText = String(terms.text || '');
-        var summaryText = String(summary.text || '');
+    var termsText = String(terms.text || '');
+    var summaryText = String(summary.text || '');
 
-        return [
-            '<div class="warhub-grid">',
-                '<div class="warhub-hero-card">',
-                    '<div class="warhub-title">Terms</div>',
-                    '<div class="warhub-sub">Leader shared war terms and summary notes</div>',
+    return [
+        '<div class="warhub-grid">',
+            '<div class="warhub-hero-card">',
+                '<div class="warhub-title">Terms</div>',
+                '<div class="warhub-sub">Leader shared war terms and summary notes</div>',
+            '</div>',
+
+            '<div class="warhub-card warhub-col">',
+                '<label class="warhub-label" for="warhub-terms-text">War terms</label>',
+                '<textarea id="warhub-terms-text" class="warhub-textarea" placeholder="Write war terms here...">' + esc(termsText) + '</textarea>',
+                '<div class="warhub-row">',
+                    '<button type="button" class="warhub-btn" data-action="terms-save">Save</button>',
+                    '<button type="button" class="warhub-btn gray" data-action="terms-clear">Delete</button>',
                 '</div>',
+            '</div>',
 
-                '<div class="warhub-card warhub-col">',
-                    '<label class="warhub-label" for="warhub-terms-text">War terms</label>',
-                    '<textarea id="warhub-terms-text" class="warhub-textarea" placeholder="Write war terms here...">' + esc(termsText) + '</textarea>',
-                    '<div class="warhub-row">',
-                        '<button type="button" class="warhub-btn" data-action="terms-save">Save</button>',
-                        '<button type="button" class="warhub-btn gray" data-action="terms-clear">Delete</button>',
-                    '</div>',
+            '<div class="warhub-card warhub-col">',
+                '<label class="warhub-label" for="warhub-summary-text">War summary / improvements</label>',
+                '<textarea id="warhub-summary-text" class="warhub-textarea" placeholder="Write war summary and improvements here...">' + esc(summaryText) + '</textarea>',
+                '<div class="warhub-row">',
+                    '<button type="button" class="warhub-btn" data-action="summary-notes-save">Save</button>',
+                    '<button type="button" class="warhub-btn gray" data-action="summary-notes-clear">Delete</button>',
                 '</div>',
-
-                '<div class="warhub-card warhub-col">',
-                    '<label class="warhub-label" for="warhub-summary-text">War summary / improvements</label>',
-                    '<textarea id="warhub-summary-text" class="warhub-textarea" placeholder="Write war summary and improvements here...">' + esc(summaryText) + '</textarea>',
-                    '<div class="warhub-row">',
-                        '<button type="button" class="warhub-btn" data-action="summary-notes-save">Save</button>',
-                        '<button type="button" class="warhub-btn gray" data-action="summary-notes-clear">Delete</button>',
-                    '</div>',
-                '</div>',
-            '</div>'
-        ].join('');
-    }
-
+            '</div>',
+        '</div>'
+    ].join('');
+}
     function renderSummaryTab() {
         var summary = liveSummaryCache || {};
         var cards = arr(summary.cards);
