@@ -1189,3 +1189,15 @@ def get_faction_license_for_member(member_user_id: str) -> Optional[Dict[str, An
     if not faction_id:
         return None
     return compute_faction_license_status(faction_id, viewer_user_id=member_user_id)
+
+def delete_faction_terms_summary(faction_id: str):
+    faction_id = _clean_text(faction_id)
+    if not faction_id:
+        return
+
+    con = _con()
+    cur = con.cursor()
+    cur.execute("DELETE FROM faction_terms_summary WHERE faction_id = ?", (faction_id,))
+    con.commit()
+    con.close()
+
