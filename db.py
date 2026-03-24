@@ -246,6 +246,19 @@ def init_db():
         )
         """
     )
+        cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS faction_terms_summary (
+            faction_id TEXT PRIMARY KEY,
+            faction_name TEXT DEFAULT '',
+            text TEXT DEFAULT '',
+            updated_by_user_id TEXT DEFAULT '',
+            updated_by_name TEXT DEFAULT '',
+            created_at TEXT DEFAULT '',
+            updated_at TEXT DEFAULT ''
+        )
+        """
+    )
 
     cur.execute(
         """
@@ -1091,6 +1104,80 @@ def get_faction_admin_dashboard_summary() -> Dict[str, Any]:
         "faction_exemptions_total": faction_exemptions_total,
         "user_exemptions_total": user_exemptions_total,
     }
+# -----------------------------
+# faction shared notes
+# -----------------------------
+
+def get_faction_terms_summary(faction_id: str) -> Optional[Dict[str, Any]]:
+    faction_id = _clean_text(faction_id)
+    if not faction_id:
+        return None
+
+    con = _con()
+    cur = con.cursor()
+    cur.execute(
+        "SELECT * FROM faction_terms_summary WHERE faction_id = ? LIMIT 1",
+        (faction_id,)
+    )
+    row = cur.fetchone()
+    con.close()
+    return _row_to_dict(row)
+
+
+def upsert_faction_terms_summary(
+    faction_id: str,
+    faction_name: str = "",
+    text: str = "",
+    updated_by_user_id: str = "",
+    updated_by_name: str = "",
+) -> Dict[str, Any]:
+    faction_id = _clean_text(faction_id)
+    if not faction_id:
+        return {}
+
+    now = _utc_now()
+    con = _con()
+    cur = con.cursor()
+    cur.execute(
+        """
+        INSERT INTO faction_terms_summary (
+            faction_id,
+            faction_name,
+            text,
+            updated_by_user_id,
+            updated_by_name,
+            created_at,
+            updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(faction_id) DO UPDATE SET
+            faction_name = excluded.faction_name,
+            text = excluded.text,
+            updated_by_user_id = excluded.updated_by_user_id,
+            updated_by_name = excluded.updated_by_name,
+            updated_at = excluded.updated_at
+        """,
+        (
+            faction_id,
+            _clean_text(faction_name),
+            str(text or ""),
+            _clean_text(updated_by_user_id),
+            _clean_text(updated_by_name),
+            now,
+            now,
+        ),
+    )
+    con.commit()
+    con.close()
+
+    add_audit_log(
+        _clean_text(updated_by_user_id),
+        _clean_text(updated_by_name),
+        "faction_terms_summary_saved",
+        f"faction_id={faction_id}"
+    )
+
+    return get_faction_terms_summary(faction_id) or {}
 
 
 def get_faction_license_for_member(member_user_id: str) -> Optional[Dict[str, Any]]:
