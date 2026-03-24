@@ -486,6 +486,35 @@ def _build_live_faction_members(user: Dict[str, Any]) -> List[Dict[str, Any]]:
     return out
 
 
+def _enemy_bucket_order() -> List[str]:
+    return ["online", "idle", "travel", "jail", "hospital", "offline"]
+
+
+def _empty_enemy_buckets() -> Dict[str, List[Dict[str, Any]]]:
+    return {key: [] for key in _enemy_bucket_order()}
+
+
+def _group_enemy_members(enemies: List[Dict[str, Any]]) -> Dict[str, Any]:
+    buckets = _empty_enemy_buckets()
+
+    for enemy in list(enemies or []):
+        state = str(enemy.get("online_state") or "").strip().lower()
+        if state not in buckets:
+            state = "offline"
+        buckets[state].append(enemy)
+
+    for key in buckets:
+        buckets[key].sort(key=lambda x: (str(x.get("name") or "").lower(), str(x.get("user_id") or "")))
+
+    counts = {key: len(buckets.get(key) or []) for key in _enemy_bucket_order()}
+
+    return {
+        "buckets": buckets,
+        "counts": counts,
+        "order": _enemy_bucket_order(),
+        "total": sum(counts.values()),
+    }
+
 
 def _build_enemy_member_payload(member: Dict[str, Any], enemy_faction_id: str, enemy_faction_name: str) -> Dict[str, Any]:
     member_user_id = str(member.get("user_id") or "").strip()
@@ -523,11 +552,23 @@ def _build_war_and_enemy_payload(user: Dict[str, Any]) -> Dict[str, Any]:
 
     enemies.sort(key=lambda x: (str(x.get("name") or "").lower(), str(x.get("user_id") or "")))
 
+    grouped = _group_enemy_members(enemies)
+
     war["enemy_faction_id"] = enemy_faction_id
     war["enemy_faction_name"] = enemy_faction_name
     war["enemy_members_count"] = len(enemies)
     war["enemy_members"] = enemies
-    return {"war": war, "enemies": enemies}
+    war["enemy_buckets"] = grouped.get("buckets") or _empty_enemy_buckets()
+    war["enemy_bucket_counts"] = grouped.get("counts") or {key: 0 for key in _enemy_bucket_order()}
+
+    return {
+        "war": war,
+        "enemies": enemies,
+        "enemy_buckets": grouped.get("buckets") or _empty_enemy_buckets(),
+        "enemy_bucket_counts": grouped.get("counts") or {key: 0 for key in _enemy_bucket_order()},
+        "enemy_bucket_order": grouped.get("order") or _enemy_bucket_order(),
+        "enemy_total": grouped.get("total") or 0,
+    }
 
 
 def _build_state_payload(user: Dict[str, Any]) -> Dict[str, Any]:
@@ -538,7 +579,14 @@ def _build_state_payload(user: Dict[str, Any]) -> Dict[str, Any]:
         ensure_faction_license_row(faction_id=faction_id, faction_name=faction_name)
     access = _feature_access_for_user(user)
     members = _build_live_faction_members(user)
-    war_payload = _build_war_and_enemy_payload(user) if faction_id else {"war": {}, "enemies": []}
+    war_payload = _build_war_and_enemy_payload(user) if faction_id else {
+        "war": {},
+        "enemies": [],
+        "enemy_buckets": _empty_enemy_buckets(),
+        "enemy_bucket_counts": {key: 0 for key in _enemy_bucket_order()},
+        "enemy_bucket_order": _enemy_bucket_order(),
+        "enemy_total": 0,
+    }
     notifications = list_notifications(str(user.get("user_id") or ""), limit=25)
 
     return {
@@ -557,6 +605,9 @@ def _build_state_payload(user: Dict[str, Any]) -> Dict[str, Any]:
         "members": members,
         "war": war_payload.get("war") or {},
         "enemies": war_payload.get("enemies") or [],
+        "enemies_by_state": war_payload.get("enemy_buckets") or _empty_enemy_buckets(),
+        "enemy_bucket_counts": war_payload.get("enemy_bucket_counts") or {key: 0 for key in _enemy_bucket_order()},
+        "enemy_bucket_order": war_payload.get("enemy_bucket_order") or _enemy_bucket_order(),
         "notifications": notifications,
         "access": access,
         "license": access.get("license") or {},
@@ -702,12 +753,26 @@ def api_war():
     user = request.user or {}
     faction_id = str(user.get("faction_id") or "").strip()
     if not faction_id:
-        return ok(war=ranked_war_summary(str(user.get("api_key") or ""), my_faction_id="", my_faction_name=""), enemies=[], count=0)
+        return ok(
+            war=ranked_war_summary(str(user.get("api_key") or ""), my_faction_id="", my_faction_name=""),
+            enemies=[],
+            enemy_buckets=_empty_enemy_buckets(),
+            enemy_bucket_counts={key: 0 for key in _enemy_bucket_order()},
+            enemy_bucket_order=_enemy_bucket_order(),
+            count=0,
+        )
     access_error = _require_feature_access()
     if access_error:
         return access_error
     payload = _build_war_and_enemy_payload(user)
-    return ok(war=payload.get("war") or {}, enemies=payload.get("enemies") or [], count=len(payload.get("enemies") or []))
+    return ok(
+        war=payload.get("war") or {},
+        enemies=payload.get("enemies") or [],
+        enemy_buckets=payload.get("enemy_buckets") or _empty_enemy_buckets(),
+        enemy_bucket_counts=payload.get("enemy_bucket_counts") or {key: 0 for key in _enemy_bucket_order()},
+        enemy_bucket_order=payload.get("enemy_bucket_order") or _enemy_bucket_order(),
+        count=len(payload.get("enemies") or []),
+    )
 
 
 @app.route("/api/enemies", methods=["GET"])
@@ -716,7 +781,16 @@ def api_enemies():
     user = request.user or {}
     faction_id = str(user.get("faction_id") or "").strip()
     if not faction_id:
-        return ok(items=[], count=0, faction_id="", faction_name="")
+        return ok(
+            items=[],
+            count=0,
+            faction_id="",
+            faction_name="",
+            buckets=_empty_enemy_buckets(),
+            counts_by_state={key: 0 for key in _enemy_bucket_order()},
+            order=_enemy_bucket_order(),
+            war={},
+        )
     access_error = _require_feature_access()
     if access_error:
         return access_error
@@ -728,6 +802,9 @@ def api_enemies():
         count=len(enemies),
         faction_id=str(war.get("enemy_faction_id") or ""),
         faction_name=str(war.get("enemy_faction_name") or ""),
+        buckets=payload.get("enemy_buckets") or _empty_enemy_buckets(),
+        counts_by_state=payload.get("enemy_bucket_counts") or {key: 0 for key in _enemy_bucket_order()},
+        order=payload.get("enemy_bucket_order") or _enemy_bucket_order(),
         war=war,
     )
 
