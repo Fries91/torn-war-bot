@@ -2173,27 +2173,39 @@ if (window.visualViewport) {
     }
 
     function renderEnemyRow(member) {
-        var id = getMemberId(member);
-        var name = getMemberName(member);
-        var st = stateLabel(member);
-        var spy = spyText(member);
+    var id = getMemberId(member);
+    var name = getMemberName(member);
+    var st = stateLabel(member);
+    var spy = spyText(member);
 
-        return [
-            '<div class="warhub-member-row">',
-                '<div class="warhub-member-main">',
-                    '<div class="warhub-row">',
-                        '<a class="warhub-member-name" href="' + esc(profileUrl(member)) + '" target="_blank" rel="noopener noreferrer">' + esc(name) + '</a>',
-                        id ? '<span class="warhub-pill neutral">#' + esc(id) + '</span>' : '',
-                        '<span class="warhub-pill ' + esc(st) + '">' + esc(humanStateLabel(st)) + '</span>',
-                    '</div>',
-                    '<div class="warhub-row">',
-                        '<a class="warhub-btn" href="' + esc(attackUrl(member)) + '" target="_blank" rel="noopener noreferrer">Attack</a>',
-                    '</div>',
+    var profile = profileUrl(member);
+    var attack = attackUrl(member);
+    var bounty = bountyUrl(member);
+
+    return [
+        '<div class="warhub-member-row">',
+            '<div class="warhub-member-main">',
+                '<div class="warhub-row">',
+                    '<a class="warhub-member-name" href="' + esc(profile) + '" target="_blank" rel="noopener noreferrer">' + esc(name) + '</a>',
+                    '<span class="warhub-pill ' + esc(st) + '">' + esc(humanStateLabel(st)) + '</span>',
                 '</div>',
-                spy ? '<div class="warhub-spy-box">' + esc(spy) + '</div>' : '',
-            '</div>'
-        ].join('');
-    }
+
+                '<div class="warhub-row warhub-row-sub">',
+                    id ? '<span class="warhub-mini">#' + esc(id) + '</span>' : '',
+                    member && member.level ? '<span class="warhub-mini">Lvl ' + esc(member.level) + '</span>' : '',
+                    member && member.last_action ? '<span class="warhub-mini">' + esc(member.last_action) + '</span>' : '',
+                '</div>',
+
+                '<div class="warhub-row">',
+                    '<a class="warhub-btn" href="' + esc(attack) + '" target="_blank" rel="noopener noreferrer">Attack</a>',
+                    '<a class="warhub-btn ghost" href="' + esc(profile) + '" target="_blank" rel="noopener noreferrer">Profile</a>',
+                    '<a class="warhub-btn ghost" href="' + esc(bounty) + '" target="_blank" rel="noopener noreferrer">Bounty</a>',
+                '</div>',
+            '</div>',
+            spy ? '<div class="warhub-spy-box">' + esc(spy) + '</div>' : '',
+        '</div>'
+    ].join('');
+}
 
     // ============================================================
     // 18. TAB RENDERS: LOGIN / OVERVIEW / MEMBERS / ENEMIES
@@ -2361,51 +2373,147 @@ function renderOverviewTab() {
     }
 
     function renderEnemiesTab() {
-        var enemies = arr((state && state.enemies) || warEnemiesCache || []);
-        var war = (state && state.war) || {};
-        var enemyFactionName = String(war.enemy_faction_name || warEnemiesFactionName || 'Enemy Faction');
-        var search = String(GM_getValue('warhub_enemies_search', '') || '').trim().toLowerCase();
+    var war = (state && state.war) || {};
+    var enemyFactionName = String(war.enemy_faction_name || warEnemiesFactionName || 'Enemy Faction');
+    var enemyFactionId = String(war.enemy_faction_id || warEnemiesFactionId || '');
 
-        var filtered = enemies.filter(function (m) {
-            if (!search) return true;
+    var search = String(GM_getValue('warhub_enemies_search', '') || '').trim().toLowerCase();
+
+    var backendBuckets =
+        (state && state.enemies_by_state) ||
+        (state && state.enemy_buckets) ||
+        (state && state.enemiesBuckets) ||
+        {};
+
+    var backendCounts =
+        (state && state.enemy_bucket_counts) ||
+        (state && state.counts_by_state) ||
+        {};
+
+    var backendOrder =
+        (state && state.enemy_bucket_order) ||
+        (state && state.enemyBucketOrder) ||
+        ['online', 'idle', 'travel', 'jail', 'hospital', 'offline'];
+
+    var buckets = {
+        online: arr(backendBuckets.online),
+        idle: arr(backendBuckets.idle),
+        travel: arr(backendBuckets.travel),
+        jail: arr(backendBuckets.jail),
+        hospital: arr(backendBuckets.hospital),
+        offline: arr(backendBuckets.offline)
+    };
+
+    if (
+        !buckets.online.length &&
+        !buckets.idle.length &&
+        !buckets.travel.length &&
+        !buckets.jail.length &&
+        !buckets.hospital.length &&
+        !buckets.offline.length
+    ) {
+        var fallbackEnemies = arr((state && state.enemies) || warEnemiesCache || []);
+        var fallbackGrouped = groupMembers(fallbackEnemies);
+        buckets.online = arr(fallbackGrouped.online);
+        buckets.idle = arr(fallbackGrouped.idle);
+        buckets.travel = arr(fallbackGrouped.travel);
+        buckets.jail = arr(fallbackGrouped.jail);
+        buckets.hospital = arr(fallbackGrouped.hospital);
+        buckets.offline = arr(fallbackGrouped.offline);
+    }
+
+    function filterBucket(items) {
+        items = arr(items);
+        if (!search) return items;
+        return items.filter(function (m) {
             return memberSearchText(m).indexOf(search) >= 0;
         });
-
-        var grouped = groupMembers(filtered);
-
-        return [
-            '<div class="warhub-grid">',
-                '<div class="warhub-hero-card">',
-                    '<div class="warhub-title">Enemies</div>',
-                    '<div class="warhub-sub">' + esc(enemyFactionName) + '</div>',
-                '</div>',
-
-                '<div class="warhub-card">',
-                    '<div class="warhub-kv"><div>Enemy faction</div><div>' + esc(enemyFactionName) + '</div></div>',
-                    '<div class="warhub-kv"><div>Enemy faction ID</div><div>' + esc(String(war.enemy_faction_id || warEnemiesFactionId || '—')) + '</div></div>',
-                    '<div class="warhub-kv"><div>Loaded members</div><div>' + esc(String(filtered.length)) + '</div></div>',
-                '</div>',
-
-                '<div class="warhub-card">',
-                    '<div class="warhub-row">',
-                        '<input id="warhub-enemies-search" class="warhub-input" type="text" value="' + esc(search) + '" placeholder="Search enemy name or ID" />',
-                        '<button type="button" class="warhub-btn ghost" data-action="enemies-refresh">Refresh</button>',
-                    '</div>',
-                '</div>',
-
-                enemies.length ? [
-                    '<div class="warhub-grid">',
-                        renderGroupBlock('enemies_online', grouped.online, renderEnemyRow, true),
-                        renderGroupBlock('enemies_idle', grouped.idle, renderEnemyRow, true),
-                        renderGroupBlock('enemies_travel', grouped.travel, renderEnemyRow, false),
-                        renderGroupBlock('enemies_jail', grouped.jail, renderEnemyRow, false),
-                        renderGroupBlock('enemies_hospital', grouped.hospital, renderEnemyRow, true),
-                        renderGroupBlock('enemies_offline', grouped.offline, renderEnemyRow, false),
-                    '</div>'
-                ].join('') : '<div class="warhub-card">No enemy members loaded from the current war.</div>',
-            '</div>'
-        ].join('');
     }
+
+    var filteredBuckets = {
+        online: filterBucket(buckets.online),
+        idle: filterBucket(buckets.idle),
+        travel: filterBucket(buckets.travel),
+        jail: filterBucket(buckets.jail),
+        hospital: filterBucket(buckets.hospital),
+        offline: filterBucket(buckets.offline)
+    };
+
+    var totalFiltered =
+        filteredBuckets.online.length +
+        filteredBuckets.idle.length +
+        filteredBuckets.travel.length +
+        filteredBuckets.jail.length +
+        filteredBuckets.hospital.length +
+        filteredBuckets.offline.length;
+
+    var totalLoaded =
+        arr(buckets.online).length +
+        arr(buckets.idle).length +
+        arr(buckets.travel).length +
+        arr(buckets.jail).length +
+        arr(buckets.hospital).length +
+        arr(buckets.offline).length;
+
+    function countFor(key) {
+        if (search) return arr(filteredBuckets[key]).length;
+        return Number(backendCounts && backendCounts[key] != null ? backendCounts[key] : arr(buckets[key]).length);
+    }
+
+    var groupHtml = [];
+    backendOrder.forEach(function (key) {
+        var items = filteredBuckets[key];
+        if (!items) return;
+
+        if (key === 'online') {
+            groupHtml.push(renderGroupBlock('enemies_online', items, renderEnemyRow, true));
+        } else if (key === 'idle') {
+            groupHtml.push(renderGroupBlock('enemies_idle', items, renderEnemyRow, true));
+        } else if (key === 'travel') {
+            groupHtml.push(renderGroupBlock('enemies_travel', items, renderEnemyRow, false));
+        } else if (key === 'jail') {
+            groupHtml.push(renderGroupBlock('enemies_jail', items, renderEnemyRow, false));
+        } else if (key === 'hospital') {
+            groupHtml.push(renderGroupBlock('enemies_hospital', items, renderEnemyRow, true));
+        } else if (key === 'offline') {
+            groupHtml.push(renderGroupBlock('enemies_offline', items, renderEnemyRow, false));
+        }
+    });
+
+    return [
+        '<div class="warhub-grid">',
+            '<div class="warhub-hero-card">',
+                '<div class="warhub-title">Enemies</div>',
+                '<div class="warhub-sub">' + esc(enemyFactionName) + '</div>',
+            '</div>',
+
+            '<div class="warhub-card">',
+                '<div class="warhub-kv"><div>Enemy faction</div><div>' + esc(enemyFactionName) + '</div></div>',
+                '<div class="warhub-kv"><div>Enemy faction ID</div><div>' + esc(enemyFactionId || '—') + '</div></div>',
+                '<div class="warhub-kv"><div>Loaded members</div><div>' + esc(String(totalLoaded)) + '</div></div>',
+                '<div class="warhub-kv"><div>Online</div><div>' + esc(String(countFor('online'))) + '</div></div>',
+                '<div class="warhub-kv"><div>Idle</div><div>' + esc(String(countFor('idle'))) + '</div></div>',
+                '<div class="warhub-kv"><div>Travel</div><div>' + esc(String(countFor('travel'))) + '</div></div>',
+                '<div class="warhub-kv"><div>Jail</div><div>' + esc(String(countFor('jail'))) + '</div></div>',
+                '<div class="warhub-kv"><div>Hospital</div><div>' + esc(String(countFor('hospital'))) + '</div></div>',
+                '<div class="warhub-kv"><div>Offline</div><div>' + esc(String(countFor('offline'))) + '</div></div>',
+            '</div>',
+
+            '<div class="warhub-card">',
+                '<div class="warhub-row">',
+                    '<input id="warhub-enemies-search" class="warhub-input" type="text" value="' + esc(search) + '" placeholder="Search enemy name or ID" />',
+                    '<button type="button" class="warhub-btn ghost" data-action="enemies-refresh">Refresh</button>',
+                '</div>',
+            '</div>',
+
+            totalFiltered ? [
+                '<div class="warhub-grid">',
+                    groupHtml.join(''),
+                '</div>'
+            ].join('') : '<div class="warhub-card">No enemy members loaded from the current war.</div>',
+        '</div>'
+    ].join('');
+}
         // ============================================================
     // 19. TAB RENDERS: HOSPITAL / CHAIN / TARGETS / MED DEALS / TERMS / SUMMARY
     // ============================================================
