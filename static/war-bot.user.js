@@ -3540,4 +3540,5 @@ function renderAdminTab() {
         }
     }
 
-    boot();
+        boot();
+})();
