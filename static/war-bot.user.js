@@ -2297,7 +2297,7 @@ function renderOverviewTab() {
 
     function previewText(text, emptyText, maxLen) {
         var value = String(text || '').trim();
-        var limit = Number(maxLen || 100);
+        var limit = Number(maxLen || 96);
         if (!value) return emptyText;
         return value.length > limit ? esc(value.slice(0, limit)) + '...' : esc(value);
     }
@@ -2369,17 +2369,13 @@ function renderOverviewTab() {
             '<div class="warhub-mini-grid">',
                 '<div class="warhub-card warhub-overview-link-card terms">',
                     '<h3>📜 Terms</h3>',
-                    '<div class="warhub-spy-box">' + previewText(termsText, 'No war terms saved yet.', 110) + '</div>',
-                    '<div class="warhub-row">',
-                        '<span class="warhub-pill neutral">Saved Notes</span>',
-                    '</div>',
+                    '<div class="warhub-spy-box">' + previewText(termsText, 'No war terms saved yet.', 96) + '</div>',
                 '</div>',
 
                 '<div class="warhub-card warhub-overview-link-card meddeals">',
                     '<h3>🤝 Med Deals</h3>',
-                    '<div class="warhub-spy-box">' + previewText(medPreview, 'No med deals saved.', 110) + '</div>',
+                    '<div class="warhub-spy-box">' + previewText(medPreview, 'No med deals saved.', 96) + '</div>',
                     '<div class="warhub-row">',
-                        '<span class="warhub-pill good">Saved ' + esc(String(medDeals.length)) + '</span>',
                         '<button type="button" class="warhub-btn ghost" data-tab="meddeals">Open</button>',
                     '</div>',
                 '</div>',
@@ -2387,7 +2383,7 @@ function renderOverviewTab() {
 
             '<div class="warhub-card warhub-overview-link-card dibs">',
                 '<h3>🎯 Dibs</h3>',
-                '<div class="warhub-spy-box">' + previewText(dibsPreview, 'No hospital enemies right now.', 110) + '</div>',
+                '<div class="warhub-spy-box">' + previewText(dibsPreview, 'No hospital enemies right now.', 96) + '</div>',
                 '<div class="warhub-row">',
                     '<span class="warhub-pill bad">Hospital ' + esc(String(hospitalEnemies.length)) + '</span>',
                     '<button type="button" class="warhub-btn ghost" data-tab="hospital">Open</button>',
@@ -2397,7 +2393,6 @@ function renderOverviewTab() {
         '</div>'
     ].join('');
 }
-
     function renderMembersTab() {
     var members = arr((state && state.members) || currentFactionMembers || factionMembersCache || []);
     var search = String(GM_getValue('warhub_members_search', '') || '').trim().toLowerCase();
