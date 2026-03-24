@@ -2297,7 +2297,7 @@ function energyText(member) {
 
     function previewText(text, emptyText, maxLen) {
         var value = String(text || '').trim();
-        var limit = Number(maxLen || 140);
+        var limit = Number(maxLen || 100);
         if (!value) return emptyText;
         return value.length > limit ? esc(value.slice(0, limit)) + '...' : esc(value);
     }
@@ -2314,15 +2314,25 @@ function energyText(member) {
     var medPreview = 'No med deals saved.';
     if (medDeals.length) {
         var firstDeal = medDeals[0] || {};
-        var who = String(firstDeal.name || firstDeal.user || firstDeal.member_name || 'Entry');
-        var amount = String(firstDeal.amount || firstDeal.cost || firstDeal.price || '').trim();
-        medPreview = amount ? who + ' — ' + amount : who;
+        var who = String(
+            firstDeal.name ||
+            firstDeal.user ||
+            firstDeal.member_name ||
+            'Entry'
+        );
+        var amount = String(
+            firstDeal.amount ||
+            firstDeal.cost ||
+            firstDeal.price ||
+            ''
+        ).trim();
+        medPreview = amount ? (who + ' — ' + amount) : who;
     }
 
     var dibsPreview = 'No hospital enemies right now.';
     if (hospitalEnemies.length) {
         var firstEnemy = hospitalEnemies[0] || {};
-        dibsPreview = String(firstEnemy.name || 'Enemy') + ' is in hospital.';
+        dibsPreview = String(firstEnemy.name || 'Enemy') + ' in hospital';
     }
 
     return [
@@ -2358,34 +2368,35 @@ function energyText(member) {
 
             '<div class="warhub-mini-grid">',
                 '<div class="warhub-card warhub-overview-link-card terms">',
-                    '<h3>Terms</h3>',
-                    '<div class="warhub-spy-box">' + previewText(termsText, 'No war terms saved yet.', 180) + '</div>',
+                    '<h3>📜 Terms</h3>',
+                    '<div class="warhub-spy-box">' + previewText(termsText, 'No war terms saved yet.', 110) + '</div>',
                     '<div class="warhub-row">',
-                        '<button type="button" class="warhub-btn ghost" data-tab="terms">Open Terms</button>',
+                        '<span class="warhub-pill neutral">Saved Notes</span>',
                     '</div>',
                 '</div>',
 
                 '<div class="warhub-card warhub-overview-link-card meddeals">',
-                    '<h3>Med Deals</h3>',
-                    '<div class="warhub-spy-box">' + previewText(medPreview, 'No med deals saved.', 180) + '</div>',
+                    '<h3>🤝 Med Deals</h3>',
+                    '<div class="warhub-spy-box">' + previewText(medPreview, 'No med deals saved.', 110) + '</div>',
                     '<div class="warhub-row">',
                         '<span class="warhub-pill good">Saved ' + esc(String(medDeals.length)) + '</span>',
-                        '<button type="button" class="warhub-btn ghost" data-tab="meddeals">Open Med Deals</button>',
+                        '<button type="button" class="warhub-btn ghost" data-tab="meddeals">Open</button>',
                     '</div>',
                 '</div>',
             '</div>',
 
             '<div class="warhub-card warhub-overview-link-card dibs">',
-                '<h3>Dibs</h3>',
-                '<div class="warhub-spy-box">' + previewText(dibsPreview, 'No hospital enemies right now.', 180) + '</div>',
+                '<h3>🎯 Dibs</h3>',
+                '<div class="warhub-spy-box">' + previewText(dibsPreview, 'No hospital enemies right now.', 110) + '</div>',
                 '<div class="warhub-row">',
                     '<span class="warhub-pill bad">Hospital ' + esc(String(hospitalEnemies.length)) + '</span>',
-                    '<button type="button" class="warhub-btn ghost" data-tab="hospital">Open Dibs</button>',
+                    '<button type="button" class="warhub-btn ghost" data-tab="hospital">Open</button>',
                 '</div>',
             '</div>',
 
         '</div>'
     ].join('');
+}
 }
     function renderMembersTab() {
     var members = arr((state && state.members) || currentFactionMembers || factionMembersCache || []);
