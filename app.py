@@ -840,6 +840,8 @@ def api_war():
 def api_enemies():
     user = request.user or {}
     faction_id = str(user.get("faction_id") or "").strip()
+    faction_name = str(user.get("faction_name") or "").strip()
+
     if not faction_id:
         return ok(
             items=[],
@@ -851,20 +853,70 @@ def api_enemies():
             order=_enemy_bucket_order(),
             war={},
         )
+
     access_error = _require_feature_access()
     if access_error:
         return access_error
+
     payload = _build_war_and_enemy_payload(user)
     war = payload.get("war") or {}
-    enemies = payload.get("enemies") or []
+    enemies = list(payload.get("enemies") or [])
+
+    enemy_faction_id = str(war.get("enemy_faction_id") or "").strip()
+    enemy_faction_name = str(war.get("enemy_faction_name") or "").strip()
+
+    same_faction = False
+    if enemy_faction_id and faction_id and enemy_faction_id == faction_id:
+        same_faction = True
+    if enemy_faction_name and faction_name and enemy_faction_name.strip().lower() == faction_name.strip().lower():
+        same_faction = True
+
+    own_member_ids = set()
+    try:
+        own_faction = faction_basic(str(user.get("api_key") or "").strip(), faction_id=faction_id) or {}
+        for member in list(own_faction.get("members") or []):
+            member_user_id = str(member.get("user_id") or "").strip()
+            if member_user_id:
+                own_member_ids.add(member_user_id)
+    except Exception:
+        own_member_ids = set()
+
+    filtered_enemies = []
+    seen_enemy_ids = set()
+
+    for member in enemies:
+        member_user_id = str(member.get("user_id") or "").strip()
+        if not member_user_id:
+            continue
+        if member_user_id in own_member_ids:
+            continue
+        if member_user_id in seen_enemy_ids:
+            continue
+        seen_enemy_ids.add(member_user_id)
+        filtered_enemies.append(member)
+
+    if same_faction:
+        enemy_faction_id = ""
+        enemy_faction_name = ""
+        filtered_enemies = []
+
+    grouped = _group_enemy_members(filtered_enemies)
+
+    war["enemy_faction_id"] = enemy_faction_id
+    war["enemy_faction_name"] = enemy_faction_name
+    war["enemy_members"] = filtered_enemies
+    war["enemy_members_count"] = len(filtered_enemies)
+    war["enemy_buckets"] = grouped.get("buckets") or _empty_enemy_buckets()
+    war["enemy_bucket_counts"] = grouped.get("counts") or {key: 0 for key in _enemy_bucket_order()}
+
     return ok(
-        items=enemies,
-        count=len(enemies),
-        faction_id=str(war.get("enemy_faction_id") or ""),
-        faction_name=str(war.get("enemy_faction_name") or ""),
-        buckets=payload.get("enemy_buckets") or _empty_enemy_buckets(),
-        counts_by_state=payload.get("enemy_bucket_counts") or {key: 0 for key in _enemy_bucket_order()},
-        order=payload.get("enemy_bucket_order") or _enemy_bucket_order(),
+        items=filtered_enemies,
+        count=len(filtered_enemies),
+        faction_id=enemy_faction_id,
+        faction_name=enemy_faction_name,
+        buckets=grouped.get("buckets") or _empty_enemy_buckets(),
+        counts_by_state=grouped.get("counts") or {key: 0 for key in _enemy_bucket_order()},
+        order=grouped.get("order") or _enemy_bucket_order(),
         war=war,
     )
 
