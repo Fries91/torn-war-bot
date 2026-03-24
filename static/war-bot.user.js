@@ -174,11 +174,11 @@ var css = "\n\
   position: fixed !important;\n\
   z-index: 2147483646 !important;\n\
   right: 12px !important;\n\
-  top: 170px !important;\n\
+  top: 12px !important;\n\
   width: min(96vw, 520px) !important;\n\
-  height: min(88vh, 900px) !important;\n\
-  max-height: 88vh !important;\n\
-  min-height: 420px !important;\n\
+  height: auto !important;\n\
+  max-height: calc(100dvh - 24px) !important;\n\
+  min-height: 320px !important;\n\
   overflow: hidden !important;\n\
   border-radius: 14px !important;\n\
   background: linear-gradient(180deg, #171717, #0c0c0c) !important;\n\
@@ -644,8 +644,11 @@ var css = "\n\
 @media (max-width: 520px) {\n\
   #warhub-overlay {\n\
     width: min(98vw, 520px) !important;\n\
+    left: 1vw !important;\n\
     right: 1vw !important;\n\
-    top: 160px !important;\n\
+    top: 8px !important;\n\
+    max-height: calc(100dvh - 16px) !important;\n\
+    min-height: 0 !important;\n\
   }\n\
   .warhub-mini-grid {\n\
     grid-template-columns: 1fr !important;\n\
@@ -1154,13 +1157,13 @@ function applyOverlayPos() {
 
     var vp = getViewport();
     var fallback = {
-        left: Math.max(6, vp.w - Math.min(vp.w * 0.96, 520) - 12),
-        top: 170
+        left: Math.max(4, vp.w - Math.min(vp.w * 0.96, 520) - 8),
+        top: 8
     };
     var pos = loadPos(K_OVERLAY_POS, fallback);
 
     var width = overlay.offsetWidth || Math.min(vp.w * 0.96, 520);
-    var height = overlay.offsetHeight || Math.min(vp.h * 0.88, 900);
+    var height = overlay.offsetHeight || Math.min(vp.h - 16, 900);
 
     var left = clamp(pos.left, 4, Math.max(4, vp.w - width - 4));
     var top = clamp(pos.top, 4, Math.max(4, vp.h - height - 4));
@@ -1273,14 +1276,17 @@ function makeDraggable(handle, target, key, options) {
 
         var t = e.touches[0];
         onStart(t.clientX, t.clientY);
-    }, { passive: true });
+        e.preventDefault();
+    }, { passive: false });
 
     document.addEventListener('touchmove', function (e) {
+        if (!dragging) return;
         if (!e.touches || !e.touches.length) return;
 
         var t = e.touches[0];
         onMove(t.clientX, t.clientY);
-    }, { passive: true });
+        e.preventDefault();
+    }, { passive: false });
 
     document.addEventListener('touchend', function () {
         onEnd();
