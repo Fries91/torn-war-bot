@@ -1151,24 +1151,25 @@ function makeHoldDraggable(handle, target, key) {
     }
 
     function beginPress(clientX, clientY) {
-        moved = false;
-        dragging = false;
-        pressActive = true;
-        startX = clientX;
-        startY = clientY;
+    moved = false;
+    dragging = false;
+    pressActive = true;
+    startX = clientX;
+    startY = clientY;
 
-        var rect = target.getBoundingClientRect();
-        startLeft = rect.left;
-        startTop = rect.top;
+    var rect = target.getBoundingClientRect();
+    var vp = getViewport();
+    startLeft = rect.left + vp.left;
+    startTop = rect.top + vp.top;
 
-        clearPressTimer();
-        pressTimer = setTimeout(function () {
-            if (!pressActive) return;
-            dragging = true;
-            target.classList.add('dragging');
-            handle.classList.add('dragging');
-        }, HOLD_MS);
-    }
+    clearPressTimer();
+    pressTimer = setTimeout(function () {
+        if (!pressActive) return;
+        dragging = true;
+        target.classList.add('dragging');
+        handle.classList.add('dragging');
+    }, HOLD_MS);
+}
 
     function moveAt(clientX, clientY) {
         if (!pressActive) return;
