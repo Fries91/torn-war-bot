@@ -100,6 +100,7 @@
     var badge = null;
 
     var mounted = false;
+    var dragMoved = false;
     var isOpen = !!GM_getValue(K_OPEN, false);
     var currentTab = GM_getValue(K_TAB, 'settings');
     if (currentTab === 'owner') currentTab = 'admin';
@@ -115,6 +116,7 @@
     var lastStatusErr = false;
 
     var accessState = normalizeAccessCache(GM_getValue(K_ACCESS_CACHE, null));
+
     // ============================================================
     // 05. STYLES
     // ============================================================
@@ -123,13 +125,13 @@
 #warhub-shield {\n\
   position: fixed !important;\n\
   z-index: 2147483647 !important;\n\
-  width: 36px !important;\n\
-  height: 36px !important;\n\
-  border-radius: 10px !important;\n\
+  width: 42px !important;\n\
+  height: 42px !important;\n\
+  border-radius: 12px !important;\n\
   display: flex !important;\n\
   align-items: center !important;\n\
   justify-content: center !important;\n\
-  font-size: 17px !important;\n\
+  font-size: 21px !important;\n\
   line-height: 1 !important;\n\
   cursor: pointer !important;\n\
   user-select: none !important;\n\
@@ -137,8 +139,8 @@
   -webkit-touch-callout: none !important;\n\
   -webkit-tap-highlight-color: transparent !important;\n\
   touch-action: none !important;\n\
-  box-shadow: 0 8px 22px rgba(0,0,0,.42) !important;\n\
-  border: 1px solid rgba(255,255,255,.12) !important;\n\
+  box-shadow: 0 8px 24px rgba(0,0,0,.45) !important;\n\
+  border: 1px solid rgba(255,255,255,.10) !important;\n\
   background: radial-gradient(circle at 30% 20%, rgba(220,75,75,.98), rgba(110,12,12,.98) 55%, rgba(48,6,6,.98)) !important;\n\
   color: #fff !important;\n\
   left: auto !important;\n\
@@ -151,20 +153,19 @@
 }\n\
 #warhub-shield.dragging {\n\
   cursor: grabbing !important;\n\
-  transform: scale(1.03) !important;\n\
 }\n\
 \n\
 #warhub-badge {\n\
   position: fixed !important;\n\
   z-index: 2147483647 !important;\n\
-  min-width: 15px !important;\n\
-  height: 15px !important;\n\
+  min-width: 16px !important;\n\
+  height: 16px !important;\n\
   padding: 0 4px !important;\n\
   border-radius: 999px !important;\n\
   background: #ffd54a !important;\n\
   color: #111 !important;\n\
   font-size: 10px !important;\n\
-  line-height: 15px !important;\n\
+  line-height: 16px !important;\n\
   text-align: center !important;\n\
   font-weight: 800 !important;\n\
   box-shadow: 0 3px 12px rgba(0,0,0,.45) !important;\n\
@@ -209,6 +210,7 @@
   padding: 12px 12px 10px !important;\n\
   border-bottom: 1px solid rgba(255,255,255,.08) !important;\n\
   background: rgba(255,255,255,.03) !important;\n\
+  touch-action: none !important;\n\
 }\n\
 \n\
 .warhub-toprow {\n\
@@ -554,10 +556,10 @@
 .warhub-overview-link-card.dibs { border-color: rgba(220,90,90,.18) !important; }\n\
 @media (max-width: 520px) {\n\
   #warhub-shield {\n\
-    width: 34px !important;\n\
-    height: 34px !important;\n\
-    font-size: 16px !important;\n\
-    border-radius: 10px !important;\n\
+    width: 44px !important;\n\
+    height: 44px !important;\n\
+    font-size: 22px !important;\n\
+    border-radius: 12px !important;\n\
   }\n\
   #warhub-overlay {\n\
     left: 6px !important;\n\
@@ -586,7 +588,9 @@
   .warhub-body { padding: 10px !important; }\n\
 }\n\
 ";
+
     GM_addStyle(css);
+
     // ============================================================
     // 06. BASIC UTILITIES
     // ============================================================
@@ -997,14 +1001,9 @@
 
     function getViewport() {
         var de = document.documentElement || {};
-        var w = Math.max(de.clientWidth || 0, window.innerWidth || 0, 320);
-        var h = Math.max(de.clientHeight || 0, window.innerHeight || 0, 320);
-
         return {
-            w: Math.max(320, Math.round(w)),
-            h: Math.max(320, Math.round(h)),
-            left: 0,
-            top: 0
+            w: Math.max(de.clientWidth || 0, window.innerWidth || 0, 320),
+            h: Math.max(de.clientHeight || 0, window.innerHeight || 0, 320)
         };
     }
 
@@ -1048,34 +1047,24 @@
         if (!shield) return;
 
         var vp = getViewport();
-        var width = shield.offsetWidth || 36;
-        var height = shield.offsetHeight || 36;
-        var margin = 8;
+        var width = shield.offsetWidth || 42;
+        var height = shield.offsetHeight || 42;
 
         var fallback = {
-            left: Math.max(margin, vp.w - width - 12),
-            top: Math.max(margin, Math.round((vp.h - height) / 2))
+            left: Math.max(6, vp.w - width - 14),
+            top: Math.max(6, Math.round((vp.h - height) / 2))
         };
 
         var pos = loadPos(K_SHIELD_POS, fallback);
 
-        var minLeft = margin;
-        var maxLeft = Math.max(margin, vp.w - width - margin);
-        var minTop = margin;
-        var maxTop = Math.max(margin, vp.h - height - margin);
-
-        var left = clamp(pos.left, minLeft, maxLeft);
-        var top = clamp(pos.top, minTop, maxTop);
+        var left = clamp(pos.left, 6, Math.max(6, vp.w - width - 6));
+        var top = clamp(pos.top, 6, Math.max(6, vp.h - height - 6));
 
         shield.style.left = left + 'px';
         shield.style.top = top + 'px';
         shield.style.right = 'auto';
         shield.style.bottom = 'auto';
-        shield.style.display = 'flex';
-        shield.style.visibility = 'visible';
-        shield.style.opacity = '1';
 
-        savePos(K_SHIELD_POS, { left: left, top: top });
         positionBadge();
     }
 
@@ -1092,12 +1081,6 @@
         overlay.style.bottom = '6px';
         overlay.style.width = width + 'px';
         overlay.style.maxWidth = '520px';
-    }
-
-    function refreshFloatingUiPositions() {
-        applyShieldPos();
-        applyOverlayPos();
-        positionBadge();
     }
 
     function positionBadge() {
@@ -1124,7 +1107,7 @@
         var startY = 0;
         var startLeft = 0;
         var startTop = 0;
-        var HOLD_MS = 240;
+        var HOLD_MS = 260;
         var DRAG_THRESHOLD = 8;
 
         function clearPressTimer() {
@@ -1137,7 +1120,6 @@
         function resetPress() {
             clearPressTimer();
             pressActive = false;
-
             if (dragging) {
                 dragging = false;
                 target.classList.remove('dragging');
@@ -1153,9 +1135,8 @@
             startY = clientY;
 
             var rect = target.getBoundingClientRect();
-            var vp = getViewport();
-            startLeft = rect.left + vp.left;
-            startTop = rect.top + vp.top;
+            startLeft = rect.left;
+            startTop = rect.top;
 
             clearPressTimer();
             pressTimer = setTimeout(function () {
@@ -1183,17 +1164,11 @@
             moved = true;
 
             var vp = getViewport();
-            var width = target.offsetWidth || 36;
-            var height = target.offsetHeight || 36;
-            var margin = 8;
+            var width = target.offsetWidth || 42;
+            var height = target.offsetHeight || 42;
 
-            var minLeft = vp.left + margin;
-            var maxLeft = vp.left + Math.max(margin, vp.w - width - margin);
-            var minTop = vp.top + margin;
-            var maxTop = vp.top + Math.max(margin, vp.h - height - margin);
-
-            var left = clamp(startLeft + dx, minLeft, maxLeft);
-            var top = clamp(startTop + dy, minTop, maxTop);
+            var left = clamp(startLeft + dx, 6, Math.max(6, vp.w - width - 6));
+            var top = clamp(startTop + dy, 6, Math.max(6, vp.h - height - 6));
 
             target.style.left = left + 'px';
             target.style.top = top + 'px';
@@ -1217,7 +1192,7 @@
             if (wasDragging) {
                 setTimeout(function () {
                     moved = false;
-                }, 140);
+                }, 120);
                 return true;
             }
 
@@ -1267,6 +1242,7 @@
             }
         };
     }
+
     // ============================================================
     // 11. AUTH / LOGIN
     // ============================================================
@@ -1451,44 +1427,40 @@
     }
 
     function loadEnemies(force) {
-    return _loadEnemies.apply(this, arguments);
-}
+        return _loadEnemies.apply(this, arguments);
+    }
 
-function _loadEnemies() {
-    _loadEnemies = _asyncToGenerator(function* (force) {
-        if (!isLoggedIn()) return [];
+    function _loadEnemies() {
+        _loadEnemies = _asyncToGenerator(function* (force) {
+            if (!isLoggedIn()) return [];
 
-        if (!force && warEnemiesCache && warEnemiesCache.length && (Date.now() - warEnemiesLoadedAt) < 15000) {
+            if (!force && warEnemiesCache && warEnemiesCache.length && (Date.now() - warEnemiesLoadedAt) < 15000) {
+                return warEnemiesCache;
+            }
+
+            var res = yield authedReq('GET', '/api/enemies');
+            if (!res.ok || !res.json) return warEnemiesCache || [];
+
+            var payload = res.json || {};
+            var enemies = arr(payload.enemies);
+
+            warEnemiesCache = enemies.slice();
+            warEnemiesFactionId = String(payload.enemy_faction_id || warEnemiesFactionId || '');
+            warEnemiesFactionName = String(payload.enemy_faction_name || warEnemiesFactionName || '');
+            warEnemiesLoadedAt = Date.now();
+
+            state = state || {};
+            state.enemies = enemies.slice();
+            state.war = Object.assign({}, state.war || {}, {
+                enemy_faction_id: warEnemiesFactionId,
+                enemy_faction_name: warEnemiesFactionName
+            });
+
             return warEnemiesCache;
-        }
-
-        var res = yield authedReq('GET', '/api/enemies');
-        if (!res.ok || !res.json) return warEnemiesCache || [];
-
-        var payload = res.json || {};
-        var enemies = arr(payload.items || payload.enemies);
-
-        warEnemiesCache = enemies.slice();
-        warEnemiesFactionId = String(payload.faction_id || payload.enemy_faction_id || warEnemiesFactionId || '');
-        warEnemiesFactionName = String(payload.faction_name || payload.enemy_faction_name || warEnemiesFactionName || '');
-        warEnemiesLoadedAt = Date.now();
-
-        state = state || {};
-        state.enemies = enemies.slice();
-        state.war = Object.assign({}, state.war || {}, {
-            enemy_faction_id: warEnemiesFactionId,
-            enemy_faction_name: warEnemiesFactionName
         });
 
-        if (payload.buckets) state.enemies_by_state = payload.buckets;
-        if (payload.counts_by_state) state.enemy_bucket_counts = payload.counts_by_state;
-        if (payload.order) state.enemy_bucket_order = payload.order;
-
-        return warEnemiesCache;
-    });
-
-    return _loadEnemies.apply(this, arguments);
-}
+        return _loadEnemies.apply(this, arguments);
+    }
 
     function loadLiveSummary(force) {
         return _loadLiveSummary.apply(this, arguments);
@@ -1731,35 +1703,18 @@ function _loadEnemies() {
     // 14. OVERLAY MOUNT / DOM
     // ============================================================
 
-    function bindPress(el, handler) {
+    function bindTap(el, handler) {
         if (!el) return;
 
-        var touchFired = false;
-
         el.addEventListener('touchend', function (e) {
-            touchFired = true;
             if (e.cancelable) e.preventDefault();
             e.stopPropagation();
             handler(e);
-            setTimeout(function () {
-                touchFired = false;
-            }, 350);
         }, { passive: false });
-
-        el.addEventListener('click', function (e) {
-            if (touchFired) {
-                if (e.cancelable) e.preventDefault();
-                e.stopPropagation();
-                return;
-            }
-            e.stopPropagation();
-            handler(e);
-        });
     }
 
     function mount() {
         if (mounted) return;
-        if (!document.body) return;
 
         shield = document.createElement('div');
         shield.id = 'warhub-shield';
@@ -1790,12 +1745,14 @@ function _loadEnemies() {
             '</div>'
         ].join('');
 
-        document.body.appendChild(overlay);
         document.body.appendChild(shield);
         document.body.appendChild(badge);
+        document.body.appendChild(overlay);
 
-        refreshFloatingUiPositions();
+        applyShieldPos();
+        applyOverlayPos();
         updateBadge();
+        positionBadge();
 
         var shieldDrag = makeHoldDraggable(shield, shield, K_SHIELD_POS);
 
@@ -1809,12 +1766,12 @@ function _loadEnemies() {
             );
         }
 
-        bindPress(shield, function () {
+        bindTap(shield, function () {
             if (shieldTapBlocked()) return;
             toggleOverlay();
         });
 
-        bindPress(overlay.querySelector('#warhub-close'), function () {
+        bindTap(overlay.querySelector('#warhub-close'), function () {
             setOverlayOpen(false);
         });
 
@@ -1845,29 +1802,6 @@ function _loadEnemies() {
             }
         }, { passive: false });
 
-        overlay.addEventListener('click', function (e) {
-            var tabBtn = e.target.closest('[data-tab]');
-            if (tabBtn) {
-                e.stopPropagation();
-                handleTabClick(tabBtn.getAttribute('data-tab'));
-                return;
-            }
-
-            var act = e.target.closest('[data-action]');
-            if (act) {
-                e.stopPropagation();
-                handleActionClick(act);
-                return;
-            }
-
-            var groupHead = e.target.closest('[data-group-toggle]');
-            if (groupHead) {
-                e.stopPropagation();
-                var key = groupHead.getAttribute('data-group-toggle');
-                toggleGroup(key);
-            }
-        });
-
         overlay.addEventListener('change', function (e) {
             var t = e.target;
 
@@ -1890,14 +1824,11 @@ function _loadEnemies() {
             }
         });
 
-        window.addEventListener('resize', refreshFloatingUiPositions);
-        window.addEventListener('orientationchange', refreshFloatingUiPositions);
-        window.addEventListener('scroll', refreshFloatingUiPositions, { passive: true });
-
-        if (window.visualViewport) {
-            window.visualViewport.addEventListener('resize', refreshFloatingUiPositions);
-            window.visualViewport.addEventListener('scroll', refreshFloatingUiPositions);
-        }
+        window.addEventListener('resize', function () {
+            applyShieldPos();
+            applyOverlayPos();
+            positionBadge();
+        });
 
         mounted = true;
         setOverlayOpen(isOpen);
@@ -1909,22 +1840,12 @@ function _loadEnemies() {
         GM_setValue(K_OPEN, isOpen);
 
         if (!overlay) return;
-        if (!shield) shield = document.getElementById('warhub-shield');
 
         overlay.classList.toggle('open', isOpen);
 
-        if (shield) {
-            shield.style.display = 'flex';
-            shield.style.visibility = 'visible';
-            shield.style.opacity = '1';
-            shield.style.zIndex = '2147483647';
-        }
-
-        applyOverlayPos();
-        applyShieldPos();
-        positionBadge();
-
         if (isOpen) {
+            applyOverlayPos();
+            positionBadge();
             renderBody();
         }
     }
@@ -2222,39 +2143,27 @@ function _loadEnemies() {
     }
 
     function renderEnemyRow(member) {
-    var id = getMemberId(member);
-    var name = getMemberName(member);
-    var st = stateLabel(member);
-    var spy = spyText(member);
+        var id = getMemberId(member);
+        var name = getMemberName(member);
+        var st = stateLabel(member);
+        var spy = spyText(member);
 
-    var profile = profileUrl(member);
-    var attack = attackUrl(member);
-    var bounty = bountyUrl(member);
-
-    return [
-        '<div class="warhub-member-row">',
-            '<div class="warhub-member-main">',
-                '<div class="warhub-row">',
-                    '<a class="warhub-member-name" href="' + esc(profile) + '" target="_blank" rel="noopener noreferrer">' + esc(name) + '</a>',
-                    '<span class="warhub-pill ' + esc(st) + '">' + esc(humanStateLabel(st)) + '</span>',
+        return [
+            '<div class="warhub-member-row">',
+                '<div class="warhub-member-main">',
+                    '<div class="warhub-row">',
+                        '<a class="warhub-member-name" href="' + esc(profileUrl(member)) + '" target="_blank" rel="noopener noreferrer">' + esc(name) + '</a>',
+                        id ? '<span class="warhub-pill neutral">#' + esc(id) + '</span>' : '',
+                        '<span class="warhub-pill ' + esc(st) + '">' + esc(humanStateLabel(st)) + '</span>',
+                    '</div>',
+                    '<div class="warhub-row">',
+                        '<a class="warhub-btn" href="' + esc(attackUrl(member)) + '" target="_blank" rel="noopener noreferrer">Attack</a>',
+                    '</div>',
                 '</div>',
-
-                '<div class="warhub-row warhub-row-sub">',
-                    id ? '<span class="warhub-mini">#' + esc(id) + '</span>' : '',
-                    member && member.level ? '<span class="warhub-mini">Lvl ' + esc(member.level) + '</span>' : '',
-                    member && member.last_action ? '<span class="warhub-mini">' + esc(member.last_action) + '</span>' : '',
-                '</div>',
-
-                '<div class="warhub-row">',
-                    '<a class="warhub-btn" href="' + esc(attack) + '" target="_blank" rel="noopener noreferrer">Attack</a>',
-                    '<a class="warhub-btn ghost" href="' + esc(profile) + '" target="_blank" rel="noopener noreferrer">Profile</a>',
-                    '<a class="warhub-btn ghost" href="' + esc(bounty) + '" target="_blank" rel="noopener noreferrer">Bounty</a>',
-                '</div>',
-            '</div>',
-            spy ? '<div class="warhub-spy-box">' + esc(spy) + '</div>' : '',
-        '</div>'
-    ].join('');
-}
+                spy ? '<div class="warhub-spy-box">' + esc(spy) + '</div>' : '',
+            '</div>'
+        ].join('');
+    }
 
     // ============================================================
     // 18. TAB RENDERS: LOGIN / OVERVIEW / MEMBERS / ENEMIES
@@ -2422,147 +2331,51 @@ function renderOverviewTab() {
     }
 
     function renderEnemiesTab() {
-    var war = (state && state.war) || {};
-    var enemyFactionName = String(war.enemy_faction_name || warEnemiesFactionName || 'Enemy Faction');
-    var enemyFactionId = String(war.enemy_faction_id || warEnemiesFactionId || '');
+        var enemies = arr((state && state.enemies) || warEnemiesCache || []);
+        var war = (state && state.war) || {};
+        var enemyFactionName = String(war.enemy_faction_name || warEnemiesFactionName || 'Enemy Faction');
+        var search = String(GM_getValue('warhub_enemies_search', '') || '').trim().toLowerCase();
 
-    var search = String(GM_getValue('warhub_enemies_search', '') || '').trim().toLowerCase();
-
-    var backendBuckets =
-        (state && state.enemies_by_state) ||
-        (state && state.enemy_buckets) ||
-        (state && state.enemiesBuckets) ||
-        {};
-
-    var backendCounts =
-        (state && state.enemy_bucket_counts) ||
-        (state && state.counts_by_state) ||
-        {};
-
-    var backendOrder =
-        (state && state.enemy_bucket_order) ||
-        (state && state.enemyBucketOrder) ||
-        ['online', 'idle', 'travel', 'jail', 'hospital', 'offline'];
-
-    var buckets = {
-        online: arr(backendBuckets.online),
-        idle: arr(backendBuckets.idle),
-        travel: arr(backendBuckets.travel),
-        jail: arr(backendBuckets.jail),
-        hospital: arr(backendBuckets.hospital),
-        offline: arr(backendBuckets.offline)
-    };
-
-    if (
-        !buckets.online.length &&
-        !buckets.idle.length &&
-        !buckets.travel.length &&
-        !buckets.jail.length &&
-        !buckets.hospital.length &&
-        !buckets.offline.length
-    ) {
-        var fallbackEnemies = arr((state && state.enemies) || warEnemiesCache || []);
-        var fallbackGrouped = groupMembers(fallbackEnemies);
-        buckets.online = arr(fallbackGrouped.online);
-        buckets.idle = arr(fallbackGrouped.idle);
-        buckets.travel = arr(fallbackGrouped.travel);
-        buckets.jail = arr(fallbackGrouped.jail);
-        buckets.hospital = arr(fallbackGrouped.hospital);
-        buckets.offline = arr(fallbackGrouped.offline);
-    }
-
-    function filterBucket(items) {
-        items = arr(items);
-        if (!search) return items;
-        return items.filter(function (m) {
+        var filtered = enemies.filter(function (m) {
+            if (!search) return true;
             return memberSearchText(m).indexOf(search) >= 0;
         });
-    }
 
-    var filteredBuckets = {
-        online: filterBucket(buckets.online),
-        idle: filterBucket(buckets.idle),
-        travel: filterBucket(buckets.travel),
-        jail: filterBucket(buckets.jail),
-        hospital: filterBucket(buckets.hospital),
-        offline: filterBucket(buckets.offline)
-    };
+        var grouped = groupMembers(filtered);
 
-    var totalFiltered =
-        filteredBuckets.online.length +
-        filteredBuckets.idle.length +
-        filteredBuckets.travel.length +
-        filteredBuckets.jail.length +
-        filteredBuckets.hospital.length +
-        filteredBuckets.offline.length;
-
-    var totalLoaded =
-        arr(buckets.online).length +
-        arr(buckets.idle).length +
-        arr(buckets.travel).length +
-        arr(buckets.jail).length +
-        arr(buckets.hospital).length +
-        arr(buckets.offline).length;
-
-    function countFor(key) {
-        if (search) return arr(filteredBuckets[key]).length;
-        return Number(backendCounts && backendCounts[key] != null ? backendCounts[key] : arr(buckets[key]).length);
-    }
-
-    var groupHtml = [];
-    backendOrder.forEach(function (key) {
-        var items = filteredBuckets[key];
-        if (!items) return;
-
-        if (key === 'online') {
-            groupHtml.push(renderGroupBlock('enemies_online', items, renderEnemyRow, true));
-        } else if (key === 'idle') {
-            groupHtml.push(renderGroupBlock('enemies_idle', items, renderEnemyRow, true));
-        } else if (key === 'travel') {
-            groupHtml.push(renderGroupBlock('enemies_travel', items, renderEnemyRow, false));
-        } else if (key === 'jail') {
-            groupHtml.push(renderGroupBlock('enemies_jail', items, renderEnemyRow, false));
-        } else if (key === 'hospital') {
-            groupHtml.push(renderGroupBlock('enemies_hospital', items, renderEnemyRow, true));
-        } else if (key === 'offline') {
-            groupHtml.push(renderGroupBlock('enemies_offline', items, renderEnemyRow, false));
-        }
-    });
-
-    return [
-        '<div class="warhub-grid">',
-            '<div class="warhub-hero-card">',
-                '<div class="warhub-title">Enemies</div>',
-                '<div class="warhub-sub">' + esc(enemyFactionName) + '</div>',
-            '</div>',
-
-            '<div class="warhub-card">',
-                '<div class="warhub-kv"><div>Enemy faction</div><div>' + esc(enemyFactionName) + '</div></div>',
-                '<div class="warhub-kv"><div>Enemy faction ID</div><div>' + esc(enemyFactionId || '—') + '</div></div>',
-                '<div class="warhub-kv"><div>Loaded members</div><div>' + esc(String(totalLoaded)) + '</div></div>',
-                '<div class="warhub-kv"><div>Online</div><div>' + esc(String(countFor('online'))) + '</div></div>',
-                '<div class="warhub-kv"><div>Idle</div><div>' + esc(String(countFor('idle'))) + '</div></div>',
-                '<div class="warhub-kv"><div>Travel</div><div>' + esc(String(countFor('travel'))) + '</div></div>',
-                '<div class="warhub-kv"><div>Jail</div><div>' + esc(String(countFor('jail'))) + '</div></div>',
-                '<div class="warhub-kv"><div>Hospital</div><div>' + esc(String(countFor('hospital'))) + '</div></div>',
-                '<div class="warhub-kv"><div>Offline</div><div>' + esc(String(countFor('offline'))) + '</div></div>',
-            '</div>',
-
-            '<div class="warhub-card">',
-                '<div class="warhub-row">',
-                    '<input id="warhub-enemies-search" class="warhub-input" type="text" value="' + esc(search) + '" placeholder="Search enemy name or ID" />',
-                    '<button type="button" class="warhub-btn ghost" data-action="enemies-refresh">Refresh</button>',
+        return [
+            '<div class="warhub-grid">',
+                '<div class="warhub-hero-card">',
+                    '<div class="warhub-title">Enemies</div>',
+                    '<div class="warhub-sub">' + esc(enemyFactionName) + '</div>',
                 '</div>',
-            '</div>',
 
-            totalFiltered ? [
-                '<div class="warhub-grid">',
-                    groupHtml.join(''),
-                '</div>'
-            ].join('') : '<div class="warhub-card">No enemy members loaded from the current war.</div>',
-        '</div>'
-    ].join('');
-}
+                '<div class="warhub-card">',
+                    '<div class="warhub-kv"><div>Enemy faction</div><div>' + esc(enemyFactionName) + '</div></div>',
+                    '<div class="warhub-kv"><div>Enemy faction ID</div><div>' + esc(String(war.enemy_faction_id || warEnemiesFactionId || '—')) + '</div></div>',
+                    '<div class="warhub-kv"><div>Loaded members</div><div>' + esc(String(filtered.length)) + '</div></div>',
+                '</div>',
+
+                '<div class="warhub-card">',
+                    '<div class="warhub-row">',
+                        '<input id="warhub-enemies-search" class="warhub-input" type="text" value="' + esc(search) + '" placeholder="Search enemy name or ID" />',
+                        '<button type="button" class="warhub-btn ghost" data-action="enemies-refresh">Refresh</button>',
+                    '</div>',
+                '</div>',
+
+                enemies.length ? [
+                    '<div class="warhub-grid">',
+                        renderGroupBlock('enemies_online', grouped.online, renderEnemyRow, true),
+                        renderGroupBlock('enemies_idle', grouped.idle, renderEnemyRow, true),
+                        renderGroupBlock('enemies_travel', grouped.travel, renderEnemyRow, false),
+                        renderGroupBlock('enemies_jail', grouped.jail, renderEnemyRow, false),
+                        renderGroupBlock('enemies_hospital', grouped.hospital, renderEnemyRow, true),
+                        renderGroupBlock('enemies_offline', grouped.offline, renderEnemyRow, false),
+                    '</div>'
+                ].join('') : '<div class="warhub-card">No enemy members loaded from the current war.</div>',
+            '</div>'
+        ].join('');
+    }
         // ============================================================
     // 19. TAB RENDERS: HOSPITAL / CHAIN / TARGETS / MED DEALS / TERMS / SUMMARY
     // ============================================================
@@ -3476,9 +3289,8 @@ function renderAdminTab() {
 
         var hasShield = !!document.getElementById('warhub-shield');
         var hasOverlay = !!document.getElementById('warhub-overlay');
-        var hasBadge = !!document.getElementById('warhub-badge');
 
-        if (!hasShield || !hasOverlay || !hasBadge || !shield || !overlay || !badge) {
+        if (!hasShield || !hasOverlay || !shield || !overlay) {
             mounted = false;
             shield = null;
             badge = null;
@@ -3497,20 +3309,13 @@ function renderAdminTab() {
             try {
                 if (!document.body) return;
 
-                if (
-                    !document.getElementById('warhub-shield') ||
-                    !document.getElementById('warhub-overlay') ||
-                    !document.getElementById('warhub-badge')
-                ) {
+                if (!document.getElementById('warhub-shield') || !document.getElementById('warhub-overlay')) {
                     mounted = false;
                     shield = null;
                     badge = null;
                     overlay = null;
                     ensureMounted();
                     renderBody();
-                } else {
-                    applyShieldPos();
-                    positionBadge();
                 }
             } catch (err) {
                 console.error('War Hub remount watch error:', err);
@@ -3526,20 +3331,16 @@ function renderAdminTab() {
         if (isLoggedIn()) {
             loadState().then(function () {
                 renderBody();
-                applyShieldPos();
-                positionBadge();
             }).catch(function (err) {
                 console.error('War Hub initial load error:', err);
                 renderBody();
-                applyShieldPos();
-                positionBadge();
             });
         } else {
             renderBody();
-            applyShieldPos();
-            positionBadge();
         }
     }
 
-        boot();
+    boot();
+
 })();
+    
