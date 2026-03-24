@@ -2895,62 +2895,128 @@ function renderOverviewTab() {
     }
 
     function renderAdminTab() {
-        if (!canSeeAdmin()) {
-            return '<div class="warhub-card">Admin tab is restricted.</div>';
-        }
+    if (!canSeeAdmin()) {
+        return '<div class="warhub-card">Admin tab is restricted.</div>';
+    }
 
-        var dash = analyticsCache || {};
-        var licenses = arr(dash.licenses || []);
-        var recent = arr(dash.recent || []);
+    var dash = analyticsCache || {};
+    var licenses = arr(dash.licenses || []);
+    var recent = arr(dash.recent || []);
 
+    function statCard(label, value, sub) {
         return [
-            '<div class="warhub-grid">',
-                '<div class="warhub-hero-card">',
-                    '<div class="warhub-title">Admin</div>',
-                    '<div class="warhub-sub">Owner/admin controls</div>',
-                '</div>',
-
-                '<div class="warhub-mini-grid">',
-                    '<div class="warhub-card"><h3>Total Factions</h3><div>' + esc(fmtNum(dash.total_factions || 0)) + '</div></div>',
-                    '<div class="warhub-card"><h3>Active Licenses</h3><div>' + esc(fmtNum(dash.active_licenses || 0)) + '</div></div>',
-                    '<div class="warhub-card"><h3>Exempt Users</h3><div>' + esc(fmtNum(dash.user_exemptions || 0)) + '</div></div>',
-                    '<div class="warhub-card"><h3>Exempt Factions</h3><div>' + esc(fmtNum(dash.faction_exemptions || 0)) + '</div></div>',
-                '</div>',
-
-                '<div class="warhub-card warhub-col">',
-                    '<h3>Recent Activity</h3>',
-                    recent.length
-                        ? recent.map(function (r) {
-                            return '<div class="warhub-kv"><div>' + esc(String(r.note || r.kind || 'Entry')) + '</div><div>' + esc(fmtTs(r.created_at)) + '</div></div>';
-                        }).join('')
-                        : '<div>No recent admin activity.</div>',
-                '</div>',
-
-                '<div class="warhub-card warhub-col">',
-                    '<h3>Faction Licenses</h3>',
-                    licenses.length
-                        ? licenses.map(function (l) {
-                            return [
-                                '<div class="warhub-member-row">',
-                                    '<div class="warhub-member-main">',
-                                        '<div class="warhub-row">',
-                                            '<span class="warhub-member-name">' + esc(String(l.faction_name || 'Unknown Faction')) + '</span>',
-                                            l.faction_id ? '<span class="warhub-pill neutral">#' + esc(String(l.faction_id)) + '</span>' : '',
-                                        '</div>',
-                                        '<div class="warhub-row">',
-                                            l.faction_id ? '<button type="button" class="warhub-btn ghost" data-action="admin-history" data-faction-id="' + esc(String(l.faction_id)) + '">History</button>' : '',
-                                            l.faction_id ? '<button type="button" class="warhub-btn green" data-action="admin-renew" data-faction-id="' + esc(String(l.faction_id)) + '">Renew</button>' : '',
-                                            l.faction_id ? '<button type="button" class="warhub-btn gray" data-action="admin-expire" data-faction-id="' + esc(String(l.faction_id)) + '">Expire</button>' : '',
-                                        '</div>',
-                                    '</div>',
-                                '</div>'
-                            ].join('');
-                        }).join('')
-                        : '<div>No faction license rows.</div>',
-                '</div>',
+            '<div class="warhub-stat-card">',
+                '<div class="warhub-stat-label">', esc(String(label || '')), '</div>',
+                '<div class="warhub-stat-value">', esc(fmtNum(value || 0)), '</div>',
+                sub ? '<div class="warhub-stat-sub">' + esc(String(sub)) + '</div>' : '',
             '</div>'
         ].join('');
     }
+
+    var summaryPills = [
+        '<span class="warhub-pill neutral">Total Factions: ' + esc(fmtNum(dash.total_factions || 0)) + '</span>',
+        '<span class="warhub-pill green">Active: ' + esc(fmtNum(dash.active_licenses || 0)) + '</span>',
+        '<span class="warhub-pill blue">User Exempt: ' + esc(fmtNum(dash.user_exemptions || 0)) + '</span>',
+        '<span class="warhub-pill purple">Faction Exempt: ' + esc(fmtNum(dash.faction_exemptions || 0)) + '</span>'
+    ].join('');
+
+    var recentHtml = recent.length
+        ? recent.slice(0, 8).map(function (r) {
+            return [
+                '<div class="warhub-kv">',
+                    '<div>',
+                        '<div class="warhub-member-name">', esc(String(r.note || r.kind || 'Entry')), '</div>',
+                        r.faction_id ? '<div class="warhub-sub">Faction #' + esc(String(r.faction_id)) + '</div>' : '',
+                    '</div>',
+                    '<div>', esc(fmtTs(r.created_at)), '</div>',
+                '</div>'
+            ].join('');
+        }).join('')
+        : '<div class="warhub-empty">No recent admin activity.</div>';
+
+    var licensesHtml = licenses.length
+        ? licenses.map(function (l) {
+            var factionId = l.faction_id ? String(l.faction_id) : '';
+            var factionName = String(l.faction_name || 'Unknown Faction');
+            var daysLeft = Number(l.days_left || 0);
+            var enabledCount = Number(l.enabled_member_count || 0);
+            var renewalCost = Number(l.renewal_cost || 0);
+            var exemptFaction = !!l.is_faction_exempt;
+            var active = !!l.active;
+
+            return [
+                '<div class="warhub-overview-link-card">',
+                    '<div class="warhub-row" style="justify-content:space-between;align-items:flex-start;gap:8px;">',
+                        '<div>',
+                            '<div class="warhub-member-name">', esc(factionName), '</div>',
+                            '<div class="warhub-sub">Faction #', esc(factionId || '—'), '</div>',
+                        '</div>',
+                        '<div class="warhub-row" style="flex-wrap:wrap;justify-content:flex-end;">',
+                            active
+                                ? '<span class="warhub-pill green">Active</span>'
+                                : '<span class="warhub-pill gray">Inactive</span>',
+                            exemptFaction
+                                ? '<span class="warhub-pill purple">Exempt</span>'
+                                : '',
+                            '<span class="warhub-pill neutral">Days Left: ' + esc(String(daysLeft)) + '</span>',
+                        '</div>',
+                    '</div>',
+
+                    '<div class="warhub-mini-grid" style="margin-top:10px;">',
+                        statCard('Enabled', enabledCount),
+                        statCard('Renewal', renewalCost, '3 Xanax/member'),
+                    '</div>',
+
+                    '<div class="warhub-row" style="margin-top:12px;flex-wrap:wrap;">',
+                        factionId
+                            ? '<button type="button" class="warhub-btn ghost" data-action="admin-history" data-faction-id="' + esc(factionId) + '">History</button>'
+                            : '',
+                        factionId
+                            ? '<button type="button" class="warhub-btn green" data-action="admin-renew" data-faction-id="' + esc(factionId) + '">Renew</button>'
+                            : '',
+                        factionId
+                            ? '<button type="button" class="warhub-btn gray" data-action="admin-expire" data-faction-id="' + esc(factionId) + '">Expire</button>'
+                            : '',
+                    '</div>',
+                '</div>'
+            ].join('');
+        }).join('')
+        : '<div class="warhub-empty">No faction license rows.</div>';
+
+    return [
+        '<div class="warhub-grid">',
+
+            '<div class="warhub-hero-card">',
+                '<div class="warhub-title">Admin</div>',
+                '<div class="warhub-sub">Owner/admin controls</div>',
+                '<div class="warhub-row" style="margin-top:10px;flex-wrap:wrap;">',
+                    summaryPills,
+                '</div>',
+            '</div>',
+
+            '<div class="warhub-mini-grid">',
+                statCard('Total Factions', dash.total_factions || 0),
+                statCard('Active Licenses', dash.active_licenses || 0),
+                statCard('Exempt Users', dash.user_exemptions || 0),
+                statCard('Exempt Factions', dash.faction_exemptions || 0),
+            '</div>',
+
+            '<div class="warhub-card warhub-col">',
+                '<h3>Recent Activity</h3>',
+                recentHtml,
+            '</div>',
+
+            '<div class="warhub-card warhub-col">',
+                '<div class="warhub-row" style="justify-content:space-between;align-items:center;">',
+                    '<h3>Faction Licenses</h3>',
+                    '<span class="warhub-pill neutral">', esc(fmtNum(licenses.length)), ' shown</span>',
+                '</div>',
+                licensesHtml,
+            '</div>',
+
+        '</div>'
+    ].join('');
+}
        // ============================================================
     // 22. ACTION HANDLERS
     // ============================================================
