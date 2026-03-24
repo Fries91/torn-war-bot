@@ -1135,9 +1135,15 @@ function applyShieldPos() {
     if (!shield) return;
 
     var vp = getViewport();
-    var pos = loadPos(K_SHIELD_POS, { left: vp.w - 50, top: 120 });
     var width = shield.offsetWidth || 36;
     var height = shield.offsetHeight || 36;
+
+    var fallback = {
+        left: Math.max(6, vp.w - width - 14),
+        top: 120
+    };
+
+    var pos = loadPos(K_SHIELD_POS, fallback);
 
     var left = clamp(pos.left, 6, Math.max(6, vp.w - width - 6));
     var top = clamp(pos.top, 6, Math.max(6, vp.h - height - 6));
@@ -1169,7 +1175,12 @@ function positionBadge() {
 }
 
 function makeHoldDraggable(handle, target, key) {
-    if (!handle || !target) return { didMove: function () { return false; } };
+    if (!handle || !target) {
+        return {
+            didMove: function () { return false; },
+            isDragging: function () { return false; }
+        };
+    }
 
     var dragging = false;
     var moved = false;
@@ -1186,6 +1197,15 @@ function makeHoldDraggable(handle, target, key) {
         if (pressTimer) {
             clearTimeout(pressTimer);
             pressTimer = null;
+        }
+    }
+
+    function resetPress() {
+        clearPressTimer();
+        pressActive = false;
+        if (dragging) {
+            dragging = false;
+            target.classList.remove('dragging');
         }
     }
 
@@ -1217,6 +1237,7 @@ function makeHoldDraggable(handle, target, key) {
         if (!dragging) {
             if (Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD) {
                 clearPressTimer();
+                pressActive = false;
             }
             return;
         }
@@ -1241,11 +1262,14 @@ function makeHoldDraggable(handle, target, key) {
 
     function endPress() {
         clearPressTimer();
-        pressActive = false;
 
-        if (dragging) {
-            dragging = false;
-            target.classList.remove('dragging');
+        var wasDragging = dragging;
+
+        pressActive = false;
+        dragging = false;
+        target.classList.remove('dragging');
+
+        if (wasDragging) {
             setTimeout(function () {
                 moved = false;
             }, 120);
@@ -1272,7 +1296,7 @@ function makeHoldDraggable(handle, target, key) {
         if (!e.touches || !e.touches.length) return;
         var t = e.touches[0];
         beginPress(t.clientX, t.clientY);
-    }, { passive: true });
+    }, { passive: false });
 
     document.addEventListener('touchmove', function (e) {
         if (!pressActive || !e.touches || !e.touches.length) return;
@@ -1286,7 +1310,7 @@ function makeHoldDraggable(handle, target, key) {
     });
 
     document.addEventListener('touchcancel', function () {
-        endPress();
+        resetPress();
     });
 
     return {
@@ -1783,21 +1807,37 @@ function mount() {
     positionBadge();
 
     var shieldDrag = makeHoldDraggable(shield, shield, K_SHIELD_POS);
+    var touchTapBlocked = false;
 
     shield.addEventListener('click', function (e) {
+        if (touchTapBlocked) {
+            e.preventDefault();
+            e.stopPropagation();
+            touchTapBlocked = false;
+            return;
+        }
+
         if (shieldDrag && shieldDrag.isDragging && shieldDrag.isDragging()) {
             e.preventDefault();
             e.stopPropagation();
             return;
         }
+
         toggleOverlay();
     });
 
     shield.addEventListener('touchend', function (e) {
         if (shieldDrag && shieldDrag.didMove && shieldDrag.didMove()) {
+            touchTapBlocked = true;
             e.preventDefault();
             e.stopPropagation();
+            return;
         }
+
+        touchTapBlocked = true;
+        e.preventDefault();
+        e.stopPropagation();
+        toggleOverlay();
     }, { passive: false });
 
     overlay.querySelector('#warhub-close').addEventListener('click', function () {
