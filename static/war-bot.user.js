@@ -100,7 +100,6 @@
     var badge = null;
 
     var mounted = false;
-    var dragMoved = false;
     var isOpen = !!GM_getValue(K_OPEN, false);
     var currentTab = GM_getValue(K_TAB, 'settings');
     if (currentTab === 'owner') currentTab = 'admin';
@@ -116,7 +115,6 @@
     var lastStatusErr = false;
 
     var accessState = normalizeAccessCache(GM_getValue(K_ACCESS_CACHE, null));
-
     // ============================================================
     // 05. STYLES
     // ============================================================
@@ -125,13 +123,13 @@
 #warhub-shield {\n\
   position: fixed !important;\n\
   z-index: 2147483647 !important;\n\
-  width: 42px !important;\n\
-  height: 42px !important;\n\
-  border-radius: 12px !important;\n\
+  width: 36px !important;\n\
+  height: 36px !important;\n\
+  border-radius: 10px !important;\n\
   display: flex !important;\n\
   align-items: center !important;\n\
   justify-content: center !important;\n\
-  font-size: 21px !important;\n\
+  font-size: 17px !important;\n\
   line-height: 1 !important;\n\
   cursor: pointer !important;\n\
   user-select: none !important;\n\
@@ -139,8 +137,8 @@
   -webkit-touch-callout: none !important;\n\
   -webkit-tap-highlight-color: transparent !important;\n\
   touch-action: none !important;\n\
-  box-shadow: 0 8px 24px rgba(0,0,0,.45) !important;\n\
-  border: 1px solid rgba(255,255,255,.10) !important;\n\
+  box-shadow: 0 8px 22px rgba(0,0,0,.42) !important;\n\
+  border: 1px solid rgba(255,255,255,.12) !important;\n\
   background: radial-gradient(circle at 30% 20%, rgba(220,75,75,.98), rgba(110,12,12,.98) 55%, rgba(48,6,6,.98)) !important;\n\
   color: #fff !important;\n\
   left: auto !important;\n\
@@ -153,19 +151,20 @@
 }\n\
 #warhub-shield.dragging {\n\
   cursor: grabbing !important;\n\
+  transform: scale(1.03) !important;\n\
 }\n\
 \n\
 #warhub-badge {\n\
   position: fixed !important;\n\
   z-index: 2147483647 !important;\n\
-  min-width: 16px !important;\n\
-  height: 16px !important;\n\
+  min-width: 15px !important;\n\
+  height: 15px !important;\n\
   padding: 0 4px !important;\n\
   border-radius: 999px !important;\n\
   background: #ffd54a !important;\n\
   color: #111 !important;\n\
   font-size: 10px !important;\n\
-  line-height: 16px !important;\n\
+  line-height: 15px !important;\n\
   text-align: center !important;\n\
   font-weight: 800 !important;\n\
   box-shadow: 0 3px 12px rgba(0,0,0,.45) !important;\n\
@@ -210,7 +209,6 @@
   padding: 12px 12px 10px !important;\n\
   border-bottom: 1px solid rgba(255,255,255,.08) !important;\n\
   background: rgba(255,255,255,.03) !important;\n\
-  touch-action: none !important;\n\
 }\n\
 \n\
 .warhub-toprow {\n\
@@ -556,10 +554,10 @@
 .warhub-overview-link-card.dibs { border-color: rgba(220,90,90,.18) !important; }\n\
 @media (max-width: 520px) {\n\
   #warhub-shield {\n\
-    width: 44px !important;\n\
-    height: 44px !important;\n\
-    font-size: 22px !important;\n\
-    border-radius: 12px !important;\n\
+    width: 34px !important;\n\
+    height: 34px !important;\n\
+    font-size: 16px !important;\n\
+    border-radius: 10px !important;\n\
   }\n\
   #warhub-overlay {\n\
     left: 6px !important;\n\
@@ -588,9 +586,6 @@
   .warhub-body { padding: 10px !important; }\n\
 }\n\
 ";
-
-    GM_addStyle(css);
-
     // ============================================================
     // 06. BASIC UTILITIES
     // ============================================================
@@ -1000,17 +995,17 @@
     // ============================================================
 
     function getViewport() {
-    var de = document.documentElement || {};
-    var w = Math.max(de.clientWidth || 0, window.innerWidth || 0, 320);
-    var h = Math.max(de.clientHeight || 0, window.innerHeight || 0, 320);
+        var de = document.documentElement || {};
+        var w = Math.max(de.clientWidth || 0, window.innerWidth || 0, 320);
+        var h = Math.max(de.clientHeight || 0, window.innerHeight || 0, 320);
 
-    return {
-        w: Math.max(320, Math.round(w)),
-        h: Math.max(320, Math.round(h)),
-        left: 0,
-        top: 0
-    };
-}
+        return {
+            w: Math.max(320, Math.round(w)),
+            h: Math.max(320, Math.round(h)),
+            left: 0,
+            top: 0
+        };
+    }
 
     function clamp(n, min, max) {
         n = Number(n || 0);
@@ -1049,39 +1044,39 @@
     }
 
     function applyShieldPos() {
-    if (!shield) return;
+        if (!shield) return;
 
-    var vp = getViewport();
-    var width = shield.offsetWidth || 44;
-    var height = shield.offsetHeight || 44;
-    var margin = 8;
+        var vp = getViewport();
+        var width = shield.offsetWidth || 36;
+        var height = shield.offsetHeight || 36;
+        var margin = 8;
 
-    var fallback = {
-        left: Math.max(margin, vp.w - width - 14),
-        top: Math.max(margin, Math.round((vp.h - height) / 2))
-    };
+        var fallback = {
+            left: Math.max(margin, vp.w - width - 12),
+            top: Math.max(margin, Math.round((vp.h - height) / 2))
+        };
 
-    var pos = loadPos(K_SHIELD_POS, fallback);
+        var pos = loadPos(K_SHIELD_POS, fallback);
 
-    var minLeft = margin;
-    var maxLeft = Math.max(margin, vp.w - width - margin);
-    var minTop = margin;
-    var maxTop = Math.max(margin, vp.h - height - margin);
+        var minLeft = margin;
+        var maxLeft = Math.max(margin, vp.w - width - margin);
+        var minTop = margin;
+        var maxTop = Math.max(margin, vp.h - height - margin);
 
-    var left = clamp(pos.left, minLeft, maxLeft);
-    var top = clamp(pos.top, minTop, maxTop);
+        var left = clamp(pos.left, minLeft, maxLeft);
+        var top = clamp(pos.top, minTop, maxTop);
 
-    shield.style.left = left + 'px';
-    shield.style.top = top + 'px';
-    shield.style.right = 'auto';
-    shield.style.bottom = 'auto';
-    shield.style.display = 'flex';
-    shield.style.visibility = 'visible';
-    shield.style.opacity = '1';
+        shield.style.left = left + 'px';
+        shield.style.top = top + 'px';
+        shield.style.right = 'auto';
+        shield.style.bottom = 'auto';
+        shield.style.display = 'flex';
+        shield.style.visibility = 'visible';
+        shield.style.opacity = '1';
 
-    savePos(K_SHIELD_POS, { left: left, top: top });
-    positionBadge();
-}
+        savePos(K_SHIELD_POS, { left: left, top: top });
+        positionBadge();
+    }
 
     function applyOverlayPos() {
         if (!overlay) return;
@@ -1099,10 +1094,10 @@
     }
 
     function refreshFloatingUiPositions() {
-    applyShieldPos();
-    applyOverlayPos();
-    positionBadge();
-}
+        applyShieldPos();
+        applyOverlayPos();
+        positionBadge();
+    }
 
     function positionBadge() {
         if (!badge || !shield) return;
@@ -1112,165 +1107,165 @@
         badge.style.top = Math.round(rect.top - 6) + 'px';
     }
 
-function makeHoldDraggable(handle, target, key) {
-    if (!handle || !target) {
-        return {
-            didMove: function () { return false; },
-            isDragging: function () { return false; }
-        };
-    }
-
-    var dragging = false;
-    var moved = false;
-    var pressTimer = null;
-    var pressActive = false;
-    var startX = 0;
-    var startY = 0;
-    var startLeft = 0;
-    var startTop = 0;
-    var HOLD_MS = 260;
-    var DRAG_THRESHOLD = 8;
-
-    function clearPressTimer() {
-        if (pressTimer) {
-            clearTimeout(pressTimer);
-            pressTimer = null;
+    function makeHoldDraggable(handle, target, key) {
+        if (!handle || !target) {
+            return {
+                didMove: function () { return false; },
+                isDragging: function () { return false; }
+            };
         }
-    }
 
-    function resetPress() {
-        clearPressTimer();
-        pressActive = false;
+        var dragging = false;
+        var moved = false;
+        var pressTimer = null;
+        var pressActive = false;
+        var startX = 0;
+        var startY = 0;
+        var startLeft = 0;
+        var startTop = 0;
+        var HOLD_MS = 240;
+        var DRAG_THRESHOLD = 8;
 
-        if (dragging) {
+        function clearPressTimer() {
+            if (pressTimer) {
+                clearTimeout(pressTimer);
+                pressTimer = null;
+            }
+        }
+
+        function resetPress() {
+            clearPressTimer();
+            pressActive = false;
+
+            if (dragging) {
+                dragging = false;
+                target.classList.remove('dragging');
+                handle.classList.remove('dragging');
+            }
+        }
+
+        function beginPress(clientX, clientY) {
+            moved = false;
+            dragging = false;
+            pressActive = true;
+            startX = clientX;
+            startY = clientY;
+
+            var rect = target.getBoundingClientRect();
+            var vp = getViewport();
+            startLeft = rect.left + vp.left;
+            startTop = rect.top + vp.top;
+
+            clearPressTimer();
+            pressTimer = setTimeout(function () {
+                if (!pressActive) return;
+                dragging = true;
+                target.classList.add('dragging');
+                handle.classList.add('dragging');
+            }, HOLD_MS);
+        }
+
+        function moveAt(clientX, clientY) {
+            if (!pressActive) return;
+
+            var dx = clientX - startX;
+            var dy = clientY - startY;
+
+            if (!dragging) {
+                if (Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD) {
+                    clearPressTimer();
+                    pressActive = false;
+                }
+                return;
+            }
+
+            moved = true;
+
+            var vp = getViewport();
+            var width = target.offsetWidth || 36;
+            var height = target.offsetHeight || 36;
+            var margin = 8;
+
+            var minLeft = vp.left + margin;
+            var maxLeft = vp.left + Math.max(margin, vp.w - width - margin);
+            var minTop = vp.top + margin;
+            var maxTop = vp.top + Math.max(margin, vp.h - height - margin);
+
+            var left = clamp(startLeft + dx, minLeft, maxLeft);
+            var top = clamp(startTop + dy, minTop, maxTop);
+
+            target.style.left = left + 'px';
+            target.style.top = top + 'px';
+            target.style.right = 'auto';
+            target.style.bottom = 'auto';
+
+            savePos(key, { left: left, top: top });
+            positionBadge();
+        }
+
+        function endPress() {
+            clearPressTimer();
+
+            var wasDragging = dragging;
+
+            pressActive = false;
             dragging = false;
             target.classList.remove('dragging');
             handle.classList.remove('dragging');
-        }
-    }
 
-    function beginPress(clientX, clientY) {
-    moved = false;
-    dragging = false;
-    pressActive = true;
-    startX = clientX;
-    startY = clientY;
-
-    var rect = target.getBoundingClientRect();
-    var vp = getViewport();
-    startLeft = rect.left + vp.left;
-    startTop = rect.top + vp.top;
-
-    clearPressTimer();
-    pressTimer = setTimeout(function () {
-        if (!pressActive) return;
-        dragging = true;
-        target.classList.add('dragging');
-        handle.classList.add('dragging');
-    }, HOLD_MS);
-}
-
-    function moveAt(clientX, clientY) {
-        if (!pressActive) return;
-
-        var dx = clientX - startX;
-        var dy = clientY - startY;
-
-        if (!dragging) {
-            if (Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD) {
-                clearPressTimer();
-                pressActive = false;
+            if (wasDragging) {
+                setTimeout(function () {
+                    moved = false;
+                }, 140);
+                return true;
             }
-            return;
+
+            return false;
         }
 
-        moved = true;
+        handle.addEventListener('mousedown', function (e) {
+            if (e.button !== 0) return;
+            beginPress(e.clientX, e.clientY);
+        });
 
-        var vp = getViewport();
-        var width = target.offsetWidth || 42;
-        var height = target.offsetHeight || 42;
-        var margin = 8;
+        document.addEventListener('mousemove', function (e) {
+            moveAt(e.clientX, e.clientY);
+        });
 
-        var minLeft = vp.left + margin;
-        var maxLeft = vp.left + Math.max(margin, vp.w - width - margin);
-        var minTop = vp.top + margin;
-        var maxTop = vp.top + Math.max(margin, vp.h - height - margin);
+        document.addEventListener('mouseup', function () {
+            endPress();
+        });
 
-        var left = clamp(startLeft + dx, minLeft, maxLeft);
-        var top = clamp(startTop + dy, minTop, maxTop);
+        handle.addEventListener('touchstart', function (e) {
+            if (!e.touches || !e.touches.length) return;
+            var t = e.touches[0];
+            beginPress(t.clientX, t.clientY);
+        }, { passive: true });
 
-        target.style.left = left + 'px';
-        target.style.top = top + 'px';
-        target.style.right = 'auto';
-        target.style.bottom = 'auto';
+        document.addEventListener('touchmove', function (e) {
+            if (!pressActive || !e.touches || !e.touches.length) return;
+            var t = e.touches[0];
+            moveAt(t.clientX, t.clientY);
+            if (dragging && e.cancelable) e.preventDefault();
+        }, { passive: false });
 
-        savePos(key, { left: left, top: top });
-        positionBadge();
+        document.addEventListener('touchend', function () {
+            endPress();
+        });
+
+        document.addEventListener('touchcancel', function () {
+            resetPress();
+        });
+
+        return {
+            didMove: function () {
+                return moved;
+            },
+            isDragging: function () {
+                return dragging;
+            }
+        };
     }
-
-    function endPress() {
-        clearPressTimer();
-
-        var wasDragging = dragging;
-
-        pressActive = false;
-        dragging = false;
-        target.classList.remove('dragging');
-        handle.classList.remove('dragging');
-
-        if (wasDragging) {
-            setTimeout(function () {
-                moved = false;
-            }, 120);
-            return true;
-        }
-
-        return false;
-    }
-
-    handle.addEventListener('mousedown', function (e) {
-        if (e.button !== 0) return;
-        beginPress(e.clientX, e.clientY);
-    });
-
-    document.addEventListener('mousemove', function (e) {
-        moveAt(e.clientX, e.clientY);
-    });
-
-    document.addEventListener('mouseup', function () {
-        endPress();
-    });
-
-    handle.addEventListener('touchstart', function (e) {
-        if (!e.touches || !e.touches.length) return;
-        var t = e.touches[0];
-        beginPress(t.clientX, t.clientY);
-    }, { passive: true });
-
-    document.addEventListener('touchmove', function (e) {
-        if (!pressActive || !e.touches || !e.touches.length) return;
-        var t = e.touches[0];
-        moveAt(t.clientX, t.clientY);
-        if (dragging && e.cancelable) e.preventDefault();
-    }, { passive: false });
-
-    document.addEventListener('touchend', function () {
-        endPress();
-    });
-
-    document.addEventListener('touchcancel', function () {
-        resetPress();
-    });
-
-    return {
-        didMove: function () {
-            return moved;
-        },
-        isDragging: function () {
-            return dragging;
-        }
-    };
-}
     // ============================================================
     // 11. AUTH / LOGIN
     // ============================================================
@@ -1735,18 +1730,35 @@ function _loadEnemies() {
     // 14. OVERLAY MOUNT / DOM
     // ============================================================
 
-    function bindTap(el, handler) {
+    function bindPress(el, handler) {
         if (!el) return;
 
+        var touchFired = false;
+
         el.addEventListener('touchend', function (e) {
+            touchFired = true;
             if (e.cancelable) e.preventDefault();
             e.stopPropagation();
             handler(e);
+            setTimeout(function () {
+                touchFired = false;
+            }, 350);
         }, { passive: false });
+
+        el.addEventListener('click', function (e) {
+            if (touchFired) {
+                if (e.cancelable) e.preventDefault();
+                e.stopPropagation();
+                return;
+            }
+            e.stopPropagation();
+            handler(e);
+        });
     }
 
     function mount() {
         if (mounted) return;
+        if (!document.body) return;
 
         shield = document.createElement('div');
         shield.id = 'warhub-shield';
@@ -1777,9 +1789,9 @@ function _loadEnemies() {
             '</div>'
         ].join('');
 
+        document.body.appendChild(overlay);
         document.body.appendChild(shield);
         document.body.appendChild(badge);
-        document.body.appendChild(overlay);
 
         refreshFloatingUiPositions();
         updateBadge();
@@ -1796,12 +1808,12 @@ function _loadEnemies() {
             );
         }
 
-        bindTap(shield, function () {
+        bindPress(shield, function () {
             if (shieldTapBlocked()) return;
             toggleOverlay();
         });
 
-        bindTap(overlay.querySelector('#warhub-close'), function () {
+        bindPress(overlay.querySelector('#warhub-close'), function () {
             setOverlayOpen(false);
         });
 
@@ -1832,6 +1844,29 @@ function _loadEnemies() {
             }
         }, { passive: false });
 
+        overlay.addEventListener('click', function (e) {
+            var tabBtn = e.target.closest('[data-tab]');
+            if (tabBtn) {
+                e.stopPropagation();
+                handleTabClick(tabBtn.getAttribute('data-tab'));
+                return;
+            }
+
+            var act = e.target.closest('[data-action]');
+            if (act) {
+                e.stopPropagation();
+                handleActionClick(act);
+                return;
+            }
+
+            var groupHead = e.target.closest('[data-group-toggle]');
+            if (groupHead) {
+                e.stopPropagation();
+                var key = groupHead.getAttribute('data-group-toggle');
+                toggleGroup(key);
+            }
+        });
+
         overlay.addEventListener('change', function (e) {
             var t = e.target;
 
@@ -1858,10 +1893,10 @@ function _loadEnemies() {
         window.addEventListener('orientationchange', refreshFloatingUiPositions);
         window.addEventListener('scroll', refreshFloatingUiPositions, { passive: true });
 
-if (window.visualViewport) {
-    window.visualViewport.addEventListener('resize', refreshFloatingUiPositions);
-    window.visualViewport.addEventListener('scroll', refreshFloatingUiPositions);
-}
+        if (window.visualViewport) {
+            window.visualViewport.addEventListener('resize', refreshFloatingUiPositions);
+            window.visualViewport.addEventListener('scroll', refreshFloatingUiPositions);
+        }
 
         mounted = true;
         setOverlayOpen(isOpen);
@@ -1869,29 +1904,29 @@ if (window.visualViewport) {
     }
 
     function setOverlayOpen(open) {
-    isOpen = !!open;
-    GM_setValue(K_OPEN, isOpen);
+        isOpen = !!open;
+        GM_setValue(K_OPEN, isOpen);
 
-    if (!overlay) return;
-    if (!shield) shield = document.getElementById('warhub-shield');
+        if (!overlay) return;
+        if (!shield) shield = document.getElementById('warhub-shield');
 
-    overlay.classList.toggle('open', isOpen);
+        overlay.classList.toggle('open', isOpen);
 
-    if (shield) {
-        shield.style.display = 'flex';
-        shield.style.visibility = 'visible';
-        shield.style.opacity = '1';
-    }
+        if (shield) {
+            shield.style.display = 'flex';
+            shield.style.visibility = 'visible';
+            shield.style.opacity = '1';
+            shield.style.zIndex = '2147483647';
+        }
 
-    if (isOpen) {
         applyOverlayPos();
-        positionBadge();
-        renderBody();
-    } else {
         applyShieldPos();
         positionBadge();
+
+        if (isOpen) {
+            renderBody();
+        }
     }
-}
 
     function toggleOverlay() {
         setOverlayOpen(!isOpen);
@@ -3440,8 +3475,9 @@ function renderAdminTab() {
 
         var hasShield = !!document.getElementById('warhub-shield');
         var hasOverlay = !!document.getElementById('warhub-overlay');
+        var hasBadge = !!document.getElementById('warhub-badge');
 
-        if (!hasShield || !hasOverlay || !shield || !overlay) {
+        if (!hasShield || !hasOverlay || !hasBadge || !shield || !overlay || !badge) {
             mounted = false;
             shield = null;
             badge = null;
@@ -3460,13 +3496,20 @@ function renderAdminTab() {
             try {
                 if (!document.body) return;
 
-                if (!document.getElementById('warhub-shield') || !document.getElementById('warhub-overlay')) {
+                if (
+                    !document.getElementById('warhub-shield') ||
+                    !document.getElementById('warhub-overlay') ||
+                    !document.getElementById('warhub-badge')
+                ) {
                     mounted = false;
                     shield = null;
                     badge = null;
                     overlay = null;
                     ensureMounted();
                     renderBody();
+                } else {
+                    applyShieldPos();
+                    positionBadge();
                 }
             } catch (err) {
                 console.error('War Hub remount watch error:', err);
@@ -3482,16 +3525,19 @@ function renderAdminTab() {
         if (isLoggedIn()) {
             loadState().then(function () {
                 renderBody();
+                applyShieldPos();
+                positionBadge();
             }).catch(function (err) {
                 console.error('War Hub initial load error:', err);
                 renderBody();
+                applyShieldPos();
+                positionBadge();
             });
         } else {
             renderBody();
+            applyShieldPos();
+            positionBadge();
         }
     }
 
     boot();
-
-})();
-    
