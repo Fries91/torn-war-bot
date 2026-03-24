@@ -1000,12 +1000,21 @@
     // ============================================================
 
     function getViewport() {
-        var de = document.documentElement || {};
-        return {
-            w: Math.max(de.clientWidth || 0, window.innerWidth || 0, 320),
-            h: Math.max(de.clientHeight || 0, window.innerHeight || 0, 320)
-        };
-    }
+    var vv = window.visualViewport;
+    var de = document.documentElement || {};
+
+    var w = vv && vv.width ? vv.width : Math.max(de.clientWidth || 0, window.innerWidth || 0, 320);
+    var h = vv && vv.height ? vv.height : Math.max(de.clientHeight || 0, window.innerHeight || 0, 320);
+    var left = vv && Number.isFinite(vv.offsetLeft) ? vv.offsetLeft : 0;
+    var top = vv && Number.isFinite(vv.offsetTop) ? vv.offsetTop : 0;
+
+    return {
+        w: Math.max(320, Math.round(w)),
+        h: Math.max(320, Math.round(h)),
+        left: Math.round(left),
+        top: Math.round(top)
+    };
+}
 
     function clamp(n, min, max) {
         n = Number(n || 0);
@@ -1044,29 +1053,36 @@
     }
 
     function applyShieldPos() {
-        if (!shield) return;
+    if (!shield) return;
 
-        var vp = getViewport();
-        var width = shield.offsetWidth || 42;
-        var height = shield.offsetHeight || 42;
+    var vp = getViewport();
+    var width = shield.offsetWidth || 44;
+    var height = shield.offsetHeight || 44;
+    var margin = 8;
 
-        var fallback = {
-            left: Math.max(6, vp.w - width - 14),
-            top: Math.max(6, Math.round((vp.h - height) / 2))
-        };
+    var fallback = {
+        left: vp.left + Math.max(margin, vp.w - width - 14),
+        top: vp.top + Math.max(margin, Math.round((vp.h - height) / 2))
+    };
 
-        var pos = loadPos(K_SHIELD_POS, fallback);
+    var pos = loadPos(K_SHIELD_POS, fallback);
 
-        var left = clamp(pos.left, 6, Math.max(6, vp.w - width - 6));
-        var top = clamp(pos.top, 6, Math.max(6, vp.h - height - 6));
+    var minLeft = vp.left + margin;
+    var maxLeft = vp.left + Math.max(margin, vp.w - width - margin);
+    var minTop = vp.top + margin;
+    var maxTop = vp.top + Math.max(margin, vp.h - height - margin);
 
-        shield.style.left = left + 'px';
-        shield.style.top = top + 'px';
-        shield.style.right = 'auto';
-        shield.style.bottom = 'auto';
+    var left = clamp(pos.left, minLeft, maxLeft);
+    var top = clamp(pos.top, minTop, maxTop);
 
-        positionBadge();
-    }
+    shield.style.left = left + 'px';
+    shield.style.top = top + 'px';
+    shield.style.right = 'auto';
+    shield.style.bottom = 'auto';
+
+    savePos(K_SHIELD_POS, { left: left, top: top });
+    positionBadge();
+}
 
     function applyOverlayPos() {
         if (!overlay) return;
@@ -1082,6 +1098,12 @@
         overlay.style.width = width + 'px';
         overlay.style.maxWidth = '520px';
     }
+
+    function refreshFloatingUiPositions() {
+    applyShieldPos();
+    applyOverlayPos();
+    positionBadge();
+}
 
     function positionBadge() {
         if (!badge || !shield) return;
@@ -1824,11 +1846,14 @@
             }
         });
 
-        window.addEventListener('resize', function () {
-            applyShieldPos();
-            applyOverlayPos();
-            positionBadge();
-        });
+        window.addEventListener('resize', refreshFloatingUiPositions);
+        window.addEventListener('orientationchange', refreshFloatingUiPositions);
+        window.addEventListener('scroll', refreshFloatingUiPositions, { passive: true });
+
+if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', refreshFloatingUiPositions);
+    window.visualViewport.addEventListener('scroll', refreshFloatingUiPositions);
+}
 
         mounted = true;
         setOverlayOpen(isOpen);
