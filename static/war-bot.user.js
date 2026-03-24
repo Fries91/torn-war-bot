@@ -2240,7 +2240,7 @@ function energyText(member) {
         ].join('');
     }
 
-    function renderOverviewTab() {
+function renderOverviewTab() {
     var war = (state && state.war) || {};
     var license = (state && state.license) || {};
     var ownFaction = (state && state.faction) || {};
@@ -2397,7 +2397,7 @@ function energyText(member) {
         '</div>'
     ].join('');
 }
-}
+
     function renderMembersTab() {
     var members = arr((state && state.members) || currentFactionMembers || factionMembersCache || []);
     var search = String(GM_getValue('warhub_members_search', '') || '').trim().toLowerCase();
