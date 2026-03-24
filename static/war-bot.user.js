@@ -197,8 +197,6 @@ var css = "\n\
 #warhub-overlay.open {\n\
   display: flex !important;\n\
 }\n\
-#warhub-overlay.open { display: flex !important; }\n\
-\n\
 #warhub-overlay *,\n\
 #warhub-overlay *::before,\n\
 #warhub-overlay *::after {\n\
@@ -648,7 +646,6 @@ var css = "\n\
     max-width: none !important;\n\
     border-radius: 12px !important;\n\
   }\n\
-}\n\
   .warhub-mini-grid {\n\
     grid-template-columns: 1fr !important;\n\
   }\n\
