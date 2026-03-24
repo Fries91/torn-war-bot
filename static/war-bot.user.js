@@ -1195,6 +1195,7 @@ function makeDraggable(handle, target, key, options) {
     var startY = 0;
     var startLeft = 0;
     var startTop = 0;
+    var DRAG_THRESHOLD = 10;
 
     function shouldIgnoreStart(evt) {
         var t = evt && evt.target;
@@ -1222,7 +1223,11 @@ function makeDraggable(handle, target, key, options) {
         var dx = clientX - startX;
         var dy = clientY - startY;
 
-        if (Math.abs(dx) > 3 || Math.abs(dy) > 3) moved = true;
+        if (Math.abs(dx) < DRAG_THRESHOLD && Math.abs(dy) < DRAG_THRESHOLD) {
+            return;
+        }
+
+        moved = true;
 
         var vp = getViewport();
         var width = target.offsetWidth || 40;
@@ -1251,7 +1256,7 @@ function makeDraggable(handle, target, key, options) {
 
         setTimeout(function () {
             moved = false;
-        }, 0);
+        }, 120);
     }
 
     handle.addEventListener('mousedown', function (e) {
@@ -1276,8 +1281,7 @@ function makeDraggable(handle, target, key, options) {
 
         var t = e.touches[0];
         onStart(t.clientX, t.clientY);
-        e.preventDefault();
-    }, { passive: false });
+    }, { passive: true });
 
     document.addEventListener('touchmove', function (e) {
         if (!dragging) return;
@@ -1285,7 +1289,8 @@ function makeDraggable(handle, target, key, options) {
 
         var t = e.touches[0];
         onMove(t.clientX, t.clientY);
-        e.preventDefault();
+
+        if (moved) e.preventDefault();
     }, { passive: false });
 
     document.addEventListener('touchend', function () {
@@ -1302,7 +1307,6 @@ function makeDraggable(handle, target, key, options) {
         }
     };
 }
-
     // ============================================================
     // 11. AUTH / LOGIN
     // ============================================================
@@ -1787,18 +1791,17 @@ function mount() {
     updateBadge();
     positionBadge();
 
-    var shieldDrag = makeDraggable(shield, shield, K_SHIELD_POS);
-    makeDraggable(overlay.querySelector('#warhub-head'), overlay, K_OVERLAY_POS);
+var shieldDrag = makeDraggable(shield, shield, K_SHIELD_POS);
+makeDraggable(overlay.querySelector('#warhub-head'), overlay, K_OVERLAY_POS);
 
-    shield.addEventListener('click', function (e) {
-        if (shieldDrag && shieldDrag.didMove && shieldDrag.didMove()) {
-            e.preventDefault();
-            e.stopPropagation();
-            return;
-        }
-        toggleOverlay();
-    });
-
+shield.addEventListener('click', function (e) {
+    if (shieldDrag && shieldDrag.didMove && shieldDrag.didMove()) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+    }
+    toggleOverlay();
+});
     overlay.querySelector('#warhub-close').addEventListener('click', function () {
         setOverlayOpen(false);
     });
