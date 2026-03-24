@@ -19,6 +19,11 @@
 (function () {
     'use strict';
 
+    GM_deleteValue('warhub_shield_pos_v3');
+
+    if (window.__WAR_HUB_V287__ && document.getElementById('warhub-shield')) return;
+    window.__WAR_HUB_V287__ = true;
+
     if (window.__WAR_HUB_V287__ && document.getElementById('warhub-shield')) return;
     window.__WAR_HUB_V287__ = true;
 
@@ -1043,30 +1048,37 @@
         });
     }
 
-    function applyShieldPos() {
-        if (!shield) return;
+function applyShieldPos() {
+    if (!shield) return;
 
-        var vp = getViewport();
-        var width = shield.offsetWidth || 42;
-        var height = shield.offsetHeight || 42;
+    var vp = getViewport();
+    var width = shield.offsetWidth || 42;
+    var height = shield.offsetHeight || 42;
 
-        var fallback = {
-            left: Math.max(6, vp.w - width - 14),
-            top: Math.max(6, Math.round((vp.h - height) / 2))
-        };
+    var fallback = {
+        left: Math.max(8, vp.w - width - 14),
+        top: Math.max(80, Math.round((vp.h - height) / 2))
+    };
 
-        var pos = loadPos(K_SHIELD_POS, fallback);
+    var pos = loadPos(K_SHIELD_POS, fallback);
 
-        var left = clamp(pos.left, 6, Math.max(6, vp.w - width - 6));
-        var top = clamp(pos.top, 6, Math.max(6, vp.h - height - 6));
+    var maxLeft = Math.max(8, vp.w - width - 8);
+    var maxTop = Math.max(80, vp.h - height - 8);
 
-        shield.style.left = left + 'px';
-        shield.style.top = top + 'px';
-        shield.style.right = 'auto';
-        shield.style.bottom = 'auto';
+    var left = Number(pos.left);
+    var top = Number(pos.top);
 
-        positionBadge();
-    }
+    if (!isFinite(left) || left < 8 || left > maxLeft) left = fallback.left;
+    if (!isFinite(top) || top < 80 || top > maxTop) top = fallback.top;
+
+    shield.style.left = left + 'px';
+    shield.style.top = top + 'px';
+    shield.style.right = 'auto';
+    shield.style.bottom = 'auto';
+
+    savePos(K_SHIELD_POS, { left: left, top: top });
+    positionBadge();
+}
 
     function applyOverlayPos() {
         if (!overlay) return;
@@ -1091,157 +1103,171 @@
         badge.style.top = Math.round(rect.top - 6) + 'px';
     }
 
-    function makeHoldDraggable(handle, target, key) {
-        if (!handle || !target) {
-            return {
-                didMove: function () { return false; },
-                isDragging: function () { return false; }
-            };
-        }
-
-        var dragging = false;
-        var moved = false;
-        var pressTimer = null;
-        var pressActive = false;
-        var startX = 0;
-        var startY = 0;
-        var startLeft = 0;
-        var startTop = 0;
-        var HOLD_MS = 260;
-        var DRAG_THRESHOLD = 8;
-
-        function clearPressTimer() {
-            if (pressTimer) {
-                clearTimeout(pressTimer);
-                pressTimer = null;
-            }
-        }
-
-        function resetPress() {
-            clearPressTimer();
-            pressActive = false;
-            if (dragging) {
-                dragging = false;
-                target.classList.remove('dragging');
-                handle.classList.remove('dragging');
-            }
-        }
-
-        function beginPress(clientX, clientY) {
-            moved = false;
-            dragging = false;
-            pressActive = true;
-            startX = clientX;
-            startY = clientY;
-
-            var rect = target.getBoundingClientRect();
-            startLeft = rect.left;
-            startTop = rect.top;
-
-            clearPressTimer();
-            pressTimer = setTimeout(function () {
-                if (!pressActive) return;
-                dragging = true;
-                target.classList.add('dragging');
-                handle.classList.add('dragging');
-            }, HOLD_MS);
-        }
-
-        function moveAt(clientX, clientY) {
-            if (!pressActive) return;
-
-            var dx = clientX - startX;
-            var dy = clientY - startY;
-
-            if (!dragging) {
-                if (Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD) {
-                    clearPressTimer();
-                    pressActive = false;
-                }
-                return;
-            }
-
-            moved = true;
-
-            var vp = getViewport();
-            var width = target.offsetWidth || 42;
-            var height = target.offsetHeight || 42;
-
-            var left = clamp(startLeft + dx, 6, Math.max(6, vp.w - width - 6));
-            var top = clamp(startTop + dy, 6, Math.max(6, vp.h - height - 6));
-
-            target.style.left = left + 'px';
-            target.style.top = top + 'px';
-            target.style.right = 'auto';
-            target.style.bottom = 'auto';
-
-            savePos(key, { left: left, top: top });
-            positionBadge();
-        }
-
-        function endPress() {
-            clearPressTimer();
-
-            var wasDragging = dragging;
-
-            pressActive = false;
-            dragging = false;
-            target.classList.remove('dragging');
-            handle.classList.remove('dragging');
-
-            if (wasDragging) {
-                setTimeout(function () {
-                    moved = false;
-                }, 120);
-                return true;
-            }
-
-            return false;
-        }
-
-        handle.addEventListener('mousedown', function (e) {
-            if (e.button !== 0) return;
-            beginPress(e.clientX, e.clientY);
-        });
-
-        document.addEventListener('mousemove', function (e) {
-            moveAt(e.clientX, e.clientY);
-        });
-
-        document.addEventListener('mouseup', function () {
-            endPress();
-        });
-
-        handle.addEventListener('touchstart', function (e) {
-            if (!e.touches || !e.touches.length) return;
-            var t = e.touches[0];
-            beginPress(t.clientX, t.clientY);
-        }, { passive: true });
-
-        document.addEventListener('touchmove', function (e) {
-            if (!pressActive || !e.touches || !e.touches.length) return;
-            var t = e.touches[0];
-            moveAt(t.clientX, t.clientY);
-            if (dragging && e.cancelable) e.preventDefault();
-        }, { passive: false });
-
-        document.addEventListener('touchend', function () {
-            endPress();
-        });
-
-        document.addEventListener('touchcancel', function () {
-            resetPress();
-        });
-
+function makeHoldDraggable(handle, target, key) {
+    if (!handle || !target) {
         return {
-            didMove: function () {
-                return moved;
-            },
-            isDragging: function () {
-                return dragging;
-            }
+            didMove: function () { return false; },
+            isDragging: function () { return false; }
         };
     }
+
+    var dragging = false;
+    var moved = false;
+    var pressTimer = null;
+    var pressActive = false;
+    var startX = 0;
+    var startY = 0;
+    var startLeft = 0;
+    var startTop = 0;
+    var HOLD_MS = 260;
+    var DRAG_THRESHOLD = 8;
+
+    function clearPressTimer() {
+        if (pressTimer) {
+            clearTimeout(pressTimer);
+            pressTimer = null;
+        }
+    }
+
+    function pageX(evt) {
+        if (evt.touches && evt.touches[0]) return evt.touches[0].clientX;
+        if (evt.changedTouches && evt.changedTouches[0]) return evt.changedTouches[0].clientX;
+        return evt.clientX;
+    }
+
+    function pageY(evt) {
+        if (evt.touches && evt.touches[0]) return evt.touches[0].clientY;
+        if (evt.changedTouches && evt.changedTouches[0]) return evt.changedTouches[0].clientY;
+        return evt.clientY;
+    }
+
+    function getSafeBounds() {
+        var vp = getViewport();
+        var rect = target.getBoundingClientRect();
+        var width = Math.round(rect.width || target.offsetWidth || 42);
+        var height = Math.round(rect.height || target.offsetHeight || 42);
+
+        var minLeft = 8;
+        var minTop = (target === shield) ? 80 : 8;
+        var maxLeft = Math.max(minLeft, vp.w - width - 8);
+        var maxTop = Math.max(minTop, vp.h - height - 8);
+
+        return {
+            minLeft: minLeft,
+            minTop: minTop,
+            maxLeft: maxLeft,
+            maxTop: maxTop
+        };
+    }
+
+    function clampAndApply(left, top, saveIt) {
+        var bounds = getSafeBounds();
+
+        left = Math.max(bounds.minLeft, Math.min(bounds.maxLeft, Math.round(left)));
+        top = Math.max(bounds.minTop, Math.min(bounds.maxTop, Math.round(top)));
+
+        target.style.left = left + 'px';
+        target.style.top = top + 'px';
+        target.style.right = 'auto';
+        target.style.bottom = 'auto';
+
+        if (saveIt && key) {
+            savePos(key, { left: left, top: top });
+        }
+
+        if (target === shield) {
+            positionBadge();
+        }
+    }
+
+    function startDrag(evt) {
+        dragging = true;
+        moved = false;
+
+        var rect = target.getBoundingClientRect();
+        startX = pageX(evt);
+        startY = pageY(evt);
+        startLeft = rect.left;
+        startTop = rect.top;
+
+        target.classList.add('warhub-dragging');
+    }
+
+    function onPress(evt) {
+        if (evt.type === 'mousedown' && evt.button !== 0) return;
+        if (dragging) return;
+
+        clearPressTimer();
+        pressActive = true;
+        moved = false;
+
+        startX = pageX(evt);
+        startY = pageY(evt);
+
+        pressTimer = setTimeout(function () {
+            if (!pressActive) return;
+            startDrag(evt);
+        }, HOLD_MS);
+    }
+
+    function onMove(evt) {
+        if (!pressActive && !dragging) return;
+
+        var x = pageX(evt);
+        var y = pageY(evt);
+        var dx = x - startX;
+        var dy = y - startY;
+
+        if (!dragging) {
+            if (Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD) {
+                clearPressTimer();
+            }
+            return;
+        }
+
+        evt.preventDefault();
+        moved = true;
+        clampAndApply(startLeft + dx, startTop + dy, false);
+    }
+
+    function finishDrag() {
+        clearPressTimer();
+        pressActive = false;
+
+        if (!dragging) return;
+
+        dragging = false;
+        target.classList.remove('warhub-dragging');
+
+        var rect = target.getBoundingClientRect();
+        clampAndApply(rect.left, rect.top, true);
+    }
+
+    function cancelPress() {
+        clearPressTimer();
+        pressActive = false;
+
+        if (dragging) {
+            finishDrag();
+        }
+    }
+
+    handle.addEventListener('touchstart', onPress, { passive: true });
+    handle.addEventListener('mousedown', onPress);
+
+    window.addEventListener('touchmove', onMove, { passive: false });
+    window.addEventListener('mousemove', onMove);
+
+    window.addEventListener('touchend', finishDrag);
+    window.addEventListener('mouseup', finishDrag);
+    window.addEventListener('touchcancel', cancelPress);
+    window.addEventListener('mouseleave', cancelPress);
+
+    return {
+        didMove: function () { return moved; },
+        isDragging: function () { return dragging; }
+    };
+}
 
     // ============================================================
     // 11. AUTH / LOGIN
