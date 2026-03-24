@@ -18,7 +18,7 @@
 
 (function () {
     'use strict';
-    GM_deleteValue(K_SHIELD_POS);
+
 
     if (window.__WAR_HUB_V287__ && document.getElementById('warhub-shield')) return;
     window.__WAR_HUB_V287__ = true;
@@ -42,7 +42,8 @@
     var K_ACCESS_CACHE = 'warhub_access_cache_v3';
     var K_OVERVIEW_BOXES = 'warhub_overview_boxes_v3';
     var K_OVERLAY_SCROLL = 'warhub_overlay_scroll_v3';
-
+    
+    GM_deleteValue(K_SHIELD_POS);
     // ============================================================
     // 02. PAYMENT / OWNER CONFIG
     // ============================================================
