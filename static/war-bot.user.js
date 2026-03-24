@@ -3414,7 +3414,7 @@ if (action === 'admin-faction-exempt-add') {
                     var historyFactionId = el.getAttribute('data-faction-id');
                     if (!historyFactionId) return;
 
-                    var historyRes = yield adminReq('GET', '/api/admin/faction-licenses/' + encodeURIComponent(historyFactionId) + '/history');
+                    var historyRes = yield adminReq('GET', '/api/admin/factions/' + encodeURIComponent(historyFactionId) + '/history');
                     if (!historyRes.ok) {
                         setStatus((historyRes.json && historyRes.json.error) || 'Failed to load history.', true);
                         return;
@@ -3431,7 +3431,7 @@ if (action === 'admin-faction-exempt-add') {
                     var renewFactionId = el.getAttribute('data-faction-id');
                     if (!renewFactionId) return;
 
-                    var renewRes = yield adminReq('POST', '/api/admin/faction-licenses/' + encodeURIComponent(renewFactionId) + '/renew', {});
+                    var renewRes = yield adminReq('POST', '/api/admin/factions/' + encodeURIComponent(renewFactionId) + '/renew', {});
                     if (!renewRes.ok) {
                         setStatus((renewRes.json && renewRes.json.error) || 'Failed to renew faction.', true);
                         return;
@@ -3447,7 +3447,7 @@ if (action === 'admin-faction-exempt-add') {
                     var expireFactionId = el.getAttribute('data-faction-id');
                     if (!expireFactionId) return;
 
-                    var expireRes = yield adminReq('POST', '/api/admin/faction-licenses/' + encodeURIComponent(expireFactionId) + '/expire', {});
+                    var expireRes = yield adminReq('POST', '/api/admin/factions/' + encodeURIComponent(expireFactionId) + '/expire', {});
                     if (!expireRes.ok) {
                         setStatus((expireRes.json && expireRes.json.error) || 'Failed to expire faction.', true);
                         return;
