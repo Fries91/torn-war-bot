@@ -43,7 +43,7 @@
     var K_OVERVIEW_BOXES = 'warhub_overview_boxes_v3';
     var K_OVERLAY_SCROLL = 'warhub_overlay_scroll_v3';
     
-    GM_deleteValue(K_SHIELD_POS);
+   
     // ============================================================
     // 02. PAYMENT / OWNER CONFIG
     // ============================================================
@@ -1081,11 +1081,11 @@ GM_addStyle(css);
         });
     }
 
-    // ============================================================
-    // 10. POSITION / DRAG HELPERS
-    // ============================================================
+// ============================================================
+// 10. POSITION / DRAG HELPERS
+// ============================================================
 
-    function getViewport() {
+function getViewport() {
     var de = document.documentElement || {};
     return {
         w: Math.max(de.clientWidth || 0, window.innerWidth || 0, 320),
@@ -1151,7 +1151,6 @@ function applyShieldPos() {
     shield.style.right = 'auto';
     shield.style.bottom = 'auto';
 
-    savePos(K_SHIELD_POS, { left: left, top: top });
     positionBadge();
 }
 
@@ -1328,181 +1327,6 @@ function makeHoldDraggable(handle, target, key) {
             return dragging;
         }
     };
-}
-
-function bindTap(el, handler) {
-    if (!el) return;
-
-    el.addEventListener('touchend', function (e) {
-        if (e.cancelable) e.preventDefault();
-        e.stopPropagation();
-        handler(e);
-    }, { passive: false });
-}
-
-function mount() {
-    if (mounted) return;
-
-    shield = document.createElement('div');
-    shield.id = 'warhub-shield';
-    shield.textContent = '⚔️';
-    shield.setAttribute('aria-label', 'Open War Hub');
-    shield.setAttribute('title', 'War Hub');
-
-    badge = document.createElement('div');
-    badge.id = 'warhub-badge';
-
-    overlay = document.createElement('div');
-    overlay.id = 'warhub-overlay';
-    overlay.innerHTML = [
-        '<div class=\"warhub-head\" id=\"warhub-head\">',
-            '<div class=\"warhub-toprow\">',
-                '<div>',
-                    '<div class=\"warhub-title\">War Hub ⚔️</div>',
-                    '<div class=\"warhub-sub\">Faction tools, payments, access, and war data</div>',
-                '</div>',
-                '<button class=\"warhub-close\" id=\"warhub-close\" type=\"button\">Close</button>',
-            '</div>',
-        '</div>',
-        '<div class=\"warhub-tabs\" id=\"warhub-tabs-row-1\"></div>',
-        '<div class=\"warhub-tabs\" id=\"warhub-tabs-row-2\"></div>',
-        '<div class=\"warhub-body\" id=\"warhub-body\">',
-            '<div class=\"warhub-status-wrap\"><div id=\"warhub-status\" style=\"display:none;\"></div></div>',
-            '<div id=\"warhub-content\"></div>',
-        '</div>'
-    ].join('');
-
-    document.body.appendChild(shield);
-    document.body.appendChild(badge);
-    document.body.appendChild(overlay);
-
-    applyShieldPos();
-    applyOverlayPos();
-    updateBadge();
-    positionBadge();
-
-    var shieldDrag = makeHoldDraggable(shield, shield, K_SHIELD_POS);
-    var overlayHead = overlay.querySelector('#warhub-head') || overlay;
-    var overlayDrag = makeHoldDraggable(overlayHead, overlay, K_OVERLAY_POS);
-
-    function shieldTapBlocked() {
-        return !!(
-            shieldDrag &&
-            (
-                (shieldDrag.isDragging && shieldDrag.isDragging()) ||
-                (shieldDrag.didMove && shieldDrag.didMove())
-            )
-        );
-    }
-
-    function overlayTapBlocked() {
-        return !!(
-            (shieldDrag &&
-                (
-                    (shieldDrag.isDragging && shieldDrag.isDragging()) ||
-                    (shieldDrag.didMove && shieldDrag.didMove())
-                )) ||
-            (overlayDrag &&
-                (
-                    (overlayDrag.isDragging && overlayDrag.isDragging()) ||
-                    (overlayDrag.didMove && overlayDrag.didMove())
-                ))
-        );
-    }
-
-    bindTap(shield, function () {
-        if (shieldTapBlocked()) return;
-        toggleOverlay();
-    });
-
-    bindTap(overlay.querySelector('#warhub-close'), function () {
-        if (overlayTapBlocked()) return;
-        setOverlayOpen(false);
-    });
-
-    overlay.addEventListener('touchend', function (e) {
-        if (overlayTapBlocked()) {
-            if (e.cancelable) e.preventDefault();
-            e.stopPropagation();
-            return;
-        }
-
-        var tabBtn = e.target.closest('[data-tab]');
-        if (tabBtn) {
-            if (e.cancelable) e.preventDefault();
-            e.stopPropagation();
-            handleTabClick(tabBtn.getAttribute('data-tab'));
-            return;
-        }
-
-        var act = e.target.closest('[data-action]');
-        if (act) {
-            if (e.cancelable) e.preventDefault();
-            e.stopPropagation();
-            handleActionClick(act);
-            return;
-        }
-
-        var groupHead = e.target.closest('[data-group-toggle]');
-        if (groupHead) {
-            if (e.cancelable) e.preventDefault();
-            e.stopPropagation();
-            var key = groupHead.getAttribute('data-group-toggle');
-            toggleGroup(key);
-            return;
-        }
-    }, { passive: false });
-
-    overlay.addEventListener('change', function (e) {
-        var t = e.target;
-
-        if (t && t.id === 'warhub-api-key') {
-            GM_setValue(K_API_KEY, cleanInputValue(t.value));
-        }
-        if (t && t.id === 'warhub-owner-token') {
-            GM_setValue(K_OWNER_TOKEN, cleanInputValue(t.value));
-        }
-    });
-
-    overlay.addEventListener('input', function (e) {
-        var t = e.target;
-
-        if (t && t.id === 'warhub-api-key') {
-            GM_setValue(K_API_KEY, cleanInputValue(t.value));
-        }
-        if (t && t.id === 'warhub-owner-token') {
-            GM_setValue(K_OWNER_TOKEN, cleanInputValue(t.value));
-        }
-    });
-
-    window.addEventListener('resize', function () {
-        applyShieldPos();
-        applyOverlayPos();
-        positionBadge();
-    });
-
-    mounted = true;
-    setOverlayOpen(isOpen);
-    renderBody();
-}
-
-function setOverlayOpen(open) {
-    isOpen = !!open;
-    GM_setValue(K_OPEN, isOpen);
-
-    if (!overlay) return;
-
-    overlay.classList.toggle('open', isOpen);
-
-    if (isOpen) {
-        applyOverlayPos();
-        positionBadge();
-        renderBody();
-    }
-}
-
-function toggleOverlay() {
-    setOverlayOpen(!isOpen);
 }
     // ============================================================
     // 11. AUTH / LOGIN
@@ -1999,11 +1823,6 @@ function mount() {
     positionBadge();
 
     var shieldDrag = makeHoldDraggable(shield, shield, K_SHIELD_POS);
-    var overlayDrag = makeHoldDraggable(
-        overlay,
-        overlay.querySelector('#warhub-head') || overlay,
-        K_OVERLAY_POS
-    );
 
     function shieldTapBlocked() {
         return !!(
@@ -2015,38 +1834,16 @@ function mount() {
         );
     }
 
-    function overlayTapBlocked() {
-        return !!(
-            (shieldDrag &&
-                (
-                    (shieldDrag.isDragging && shieldDrag.isDragging()) ||
-                    (shieldDrag.didMove && shieldDrag.didMove())
-                )) ||
-            (overlayDrag &&
-                (
-                    (overlayDrag.isDragging && overlayDrag.isDragging()) ||
-                    (overlayDrag.didMove && overlayDrag.didMove())
-                ))
-        );
-    }
-
     bindTap(shield, function () {
         if (shieldTapBlocked()) return;
         toggleOverlay();
     });
 
     bindTap(overlay.querySelector('#warhub-close'), function () {
-        if (overlayTapBlocked()) return;
         setOverlayOpen(false);
     });
 
     overlay.addEventListener('touchend', function (e) {
-        if (overlayTapBlocked()) {
-            if (e.cancelable) e.preventDefault();
-            e.stopPropagation();
-            return;
-        }
-
         var tabBtn = e.target.closest('[data-tab]');
         if (tabBtn) {
             if (e.cancelable) e.preventDefault();
