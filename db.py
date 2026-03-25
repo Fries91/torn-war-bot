@@ -263,6 +263,32 @@ def init_db():
 
     cur.execute(
         """
+        CREATE TABLE IF NOT EXISTS hospital_dibs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            faction_id TEXT NOT NULL,
+            faction_name TEXT DEFAULT '',
+            enemy_faction_id TEXT DEFAULT '',
+            enemy_faction_name TEXT DEFAULT '',
+            enemy_user_id TEXT NOT NULL,
+            enemy_name TEXT DEFAULT '',
+            dibbed_by_user_id TEXT DEFAULT '',
+            dibbed_by_name TEXT DEFAULT '',
+            dibbed_at TEXT DEFAULT '',
+            in_hospital INTEGER DEFAULT 0,
+            hospital_until_ts INTEGER DEFAULT 0,
+            last_seen_in_hospital_at TEXT DEFAULT '',
+            left_hospital_at TEXT DEFAULT '',
+            dibs_lock_until_ts INTEGER DEFAULT 0,
+            overview_remove_after_ts INTEGER DEFAULT 0,
+            created_at TEXT DEFAULT '',
+            updated_at TEXT DEFAULT '',
+            UNIQUE(faction_id, enemy_user_id)
+        )
+        """
+    )
+
+    cur.execute(
+        """
         CREATE TABLE IF NOT EXISTS user_exemptions (
             user_id TEXT PRIMARY KEY,
             user_name TEXT DEFAULT '',
@@ -281,6 +307,19 @@ def init_db():
     _ensure_column(cur, "faction_members", "last_renewed_at", "last_renewed_at TEXT DEFAULT ''")
     _ensure_column(cur, "faction_members", "cycle_locked", "cycle_locked INTEGER DEFAULT 0")
     _ensure_column(cur, "faction_licenses", "leader_api_key", "leader_api_key TEXT DEFAULT ''")
+    _ensure_column(cur, "hospital_dibs", "faction_name", "faction_name TEXT DEFAULT ''")
+    _ensure_column(cur, "hospital_dibs", "enemy_faction_id", "enemy_faction_id TEXT DEFAULT ''")
+    _ensure_column(cur, "hospital_dibs", "enemy_faction_name", "enemy_faction_name TEXT DEFAULT ''")
+    _ensure_column(cur, "hospital_dibs", "enemy_name", "enemy_name TEXT DEFAULT ''")
+    _ensure_column(cur, "hospital_dibs", "dibbed_by_user_id", "dibbed_by_user_id TEXT DEFAULT ''")
+    _ensure_column(cur, "hospital_dibs", "dibbed_by_name", "dibbed_by_name TEXT DEFAULT ''")
+    _ensure_column(cur, "hospital_dibs", "dibbed_at", "dibbed_at TEXT DEFAULT ''")
+    _ensure_column(cur, "hospital_dibs", "in_hospital", "in_hospital INTEGER DEFAULT 0")
+    _ensure_column(cur, "hospital_dibs", "hospital_until_ts", "hospital_until_ts INTEGER DEFAULT 0")
+    _ensure_column(cur, "hospital_dibs", "last_seen_in_hospital_at", "last_seen_in_hospital_at TEXT DEFAULT ''")
+    _ensure_column(cur, "hospital_dibs", "left_hospital_at", "left_hospital_at TEXT DEFAULT ''")
+    _ensure_column(cur, "hospital_dibs", "dibs_lock_until_ts", "dibs_lock_until_ts INTEGER DEFAULT 0")
+    _ensure_column(cur, "hospital_dibs", "overview_remove_after_ts", "overview_remove_after_ts INTEGER DEFAULT 0")
 
     cur.execute("CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_users_faction_id ON users(faction_id)")
@@ -292,6 +331,9 @@ def init_db():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_exemptions_name ON faction_exemptions(faction_name)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_exemptions_name ON user_exemptions(user_name)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_exemptions_faction_id ON user_exemptions(faction_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_hospital_dibs_faction_id ON hospital_dibs(faction_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_hospital_dibs_enemy_faction_id ON hospital_dibs(enemy_faction_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_hospital_dibs_in_hospital ON hospital_dibs(faction_id, in_hospital)")
 
     con.commit()
     con.close()
@@ -1179,6 +1221,268 @@ def upsert_faction_terms_summary(
     )
 
     return get_faction_terms_summary(faction_id) or {}
+
+
+# -----------------------------
+# hospital dibs
+# -----------------------------
+
+def _utc_now_ts() -> int:
+    return int(_utc_now_dt().timestamp())
+
+
+def _hospital_dibs_cleanup_for_faction(faction_id: str):
+    faction_id = _clean_text(faction_id)
+    if not faction_id:
+        return
+    now_ts = _utc_now_ts()
+    con = _con()
+    cur = con.cursor()
+    cur.execute(
+        """
+        DELETE FROM hospital_dibs
+        WHERE faction_id = ?
+          AND in_hospital = 0
+          AND overview_remove_after_ts > 0
+          AND overview_remove_after_ts <= ?
+        """,
+        (faction_id, now_ts),
+    )
+    con.commit()
+    con.close()
+
+
+def get_hospital_dib(enemy_user_id: str, faction_id: str = "") -> Optional[Dict[str, Any]]:
+    enemy_user_id = _clean_text(enemy_user_id)
+    faction_id = _clean_text(faction_id)
+    if not enemy_user_id:
+        return None
+    _hospital_dibs_cleanup_for_faction(faction_id) if faction_id else None
+    con = _con()
+    cur = con.cursor()
+    if faction_id:
+        cur.execute(
+            "SELECT * FROM hospital_dibs WHERE faction_id = ? AND enemy_user_id = ? LIMIT 1",
+            (faction_id, enemy_user_id),
+        )
+    else:
+        cur.execute(
+            "SELECT * FROM hospital_dibs WHERE enemy_user_id = ? ORDER BY id DESC LIMIT 1",
+            (enemy_user_id,),
+        )
+    row = cur.fetchone()
+    con.close()
+    return _row_to_dict(row)
+
+
+def sync_hospital_dibs_snapshot(
+    faction_id: str,
+    faction_name: str = "",
+    enemy_faction_id: str = "",
+    enemy_faction_name: str = "",
+    members: Optional[List[Dict[str, Any]]] = None,
+) -> List[Dict[str, Any]]:
+    faction_id = _clean_text(faction_id)
+    if not faction_id:
+        return []
+
+    now = _utc_now()
+    now_ts = _utc_now_ts()
+    members = list(members or [])
+    current_ids = set()
+
+    con = _con()
+    cur = con.cursor()
+
+    for member in members:
+        enemy_user_id = _clean_text(member.get("user_id"))
+        if not enemy_user_id:
+            continue
+        current_ids.add(enemy_user_id)
+        enemy_name = _clean_text(member.get("name"))
+        hospital_until_ts = _to_int(member.get("hospital_until_ts"), 0)
+        cur.execute(
+            """
+            INSERT INTO hospital_dibs (
+                faction_id, faction_name, enemy_faction_id, enemy_faction_name, enemy_user_id, enemy_name,
+                dibbed_by_user_id, dibbed_by_name, dibbed_at, in_hospital, hospital_until_ts,
+                last_seen_in_hospital_at, left_hospital_at, dibs_lock_until_ts, overview_remove_after_ts,
+                created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, '', '', '', 1, ?, ?, '', 0, 0, ?, ?)
+            ON CONFLICT(faction_id, enemy_user_id) DO UPDATE SET
+                faction_name = excluded.faction_name,
+                enemy_faction_id = excluded.enemy_faction_id,
+                enemy_faction_name = excluded.enemy_faction_name,
+                enemy_name = excluded.enemy_name,
+                in_hospital = 1,
+                hospital_until_ts = CASE
+                    WHEN excluded.hospital_until_ts > 0 THEN excluded.hospital_until_ts
+                    ELSE hospital_dibs.hospital_until_ts
+                END,
+                last_seen_in_hospital_at = excluded.last_seen_in_hospital_at,
+                updated_at = excluded.updated_at
+            """,
+            (
+                faction_id,
+                _clean_text(faction_name),
+                _clean_text(enemy_faction_id),
+                _clean_text(enemy_faction_name),
+                enemy_user_id,
+                enemy_name,
+                hospital_until_ts,
+                now,
+                now,
+                now,
+            ),
+        )
+
+    cur.execute(
+        "SELECT enemy_user_id, dibbed_by_user_id, left_hospital_at FROM hospital_dibs WHERE faction_id = ? AND in_hospital = 1",
+        (faction_id,),
+    )
+    for row in cur.fetchall():
+        enemy_user_id = _clean_text(row["enemy_user_id"])
+        if enemy_user_id in current_ids:
+            continue
+        dibbed_by_user_id = _clean_text(row["dibbed_by_user_id"])
+        cur.execute(
+            """
+            UPDATE hospital_dibs
+            SET in_hospital = 0,
+                left_hospital_at = CASE WHEN COALESCE(left_hospital_at, '') = '' THEN ? ELSE left_hospital_at END,
+                dibs_lock_until_ts = CASE WHEN ? != '' THEN ? ELSE dibs_lock_until_ts END,
+                overview_remove_after_ts = CASE WHEN ? != '' THEN ? ELSE overview_remove_after_ts END,
+                updated_at = ?
+            WHERE faction_id = ? AND enemy_user_id = ?
+            """,
+            (
+                now,
+                dibbed_by_user_id,
+                now_ts + 30,
+                dibbed_by_user_id,
+                now_ts + 45,
+                now,
+                faction_id,
+                enemy_user_id,
+            ),
+        )
+
+    con.commit()
+    con.close()
+    _hospital_dibs_cleanup_for_faction(faction_id)
+    return list_hospital_dibs(faction_id, include_recent=True)
+
+
+def claim_hospital_dib(
+    faction_id: str,
+    enemy_user_id: str,
+    dibbed_by_user_id: str,
+    dibbed_by_name: str,
+) -> Dict[str, Any]:
+    faction_id = _clean_text(faction_id)
+    enemy_user_id = _clean_text(enemy_user_id)
+    dibbed_by_user_id = _clean_text(dibbed_by_user_id)
+    dibbed_by_name = _clean_text(dibbed_by_name)
+    if not faction_id or not enemy_user_id or not dibbed_by_user_id:
+        return {"ok": False, "error": "Missing dibs details."}
+
+    _hospital_dibs_cleanup_for_faction(faction_id)
+    now = _utc_now()
+    now_ts = _utc_now_ts()
+    con = _con()
+    cur = con.cursor()
+    cur.execute(
+        "SELECT * FROM hospital_dibs WHERE faction_id = ? AND enemy_user_id = ? LIMIT 1",
+        (faction_id, enemy_user_id),
+    )
+    row = _row_to_dict(cur.fetchone())
+    if not row:
+        con.close()
+        return {"ok": False, "error": "Enemy not found in hospital list."}
+    if not _safe_bool(row.get("in_hospital")):
+        con.close()
+        return {"ok": False, "error": "Enemy is not currently in hospital."}
+    if _to_int(row.get("dibs_lock_until_ts"), 0) > now_ts:
+        con.close()
+        return {"ok": False, "error": "Dibs is temporarily locked for this enemy."}
+    existing_dibber = _clean_text(row.get("dibbed_by_user_id"))
+    if existing_dibber and existing_dibber != dibbed_by_user_id:
+        con.close()
+        return {"ok": False, "error": "Enemy is already dibbed."}
+
+    cur.execute(
+        """
+        UPDATE hospital_dibs
+        SET dibbed_by_user_id = ?,
+            dibbed_by_name = ?,
+            dibbed_at = ?,
+            updated_at = ?
+        WHERE faction_id = ? AND enemy_user_id = ?
+        """,
+        (dibbed_by_user_id, dibbed_by_name, now, now, faction_id, enemy_user_id),
+    )
+    con.commit()
+    con.close()
+
+    add_audit_log(dibbed_by_user_id, dibbed_by_name, "hospital_dib_claimed", f"faction_id={faction_id};enemy_user_id={enemy_user_id}")
+    return {"ok": True, "item": get_hospital_dib(enemy_user_id, faction_id=faction_id) or {}}
+
+
+def list_hospital_dibs(faction_id: str, include_recent: bool = True) -> List[Dict[str, Any]]:
+    faction_id = _clean_text(faction_id)
+    if not faction_id:
+        return []
+    _hospital_dibs_cleanup_for_faction(faction_id)
+    now_ts = _utc_now_ts()
+    con = _con()
+    cur = con.cursor()
+    if include_recent:
+        cur.execute(
+            """
+            SELECT *
+            FROM hospital_dibs
+            WHERE faction_id = ?
+              AND (in_hospital = 1 OR overview_remove_after_ts > ?)
+            ORDER BY LOWER(enemy_name), enemy_user_id
+            """,
+            (faction_id, now_ts),
+        )
+    else:
+        cur.execute(
+            "SELECT * FROM hospital_dibs WHERE faction_id = ? AND in_hospital = 1 ORDER BY LOWER(enemy_name), enemy_user_id",
+            (faction_id,),
+        )
+    rows = [_row_to_dict(r) or {} for r in cur.fetchall()]
+    con.close()
+    return rows
+
+
+def list_overview_dibs(faction_id: str) -> List[Dict[str, Any]]:
+    faction_id = _clean_text(faction_id)
+    if not faction_id:
+        return []
+    _hospital_dibs_cleanup_for_faction(faction_id)
+    now_ts = _utc_now_ts()
+    con = _con()
+    cur = con.cursor()
+    cur.execute(
+        """
+        SELECT *
+        FROM hospital_dibs
+        WHERE faction_id = ?
+          AND dibbed_by_user_id != ''
+          AND (in_hospital = 1 OR overview_remove_after_ts > ?)
+        ORDER BY
+            CASE WHEN in_hospital = 1 THEN 0 ELSE 1 END,
+            LOWER(enemy_name),
+            enemy_user_id
+        """,
+        (faction_id, now_ts),
+    )
+    rows = [_row_to_dict(r) or {} for r in cur.fetchall()]
+    con.close()
+    return rows
 
 
 def get_faction_license_for_member(member_user_id: str) -> Optional[Dict[str, Any]]:
