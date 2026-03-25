@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         War Hub ⚔️
 // @namespace    fries91-war-hub
-// @version      3.2.3
+// @version      3.2.4
 // @description  War Hub by Fries91. Faction-license aware overlay with draggable icon, PDA friendly, shared war tools, faction member management, and payment lock handling.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -18,6 +18,7 @@
 
 (function () {
     'use strict';
+
 
     if (window.__WAR_HUB_V287__ && document.getElementById('warhub-shield')) return;
     window.__WAR_HUB_V287__ = true;
@@ -100,6 +101,7 @@
     var badge = null;
 
     var mounted = false;
+    var dragMoved = false;
     var isOpen = !!GM_getValue(K_OPEN, false);
     var currentTab = GM_getValue(K_TAB, 'settings');
     if (currentTab === 'owner') currentTab = 'admin';
@@ -115,6 +117,7 @@
     var lastStatusErr = false;
 
     var accessState = normalizeAccessCache(GM_getValue(K_ACCESS_CACHE, null));
+
     // ============================================================
     // 05. STYLES
     // ============================================================
@@ -123,13 +126,13 @@
 #warhub-shield {\n\
   position: fixed !important;\n\
   z-index: 2147483647 !important;\n\
-  width: 36px !important;\n\
-  height: 36px !important;\n\
-  border-radius: 10px !important;\n\
+  width: 42px !important;\n\
+  height: 42px !important;\n\
+  border-radius: 12px !important;\n\
   display: flex !important;\n\
   align-items: center !important;\n\
   justify-content: center !important;\n\
-  font-size: 17px !important;\n\
+  font-size: 21px !important;\n\
   line-height: 1 !important;\n\
   cursor: pointer !important;\n\
   user-select: none !important;\n\
@@ -137,8 +140,8 @@
   -webkit-touch-callout: none !important;\n\
   -webkit-tap-highlight-color: transparent !important;\n\
   touch-action: none !important;\n\
-  box-shadow: 0 8px 22px rgba(0,0,0,.42) !important;\n\
-  border: 1px solid rgba(255,255,255,.12) !important;\n\
+  box-shadow: 0 8px 24px rgba(0,0,0,.45) !important;\n\
+  border: 1px solid rgba(255,255,255,.10) !important;\n\
   background: radial-gradient(circle at 30% 20%, rgba(220,75,75,.98), rgba(110,12,12,.98) 55%, rgba(48,6,6,.98)) !important;\n\
   color: #fff !important;\n\
   left: auto !important;\n\
@@ -151,20 +154,19 @@
 }\n\
 #warhub-shield.dragging {\n\
   cursor: grabbing !important;\n\
-  transform: scale(1.03) !important;\n\
 }\n\
 \n\
 #warhub-badge {\n\
   position: fixed !important;\n\
   z-index: 2147483647 !important;\n\
-  min-width: 15px !important;\n\
-  height: 15px !important;\n\
+  min-width: 16px !important;\n\
+  height: 16px !important;\n\
   padding: 0 4px !important;\n\
   border-radius: 999px !important;\n\
   background: #ffd54a !important;\n\
   color: #111 !important;\n\
   font-size: 10px !important;\n\
-  line-height: 15px !important;\n\
+  line-height: 16px !important;\n\
   text-align: center !important;\n\
   font-weight: 800 !important;\n\
   box-shadow: 0 3px 12px rgba(0,0,0,.45) !important;\n\
@@ -209,6 +211,7 @@
   padding: 12px 12px 10px !important;\n\
   border-bottom: 1px solid rgba(255,255,255,.08) !important;\n\
   background: rgba(255,255,255,.03) !important;\n\
+  touch-action: none !important;\n\
 }\n\
 \n\
 .warhub-toprow {\n\
@@ -554,10 +557,10 @@
 .warhub-overview-link-card.dibs { border-color: rgba(220,90,90,.18) !important; }\n\
 @media (max-width: 520px) {\n\
   #warhub-shield {\n\
-    width: 34px !important;\n\
-    height: 34px !important;\n\
-    font-size: 16px !important;\n\
-    border-radius: 10px !important;\n\
+    width: 44px !important;\n\
+    height: 44px !important;\n\
+    font-size: 22px !important;\n\
+    border-radius: 12px !important;\n\
   }\n\
   #warhub-overlay {\n\
     left: 6px !important;\n\
@@ -586,6 +589,9 @@
   .warhub-body { padding: 10px !important; }\n\
 }\n\
 ";
+
+    GM_addStyle(css);
+
     // ============================================================
     // 06. BASIC UTILITIES
     // ============================================================
@@ -595,7 +601,7 @@
             .replace(/&/g, '&amp;')
             .replace(/</g, '&lt;')
             .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
+                        .replace(/"/g, '&quot;')
             .replace(/'/g, '&#39;');
     }
 
@@ -996,14 +1002,9 @@
 
     function getViewport() {
         var de = document.documentElement || {};
-        var w = Math.max(de.clientWidth || 0, window.innerWidth || 0, 320);
-        var h = Math.max(de.clientHeight || 0, window.innerHeight || 0, 320);
-
         return {
-            w: Math.max(320, Math.round(w)),
-            h: Math.max(320, Math.round(h)),
-            left: 0,
-            top: 0
+            w: Math.max(de.clientWidth || 0, window.innerWidth || 0, 320),
+            h: Math.max(de.clientHeight || 0, window.innerHeight || 0, 320)
         };
     }
 
@@ -1043,40 +1044,37 @@
         });
     }
 
-    function applyShieldPos() {
-        if (!shield) return;
+function applyShieldPos() {
+    if (!shield) return;
 
-        var vp = getViewport();
-        var width = shield.offsetWidth || 36;
-        var height = shield.offsetHeight || 36;
-        var margin = 8;
+    var vp = getViewport();
+    var width = shield.offsetWidth || 42;
+    var height = shield.offsetHeight || 42;
 
-        var fallback = {
-            left: Math.max(margin, vp.w - width - 12),
-            top: Math.max(margin, Math.round((vp.h - height) / 2))
-        };
+    var fallback = {
+        left: Math.max(8, vp.w - width - 14),
+        top: Math.max(80, Math.round((vp.h - height) / 2))
+    };
 
-        var pos = loadPos(K_SHIELD_POS, fallback);
+    var pos = loadPos(K_SHIELD_POS, fallback);
 
-        var minLeft = margin;
-        var maxLeft = Math.max(margin, vp.w - width - margin);
-        var minTop = margin;
-        var maxTop = Math.max(margin, vp.h - height - margin);
+    var maxLeft = Math.max(8, vp.w - width - 8);
+    var maxTop = Math.max(80, vp.h - height - 8);
 
-        var left = clamp(pos.left, minLeft, maxLeft);
-        var top = clamp(pos.top, minTop, maxTop);
+    var left = Number(pos.left);
+    var top = Number(pos.top);
 
-        shield.style.left = left + 'px';
-        shield.style.top = top + 'px';
-        shield.style.right = 'auto';
-        shield.style.bottom = 'auto';
-        shield.style.display = 'flex';
-        shield.style.visibility = 'visible';
-        shield.style.opacity = '1';
+    if (!isFinite(left) || left < 8 || left > maxLeft) left = fallback.left;
+    if (!isFinite(top) || top < 80 || top > maxTop) top = fallback.top;
 
-        savePos(K_SHIELD_POS, { left: left, top: top });
-        positionBadge();
-    }
+    shield.style.left = left + 'px';
+    shield.style.top = top + 'px';
+    shield.style.right = 'auto';
+    shield.style.bottom = 'auto';
+
+    savePos(K_SHIELD_POS, { left: left, top: top });
+    positionBadge();
+}
 
     function applyOverlayPos() {
         if (!overlay) return;
@@ -1093,12 +1091,6 @@
         overlay.style.maxWidth = '520px';
     }
 
-    function refreshFloatingUiPositions() {
-        applyShieldPos();
-        applyOverlayPos();
-        positionBadge();
-    }
-
     function positionBadge() {
         if (!badge || !shield) return;
 
@@ -1107,165 +1099,172 @@
         badge.style.top = Math.round(rect.top - 6) + 'px';
     }
 
-    function makeHoldDraggable(handle, target, key) {
-        if (!handle || !target) {
-            return {
-                didMove: function () { return false; },
-                isDragging: function () { return false; }
-            };
-        }
-
-        var dragging = false;
-        var moved = false;
-        var pressTimer = null;
-        var pressActive = false;
-        var startX = 0;
-        var startY = 0;
-        var startLeft = 0;
-        var startTop = 0;
-        var HOLD_MS = 240;
-        var DRAG_THRESHOLD = 8;
-
-        function clearPressTimer() {
-            if (pressTimer) {
-                clearTimeout(pressTimer);
-                pressTimer = null;
-            }
-        }
-
-        function resetPress() {
-            clearPressTimer();
-            pressActive = false;
-
-            if (dragging) {
-                dragging = false;
-                target.classList.remove('dragging');
-                handle.classList.remove('dragging');
-            }
-        }
-
-        function beginPress(clientX, clientY) {
-            moved = false;
-            dragging = false;
-            pressActive = true;
-            startX = clientX;
-            startY = clientY;
-
-            var rect = target.getBoundingClientRect();
-            var vp = getViewport();
-            startLeft = rect.left + vp.left;
-            startTop = rect.top + vp.top;
-
-            clearPressTimer();
-            pressTimer = setTimeout(function () {
-                if (!pressActive) return;
-                dragging = true;
-                target.classList.add('dragging');
-                handle.classList.add('dragging');
-            }, HOLD_MS);
-        }
-
-        function moveAt(clientX, clientY) {
-            if (!pressActive) return;
-
-            var dx = clientX - startX;
-            var dy = clientY - startY;
-
-            if (!dragging) {
-                if (Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD) {
-                    clearPressTimer();
-                    pressActive = false;
-                }
-                return;
-            }
-
-            moved = true;
-
-            var vp = getViewport();
-            var width = target.offsetWidth || 36;
-            var height = target.offsetHeight || 36;
-            var margin = 8;
-
-            var minLeft = vp.left + margin;
-            var maxLeft = vp.left + Math.max(margin, vp.w - width - margin);
-            var minTop = vp.top + margin;
-            var maxTop = vp.top + Math.max(margin, vp.h - height - margin);
-
-            var left = clamp(startLeft + dx, minLeft, maxLeft);
-            var top = clamp(startTop + dy, minTop, maxTop);
-
-            target.style.left = left + 'px';
-            target.style.top = top + 'px';
-            target.style.right = 'auto';
-            target.style.bottom = 'auto';
-
-            savePos(key, { left: left, top: top });
-            positionBadge();
-        }
-
-        function endPress() {
-            clearPressTimer();
-
-            var wasDragging = dragging;
-
-            pressActive = false;
-            dragging = false;
-            target.classList.remove('dragging');
-            handle.classList.remove('dragging');
-
-            if (wasDragging) {
-                setTimeout(function () {
-                    moved = false;
-                }, 140);
-                return true;
-            }
-
-            return false;
-        }
-
-        handle.addEventListener('mousedown', function (e) {
-            if (e.button !== 0) return;
-            beginPress(e.clientX, e.clientY);
-        });
-
-        document.addEventListener('mousemove', function (e) {
-            moveAt(e.clientX, e.clientY);
-        });
-
-        document.addEventListener('mouseup', function () {
-            endPress();
-        });
-
-        handle.addEventListener('touchstart', function (e) {
-            if (!e.touches || !e.touches.length) return;
-            var t = e.touches[0];
-            beginPress(t.clientX, t.clientY);
-        }, { passive: true });
-
-        document.addEventListener('touchmove', function (e) {
-            if (!pressActive || !e.touches || !e.touches.length) return;
-            var t = e.touches[0];
-            moveAt(t.clientX, t.clientY);
-            if (dragging && e.cancelable) e.preventDefault();
-        }, { passive: false });
-
-        document.addEventListener('touchend', function () {
-            endPress();
-        });
-
-        document.addEventListener('touchcancel', function () {
-            resetPress();
-        });
-
+function makeHoldDraggable(handle, target, key) {
+    if (!handle || !target) {
         return {
-            didMove: function () {
-                return moved;
-            },
-            isDragging: function () {
-                return dragging;
-            }
+            didMove: function () { return false; },
+            isDragging: function () { return false; }
         };
     }
+
+    var dragging = false;
+    var moved = false;
+    var pressTimer = null;
+    var pressActive = false;
+    var startX = 0;
+    var startY = 0;
+    var startLeft = 0;
+    var startTop = 0;
+    var HOLD_MS = 260;
+    var DRAG_THRESHOLD = 8;
+
+    function clearPressTimer() {
+        if (pressTimer) {
+            clearTimeout(pressTimer);
+            pressTimer = null;
+        }
+    }
+
+    function pageX(evt) {
+        if (evt.touches && evt.touches[0]) return evt.touches[0].clientX;
+        if (evt.changedTouches && evt.changedTouches[0]) return evt.changedTouches[0].clientX;
+        return evt.clientX;
+    }
+
+    function pageY(evt) {
+        if (evt.touches && evt.touches[0]) return evt.touches[0].clientY;
+        if (evt.changedTouches && evt.changedTouches[0]) return evt.changedTouches[0].clientY;
+        return evt.clientY;
+    }
+
+    function getSafeBounds() {
+        var vp = getViewport();
+        var rect = target.getBoundingClientRect();
+        var width = Math.round(rect.width || target.offsetWidth || 42);
+        var height = Math.round(rect.height || target.offsetHeight || 42);
+
+        var minLeft = 8;
+        var minTop = (target === shield) ? 80 : 8;
+        var maxLeft = Math.max(minLeft, vp.w - width - 8);
+        var maxTop = Math.max(minTop, vp.h - height - 8);
+
+        return {
+            minLeft: minLeft,
+            minTop: minTop,
+            maxLeft: maxLeft,
+            maxTop: maxTop
+        };
+    }
+
+    function clampAndApply(left, top, saveIt) {
+        var bounds = getSafeBounds();
+
+        left = Math.max(bounds.minLeft, Math.min(bounds.maxLeft, Math.round(left)));
+        top = Math.max(bounds.minTop, Math.min(bounds.maxTop, Math.round(top)));
+
+        target.style.left = left + 'px';
+        target.style.top = top + 'px';
+        target.style.right = 'auto';
+        target.style.bottom = 'auto';
+
+        if (saveIt && key) {
+            savePos(key, { left: left, top: top });
+        }
+
+        if (target === shield) {
+            positionBadge();
+        }
+    }
+
+    function startDrag(evt) {
+        dragging = true;
+        moved = false;
+
+        var rect = target.getBoundingClientRect();
+        startX = pageX(evt);
+        startY = pageY(evt);
+        startLeft = rect.left;
+        startTop = rect.top;
+
+        target.classList.add('warhub-dragging');
+    }
+
+    function onPress(evt) {
+        if (evt.type === 'mousedown' && evt.button !== 0) return;
+        if (dragging) return;
+
+        clearPressTimer();
+        pressActive = true;
+        moved = false;
+
+        startX = pageX(evt);
+        startY = pageY(evt);
+
+        pressTimer = setTimeout(function () {
+            if (!pressActive) return;
+            startDrag(evt);
+        }, HOLD_MS);
+            }
+
+    function onMove(evt) {
+        if (!pressActive && !dragging) return;
+
+        var x = pageX(evt);
+        var y = pageY(evt);
+        var dx = x - startX;
+        var dy = y - startY;
+
+        if (!dragging) {
+            if (Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD) {
+                clearPressTimer();
+            }
+            return;
+        }
+
+        evt.preventDefault();
+        moved = true;
+        clampAndApply(startLeft + dx, startTop + dy, false);
+    }
+
+    function finishDrag() {
+        clearPressTimer();
+        pressActive = false;
+
+        if (!dragging) return;
+
+        dragging = false;
+        target.classList.remove('warhub-dragging');
+
+        var rect = target.getBoundingClientRect();
+        clampAndApply(rect.left, rect.top, true);
+    }
+
+    function cancelPress() {
+        clearPressTimer();
+        pressActive = false;
+
+        if (dragging) {
+            finishDrag();
+        }
+    }
+
+    handle.addEventListener('touchstart', onPress, { passive: true });
+    handle.addEventListener('mousedown', onPress);
+
+    window.addEventListener('touchmove', onMove, { passive: false });
+    window.addEventListener('mousemove', onMove);
+
+    window.addEventListener('touchend', finishDrag);
+    window.addEventListener('mouseup', finishDrag);
+    window.addEventListener('touchcancel', cancelPress);
+    window.addEventListener('mouseleave', cancelPress);
+
+    return {
+        didMove: function () { return moved; },
+        isDragging: function () { return dragging; }
+    };
+}
+
     // ============================================================
     // 11. AUTH / LOGIN
     // ============================================================
@@ -1449,7 +1448,7 @@
         return _loadWarData.apply(this, arguments);
     }
 
-    function loadEnemies(force) {
+function loadEnemies(force) {
     return _loadEnemies.apply(this, arguments);
 }
 
@@ -1465,30 +1464,87 @@ function _loadEnemies() {
         if (!res.ok || !res.json) return warEnemiesCache || [];
 
         var payload = res.json || {};
-        var enemies = arr(payload.items || payload.enemies);
+        var war = (payload.war && typeof payload.war === 'object') ? payload.war : {};
+
+        var ownFactionId = String(
+            (state && state.faction && state.faction.id) ||
+            (state && state.faction && state.faction.faction_id) ||
+            (state && state.me && state.me.faction_id) ||
+            (state && state.license && state.license.faction_id) ||
+            war.my_faction_id ||
+            ''
+        ).trim();
+
+        var ownFactionName = String(
+            (state && state.faction && state.faction.name) ||
+            (state && state.me && state.me.faction_name) ||
+            (state && state.license && state.license.faction_name) ||
+            war.my_faction_name ||
+            ''
+        ).trim().toLowerCase();
+
+        var rawEnemyFactionId = String(
+            payload.faction_id ||
+            war.enemy_faction_id ||
+            ''
+        ).trim();
+
+        var rawEnemyFactionName = String(
+            payload.faction_name ||
+            war.enemy_faction_name ||
+            ''
+        ).trim();
+
+        var ownMembers = arr(
+            (state && state.members) ||
+            currentFactionMembers ||
+            factionMembersCache ||
+            []
+        );
+
+        var ownIds = {};
+        ownMembers.forEach(function (m) {
+            var id = String((m && (m.user_id || m.id)) || '').trim();
+            if (id) ownIds[id] = true;
+        });
+
+        var enemies = arr(payload.items || payload.enemies || []).filter(function (m) {
+            var id = String((m && (m.user_id || m.id)) || '').trim();
+            if (!id) return false;
+            if (ownIds[id]) return false;
+            return true;
+        });
+
+        var enemyFactionId = rawEnemyFactionId;
+        var enemyFactionName = rawEnemyFactionName;
+
+        if (
+            !enemyFactionId ||
+            (ownFactionId && enemyFactionId === ownFactionId) ||
+            (enemyFactionName && ownFactionName && enemyFactionName.trim().toLowerCase() === ownFactionName)
+        ) {
+            enemyFactionId = '';
+            enemyFactionName = '';
+            enemies = [];
+        }
 
         warEnemiesCache = enemies.slice();
-        warEnemiesFactionId = String(payload.faction_id || payload.enemy_faction_id || warEnemiesFactionId || '');
-        warEnemiesFactionName = String(payload.faction_name || payload.enemy_faction_name || warEnemiesFactionName || '');
+        warEnemiesFactionId = enemyFactionId;
+        warEnemiesFactionName = enemyFactionName;
         warEnemiesLoadedAt = Date.now();
 
         state = state || {};
         state.enemies = enemies.slice();
-        state.war = Object.assign({}, state.war || {}, {
+        state.war = Object.assign({}, state.war || {}, war, {
             enemy_faction_id: warEnemiesFactionId,
             enemy_faction_name: warEnemiesFactionName
         });
-
-        if (payload.buckets) state.enemies_by_state = payload.buckets;
-        if (payload.counts_by_state) state.enemy_bucket_counts = payload.counts_by_state;
-        if (payload.order) state.enemy_bucket_order = payload.order;
 
         return warEnemiesCache;
     });
 
     return _loadEnemies.apply(this, arguments);
 }
-
     function loadLiveSummary(force) {
         return _loadLiveSummary.apply(this, arguments);
     }
@@ -1730,35 +1786,18 @@ function _loadEnemies() {
     // 14. OVERLAY MOUNT / DOM
     // ============================================================
 
-    function bindPress(el, handler) {
+    function bindTap(el, handler) {
         if (!el) return;
 
-        var touchFired = false;
-
         el.addEventListener('touchend', function (e) {
-            touchFired = true;
             if (e.cancelable) e.preventDefault();
             e.stopPropagation();
             handler(e);
-            setTimeout(function () {
-                touchFired = false;
-            }, 350);
         }, { passive: false });
-
-        el.addEventListener('click', function (e) {
-            if (touchFired) {
-                if (e.cancelable) e.preventDefault();
-                e.stopPropagation();
-                return;
-            }
-            e.stopPropagation();
-            handler(e);
-        });
     }
 
     function mount() {
         if (mounted) return;
-        if (!document.body) return;
 
         shield = document.createElement('div');
         shield.id = 'warhub-shield';
@@ -1768,7 +1807,7 @@ function _loadEnemies() {
 
         badge = document.createElement('div');
         badge.id = 'warhub-badge';
-
+        
         overlay = document.createElement('div');
         overlay.id = 'warhub-overlay';
         overlay.innerHTML = [
@@ -1789,12 +1828,14 @@ function _loadEnemies() {
             '</div>'
         ].join('');
 
-        document.body.appendChild(overlay);
         document.body.appendChild(shield);
         document.body.appendChild(badge);
+        document.body.appendChild(overlay);
 
-        refreshFloatingUiPositions();
+        applyShieldPos();
+        applyOverlayPos();
         updateBadge();
+        positionBadge();
 
         var shieldDrag = makeHoldDraggable(shield, shield, K_SHIELD_POS);
 
@@ -1808,12 +1849,12 @@ function _loadEnemies() {
             );
         }
 
-        bindPress(shield, function () {
+        bindTap(shield, function () {
             if (shieldTapBlocked()) return;
             toggleOverlay();
         });
 
-        bindPress(overlay.querySelector('#warhub-close'), function () {
+        bindTap(overlay.querySelector('#warhub-close'), function () {
             setOverlayOpen(false);
         });
 
@@ -1844,29 +1885,6 @@ function _loadEnemies() {
             }
         }, { passive: false });
 
-        overlay.addEventListener('click', function (e) {
-            var tabBtn = e.target.closest('[data-tab]');
-            if (tabBtn) {
-                e.stopPropagation();
-                handleTabClick(tabBtn.getAttribute('data-tab'));
-                return;
-            }
-
-            var act = e.target.closest('[data-action]');
-            if (act) {
-                e.stopPropagation();
-                handleActionClick(act);
-                return;
-            }
-
-            var groupHead = e.target.closest('[data-group-toggle]');
-            if (groupHead) {
-                e.stopPropagation();
-                var key = groupHead.getAttribute('data-group-toggle');
-                toggleGroup(key);
-            }
-        });
-
         overlay.addEventListener('change', function (e) {
             var t = e.target;
 
@@ -1889,14 +1907,11 @@ function _loadEnemies() {
             }
         });
 
-        window.addEventListener('resize', refreshFloatingUiPositions);
-        window.addEventListener('orientationchange', refreshFloatingUiPositions);
-        window.addEventListener('scroll', refreshFloatingUiPositions, { passive: true });
-
-        if (window.visualViewport) {
-            window.visualViewport.addEventListener('resize', refreshFloatingUiPositions);
-            window.visualViewport.addEventListener('scroll', refreshFloatingUiPositions);
-        }
+        window.addEventListener('resize', function () {
+            applyShieldPos();
+            applyOverlayPos();
+            positionBadge();
+        });
 
         mounted = true;
         setOverlayOpen(isOpen);
@@ -1908,22 +1923,12 @@ function _loadEnemies() {
         GM_setValue(K_OPEN, isOpen);
 
         if (!overlay) return;
-        if (!shield) shield = document.getElementById('warhub-shield');
 
         overlay.classList.toggle('open', isOpen);
 
-        if (shield) {
-            shield.style.display = 'flex';
-            shield.style.visibility = 'visible';
-            shield.style.opacity = '1';
-            shield.style.zIndex = '2147483647';
-        }
-
-        applyOverlayPos();
-        applyShieldPos();
-        positionBadge();
-
         if (isOpen) {
+            applyOverlayPos();
+            positionBadge();
             renderBody();
         }
     }
@@ -2220,34 +2225,34 @@ function _loadEnemies() {
         ].join('');
     }
 
-    function renderEnemyRow(member) {
+function renderEnemyRow(member) {
     var id = getMemberId(member);
     var name = getMemberName(member);
     var st = stateLabel(member);
     var spy = spyText(member);
 
-    var profile = profileUrl(member);
-    var attack = attackUrl(member);
-    var bounty = bountyUrl(member);
+    if (state && state.members && arr(state.members).length) {
+        var ownIds = {};
+        arr(state.members).forEach(function (m) {
+            var ownId = String((m && (m.user_id || m.id)) || '').trim();
+            if (ownId) ownIds[ownId] = true;
+        });
+
+        if (id && ownIds[String(id)]) {
+            return '';
+        }
+    }
 
     return [
         '<div class="warhub-member-row">',
             '<div class="warhub-member-main">',
                 '<div class="warhub-row">',
-                    '<a class="warhub-member-name" href="' + esc(profile) + '" target="_blank" rel="noopener noreferrer">' + esc(name) + '</a>',
+                    '<a class="warhub-member-name" href="' + esc(profileUrl(member)) + '" target="_blank" rel="noopener noreferrer">' + esc(name) + '</a>',
+                    id ? '<span class="warhub-pill neutral">#' + esc(id) + '</span>' : '',
                     '<span class="warhub-pill ' + esc(st) + '">' + esc(humanStateLabel(st)) + '</span>',
                 '</div>',
-
-                '<div class="warhub-row warhub-row-sub">',
-                    id ? '<span class="warhub-mini">#' + esc(id) + '</span>' : '',
-                    member && member.level ? '<span class="warhub-mini">Lvl ' + esc(member.level) + '</span>' : '',
-                    member && member.last_action ? '<span class="warhub-mini">' + esc(member.last_action) + '</span>' : '',
-                '</div>',
-
                 '<div class="warhub-row">',
-                    '<a class="warhub-btn" href="' + esc(attack) + '" target="_blank" rel="noopener noreferrer">Attack</a>',
-                    '<a class="warhub-btn ghost" href="' + esc(profile) + '" target="_blank" rel="noopener noreferrer">Profile</a>',
-                    '<a class="warhub-btn ghost" href="' + esc(bounty) + '" target="_blank" rel="noopener noreferrer">Bounty</a>',
+                    '<a class="warhub-btn" href="' + esc(attackUrl(member)) + '" target="_blank" rel="noopener noreferrer">Attack</a>',
                 '</div>',
             '</div>',
             spy ? '<div class="warhub-spy-box">' + esc(spy) + '</div>' : '',
@@ -2307,7 +2312,7 @@ function renderOverviewTab() {
     var chainUs = Number(war.chain_us || 0);
     var chainThem = Number(war.chain_them || 0);
 
-    var termsText = String((state && state.terms && state.terms.text) || '');
+    var termsText = String((state && state.terms_summary && state.terms_summary.text) || '');
     var medDealsText = String((state && state.med_deals && state.med_deals.text) || '');
     var dibsText = String((state && state.dibs && state.dibs.text) || '');
 
@@ -2352,9 +2357,9 @@ function renderOverviewTab() {
             '<div class="warhub-mini-grid">',
                 '<div class="warhub-card warhub-overview-link-card terms">',
                     '<div class="warhub-row" style="justify-content:space-between;">',
-                        '<h3>📜 War Terms</h3>',
+                        '<h3>📜 Terms / Summary</h3>',
                     '</div>',
-                    '<div class="warhub-spy-box">' + esc(termsText || 'No war terms added yet.') + '</div>',
+                    '<div class="warhub-spy-box">' + esc(termsText || 'No terms / summary added yet.') + '</div>',
                 '</div>',
 
                 '<div class="warhub-card warhub-overview-link-card meddeals">',
@@ -2405,7 +2410,7 @@ function renderOverviewTab() {
                         '<span class="warhub-pill idle">Idle ' + esc(String(grouped.idle.length)) + '</span>',
                         '<span class="warhub-pill travel">Travel ' + esc(String(grouped.travel.length)) + '</span>',
                         '<span class="warhub-pill jail">Jail ' + esc(String(grouped.jail.length)) + '</span>',
-                        '<span class="warhub-pill hospital">Hospital ' + esc(String(grouped.hospital.length)) + '</span>',
+                                    '<span class="warhub-pill hospital">Hospital ' + esc(String(grouped.hospital.length)) + '</span>',
                         '<span class="warhub-pill offline">Offline ' + esc(String(grouped.offline.length)) + '</span>',
                     '</div>',
                 '</div>',
@@ -2420,113 +2425,68 @@ function renderOverviewTab() {
         ].join('');
     }
 
-    function renderEnemiesTab() {
+function renderEnemiesTab() {
+    var enemies = arr((state && state.enemies) || warEnemiesCache || []);
     var war = (state && state.war) || {};
+
+    var ownFactionId = String(
+        (state && state.faction && state.faction.id) ||
+        (state && state.faction && state.faction.faction_id) ||
+        (state && state.me && state.me.faction_id) ||
+        (state && state.license && state.license.faction_id) ||
+        war.my_faction_id ||
+        ''
+    ).trim();
+
+    var ownFactionName = String(
+        (state && state.faction && state.faction.name) ||
+        (state && state.me && state.me.faction_name) ||
+        (state && state.license && state.license.faction_name) ||
+        war.my_faction_name ||
+        ''
+    ).trim().toLowerCase();
+
+    var enemyFactionId = String(war.enemy_faction_id || warEnemiesFactionId || '').trim();
     var enemyFactionName = String(war.enemy_faction_name || warEnemiesFactionName || 'Enemy Faction');
-    var enemyFactionId = String(war.enemy_faction_id || warEnemiesFactionId || '');
+    var enemyFactionNameLc = enemyFactionName.trim().toLowerCase();
 
-    var search = String(GM_getValue('warhub_enemies_search', '') || '').trim().toLowerCase();
+    var ownMembers = arr(
+        (state && state.members) ||
+        currentFactionMembers ||
+        factionMembersCache ||
+        []
+    );
 
-    var backendBuckets =
-        (state && state.enemies_by_state) ||
-        (state && state.enemy_buckets) ||
-        (state && state.enemiesBuckets) ||
-        {};
+    var ownIds = {};
+    ownMembers.forEach(function (m) {
+        var id = String((m && (m.user_id || m.id)) || '').trim();
+        if (id) ownIds[id] = true;
+    });
 
-    var backendCounts =
-        (state && state.enemy_bucket_counts) ||
-        (state && state.counts_by_state) ||
-        {};
-
-    var backendOrder =
-        (state && state.enemy_bucket_order) ||
-        (state && state.enemyBucketOrder) ||
-        ['online', 'idle', 'travel', 'jail', 'hospital', 'offline'];
-
-    var buckets = {
-        online: arr(backendBuckets.online),
-        idle: arr(backendBuckets.idle),
-        travel: arr(backendBuckets.travel),
-        jail: arr(backendBuckets.jail),
-        hospital: arr(backendBuckets.hospital),
-        offline: arr(backendBuckets.offline)
-    };
+    enemies = enemies.filter(function (m) {
+        var id = String((m && (m.user_id || m.id)) || '').trim();
+        if (!id) return false;
+        if (ownIds[id]) return false;
+        return true;
+    });
 
     if (
-        !buckets.online.length &&
-        !buckets.idle.length &&
-        !buckets.travel.length &&
-        !buckets.jail.length &&
-        !buckets.hospital.length &&
-        !buckets.offline.length
+        !enemyFactionId ||
+        (ownFactionId && enemyFactionId === ownFactionId) ||
+        (enemyFactionNameLc && ownFactionName && enemyFactionNameLc === ownFactionName)
     ) {
-        var fallbackEnemies = arr((state && state.enemies) || warEnemiesCache || []);
-        var fallbackGrouped = groupMembers(fallbackEnemies);
-        buckets.online = arr(fallbackGrouped.online);
-        buckets.idle = arr(fallbackGrouped.idle);
-        buckets.travel = arr(fallbackGrouped.travel);
-        buckets.jail = arr(fallbackGrouped.jail);
-        buckets.hospital = arr(fallbackGrouped.hospital);
-        buckets.offline = arr(fallbackGrouped.offline);
+        enemies = [];
     }
 
-    function filterBucket(items) {
-        items = arr(items);
-        if (!search) return items;
-        return items.filter(function (m) {
-            return memberSearchText(m).indexOf(search) >= 0;
-        });
-    }
+    var searchRaw = String(GM_getValue('warhub_enemies_search', '') || '').trim();
+    var search = searchRaw.toLowerCase();
 
-    var filteredBuckets = {
-        online: filterBucket(buckets.online),
-        idle: filterBucket(buckets.idle),
-        travel: filterBucket(buckets.travel),
-        jail: filterBucket(buckets.jail),
-        hospital: filterBucket(buckets.hospital),
-        offline: filterBucket(buckets.offline)
-    };
-
-    var totalFiltered =
-        filteredBuckets.online.length +
-        filteredBuckets.idle.length +
-        filteredBuckets.travel.length +
-        filteredBuckets.jail.length +
-        filteredBuckets.hospital.length +
-        filteredBuckets.offline.length;
-
-    var totalLoaded =
-        arr(buckets.online).length +
-        arr(buckets.idle).length +
-        arr(buckets.travel).length +
-        arr(buckets.jail).length +
-        arr(buckets.hospital).length +
-        arr(buckets.offline).length;
-
-    function countFor(key) {
-        if (search) return arr(filteredBuckets[key]).length;
-        return Number(backendCounts && backendCounts[key] != null ? backendCounts[key] : arr(buckets[key]).length);
-    }
-
-    var groupHtml = [];
-    backendOrder.forEach(function (key) {
-        var items = filteredBuckets[key];
-        if (!items) return;
-
-        if (key === 'online') {
-            groupHtml.push(renderGroupBlock('enemies_online', items, renderEnemyRow, true));
-        } else if (key === 'idle') {
-            groupHtml.push(renderGroupBlock('enemies_idle', items, renderEnemyRow, true));
-        } else if (key === 'travel') {
-            groupHtml.push(renderGroupBlock('enemies_travel', items, renderEnemyRow, false));
-        } else if (key === 'jail') {
-            groupHtml.push(renderGroupBlock('enemies_jail', items, renderEnemyRow, false));
-        } else if (key === 'hospital') {
-            groupHtml.push(renderGroupBlock('enemies_hospital', items, renderEnemyRow, true));
-        } else if (key === 'offline') {
-            groupHtml.push(renderGroupBlock('enemies_offline', items, renderEnemyRow, false));
-        }
+    var filtered = enemies.filter(function (m) {
+        if (!search) return true;
+        return memberSearchText(m).indexOf(search) >= 0;
     });
+
+    var grouped = groupMembers(filtered);
 
     return [
         '<div class="warhub-grid">',
@@ -2537,26 +2497,25 @@ function renderOverviewTab() {
 
             '<div class="warhub-card">',
                 '<div class="warhub-kv"><div>Enemy faction</div><div>' + esc(enemyFactionName) + '</div></div>',
-                '<div class="warhub-kv"><div>Enemy faction ID</div><div>' + esc(enemyFactionId || '—') + '</div></div>',
-                '<div class="warhub-kv"><div>Loaded members</div><div>' + esc(String(totalLoaded)) + '</div></div>',
-                '<div class="warhub-kv"><div>Online</div><div>' + esc(String(countFor('online'))) + '</div></div>',
-                '<div class="warhub-kv"><div>Idle</div><div>' + esc(String(countFor('idle'))) + '</div></div>',
-                '<div class="warhub-kv"><div>Travel</div><div>' + esc(String(countFor('travel'))) + '</div></div>',
-                '<div class="warhub-kv"><div>Jail</div><div>' + esc(String(countFor('jail'))) + '</div></div>',
-                '<div class="warhub-kv"><div>Hospital</div><div>' + esc(String(countFor('hospital'))) + '</div></div>',
-                '<div class="warhub-kv"><div>Offline</div><div>' + esc(String(countFor('offline'))) + '</div></div>',
+                '<div class="warhub-kv"><div>Enemy faction ID</div><div>' + esc(String(enemyFactionId || '—')) + '</div></div>',
+                '<div class="warhub-kv"><div>Loaded members</div><div>' + esc(String(filtered.length)) + '</div></div>',
             '</div>',
 
             '<div class="warhub-card">',
                 '<div class="warhub-row">',
-                    '<input id="warhub-enemies-search" class="warhub-input" type="text" value="' + esc(search) + '" placeholder="Search enemy name or ID" />',
+                    '<input id="warhub-enemies-search" class="warhub-input" type="text" value="' + esc(searchRaw) + '" placeholder="Search enemy name or ID" />',
                     '<button type="button" class="warhub-btn ghost" data-action="enemies-refresh">Refresh</button>',
                 '</div>',
             '</div>',
 
-            totalFiltered ? [
+            filtered.length ? [
                 '<div class="warhub-grid">',
-                    groupHtml.join(''),
+                    renderGroupBlock('enemies_online', grouped.online, renderEnemyRow, true),
+                    renderGroupBlock('enemies_idle', grouped.idle, renderEnemyRow, true),
+                    renderGroupBlock('enemies_travel', grouped.travel, renderEnemyRow, false),
+                    renderGroupBlock('enemies_jail', grouped.jail, renderEnemyRow, false),
+                    renderGroupBlock('enemies_hospital', grouped.hospital, renderEnemyRow, true),
+                    renderGroupBlock('enemies_offline', grouped.offline, renderEnemyRow, false),
                 '</div>'
             ].join('') : '<div class="warhub-card">No enemy members loaded from the current war.</div>',
         '</div>'
@@ -2679,34 +2638,22 @@ function renderOverviewTab() {
     }
 
 function renderTermsTab() {
-    var terms = (state && state.terms) || {};
-    var summary = (state && state.summary_notes) || {};
-
-    var termsText = String(terms.text || '');
-    var summaryText = String(summary.text || '');
+    var box = (state && state.terms_summary) || {};
+    var text = String(box.text || '');
 
     return [
         '<div class="warhub-grid">',
             '<div class="warhub-hero-card">',
                 '<div class="warhub-title">Terms</div>',
-                '<div class="warhub-sub">Leader shared war terms and summary notes</div>',
+                '<div class="warhub-sub">Leader shared Terms / Summary box for the whole faction</div>',
             '</div>',
 
             '<div class="warhub-card warhub-col">',
-                '<label class="warhub-label" for="warhub-terms-text">War terms</label>',
-                '<textarea id="warhub-terms-text" class="warhub-textarea" placeholder="Write war terms here...">' + esc(termsText) + '</textarea>',
+                '<label class="warhub-label" for="warhub-terms-summary-text">Terms / Summary</label>',
+                '<textarea id="warhub-terms-summary-text" class="warhub-textarea" placeholder="Write terms, summary, instructions, or improvements here...">' + esc(text) + '</textarea>',
                 '<div class="warhub-row">',
-                    '<button type="button" class="warhub-btn" data-action="terms-save">Save</button>',
-                    '<button type="button" class="warhub-btn gray" data-action="terms-clear">Delete</button>',
-                '</div>',
-            '</div>',
-
-            '<div class="warhub-card warhub-col">',
-                '<label class="warhub-label" for="warhub-summary-text">War summary / improvements</label>',
-                '<textarea id="warhub-summary-text" class="warhub-textarea" placeholder="Write war summary and improvements here...">' + esc(summaryText) + '</textarea>',
-                '<div class="warhub-row">',
-                    '<button type="button" class="warhub-btn" data-action="summary-notes-save">Save</button>',
-                    '<button type="button" class="warhub-btn gray" data-action="summary-notes-clear">Delete</button>',
+                    '<button type="button" class="warhub-btn" data-action="terms-summary-save">Save</button>',
+                    '<button type="button" class="warhub-btn gray" data-action="terms-summary-clear">Delete</button>',
                 '</div>',
             '</div>',
         '</div>'
@@ -2993,10 +2940,10 @@ function renderAdminTab() {
                         '</div>',
                         '<div class="warhub-row" style="flex-wrap:wrap;justify-content:flex-end;">',
                             active
-                                ? '<span class="warhub-pill green">Active</span>'
-                                : '<span class="warhub-pill gray">Inactive</span>',
+                                ? '<span class="warhub-pill good">Active</span>'
+                                : '<span class="warhub-pill bad">Inactive</span>',
                             exemptFaction
-                                ? '<span class="warhub-pill purple">Exempt</span>'
+                                ? '<span class="warhub-pill neutral">Exempt</span>'
                                 : '',
                             '<span class="warhub-pill neutral">Days Left: ' + esc(String(daysLeft)) + '</span>',
                         '</div>',
@@ -3016,6 +2963,9 @@ function renderAdminTab() {
                             : '',
                         factionId
                             ? '<button type="button" class="warhub-btn gray" data-action="admin-expire" data-faction-id="' + esc(factionId) + '">Expire</button>'
+                            : '',
+                        factionId
+                            ? '<button type="button" class="warhub-btn warn" data-action="admin-faction-exempt-add" data-faction-id="' + esc(factionId) + '" data-faction-name="' + esc(factionName) + '">Exempt Faction</button>'
                             : '',
                     '</div>',
                 '</div>'
@@ -3042,6 +2992,40 @@ function renderAdminTab() {
             '</div>',
 
             '<div class="warhub-card warhub-col">',
+                '<h3>Faction Exemption</h3>',
+                '<label class="warhub-label" for="warhub-admin-faction-id">Faction ID</label>',
+                '<input id="warhub-admin-faction-id" class="warhub-input" type="text" placeholder="Faction ID" />',
+                '<label class="warhub-label" for="warhub-admin-faction-name">Faction Name (optional)</label>',
+                '<input id="warhub-admin-faction-name" class="warhub-input" type="text" placeholder="Faction name" />',
+                '<label class="warhub-label" for="warhub-admin-faction-note">Note (optional)</label>',
+                '<textarea id="warhub-admin-faction-note" class="warhub-textarea" placeholder="Reason for exemption"></textarea>',
+                '<div class="warhub-row">',
+                    '<button type="button" class="warhub-btn green" data-action="admin-faction-exempt-save">Save Faction Exemption</button>',
+                    '<button type="button" class="warhub-btn gray" data-action="admin-faction-exempt-delete">Delete Faction Exemption</button>',
+                '</div>',
+                '<div class="warhub-sub">Faction exemption = no pay required and all faction members can use member features.</div>',
+            '</div>',
+
+            '<div class="warhub-card warhub-col">',
+                '<h3>Player Exemption</h3>',
+                '<label class="warhub-label" for="warhub-admin-user-id">Player ID</label>',
+                '<input id="warhub-admin-user-id" class="warhub-input" type="text" placeholder="Player ID" />',
+                '<label class="warhub-label" for="warhub-admin-user-name">Player Name (optional)</label>',
+                '<input id="warhub-admin-user-name" class="warhub-input" type="text" placeholder="Player name" />',
+                '<label class="warhub-label" for="warhub-admin-user-faction-id">Faction ID (optional)</label>',
+                        '<input id="warhub-admin-user-faction-id" class="warhub-input" type="text" placeholder="Faction ID" />',
+                '<label class="warhub-label" for="warhub-admin-user-faction-name">Faction Name (optional)</label>',
+                '<input id="warhub-admin-user-faction-name" class="warhub-input" type="text" placeholder="Faction name" />',
+                '<label class="warhub-label" for="warhub-admin-user-note">Note (optional)</label>',
+                '<textarea id="warhub-admin-user-note" class="warhub-textarea" placeholder="Reason for exemption"></textarea>',
+                '<div class="warhub-row">',
+                    '<button type="button" class="warhub-btn green" data-action="admin-user-exempt-save">Save Player Exemption</button>',
+                    '<button type="button" class="warhub-btn gray" data-action="admin-user-exempt-delete">Delete Player Exemption</button>',
+                '</div>',
+                '<div class="warhub-sub">Player exemption = script free and member features unlocked for that player.</div>',
+            '</div>',
+
+            '<div class="warhub-card warhub-col">',
                 '<h3>Recent Activity</h3>',
                 recentHtml,
             '</div>',
@@ -3061,311 +3045,411 @@ function renderAdminTab() {
     // 22. ACTION HANDLERS
     // ============================================================
 
-    function handleActionClick(el) {
-        return _handleActionClick.apply(this, arguments);
-    }
+function handleActionClick(el) {
+    return _handleActionClick.apply(this, arguments);
+}
 
-    function _handleActionClick() {
-        _handleActionClick = _asyncToGenerator(function* (el) {
-            var action = el && el.getAttribute('data-action');
-            if (!action) return;
+function _handleActionClick() {
+    _handleActionClick = _asyncToGenerator(function* (el) {
+        var action = el && el.getAttribute('data-action');
+        if (!action) return;
 
-            try {
-                if (action === 'login') {
-                    yield doLogin();
-                    return;
-                }
-
-                if (action === 'logout') {
-                    doLogout();
-                    return;
-                }
-
-                if (action === 'members-refresh') {
-                    setStatus('Refreshing members...', false);
-                    yield loadFactionMembers(true);
-                    membersLiveStamp = Date.now();
-                    renderBody();
-                    setStatus('Members refreshed.', false);
-                    return;
-                }
-
-                if (action === 'enemies-refresh') {
-                    setStatus('Refreshing enemies...', false);
-                    yield loadWarData(true);
-                    yield loadEnemies(true);
-                    renderBody();
-                    setStatus('Enemies refreshed.', false);
-                    return;
-                }
-
-                if (action === 'meddeals-save') {
-                    var medDealsTextEl = overlay && overlay.querySelector('#warhub-meddeals-text');
-                    var medDealsText = String((medDealsTextEl && medDealsTextEl.value) || '');
-
-                    var saveMedDealsRes = yield authedReq('POST', '/api/meddeals', {
-                        text: medDealsText
-                    });
-
-                    if (!saveMedDealsRes.ok) {
-                        setStatus((saveMedDealsRes.json && saveMedDealsRes.json.error) || 'Failed to save med deals.', true);
-                        return;
-                    }
-
-                    state = state || {};
-                    state.med_deals = state.med_deals || {};
-                    state.med_deals.text = medDealsText;
-                    renderBody();
-                    setStatus('Med deals saved.', false);
-                    return;
-                }
-
-                if (action === 'meddeals-clear') {
-                    var clearMedDealsRes = yield authedReq('POST', '/api/meddeals', {
-                        text: ''
-                    });
-
-                    if (!clearMedDealsRes.ok) {
-                        setStatus((clearMedDealsRes.json && clearMedDealsRes.json.error) || 'Failed to clear med deals.', true);
-                        return;
-                    }
-
-                    state = state || {};
-                    state.med_deals = state.med_deals || {};
-                    state.med_deals.text = '';
-                    renderBody();
-                    setStatus('Med deals cleared.', false);
-                    return;
-                }
-
-                if (action === 'terms-save') {
-                    var termsTextEl = overlay && overlay.querySelector('#warhub-terms-text');
-                    var termsText = String((termsTextEl && termsTextEl.value) || '');
-
-                    var saveTermsRes = yield authedReq('POST', '/api/terms', {
-                        text: termsText
-                    });
-
-                    if (!saveTermsRes.ok) {
-                        setStatus((saveTermsRes.json && saveTermsRes.json.error) || 'Failed to save war terms.', true);
-                        return;
-                    }
-
-                    state = state || {};
-                    state.terms = state.terms || {};
-                    state.terms.text = termsText;
-                    renderBody();
-                    setStatus('War terms saved.', false);
-                    return;
-                }
-
-                if (action === 'terms-clear') {
-                    var clearTermsRes = yield authedReq('POST', '/api/terms', {
-                        text: ''
-                    });
-
-                    if (!clearTermsRes.ok) {
-                        setStatus((clearTermsRes.json && clearTermsRes.json.error) || 'Failed to clear war terms.', true);
-                        return;
-                    }
-
-                    state = state || {};
-                    state.terms = state.terms || {};
-                    state.terms.text = '';
-                    renderBody();
-                    setStatus('War terms cleared.', false);
-                    return;
-                }
-
-                if (action === 'summary-notes-save') {
-                    var summaryTextEl = overlay && overlay.querySelector('#warhub-summary-text');
-                    var summaryText = String((summaryTextEl && summaryTextEl.value) || '');
-
-                    var saveSummaryRes = yield authedReq('POST', '/api/summary-notes', {
-                        text: summaryText
-                    });
-
-                    if (!saveSummaryRes.ok) {
-                        setStatus((saveSummaryRes.json && saveSummaryRes.json.error) || 'Failed to save summary notes.', true);
-                        return;
-                    }
-
-                    state = state || {};
-                    state.summary_notes = state.summary_notes || {};
-                    state.summary_notes.text = summaryText;
-                    renderBody();
-                    setStatus('Summary notes saved.', false);
-                    return;
-                }
-
-                if (action === 'summary-notes-clear') {
-                    var clearSummaryRes = yield authedReq('POST', '/api/summary-notes', {
-                        text: ''
-                    });
-
-                    if (!clearSummaryRes.ok) {
-                        setStatus((clearSummaryRes.json && clearSummaryRes.json.error) || 'Failed to clear summary notes.', true);
-                        return;
-                    }
-
-                    state = state || {};
-                    state.summary_notes = state.summary_notes || {};
-                    state.summary_notes.text = '';
-                    renderBody();
-                    setStatus('Summary notes cleared.', false);
-                    return;
-                }
-
-                if (action === 'target-save') {
-                    var targetNameEl = overlay && overlay.querySelector('#warhub-target-name');
-                    var targetIdEl = overlay && overlay.querySelector('#warhub-target-id');
-                    var targetNoteEl = overlay && overlay.querySelector('#warhub-target-note');
-
-                    var targetPayload = {
-                        name: String((targetNameEl && targetNameEl.value) || ''),
-                        user_id: cleanInputValue(targetIdEl && targetIdEl.value),
-                        note: String((targetNoteEl && targetNoteEl.value) || '')
-                    };
-
-                    var targetRes = yield authedReq('POST', '/api/targets', targetPayload);
-                    if (!targetRes.ok) {
-                        setStatus((targetRes.json && targetRes.json.error) || 'Failed to save target.', true);
-                        return;
-                    }
-
-                    yield loadState();
-                    renderBody();
-                    setStatus('Target saved.', false);
-                    return;
-                }
-
-                if (action === 'activate-member') {
-                    var activateUserId = el.getAttribute('data-user-id');
-                    if (!activateUserId) return;
-
-                    var activateRes = yield authedReq('POST', '/api/faction/members/' + encodeURIComponent(activateUserId) + '/activate', {});
-                    if (!activateRes.ok) {
-                        setStatus((activateRes.json && activateRes.json.error) || 'Failed to activate member.', true);
-                        return;
-                    }
-
-                    yield loadFactionMembers(true);
-                    yield refreshFactionPaymentData();
-                    renderBody();
-                    setStatus('Member activated.', false);
-                    return;
-                }
-
-                if (action === 'remove-member') {
-                    var removeUserId = el.getAttribute('data-user-id');
-                    if (!removeUserId) return;
-
-                    var removeRes = yield authedReq('POST', '/api/faction/members/' + encodeURIComponent(removeUserId) + '/remove', {});
-                    if (!removeRes.ok) {
-                        setStatus((removeRes.json && removeRes.json.error) || 'Failed to remove member.', true);
-                        return;
-                    }
-
-                    yield loadFactionMembers(true);
-                    yield refreshFactionPaymentData();
-                    renderBody();
-                    setStatus('Member removed.', false);
-                    return;
-                }
-
-                if (action === 'admin-history') {
-                    var historyFactionId = el.getAttribute('data-faction-id');
-                    if (!historyFactionId) return;
-
-                    var historyRes = yield adminReq('GET', '/api/admin/faction-licenses/' + encodeURIComponent(historyFactionId) + '/history');
-                    if (!historyRes.ok) {
-                        setStatus((historyRes.json && historyRes.json.error) || 'Failed to load history.', true);
-                        return;
-                    }
-
-                    var items = arr(historyRes.json && historyRes.json.items);
-                    pushLocalNotification('info', 'History loaded for faction ' + historyFactionId + ' (' + items.length + ' rows).');
-                    updateBadge();
-                    setStatus('History loaded. See notifications.', false);
-                    return;
-                }
-
-                if (action === 'admin-renew') {
-                    var renewFactionId = el.getAttribute('data-faction-id');
-                    if (!renewFactionId) return;
-
-                    var renewRes = yield adminReq('POST', '/api/admin/faction-licenses/' + encodeURIComponent(renewFactionId) + '/renew', {});
-                    if (!renewRes.ok) {
-                        setStatus((renewRes.json && renewRes.json.error) || 'Failed to renew faction.', true);
-                        return;
-                    }
-
-                    yield loadAdminDashboard(true);
-                    renderBody();
-                    setStatus('Faction renewed.', false);
-                    return;
-                }
-
-                if (action === 'admin-expire') {
-                    var expireFactionId = el.getAttribute('data-faction-id');
-                    if (!expireFactionId) return;
-
-                    var expireRes = yield adminReq('POST', '/api/admin/faction-licenses/' + encodeURIComponent(expireFactionId) + '/expire', {});
-                    if (!expireRes.ok) {
-                        setStatus((expireRes.json && expireRes.json.error) || 'Failed to expire faction.', true);
-                        return;
-                    }
-
-                    yield loadAdminDashboard(true);
-                    renderBody();
-                    setStatus('Faction expired.', false);
-                    return;
-                }
-
-                if (action === 'chain-available') {
-                    var chainAvailableRes = yield authedReq('POST', '/api/chain', { available: true });
-                    if (!chainAvailableRes.ok) {
-                        setStatus((chainAvailableRes.json && chainAvailableRes.json.error) || 'Failed to update chain.', true);
-                        return;
-                    }
-                    yield loadState();
-                    renderBody();
-                    setStatus('Chain marked available.', false);
-                    return;
-                }
-
-                if (action === 'chain-unavailable') {
-                    var chainUnavailableRes = yield authedReq('POST', '/api/chain', { available: false });
-                    if (!chainUnavailableRes.ok) {
-                        setStatus((chainUnavailableRes.json && chainUnavailableRes.json.error) || 'Failed to update chain.', true);
-                        return;
-                    }
-                    yield loadState();
-                    renderBody();
-                    setStatus('Chain marked unavailable.', false);
-                    return;
-                }
-
-                if (action === 'chain-toggle-sitter') {
-                    var current = !!(state && state.chain && state.chain.sitter_enabled);
-                    var chainSitterRes = yield authedReq('POST', '/api/chain/sitter', { enabled: !current });
-                    if (!chainSitterRes.ok) {
-                        setStatus((chainSitterRes.json && chainSitterRes.json.error) || 'Failed to update chain sitter.', true);
-                        return;
-                    }
-                    yield loadState();
-                    renderBody();
-                    setStatus('Chain sitter updated.', false);
-                    return;
-                }
-            } catch (err) {
-                console.error('War Hub action error:', action, err);
-                setStatus('Action failed: ' + action, true);
+        try {
+            if (action === 'login') {
+                yield doLogin();
+                return;
             }
-        });
-        return _handleActionClick.apply(this, arguments);
-    }
 
+            if (action === 'admin-faction-exempt-save') {
+                var factionIdEl = overlay && overlay.querySelector('#warhub-admin-faction-id');
+                var factionNameEl = overlay && overlay.querySelector('#warhub-admin-faction-name');
+                var factionNoteEl = overlay && overlay.querySelector('#warhub-admin-faction-note');
+
+                var factionId = cleanInputValue(factionIdEl && factionIdEl.value);
+                var factionName = String((factionNameEl && factionNameEl.value) || '').trim();
+                var note = String((factionNoteEl && factionNoteEl.value) || '').trim();
+
+                if (!factionId) {
+                    setStatus('Enter a faction ID first.', true);
+                    return;
+                }
+
+                var saveFactionExemptRes = yield adminReq('POST', '/api/admin/exemptions/factions', {
+                    faction_id: factionId,
+                    faction_name: factionName,
+                    note: note
+                });
+
+                if (!saveFactionExemptRes.ok) {
+                    setStatus((saveFactionExemptRes.json && saveFactionExemptRes.json.error) || 'Failed to save faction exemption.', true);
+                    return;
+                }
+
+                yield loadAdminDashboard(true);
+                setStatus('Faction exemption saved.', false);
+                renderBody();
+                return;
+            }
+
+            if (action === 'admin-faction-exempt-delete') {
+                var deleteFactionIdEl = overlay && overlay.querySelector('#warhub-admin-faction-id');
+                var deleteFactionId = cleanInputValue(deleteFactionIdEl && deleteFactionIdEl.value);
+
+                if (!deleteFactionId) {
+                    setStatus('Enter a faction ID to delete.', true);
+                    return;
+                }
+
+                var deleteFactionExemptRes = yield adminReq('DELETE', '/api/admin/exemptions/factions/' + encodeURIComponent(deleteFactionId), null);
+
+                if (!deleteFactionExemptRes.ok) {
+                    setStatus((deleteFactionExemptRes.json && deleteFactionExemptRes.json.error) || 'Failed to delete faction exemption.', true);
+                    return;
+                }
+
+                yield loadAdminDashboard(true);
+                setStatus('Faction exemption deleted.', false);
+                renderBody();
+                return;
+            }
+
+            if (action === 'admin-user-exempt-save') {
+                var userIdEl = overlay && overlay.querySelector('#warhub-admin-user-id');
+                var userNameEl = overlay && overlay.querySelector('#warhub-admin-user-name');
+                var userFactionIdEl = overlay && overlay.querySelector('#warhub-admin-user-faction-id');
+                var userFactionNameEl = overlay && overlay.querySelector('#warhub-admin-user-faction-name');
+                var userNoteEl = overlay && overlay.querySelector('#warhub-admin-user-note');
+
+                var userId = cleanInputValue(userIdEl && userIdEl.value);
+                var userName = String((userNameEl && userNameEl.value) || '').trim();
+                var userFactionId = cleanInputValue(userFactionIdEl && userFactionIdEl.value);
+                var userFactionName = String((userFactionNameEl && userFactionNameEl.value) || '').trim();
+                var userNote = String((userNoteEl && userNoteEl.value) || '').trim();
+
+                if (!userId) {
+                    setStatus('Enter a player ID first.', true);
+                    return;
+                }
+
+                var saveUserExemptRes = yield adminReq('POST', '/api/admin/exemptions/users', {
+                    user_id: userId,
+                    user_name: userName,
+                    faction_id: userFactionId,
+                    faction_name: userFactionName,
+                    note: userNote
+                });
+
+                if (!saveUserExemptRes.ok) {
+                    setStatus((saveUserExemptRes.json && saveUserExemptRes.json.error) || 'Failed to save player exemption.', true);
+                    return;
+                }
+
+                yield loadAdminDashboard(true);
+                setStatus('Player exemption saved.', false);
+                renderBody();
+                return;
+            }
+
+            if (action === 'admin-user-exempt-delete') {
+                var deleteUserIdEl = overlay && overlay.querySelector('#warhub-admin-user-id');
+                var deleteUserId = cleanInputValue(deleteUserIdEl && deleteUserIdEl.value);
+
+                if (!deleteUserId) {
+                    setStatus('Enter a player ID to delete.', true);
+                    return;
+                }
+
+                var deleteUserExemptRes = yield adminReq('DELETE', '/api/admin/exemptions/users/' + encodeURIComponent(deleteUserId), null);
+
+                if (!deleteUserExemptRes.ok) {
+                    setStatus((deleteUserExemptRes.json && deleteUserExemptRes.json.error) || 'Failed to delete player exemption.', true);
+                    return;
+                }
+
+                yield loadAdminDashboard(true);
+                setStatus('Player exemption deleted.', false);
+                renderBody();
+                return;
+            }
+
+            if (action === 'admin-faction-exempt-add') {
+                var quickFactionId = cleanInputValue(el.getAttribute('data-faction-id'));
+                var quickFactionName = String(el.getAttribute('data-faction-name') || '').trim();
+
+                if (!quickFactionId) {
+                    setStatus('Missing faction ID.', true);
+                    return;
+                }
+
+                var quickFactionExemptRes = yield adminReq('POST', '/api/admin/exemptions/factions', {
+                    faction_id: quickFactionId,
+                    faction_name: quickFactionName,
+                    note: 'Added from Admin faction license card'
+                });
+
+                if (!quickFactionExemptRes.ok) {
+                    setStatus((quickFactionExemptRes.json && quickFactionExemptRes.json.error) || 'Failed to exempt faction.', true);
+                    return;
+                }
+
+                yield loadAdminDashboard(true);
+                setStatus('Faction marked exempt.', false);
+                renderBody();
+                return;
+            }
+
+            if (action === 'logout') {
+                doLogout();
+                return;
+            }
+
+            if (action === 'members-refresh') {
+                setStatus('Refreshing members...', false);
+                yield loadFactionMembers(true);
+                membersLiveStamp = Date.now();
+                renderBody();
+                setStatus('Members refreshed.', false);
+                return;
+            }
+
+            if (action === 'enemies-refresh') {
+                setStatus('Refreshing enemies...', false);
+                yield loadWarData(true);
+                yield loadEnemies(true);
+                renderBody();
+                setStatus('Enemies refreshed.', false);
+                return;
+            }
+
+            if (action === 'meddeals-save') {
+                var medDealsTextEl = overlay && overlay.querySelector('#warhub-meddeals-text');
+                var medDealsText = String((medDealsTextEl && medDealsTextEl.value) || '');
+
+                var saveMedDealsRes = yield authedReq('POST', '/api/meddeals', {
+                    text: medDealsText
+                });
+
+                if (!saveMedDealsRes.ok) {
+                    setStatus((saveMedDealsRes.json && saveMedDealsRes.json.error) || 'Failed to save med deals.', true);
+                    return;
+                }
+
+                state = state || {};
+                state.med_deals = state.med_deals || {};
+                state.med_deals.text = medDealsText;
+                renderBody();
+                setStatus('Med deals saved.', false);
+                return;
+            }
+
+            if (action === 'meddeals-clear') {
+                var clearMedDealsRes = yield authedReq('POST', '/api/meddeals', {
+                    text: ''
+                });
+
+                if (!clearMedDealsRes.ok) {
+                    setStatus((clearMedDealsRes.json && clearMedDealsRes.json.error) || 'Failed to clear med deals.', true);
+                    return;
+                }
+
+                state = state || {};
+                state.med_deals = state.med_deals || {};
+                state.med_deals.text = '';
+                renderBody();
+                setStatus('Med deals cleared.', false);
+                return;
+            }
+
+            if (action === 'terms-summary-save') {
+                var boxEl = overlay && overlay.querySelector('#warhub-terms-summary-text');
+                var boxText = String((boxEl && boxEl.value) || '');
+
+                var saveBoxRes = yield authedReq('POST', '/api/terms-summary', {
+                    text: boxText
+                });
+
+                if (!saveBoxRes.ok) {
+                    setStatus((saveBoxRes.json && saveBoxRes.json.error) || 'Failed to save Terms / Summary.', true);
+                    return;
+                }
+
+                state = state || {};
+                state.terms_summary = state.terms_summary || {};
+                state.terms_summary.text = boxText;
+
+                renderBody();
+                setStatus('Terms / Summary saved.', false);
+                return;
+            }
+
+            if (action === 'terms-summary-clear') {
+                var clearBoxRes = yield authedReq('POST', '/api/terms-summary', {
+                    text: ''
+                });
+
+                if (!clearBoxRes.ok) {
+                    setStatus((clearBoxRes.json && clearBoxRes.json.error) || 'Failed to clear Terms / Summary.', true);
+                    return;
+                }
+
+                state = state || {};
+                state.terms_summary = state.terms_summary || {};
+                state.terms_summary.text = '';
+
+                renderBody();
+                setStatus('Terms / Summary cleared.', false);
+                return;
+            }
+
+            if (action === 'target-save') {
+                var targetNameEl = overlay && overlay.querySelector('#warhub-target-name');
+                var targetIdEl = overlay && overlay.querySelector('#warhub-target-id');
+                var targetNoteEl = overlay && overlay.querySelector('#warhub-target-note');
+
+                var targetPayload = {
+                    name: String((targetNameEl && targetNameEl.value) || ''),
+                    user_id: cleanInputValue(targetIdEl && targetIdEl.value),
+                    note: String((targetNoteEl && targetNoteEl.value) || '')
+                };
+
+                var targetRes = yield authedReq('POST', '/api/targets', targetPayload);
+                if (!targetRes.ok) {
+                    setStatus((targetRes.json && targetRes.json.error) || 'Failed to save target.', true);
+                    return;
+                }
+
+                yield loadState();
+                renderBody();
+                setStatus('Target saved.', false);
+                return;
+            }
+
+            if (action === 'activate-member') {
+                var activateUserId = el.getAttribute('data-user-id');
+                if (!activateUserId) return;
+
+                var activateRes = yield authedReq('POST', '/api/faction/members/' + encodeURIComponent(activateUserId) + '/activate', {});
+                if (!activateRes.ok) {
+                    setStatus((activateRes.json && activateRes.json.error) || 'Failed to activate member.', true);
+                    return;
+                }
+
+                yield loadFactionMembers(true);
+                yield refreshFactionPaymentData();
+                renderBody();
+                setStatus('Member activated.', false);
+                return;
+            }
+
+            if (action === 'remove-member') {
+                var removeUserId = el.getAttribute('data-user-id');
+                if (!removeUserId) return;
+
+                var removeRes = yield authedReq('POST', '/api/faction/members/' + encodeURIComponent(removeUserId) + '/remove', {});
+                if (!removeRes.ok) {
+                    setStatus((removeRes.json && removeRes.json.error) || 'Failed to remove member.', true);
+                    return;
+                }
+
+                yield loadFactionMembers(true);
+                yield refreshFactionPaymentData();
+                renderBody();
+                setStatus('Member removed.', false);
+                return;
+            }
+
+            if (action === 'admin-history') {
+                var historyFactionId = el.getAttribute('data-faction-id');
+                if (!historyFactionId) return;
+
+                var historyRes = yield adminReq('GET', '/api/admin/factions/' + encodeURIComponent(historyFactionId) + '/history');
+                if (!historyRes.ok) {
+                    setStatus((historyRes.json && historyRes.json.error) || 'Failed to load history.', true);
+                    return;
+                }
+
+                var items = arr(historyRes.json && historyRes.json.items);
+                pushLocalNotification('info', 'History loaded for faction ' + historyFactionId + ' (' + items.length + ' rows).');
+                updateBadge();
+                setStatus('History loaded. See notifications.', false);
+                return;
+            }
+
+            if (action === 'admin-renew') {
+                var renewFactionId = el.getAttribute('data-faction-id');
+                if (!renewFactionId) return;
+
+                var renewRes = yield adminReq('POST', '/api/admin/factions/' + encodeURIComponent(renewFactionId) + '/renew', {});
+                if (!renewRes.ok) {
+                    setStatus((renewRes.json && renewRes.json.error) || 'Failed to renew faction.', true);
+                    return;
+                }
+
+                yield loadAdminDashboard(true);
+                renderBody();
+                setStatus('Faction renewed.', false);
+                return;
+            }
+
+            if (action === 'admin-expire') {
+                var expireFactionId = el.getAttribute('data-faction-id');
+                if (!expireFactionId) return;
+
+                var expireRes = yield adminReq('POST', '/api/admin/factions/' + encodeURIComponent(expireFactionId) + '/expire', {});
+                if (!expireRes.ok) {
+                    setStatus((expireRes.json && expireRes.json.error) || 'Failed to expire faction.', true);
+                    return;
+                }
+
+                yield loadAdminDashboard(true);
+                renderBody();
+                setStatus('Faction expired.', false);
+                return;
+            }
+
+            if (action === 'chain-available') {
+                var chainAvailableRes = yield authedReq('POST', '/api/chain', { available: true });
+                if (!chainAvailableRes.ok) {
+                    setStatus((chainAvailableRes.json && chainAvailableRes.json.error) || 'Failed to update chain.', true);
+                    return;
+                }
+                yield loadState();
+                renderBody();
+                setStatus('Chain marked available.', false);
+                return;
+            }
+
+            if (action === 'chain-unavailable') {
+                var chainUnavailableRes = yield authedReq('POST', '/api/chain', { available: false });
+                if (!chainUnavailableRes.ok) {
+                    setStatus((chainUnavailableRes.json && chainUnavailableRes.json.error) || 'Failed to update chain.', true);
+                    return;
+                }
+                yield loadState();
+                renderBody();
+                setStatus('Chain marked unavailable.', false);
+                return;
+            }
+
+            if (action === 'chain-toggle-sitter') {
+                var current = !!(state && state.chain && state.chain.sitter_enabled);
+                var chainSitterRes = yield authedReq('POST', '/api/chain/sitter', { enabled: !current });
+                if (!chainSitterRes.ok) {
+                    setStatus((chainSitterRes.json && chainSitterRes.json.error) || 'Failed to update chain sitter.', true);
+                    return;
+                }
+                yield loadState();
+                renderBody();
+                setStatus('Chain sitter updated.', false);
+                return;
+            }
+        } catch (err) {
+            console.error('War Hub action error:', action, err);
+            setStatus('Action failed: ' + action, true);
+        }
+    });
+    return _handleActionClick.apply(this, arguments);
+}
     // ============================================================
     // 23. MAIN RENDER / INPUT BINDINGS
     // ============================================================
@@ -3475,9 +3559,8 @@ function renderAdminTab() {
 
         var hasShield = !!document.getElementById('warhub-shield');
         var hasOverlay = !!document.getElementById('warhub-overlay');
-        var hasBadge = !!document.getElementById('warhub-badge');
 
-        if (!hasShield || !hasOverlay || !hasBadge || !shield || !overlay || !badge) {
+        if (!hasShield || !hasOverlay || !shield || !overlay) {
             mounted = false;
             shield = null;
             badge = null;
@@ -3496,20 +3579,13 @@ function renderAdminTab() {
             try {
                 if (!document.body) return;
 
-                if (
-                    !document.getElementById('warhub-shield') ||
-                    !document.getElementById('warhub-overlay') ||
-                    !document.getElementById('warhub-badge')
-                ) {
+                if (!document.getElementById('warhub-shield') || !document.getElementById('warhub-overlay')) {
                     mounted = false;
                     shield = null;
                     badge = null;
                     overlay = null;
                     ensureMounted();
                     renderBody();
-                } else {
-                    applyShieldPos();
-                    positionBadge();
                 }
             } catch (err) {
                 console.error('War Hub remount watch error:', err);
@@ -3525,19 +3601,16 @@ function renderAdminTab() {
         if (isLoggedIn()) {
             loadState().then(function () {
                 renderBody();
-                applyShieldPos();
-                positionBadge();
             }).catch(function (err) {
                 console.error('War Hub initial load error:', err);
                 renderBody();
-                applyShieldPos();
-                positionBadge();
             });
         } else {
             renderBody();
-            applyShieldPos();
-            positionBadge();
         }
     }
 
     boot();
+
+})();
+    
