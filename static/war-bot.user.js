@@ -2435,7 +2435,7 @@ function renderOverviewTab() {
     var chainUs = Number(war.chain_us || 0);
     var chainThem = Number(war.chain_them || 0);
 
-    var termsText = String((state && state.terms && state.terms.text) || '');
+    var termsText = String((state && state.terms_summary && state.terms_summary.text) || '');
     var medDealsText = String((state && state.med_deals && state.med_deals.text) || '');
 
     var dibsText = String((state && state.dibs && state.dibs.text) || '').trim();
@@ -2830,22 +2830,22 @@ function renderEnemiesTab() {
     }
 
 function renderTermsTab() {
-    var box = (state && state.terms) || {};
+    var box = (state && state.terms_summary) || {};
     var text = String(box.text || '');
 
     return [
         '<div class="warhub-grid">',
             '<div class="warhub-hero-card">',
                 '<div class="warhub-title">Terms</div>',
-                '<div class="warhub-sub">Leader shared war terms for the whole faction</div>',
+                '<div class="warhub-sub">Leader shared war terms for the faction</div>',
             '</div>',
 
             '<div class="warhub-card warhub-col">',
-                '<label class="warhub-label" for="warhub-terms-text">War Terms</label>',
-                '<textarea id="warhub-terms-text" class="warhub-textarea" placeholder="Write war terms here.">' + esc(text) + '</textarea>',
+                '<label class="warhub-label" for="warhub-terms-summary-text">War Terms</label>',
+                '<textarea id="warhub-terms-summary-text" class="warhub-textarea" placeholder="Write war terms here.">' + esc(text) + '</textarea>',
                 '<div class="warhub-row">',
-                    '<button type="button" class="warhub-btn" data-action="terms-save">Save</button>',
-                    '<button type="button" class="warhub-btn gray" data-action="terms-clear">Delete</button>',
+                    '<button type="button" class="warhub-btn" data-action="terms-summary-save">Save</button>',
+                    '<button type="button" class="warhub-btn gray" data-action="terms-summary-clear">Delete</button>',
                 '</div>',
             '</div>',
         '</div>'
