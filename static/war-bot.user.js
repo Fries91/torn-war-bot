@@ -2435,7 +2435,7 @@ function renderOverviewTab() {
     var chainUs = Number(war.chain_us || 0);
     var chainThem = Number(war.chain_them || 0);
 
-    var termsText = String((state && state.terms_summary && state.terms_summary.text) || '');
+    var termsText = String((state && state.terms && state.terms.text) || '');
     var medDealsText = String((state && state.med_deals && state.med_deals.text) || '');
 
     var dibsText = String((state && state.dibs && state.dibs.text) || '').trim();
@@ -2830,66 +2830,130 @@ function renderEnemiesTab() {
     }
 
 function renderTermsTab() {
-    var box = (state && state.terms_summary) || {};
+    var box = (state && state.terms) || {};
     var text = String(box.text || '');
 
     return [
         '<div class="warhub-grid">',
             '<div class="warhub-hero-card">',
                 '<div class="warhub-title">Terms</div>',
-                '<div class="warhub-sub">Leader shared Terms / Summary box for the whole faction</div>',
+                '<div class="warhub-sub">Leader shared war terms for the whole faction</div>',
             '</div>',
 
             '<div class="warhub-card warhub-col">',
-                '<label class="warhub-label" for="warhub-terms-summary-text">Terms / Summary</label>',
-                '<textarea id="warhub-terms-summary-text" class="warhub-textarea" placeholder="Write terms, summary, instructions, or improvements here...">' + esc(text) + '</textarea>',
+                '<label class="warhub-label" for="warhub-terms-text">War Terms</label>',
+                '<textarea id="warhub-terms-text" class="warhub-textarea" placeholder="Write war terms here.">' + esc(text) + '</textarea>',
                 '<div class="warhub-row">',
-                    '<button type="button" class="warhub-btn" data-action="terms-summary-save">Save</button>',
-                    '<button type="button" class="warhub-btn gray" data-action="terms-summary-clear">Delete</button>',
+                    '<button type="button" class="warhub-btn" data-action="terms-save">Save</button>',
+                    '<button type="button" class="warhub-btn gray" data-action="terms-clear">Delete</button>',
                 '</div>',
             '</div>',
         '</div>'
     ].join('');
 }
     function renderSummaryTab() {
-        var summary = liveSummaryCache || {};
-        var cards = arr(summary.cards);
-        var top = summary.top || {};
+    var summary = liveSummaryCache || {};
+    var cards = arr(summary.cards);
+    var top5 = summary.top5 || {};
+    var alerts = summary.alerts || {};
+    var warSummaryBox = (state && state.war_summary) || {};
+    var warSummaryText = String(warSummaryBox.text || '');
+
+    function dropdownCard(key, title, items, emptyText) {
+        items = arr(items);
 
         return [
-            '<div class="warhub-grid">',
-                '<div class="warhub-hero-card">',
-                    '<div class="warhub-title">War Summary</div>',
-                    '<div class="warhub-sub">Leader / admin live war metrics</div>',
+            '<div class="warhub-member-group">',
+                '<div class="warhub-member-group-head" data-group-toggle="' + esc(key) + '">',
+                    '<div class="warhub-row">',
+                        '<span class="warhub-member-name">' + esc(title) + '</span>',
+                        '<span class="warhub-pill neutral">' + esc(String(items.length)) + '</span>',
+                    '</div>',
+                    '<span class="warhub-pill neutral">' + (isGroupOpen(key, false) ? 'Hide' : 'Show') + '</span>',
                 '</div>',
-
-                liveSummaryError
-                    ? '<div class="warhub-card"><span class="warhub-pill bad">' + esc(liveSummaryError) + '</span></div>'
+                isGroupOpen(key, false)
+                    ? '<div class="warhub-member-list">' + (
+                        items.length
+                            ? items.slice(0, 5).map(function (row, idx) {
+                                return [
+                                    '<div class="warhub-member-row">',
+                                        '<div class="warhub-member-main">',
+                                            '<div class="warhub-row">',
+                                                '<span class="warhub-pill neutral">#' + esc(String(idx + 1)) + '</span>',
+                                                '<span class="warhub-member-name">' + esc(String(row.name || row.player_name || 'Unknown')) + '</span>',
+                                            '</div>',
+                                            '<div class="warhub-row">',
+                                                '<span class="warhub-pill ' + esc(String(row.cls || 'neutral')) + '">' + esc(String(row.value == null ? '—' : row.value)) + '</span>',
+                                            '</div>',
+                                        '</div>',
+                                    '</div>'
+                                ].join('');
+                            }).join('')
+                            : '<div class="warhub-member-row"><div class="warhub-muted">' + esc(emptyText || 'No data.') + '</div></div>'
+                    ) + '</div>'
                     : '',
-
-                cards.length ? [
-                    '<div class="warhub-overview-stats">',
-                        cards.map(function (c) {
-                            return [
-                                '<div class="warhub-stat-card ' + esc(String(c.cls || '')) + '">',
-                                    '<div class="warhub-stat-label">' + esc(String(c.label || 'Metric')) + '</div>',
-                                    '<div class="warhub-stat-value">' + esc(String(c.value == null ? '—' : c.value)) + '</div>',
-                                    c.sub ? '<div class="warhub-sub" style="margin-top:6px;">' + esc(String(c.sub)) + '</div>' : '',
-                                '</div>'
-                            ].join('');
-                        }).join(''),
-                    '</div>'
-                ].join('') : '',
-
-                '<div class="warhub-card warhub-col">',
-                    '<div class="warhub-kv"><div>Top hitter</div><div>' + esc(String(top.top_hitter || '—')) + '</div></div>',
-                    '<div class="warhub-kv"><div>Top respect gain</div><div>' + esc(String(top.top_respect_gain || '—')) + '</div></div>',
-                    '<div class="warhub-kv"><div>Top points bleeder</div><div>' + esc(String(top.top_points_bleeder || '—')) + '</div></div>',
-                    '<div class="warhub-kv"><div>Best finisher</div><div>' + esc(String(top.best_finisher || '—')) + '</div></div>',
-                '</div>',
             '</div>'
         ].join('');
     }
+
+    return [
+        '<div class="warhub-grid">',
+            '<div class="warhub-hero-card">',
+                '<div class="warhub-title">Summary</div>',
+                '<div class="warhub-sub">Leader-only war command view</div>',
+            '</div>',
+
+            liveSummaryError
+                ? '<div class="warhub-card"><span class="warhub-pill bad">' + esc(liveSummaryError) + '</span></div>'
+                : '',
+
+            cards.length ? [
+                '<div class="warhub-overview-stats">',
+                    cards.map(function (c) {
+                        return [
+                            '<div class="warhub-stat-card ' + esc(String(c.cls || '')) + '">',
+                                '<div class="warhub-stat-label">' + esc(String(c.label || 'Metric')) + '</div>',
+                                '<div class="warhub-stat-value">' + esc(String(c.value == null ? '—' : c.value)) + '</div>',
+                                c.sub ? '<div class="warhub-sub" style="margin-top:6px;">' + esc(String(c.sub)) + '</div>' : '',
+                            '</div>'
+                        ].join('');
+                    }).join(''),
+                '</div>'
+            ].join('') : '',
+
+            '<div class="warhub-mini-grid">',
+                dropdownCard('sum_top_hitters', 'Top Hitters', top5.top_hitters, 'No hitters yet.'),
+                dropdownCard('sum_top_respect', 'Top Respect Gain', top5.top_respect_gain, 'No respect data yet.'),
+                dropdownCard('sum_best_finishers', 'Best Finishers', top5.best_finishers, 'No finisher data yet.'),
+                dropdownCard('sum_most_active', 'Most Active', top5.most_active, 'No activity data yet.'),
+                dropdownCard('sum_best_net', 'Best Net Impact', top5.best_net_impact, 'No net impact data yet.'),
+                dropdownCard('sum_bleeders', 'Most Points Bled', top5.top_points_bled, 'No bleed data yet.'),
+                dropdownCard('sum_hits_taken', 'Most Hits Taken', top5.most_hits_taken, 'No hits taken data yet.'),
+                dropdownCard('sum_losses', 'Most Losses', top5.most_losses, 'No loss data yet.'),
+                dropdownCard('sum_noshow', 'No-Shows', top5.no_shows, 'No no-shows.'),
+                dropdownCard('sum_worst_net', 'Worst Net Impact', top5.worst_net_impact, 'No bad net impact data yet.'),
+            '</div>',
+
+            '<div class="warhub-card warhub-col">',
+                '<h3>Alerts</h3>',
+                '<div class="warhub-kv"><div>No-Shows</div><div>' + esc(String(alerts.no_shows || '—')) + '</div></div>',
+                '<div class="warhub-kv"><div>Recovering Soon</div><div>' + esc(String(alerts.recovering_soon || '—')) + '</div></div>',
+                '<div class="warhub-kv"><div>Online and Ready</div><div>' + esc(String(alerts.online_ready || '—')) + '</div></div>',
+                '<div class="warhub-kv"><div>Under Pressure</div><div>' + esc(String(alerts.under_pressure || '—')) + '</div></div>',
+                '<div class="warhub-kv"><div>Low Participation</div><div>' + esc(String(alerts.low_participation || '—')) + '</div></div>',
+            '</div>',
+
+            '<div class="warhub-card warhub-col">',
+                '<label class="warhub-label" for="warhub-war-summary-text">War Summary</label>',
+                '<textarea id="warhub-war-summary-text" class="warhub-textarea" placeholder="Write leader-only war summary here.">' + esc(warSummaryText) + '</textarea>',
+                '<div class="warhub-row">',
+                    '<button type="button" class="warhub-btn" data-action="war-summary-save">Save</button>',
+                    '<button type="button" class="warhub-btn gray" data-action="war-summary-clear">Delete</button>',
+                '</div>',
+            '</div>',
+        '</div>'
+    ].join('');
+}
         // ============================================================
     // 20. TAB RENDERS: FACTION
     // ============================================================
@@ -3480,46 +3544,46 @@ if (action === 'hospital-dibs') {
                 return;
             }
 
-            if (action === 'terms-summary-save') {
-                var boxEl = overlay && overlay.querySelector('#warhub-terms-summary-text');
-                var boxText = String((boxEl && boxEl.value) || '');
+            if (action === 'terms-save') {
+    var termsEl = overlay && overlay.querySelector('#warhub-terms-text');
+    var termsText = String((termsEl && termsEl.value) || '');
 
-                var saveBoxRes = yield authedReq('POST', '/api/terms-summary', {
-                    text: boxText
-                });
+    var saveTermsRes = yield authedReq('POST', '/api/terms', {
+        text: termsText
+    });
 
-                if (!saveBoxRes.ok) {
-                    setStatus((saveBoxRes.json && saveBoxRes.json.error) || 'Failed to save Terms / Summary.', true);
-                    return;
-                }
+    if (!saveTermsRes.ok) {
+        setStatus((saveTermsRes.json && saveTermsRes.json.error) || 'Failed to save terms.', true);
+        return;
+    }
 
-                state = state || {};
-                state.terms_summary = state.terms_summary || {};
-                state.terms_summary.text = boxText;
+    state = state || {};
+    state.terms = state.terms || {};
+    state.terms.text = termsText;
 
-                renderBody();
-                setStatus('Terms / Summary saved.', false);
-                return;
-            }
+    renderBody();
+    setStatus('Terms saved.', false);
+    return;
+}
 
-            if (action === 'terms-summary-clear') {
-                var clearBoxRes = yield authedReq('POST', '/api/terms-summary', {
-                    text: ''
-                });
+if (action === 'terms-clear') {
+    var clearTermsRes = yield authedReq('POST', '/api/terms', {
+        text: ''
+    });
 
-                if (!clearBoxRes.ok) {
-                    setStatus((clearBoxRes.json && clearBoxRes.json.error) || 'Failed to clear Terms / Summary.', true);
-                    return;
-                }
+    if (!clearTermsRes.ok) {
+        setStatus((clearTermsRes.json && clearTermsRes.json.error) || 'Failed to clear terms.', true);
+        return;
+    }
 
-                state = state || {};
-                state.terms_summary = state.terms_summary || {};
-                state.terms_summary.text = '';
+    state = state || {};
+    state.terms = state.terms || {};
+    state.terms.text = '';
 
-                renderBody();
-                setStatus('Terms / Summary cleared.', false);
-                return;
-            }
+    renderBody();
+    setStatus('Terms cleared.', false);
+    return;
+}
 
             if (action === 'target-save') {
                 var targetNameEl = overlay && overlay.querySelector('#warhub-target-name');
