@@ -482,7 +482,25 @@
 }\n\
 ";
 
-    GM_addStyle(css);
+    (function injectStyles() {
+    var style = document.createElement('style');
+    style.id = 'warhub-inline-style';
+    style.textContent = css;
+
+    function placeStyle() {
+        var head = document.head || document.documentElement || document.body;
+        if (!head) {
+            requestAnimationFrame(placeStyle);
+            return;
+        }
+
+        var old = document.getElementById('warhub-inline-style');
+        if (old) old.remove();
+        head.appendChild(style);
+    }
+
+    placeStyle();
+})();
         // ============================================================
     // 06. SMALL HELPERS
     // ============================================================
