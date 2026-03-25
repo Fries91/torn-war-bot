@@ -1271,52 +1271,60 @@ function makeHoldDraggable(handle, target, key) {
     // ============================================================
 
     function doLogin() {
-        return _doLogin.apply(this, arguments);
-    }
+    return _doLogin.apply(this, arguments);
+}
 
-    function _doLogin() {
-        _doLogin = _asyncToGenerator(function* () {
-            var input = overlay && overlay.querySelector('#warhub-api-key');
-            var ownerInput = overlay && overlay.querySelector('#warhub-owner-token');
-            var key = cleanInputValue(input && input.value);
-            var ownerToken = cleanInputValue(ownerInput && ownerInput.value);
+function _doLogin() {
+    _doLogin = _asyncToGenerator(function* () {
+        var input = overlay && overlay.querySelector('#warhub-api-key');
+        var ownerInput = overlay && overlay.querySelector('#warhub-owner-token');
+        var key = cleanInputValue(input && input.value);
+        var ownerToken = cleanInputValue(ownerInput && ownerInput.value);
 
-            if (!key) {
-                setStatus('Enter your Torn API key.', true);
-                return;
-            }
+        if (!key) {
+            setStatus('Enter your Torn API key.', true);
+            return;
+        }
 
-            GM_setValue(K_API_KEY, key);
-            if (ownerToken) GM_setValue(K_OWNER_TOKEN, ownerToken);
+        GM_setValue(K_API_KEY, key);
+        if (ownerToken) GM_setValue(K_OWNER_TOKEN, ownerToken);
 
-            setStatus('Logging in...', false);
+        setStatus('Logging in...', false);
 
-            var res = yield req('POST', '/api/auth', {
-                api_key: key
-            });
+        var res = yield req('POST', '/api/auth', {
+            api_key: key
+        });
 
-            if (!res.ok || !res.json || !res.json.token) {
-                setStatus((res.json && res.json.error) || 'Login failed.', true);
-                return;
-            }
+        if (!res.ok || !res.json || !res.json.token) {
+            setStatus((res.json && res.json.error) || 'Login failed.', true);
+            return;
+        }
 
-            GM_setValue(K_SESSION, String(res.json.token));
+        GM_setValue(K_SESSION, String(res.json.token));
 
-            if (res.json.viewer && res.json.viewer.name) {
-                pushLocalNotification('info', 'Logged in as ' + res.json.viewer.name);
-            } else {
-                pushLocalNotification('info', 'Logged in.');
-            }
+        if (res.json.user && res.json.user.name) {
+            pushLocalNotification('info', 'Logged in as ' + res.json.user.name);
+        } else if (res.json.viewer && res.json.viewer.name) {
+            pushLocalNotification('info', 'Logged in as ' + res.json.viewer.name);
+        } else {
+            pushLocalNotification('info', 'Logged in.');
+        }
 
+        try {
             yield loadState();
             renderBody();
             restartPolling();
             setStatus('Logged in successfully.', false);
-        });
+        } catch (err) {
+            console.error('War Hub post-login error:', err);
+            setStatus('Logged in, but refresh failed. Reopen hub if needed.', true);
+            renderBody();
+            restartPolling();
+        }
+    });
 
-        return _doLogin.apply(this, arguments);
-    }
-
+    return _doLogin.apply(this, arguments);
+}
     function doLogout() {
         GM_deleteValue(K_SESSION);
         state = null;
