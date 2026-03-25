@@ -43,7 +43,14 @@ from db import (
     list_hospital_dibs,
     list_overview_dibs,
 )
-from torn_api import me_basic, faction_basic, ranked_war_summary, member_live_bars, profile_url, attack_url, bounty_url, hospital_members_from_enemies
+
+from torn_identity import me_basic
+from torn_faction import faction_basic
+from torn_members import member_live_bars
+from torn_war import ranked_war_summary
+from torn_enemies import hospital_members_from_enemies, enemy_faction_members, split_enemy_buckets
+from torn_shared import profile_url, attack_url, bounty_url
+
 from payment_service import (
     activate_faction_member_for_billing,
     confirm_faction_payment_and_renew,
@@ -618,97 +625,56 @@ def _build_war_and_enemy_payload(user: Dict[str, Any]) -> Dict[str, Any]:
     my_faction_id = str(user.get("faction_id") or "").strip()
     my_faction_name = str(user.get("faction_name") or "").strip()
 
-    war = ranked_war_summary(api_key, my_faction_id=my_faction_id, my_faction_name=my_faction_name) or {}
+    war = ranked_war_summary(
+        api_key,
+        my_faction_id=my_faction_id,
+        my_faction_name=my_faction_name,
+    ) or {}
 
     enemy_faction_id = str(war.get("enemy_faction_id") or "").strip()
     enemy_faction_name = str(war.get("enemy_faction_name") or "").strip()
 
     enemies: List[Dict[str, Any]] = []
-    own_member_ids = set()
-
-    try:
-        own_faction = faction_basic(api_key, faction_id=my_faction_id) or {}
-        if own_faction.get("ok"):
-            for member in list(own_faction.get("members") or []):
-                member_user_id = str(member.get("user_id") or "").strip()
-                if member_user_id:
-                    own_member_ids.add(member_user_id)
-    except Exception:
-        own_member_ids = set()
 
     invalid_enemy = False
-
     if not enemy_faction_id:
         invalid_enemy = True
-
     if enemy_faction_id and my_faction_id and enemy_faction_id == my_faction_id:
         invalid_enemy = True
-
-    if (
-        enemy_faction_name
-        and my_faction_name
-        and str(enemy_faction_name).strip().lower() == str(my_faction_name).strip().lower()
-    ):
+    if enemy_faction_name and my_faction_name and enemy_faction_name.strip().lower() == my_faction_name.strip().lower():
         invalid_enemy = True
 
-    if invalid_enemy:
-        enemy_faction_id = ""
-        enemy_faction_name = ""
-    else:
-        enemy_faction = faction_basic(api_key, faction_id=enemy_faction_id) or {}
-
-        resolved_enemy_faction_id = str(enemy_faction.get("faction_id") or enemy_faction_id or "").strip()
-        resolved_enemy_faction_name = str(enemy_faction.get("faction_name") or enemy_faction_name or "").strip()
-
-        if resolved_enemy_faction_id and my_faction_id and resolved_enemy_faction_id == my_faction_id:
-            enemy_faction_id = ""
-            enemy_faction_name = ""
-        elif (
-            resolved_enemy_faction_name
-            and my_faction_name
-            and resolved_enemy_faction_name.strip().lower() == my_faction_name.strip().lower()
-        ):
-            enemy_faction_id = ""
-            enemy_faction_name = ""
-        elif enemy_faction.get("ok"):
-            enemy_faction_id = resolved_enemy_faction_id
-            enemy_faction_name = resolved_enemy_faction_name
-
-            seen_enemy_ids = set()
-
-            for member in list(enemy_faction.get("members") or []):
-                member_user_id = str(member.get("user_id") or "").strip()
-                if not member_user_id:
-                    continue
-                if member_user_id in own_member_ids:
-                    continue
-                if member_user_id in seen_enemy_ids:
-                    continue
-
-                seen_enemy_ids.add(member_user_id)
-                enemies.append(_build_enemy_member_payload(member, enemy_faction_id, enemy_faction_name))
+    if not invalid_enemy:
+        enemy_payload = enemy_faction_members(api_key, enemy_faction_id)
+        if enemy_payload.get("ok"):
+            enemy_faction_id = str(enemy_payload.get("enemy_faction_id") or enemy_faction_id or "").strip()
+            enemy_faction_name = str(enemy_payload.get("enemy_faction_name") or enemy_faction_name or "").strip()
+            enemies = list(enemy_payload.get("members") or [])
         else:
             enemy_faction_id = ""
             enemy_faction_name = ""
+            enemies = []
+    else:
+        enemy_faction_id = ""
+        enemy_faction_name = ""
+        enemies = []
 
-    enemies.sort(key=lambda x: (str(x.get("name") or "").lower(), str(x.get("user_id") or "")))
-
-    grouped = _group_enemy_members(enemies)
+    grouped = split_enemy_buckets(enemies)
 
     war["enemy_faction_id"] = enemy_faction_id
     war["enemy_faction_name"] = enemy_faction_name
     war["enemy_members_count"] = len(enemies)
     war["enemy_members"] = enemies
-    war["enemy_buckets"] = grouped.get("buckets") or _empty_enemy_buckets()
-    war["enemy_bucket_counts"] = grouped.get("counts") or {key: 0 for key in _enemy_bucket_order()}
+    war["enemy_buckets"] = grouped
+    war["enemy_bucket_counts"] = {key: len(grouped.get(key) or []) for key in _enemy_bucket_order()}
 
     return {
         "war": war,
         "enemies": enemies,
-        "enemy_buckets": grouped.get("buckets") or _empty_enemy_buckets(),
-        "enemy_bucket_counts": grouped.get("counts") or {key: 0 for key in _enemy_bucket_order()},
-        "enemy_bucket_order": grouped.get("order") or _enemy_bucket_order(),
-        "enemy_total": grouped.get("total") or 0,
+        "enemy_buckets": grouped,
+        "enemy_bucket_counts": {key: len(grouped.get(key) or []) for key in _enemy_bucket_order()},
+        "enemy_bucket_order": _enemy_bucket_order(),
+        "enemy_total": len(enemies),
     }
 
 
