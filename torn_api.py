@@ -240,6 +240,33 @@ def _normalize_member(uid: Any, member: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def hospital_members_from_enemies(enemies: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    seen = set()
+    for member in list(enemies or []):
+        if not isinstance(member, dict):
+            continue
+        user_id = str(member.get("user_id") or member.get("player_id") or member.get("id") or "").strip()
+        if not user_id or user_id in seen:
+            continue
+        in_hospital = bool(member.get("in_hospital")) or str(member.get("online_state") or "").strip().lower() == "hospital"
+        hospital_until_ts = _to_int(member.get("hospital_until_ts"), 0)
+        hospital_seconds = _to_int(member.get("hospital_seconds"), 0)
+        if not in_hospital and hospital_until_ts <= int(time.time()):
+            continue
+        seen.add(user_id)
+        out.append({
+            **member,
+            "user_id": user_id,
+            "in_hospital": 1,
+            "hospital_until_ts": hospital_until_ts,
+            "hospital_seconds": hospital_seconds,
+        })
+
+    out.sort(key=lambda x: (str(x.get("name") or "").lower(), str(x.get("user_id") or "")))
+    return out
+
+
 def me_basic(api_key: str) -> Dict[str, Any]:
     api_key = str(api_key or "").strip()
     if not api_key:
