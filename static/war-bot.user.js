@@ -7,7 +7,7 @@
 // @match        https://torn.com/*
 // @downloadURL  https://torn-war-bot.onrender.com/static/war-bot.user.js
 // @updateURL    https://torn-war-bot.onrender.com/static/war-bot.user.js
-// @run-at       document-start
+// @run-at       document-idle
 // @grant        GM_addStyle
 // @grant        GM_getValue
 // @grant        GM_setValue
