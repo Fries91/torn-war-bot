@@ -19,6 +19,33 @@
 (function () {
     'use strict';
 
+    setTimeout(function () {
+    if (document.getElementById('warhub-start-dot')) return;
+    var dot = document.createElement('div');
+    dot.id = 'warhub-start-dot';
+    dot.textContent = '●';
+    dot.style.position = 'fixed';
+    dot.style.left = '8px';
+    dot.style.top = '8px';
+    dot.style.zIndex = '2147483647';
+    dot.style.fontSize = '18px';
+    dot.style.lineHeight = '18px';
+    dot.style.color = '#ff4d4f';
+    dot.style.background = 'rgba(0,0,0,.65)';
+    dot.style.padding = '2px 6px';
+    dot.style.borderRadius = '10px';
+
+    function place() {
+        if (!document.body) {
+            requestAnimationFrame(place);
+            return;
+        }
+        document.body.appendChild(dot);
+    }
+
+    place();
+}, 0);
+
     if (window.__WAR_HUB_V287__ && document.getElementById('warhub-shield')) return;
     window.__WAR_HUB_V287__ = true;
 
@@ -2141,21 +2168,32 @@
     }
 
     function defaultShieldPos() {
-        var vp = viewportSize();
-        return keepBoxOnScreen(vp.w - 58, Math.max(88, Math.round(vp.h * 0.34)), 42, 42, 8);
+    var vp = viewportSize();
+    return keepBoxOnScreen(
+        vp.w - 54,
+        Math.round((vp.h / 2) - 21),
+        42,
+        42,
+        8
+    );
+}
+
+function applyShieldPos() {
+    if (!shield) return;
+
+    var pos = GM_getValue(K_SHIELD_POS, null);
+
+    if (!pos || typeof pos.left !== 'number' || typeof pos.top !== 'number') {
+        pos = defaultShieldPos();
     }
 
-    function applyShieldPos() {
-        if (!shield) return;
+    var fixed = keepBoxOnScreen(pos.left, pos.top, 42, 42, 8);
 
-        var pos = GM_getValue(K_SHIELD_POS, null) || defaultShieldPos();
-        var fixed = keepBoxOnScreen(pos.left, pos.top, 42, 42, 8);
-
-        shield.style.left = fixed.left + 'px';
-        shield.style.top = fixed.top + 'px';
-        shield.style.right = 'auto';
-        shield.style.bottom = 'auto';
-    }
+    shield.style.left = fixed.left + 'px';
+    shield.style.top = fixed.top + 'px';
+    shield.style.right = 'auto';
+    shield.style.bottom = 'auto';
+}
 
     function defaultOverlayPos() {
         var vp = viewportSize();
