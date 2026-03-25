@@ -19,8 +19,6 @@
 (function () {
     'use strict';
 
-    GM_deleteValue(K_SHIELD_POS);
-
 
     if (window.__WAR_HUB_V287__ && document.getElementById('warhub-shield')) return;
     window.__WAR_HUB_V287__ = true;
@@ -38,6 +36,7 @@
     var K_OPEN = 'warhub_open_v3';
     var K_TAB = 'warhub_tab_v3';
     var K_SHIELD_POS = 'warhub_shield_pos_v3';
+    GM_deleteValue(K_SHIELD_POS);
     var K_OVERLAY_POS = 'warhub_overlay_pos_v3';
     var K_REFRESH = 'warhub_refresh_ms_v3';
     var K_LOCAL_NOTIFICATIONS = 'warhub_local_notifications_v3';
@@ -45,6 +44,7 @@
     var K_OVERVIEW_BOXES = 'warhub_overview_boxes_v3';
     var K_OVERLAY_SCROLL = 'warhub_overlay_scroll_v3';
 
+    
     // ============================================================
     // 02. PAYMENT / OWNER CONFIG
     // ============================================================
@@ -1083,164 +1083,6 @@ function makeHoldDraggable(handle, target, key) {
     return {
         didMove: function () { return false; },
         isDragging: function () { return false; }
-    };
-}
-
-    var dragging = false;
-    var moved = false;
-    var pressTimer = null;
-    var pressActive = false;
-    var startX = 0;
-    var startY = 0;
-    var startLeft = 0;
-    var startTop = 0;
-    var HOLD_MS = 260;
-    var DRAG_THRESHOLD = 8;
-
-    function clearPressTimer() {
-        if (pressTimer) {
-            clearTimeout(pressTimer);
-            pressTimer = null;
-        }
-    }
-
-    function pageX(evt) {
-        if (evt.touches && evt.touches[0]) return evt.touches[0].clientX;
-        if (evt.changedTouches && evt.changedTouches[0]) return evt.changedTouches[0].clientX;
-        return evt.clientX;
-    }
-
-    function pageY(evt) {
-        if (evt.touches && evt.touches[0]) return evt.touches[0].clientY;
-        if (evt.changedTouches && evt.changedTouches[0]) return evt.changedTouches[0].clientY;
-        return evt.clientY;
-    }
-
-    function getSafeBounds() {
-        var vp = getViewport();
-        var rect = target.getBoundingClientRect();
-        var width = Math.round(rect.width || target.offsetWidth || 42);
-        var height = Math.round(rect.height || target.offsetHeight || 42);
-
-        var minLeft = 8;
-        var minTop = (target === shield) ? 80 : 8;
-        var maxLeft = Math.max(minLeft, vp.w - width - 8);
-        var maxTop = Math.max(minTop, vp.h - height - 8);
-
-        return {
-            minLeft: minLeft,
-            minTop: minTop,
-            maxLeft: maxLeft,
-            maxTop: maxTop
-        };
-    }
-
-    function clampAndApply(left, top, saveIt) {
-        var bounds = getSafeBounds();
-
-        left = Math.max(bounds.minLeft, Math.min(bounds.maxLeft, Math.round(left)));
-        top = Math.max(bounds.minTop, Math.min(bounds.maxTop, Math.round(top)));
-
-        target.style.left = left + 'px';
-        target.style.top = top + 'px';
-        target.style.right = 'auto';
-        target.style.bottom = 'auto';
-
-        if (saveIt && key) {
-            savePos(key, { left: left, top: top });
-        }
-
-        if (target === shield) {
-            positionBadge();
-        }
-    }
-
-    function startDrag(evt) {
-        dragging = true;
-        moved = false;
-
-        var rect = target.getBoundingClientRect();
-        startX = pageX(evt);
-        startY = pageY(evt);
-        startLeft = rect.left;
-        startTop = rect.top;
-
-        target.classList.add('warhub-dragging');
-    }
-
-    function onPress(evt) {
-        if (evt.type === 'mousedown' && evt.button !== 0) return;
-        if (dragging) return;
-
-        clearPressTimer();
-        pressActive = true;
-        moved = false;
-
-        startX = pageX(evt);
-        startY = pageY(evt);
-
-        pressTimer = setTimeout(function () {
-            if (!pressActive) return;
-            startDrag(evt);
-        }, HOLD_MS);
-            }
-
-    function onMove(evt) {
-        if (!pressActive && !dragging) return;
-
-        var x = pageX(evt);
-        var y = pageY(evt);
-        var dx = x - startX;
-        var dy = y - startY;
-
-        if (!dragging) {
-            if (Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD) {
-                clearPressTimer();
-            }
-            return;
-        }
-
-        evt.preventDefault();
-        moved = true;
-        clampAndApply(startLeft + dx, startTop + dy, false);
-    }
-
-    function finishDrag() {
-        clearPressTimer();
-        pressActive = false;
-
-        if (!dragging) return;
-
-        dragging = false;
-        target.classList.remove('warhub-dragging');
-
-        var rect = target.getBoundingClientRect();
-        clampAndApply(rect.left, rect.top, true);
-    }
-
-    function cancelPress() {
-        clearPressTimer();
-        pressActive = false;
-
-        if (dragging) {
-            finishDrag();
-        }
-    }
-
-    handle.addEventListener('touchstart', onPress, { passive: true });
-    handle.addEventListener('mousedown', onPress);
-
-    window.addEventListener('touchmove', onMove, { passive: false });
-    window.addEventListener('mousemove', onMove);
-
-    window.addEventListener('touchend', finishDrag);
-    window.addEventListener('mouseup', finishDrag);
-    window.addEventListener('touchcancel', cancelPress);
-    window.addEventListener('mouseleave', cancelPress);
-
-    return {
-        didMove: function () { return moved; },
-        isDragging: function () { return dragging; }
     };
 }
 
