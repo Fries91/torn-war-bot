@@ -1553,6 +1553,164 @@ function _loadEnemies() {
         return _loadLiveSummary.apply(this, arguments);
     }
 
+        function loadHospital(force) {
+        return _loadHospital.apply(this, arguments);
+    }
+
+    function _loadHospital() {
+        _loadHospital = _asyncToGenerator(function* (force) {
+            if (!isLoggedIn()) return [];
+
+            if (!force && state && state.hospital && arr(state.hospital.items).length) {
+                return arr(state.hospital.items);
+            }
+
+            var res = yield authedReq('GET', '/api/state');
+            if (!res.ok || !res.json) {
+                return arr((state && state.hospital && state.hospital.items) || []);
+            }
+
+            state = res.json || state || {};
+            return arr((state && state.hospital && state.hospital.items) || []);
+        });
+
+        return _loadHospital.apply(this, arguments);
+    }
+
+    function claimHospitalDibs(enemyId) {
+        return _claimHospitalDibs.apply(this, arguments);
+    }
+
+    function _claimHospitalDibs() {
+        _claimHospitalDibs = _asyncToGenerator(function* (enemyId) {
+            enemyId = String(enemyId || '').trim();
+            if (!enemyId) {
+                return { ok: false, error: 'Missing enemy ID.' };
+            }
+
+            return yield authedReq('POST', '/api/hospital/dibs', {
+                enemy_id: enemyId
+            });
+        });
+
+        return _claimHospitalDibs.apply(this, arguments);
+    }
+
+    function hospitalItems() {
+        var items = arr((state && state.hospital && state.hospital.items) || []);
+        if (items.length) return items;
+
+        return arr((state && state.enemies) || warEnemiesCache || []).filter(function (m) {
+            return stateLabel(m) === 'hospital';
+        });
+    }
+
+    function hospitalEnemyId(item) {
+        return String(
+            (item && (
+                item.enemy_id ||
+                item.user_id ||
+                item.id ||
+                item.player_id
+            )) || ''
+        ).trim();
+    }
+
+    function hospitalEnemyName(item) {
+        return String(
+            (item && (
+                item.enemy_name ||
+                item.name ||
+                item.player_name
+            )) || 'Unknown'
+        );
+    }
+
+    function hospitalOutSeconds(item) {
+        var nowSec = Math.floor(Date.now() / 1000);
+
+        var secs = Number(
+            (item && (
+                item.hospital_seconds_left ||
+                item.hospital_time_left ||
+                item.hosp_secs
+            )) || 0
+        );
+        if (Number.isFinite(secs) && secs > 0) return secs;
+
+        var untilTs = Number(
+            (item && (
+                item.hospital_until_ts ||
+                item.hosp_out_ts ||
+                item.until
+            )) || 0
+        );
+        if (Number.isFinite(untilTs) && untilTs > nowSec) {
+            return Math.max(0, untilTs - nowSec);
+        }
+
+        return 0;
+    }
+
+    function hospitalOutText(item) {
+        var text = String(
+            (item && (
+                item.hospital_time_left_text ||
+                item.hosp_text
+            )) || ''
+        ).trim();
+
+        if (text) return text;
+
+        var secs = hospitalOutSeconds(item);
+        return secs > 0 ? shortCd(secs, '0s') : 'Out';
+    }
+
+    function hospitalDibsName(item) {
+        return String(
+            (item && (
+                item.dibbed_by_name ||
+                item.dibs_by_name ||
+                item.claimed_by_name
+            )) || ''
+        ).trim();
+    }
+
+    function hospitalDibsAvailable(item) {
+        if (item && typeof item.dibs_available === 'boolean') {
+            return item.dibs_available;
+        }
+        return !hospitalDibsName(item);
+    }
+
+    function hospitalDibsLockSeconds(item) {
+        var nowSec = Math.floor(Date.now() / 1000);
+
+        var lockTs = Number(
+            (item && (
+                item.dibs_locked_until_ts ||
+                item.locked_until_ts
+            )) || 0
+        );
+        if (Number.isFinite(lockTs) && lockTs > nowSec) {
+            return Math.max(0, lockTs - nowSec);
+        }
+
+        return 0;
+    }
+
+    function hospitalDibsStatusText(item) {
+        var dibber = hospitalDibsName(item);
+        if (dibber) return 'Dibs: ' + dibber;
+
+        if (hospitalDibsAvailable(item)) return 'Available';
+
+        var lockSecs = hospitalDibsLockSeconds(item);
+        if (lockSecs > 0) return 'Open in ' + shortCd(lockSecs, '0s');
+
+        return 'Unavailable';
+    }
+
     function _loadLiveSummary() {
         _loadLiveSummary = _asyncToGenerator(function* (force) {
             if (!isLoggedIn()) return null;
@@ -1659,132 +1817,93 @@ function _loadEnemies() {
     // ============================================================
 
     function tabNeedsLivePolling(tab) {
-        return tab === 'summary' || tab === 'enemies';
-    }
+    return tab === 'summary' || tab === 'enemies' || tab === 'hospital' || tab === 'overview';
+}
 
-    function restartPolling() {
-        if (pollTimer) {
-            clearInterval(pollTimer);
-            pollTimer = null;
-        }
+function tickCurrentTab() {
+    return _tickCurrentTab.apply(this, arguments);
+}
 
-        var refreshMs = Number(GM_getValue(K_REFRESH, 30000) || 30000);
-        if (!Number.isFinite(refreshMs) || refreshMs < 5000) refreshMs = 5000;
+function _tickCurrentTab() {
+    _tickCurrentTab = _asyncToGenerator(function* () {
+        if (!isLoggedIn()) return;
 
-        pollTimer = setInterval(function () {
-            tick();
-        }, refreshMs);
-    }
+        try {
+            if (currentTab === 'summary') {
+                yield loadLiveSummary(true);
+                return;
+            }
 
-    function restartPollingForCurrentTab() {
-        restartPolling();
-    }
+            if (currentTab === 'enemies') {
+                yield loadWarData(true);
+                yield loadEnemies(true);
+                return;
+            }
 
-    function tick() {
-        return _tick.apply(this, arguments);
-    }
+            if (currentTab === 'hospital') {
+                yield loadWarData(true);
+                yield loadEnemies(true);
+                yield loadHospital(true);
+                return;
+            }
 
-    function _tick() {
-        _tick = _asyncToGenerator(function* () {
-            if (loadInFlight) return;
-            if (!isLoggedIn()) return;
-
-            loadInFlight = true;
-            try {
+            if (currentTab === 'overview') {
                 yield loadState();
+                return;
+            }
+        } catch (err) {
+            console.error('War Hub tab tick error:', err);
+        }
+    });
 
-                if (tabNeedsLivePolling(currentTab)) {
-                    yield tickCurrentTab();
-                }
+    return _tickCurrentTab.apply(this, arguments);
+}
 
+function handleTabClick(tab) {
+    return _handleTabClick.apply(this, arguments);
+}
+
+function _handleTabClick() {
+    _handleTabClick = _asyncToGenerator(function* (tab) {
+        currentTab = String(tab || 'overview');
+        GM_setValue(K_TAB, currentTab);
+
+        try {
+            if (currentTab === 'members') {
+                yield loadFactionMembers(true);
+                membersLiveStamp = Date.now();
+            } else if (currentTab === 'enemies') {
+                yield loadWarData(true);
+                yield loadEnemies(true);
+            } else if (currentTab === 'hospital') {
+                yield loadWarData(true);
+                yield loadEnemies(true);
+                yield loadHospital(true);
+            } else if (currentTab === 'summary') {
+                yield loadLiveSummary(true);
+            } else if (currentTab === 'faction') {
                 if (canManageFaction()) {
+                    yield loadFactionMembers(true);
                     yield refreshFactionPaymentData();
                 }
-
-                if (canSeeAdmin() && currentTab === 'admin') {
+            } else if (currentTab === 'admin') {
+                if (canSeeAdmin()) {
                     yield loadAdminDashboard(true);
                     yield loadAdminTopFive(true);
                 }
-
-                renderBody();
-            } catch (err) {
-                console.error('War Hub tick error:', err);
-            } finally {
-                loadInFlight = false;
+            } else if (currentTab === 'overview') {
+                yield loadState();
             }
-        });
+        } catch (err) {
+            console.error('War Hub tab load error:', err);
+        }
 
-        return _tick.apply(this, arguments);
-    }
+        renderBody();
+        restartPollingForCurrentTab();
+    });
 
-    function tickCurrentTab() {
-        return _tickCurrentTab.apply(this, arguments);
-    }
-
-    function _tickCurrentTab() {
-        _tickCurrentTab = _asyncToGenerator(function* () {
-            if (!isLoggedIn()) return;
-
-            try {
-                if (currentTab === 'summary') {
-                    yield loadLiveSummary(true);
-                    return;
-                }
-
-                if (currentTab === 'enemies') {
-                    yield loadWarData(true);
-                    yield loadEnemies(true);
-                    return;
-                }
-            } catch (err) {
-                console.error('War Hub tab tick error:', err);
-            }
-        });
-
-        return _tickCurrentTab.apply(this, arguments);
-    }
-
-    function handleTabClick(tab) {
-        return _handleTabClick.apply(this, arguments);
-    }
-
-    function _handleTabClick() {
-        _handleTabClick = _asyncToGenerator(function* (tab) {
-            currentTab = String(tab || 'overview');
-            GM_setValue(K_TAB, currentTab);
-
-            try {
-                if (currentTab === 'members') {
-                    yield loadFactionMembers(true);
-                    membersLiveStamp = Date.now();
-                } else if (currentTab === 'enemies') {
-                    yield loadWarData(true);
-                    yield loadEnemies(true);
-                } else if (currentTab === 'summary') {
-                    yield loadLiveSummary(true);
-                } else if (currentTab === 'faction') {
-                    if (canManageFaction()) {
-                        yield loadFactionMembers(true);
-                        yield refreshFactionPaymentData();
-                    }
-                } else if (currentTab === 'admin') {
-                    if (canSeeAdmin()) {
-                        yield loadAdminDashboard(true);
-                        yield loadAdminTopFive(true);
-                    }
-                } else if (currentTab === 'overview') {
-                    yield loadState();
-                }
-            } catch (err) {
-                console.error('War Hub tab load error:', err);
-            }
-
-            renderBody();
-            restartPollingForCurrentTab();
-        });
-
-        return _handleTabClick.apply(this, arguments);
-    }
+    return _handleTabClick.apply(this, arguments);
+}
 
     // ============================================================
     // 14. OVERLAY MOUNT / DOM
@@ -2316,70 +2435,88 @@ function renderOverviewTab() {
     var chainUs = Number(war.chain_us || 0);
     var chainThem = Number(war.chain_them || 0);
 
-    var termsText = String((state && state.terms_summary && state.terms_summary.text) || '');
+    var termsText = String((state && state.terms && state.terms.text) || '');
     var medDealsText = String((state && state.med_deals && state.med_deals.text) || '');
-    var dibsText = String((state && state.dibs && state.dibs.text) || '');
+
+    var dibsText = String((state && state.dibs && state.dibs.text) || '').trim();
+    if (!dibsText) {
+        var dibsItems = arr((state && state.dibs && state.dibs.items) || []);
+        if (dibsItems.length) {
+            dibsText = dibsItems.map(function (item) {
+                var enemyNameText = String(
+                    item.enemy_name ||
+                    item.name ||
+                    'Unknown'
+                );
+                var dibbedByText = String(
+                    item.dibbed_by_name ||
+                    item.dibs_by_name ||
+                    'Unknown'
+                );
+                return enemyNameText + ' — ' + dibbedByText;
+            }).join('\n');
+        }
+    }
 
     return [
         '<div class="warhub-grid">',
-            '<div class="warhub-overview-hero warhub-hero-card">',
-                '<div class="warhub-title">Overview</div>',
-                '<div class="warhub-sub">Current war and faction access summary</div>',
 
+            '<div class="warhub-card warhub-hero-card">',
                 '<div class="warhub-war-head">',
                     '<div class="warhub-war-side">',
-                        '<div class="warhub-war-side-label">Our Faction</div>',
+                        '<div class="warhub-war-side-label">Our faction</div>',
                         '<div class="warhub-war-side-name">' + esc(ownName) + '</div>',
                     '</div>',
                     '<div class="warhub-war-vs">VS</div>',
                     '<div class="warhub-war-side right">',
-                        '<div class="warhub-war-side-label">Enemy Faction</div>',
+                        '<div class="warhub-war-side-label">Enemy faction</div>',
                         '<div class="warhub-war-side-name">' + esc(enemyName) + '</div>',
                     '</div>',
                 '</div>',
-            '</div>',
 
-            '<div class="warhub-overview-stats">',
-                '<div class="warhub-stat-card good">',
-                    '<div class="warhub-stat-label">Our Score</div>',
-                    '<div class="warhub-stat-value">' + esc(String(scoreUs)) + '</div>',
-                '</div>',
-                '<div class="warhub-stat-card bad">',
-                    '<div class="warhub-stat-label">Enemy Score</div>',
-                    '<div class="warhub-stat-value">' + esc(String(scoreThem)) + '</div>',
-                '</div>',
-                '<div class="warhub-stat-card">',
-                    '<div class="warhub-stat-label">Our Chain</div>',
-                    '<div class="warhub-stat-value">' + esc(String(chainUs)) + '</div>',
-                '</div>',
-                '<div class="warhub-stat-card">',
-                    '<div class="warhub-stat-label">Enemy Chain</div>',
-                    '<div class="warhub-stat-value">' + esc(String(chainThem)) + '</div>',
+                '<div class="warhub-overview-stats">',
+                    '<div class="warhub-stat-card ' + (scoreUs >= scoreThem ? 'good' : 'bad') + '">',
+                        '<div class="warhub-stat-label">Our score</div>',
+                        '<div class="warhub-stat-value">' + fmtNum(scoreUs) + '</div>',
+                    '</div>',
+                    '<div class="warhub-stat-card ' + (scoreThem > scoreUs ? 'bad' : 'good') + '">',
+                        '<div class="warhub-stat-label">Enemy score</div>',
+                        '<div class="warhub-stat-value">' + fmtNum(scoreThem) + '</div>',
+                    '</div>',
+                    '<div class="warhub-stat-card ' + (chainUs >= chainThem ? 'good' : 'bad') + '">',
+                        '<div class="warhub-stat-label">Our chain</div>',
+                        '<div class="warhub-stat-value">' + fmtNum(chainUs) + '</div>',
+                    '</div>',
+                    '<div class="warhub-stat-card ' + (chainThem > chainUs ? 'bad' : 'good') + '">',
+                        '<div class="warhub-stat-label">Enemy chain</div>',
+                        '<div class="warhub-stat-value">' + fmtNum(chainThem) + '</div>',
+                    '</div>',
                 '</div>',
             '</div>',
 
             '<div class="warhub-mini-grid">',
                 '<div class="warhub-card warhub-overview-link-card terms">',
-                    '<div class="warhub-row" style="justify-content:space-between;">',
-                        '<h3>📜 Terms / Summary</h3>',
+                    '<div class="warhub-title-sm">War Terms</div>',
+                    '<div class="warhub-spy-box" style="white-space:pre-wrap !important;">' +
+                        esc(termsText || 'No war terms set.') +
                     '</div>',
-                    '<div class="warhub-spy-box">' + esc(termsText || 'No terms / summary added yet.') + '</div>',
                 '</div>',
 
                 '<div class="warhub-card warhub-overview-link-card meddeals">',
-                    '<div class="warhub-row" style="justify-content:space-between;">',
-                        '<h3>🤝 Med Deals</h3>',
+                    '<div class="warhub-title-sm">Med Deals</div>',
+                    '<div class="warhub-spy-box" style="white-space:pre-wrap !important;">' +
+                        esc(medDealsText || 'No med deals posted.') +
                     '</div>',
-                    '<div class="warhub-spy-box">' + esc(medDealsText || 'No med deals posted yet.') + '</div>',
                 '</div>',
 
                 '<div class="warhub-card warhub-overview-link-card dibs">',
-                    '<div class="warhub-row" style="justify-content:space-between;">',
-                        '<h3>🎯 Dibs</h3>',
+                    '<div class="warhub-title-sm">Dibs</div>',
+                    '<div class="warhub-spy-box" style="white-space:pre-wrap !important;">' +
+                        esc(dibsText || 'No active dibs.') +
                     '</div>',
-                    '<div class="warhub-spy-box">' + esc(dibsText || 'No dibs posted yet.') + '</div>',
                 '</div>',
             '</div>',
+
         '</div>'
     ].join('');
 }
@@ -2530,24 +2667,75 @@ function renderEnemiesTab() {
     // ============================================================
 
     function renderHospitalTab() {
-        var enemies = arr((state && state.enemies) || warEnemiesCache || []);
-        var hospitalOnly = enemies.filter(function (m) {
-            return stateLabel(m) === 'hospital';
-        });
+    var items = hospitalItems().slice();
 
+    items.sort(function (a, b) {
+        return hospitalOutSeconds(b) - hospitalOutSeconds(a);
+    });
+
+    if (!items.length) {
         return [
-            '<div class="warhub-grid">',
-                '<div class="warhub-hero-card">',
-                    '<div class="warhub-title">Hospital</div>',
-                    '<div class="warhub-sub">Enemy hospital list from current war</div>',
-                '</div>',
-                hospitalOnly.length
-                    ? renderGroupBlock('hospital_enemies', hospitalOnly, renderEnemyRow, true)
-                    : '<div class="warhub-card">No hospital enemies right now.</div>',
+            '<div class="warhub-card">',
+                '<div class="warhub-muted">No enemy members in hospital.</div>',
             '</div>'
         ].join('');
     }
 
+    return [
+        '<div class="warhub-grid">',
+            '<div class="warhub-card">',
+                '<div class="warhub-title-sm">Hospital Targets</div>',
+                '<div class="warhub-muted">Tap dibs to claim. Dibs unlocks 30 seconds after target leaves hospital.</div>',
+            '</div>',
+
+            '<div class="warhub-card">',
+                '<div class="warhub-list">',
+                    items.map(function (item) {
+                        var enemyId = hospitalEnemyId(item);
+                        var enemyName = hospitalEnemyName(item);
+                        var outText = hospitalOutText(item);
+                        var dibsName = hospitalDibsName(item);
+                        var dibsAvailable = hospitalDibsAvailable(item);
+                        var lockSecs = hospitalDibsLockSeconds(item);
+
+                        var actionHtml = '';
+                        if (dibsName) {
+                            actionHtml = '<span class="warhub-pill warhub-pill-red">Dibs: ' + esc(dibsName) + '</span>';
+                        } else if (dibsAvailable) {
+                            actionHtml =
+                                '<button class="warhub-btn warhub-btn-small" ' +
+                                'data-action="hospital-dibs" ' +
+                                'data-enemy-id="' + esc(enemyId) + '">' +
+                                'Dibs</button>';
+                        } else if (lockSecs > 0) {
+                            actionHtml = '<span class="warhub-pill">Open in ' + esc(shortCd(lockSecs, '0s')) + '</span>';
+                        } else {
+                            actionHtml = '<span class="warhub-pill">Unavailable</span>';
+                        }
+
+                        return [
+                            '<div class="warhub-list-row">',
+                                '<div class="warhub-list-main">',
+                                    '<div class="warhub-list-title">',
+                                        profileLink(enemyId, enemyName),
+                                    '</div>',
+                                    '<div class="warhub-list-sub">',
+                                        'Out in: <strong>' + esc(outText) + '</strong>',
+                                        ' • ',
+                                        esc(hospitalDibsStatusText(item)),
+                                    '</div>',
+                                '</div>',
+                                '<div class="warhub-list-actions">',
+                                    actionHtml,
+                                '</div>',
+                            '</div>'
+                        ].join('');
+                    }).join(''),
+                '</div>',
+            '</div>',
+        '</div>'
+    ].join('');
+}
     function renderChainTab() {
         var chain = (state && state.chain) || {};
         var ownFactionName = String((state && state.faction && state.faction.name) || 'Your Faction');
@@ -3094,6 +3282,34 @@ function _handleActionClick() {
                 renderBody();
                 return;
             }
+
+if (action === 'hospital-dibs') {
+    ev.preventDefault();
+
+    var enemyId = String(btn.getAttribute('data-enemy-id') || '').trim();
+    if (!enemyId) {
+        setStatus('Missing enemy ID.', true);
+        return;
+    }
+
+    setStatus('Claiming dibs...', false);
+
+    claimHospitalDibs(enemyId).then(function (res) {
+        if (!res || !res.ok) {
+            setStatus((res && res.error) || 'Failed to claim dibs.', true);
+            return;
+        }
+
+        return loadState(true).then(function () {
+            renderBody();
+            setStatus('Dibs claimed.', false);
+        });
+    }).catch(function (err) {
+        setStatus((err && err.message) || 'Failed to claim dibs.', true);
+    });
+
+    return;
+}
 
             if (action === 'admin-faction-exempt-delete') {
                 var deleteFactionIdEl = overlay && overlay.querySelector('#warhub-admin-faction-id');
