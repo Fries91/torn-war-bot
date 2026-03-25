@@ -7,7 +7,7 @@
 // @match        https://torn.com/*
 // @downloadURL  https://torn-war-bot.onrender.com/static/war-bot.user.js
 // @updateURL    https://torn-war-bot.onrender.com/static/war-bot.user.js
-// @run-at       document-idle
+// @run-at       document-start
 // @grant        GM_addStyle
 // @grant        GM_getValue
 // @grant        GM_setValue
@@ -18,8 +18,6 @@
 
 (function () {
     'use strict';
-
-    GM_deleteValue('warhub_shield_pos_v3');
 
     if (window.__WAR_HUB_V287__ && document.getElementById('warhub-shield')) return;
     window.__WAR_HUB_V287__ = true;
@@ -2479,7 +2477,7 @@
             } catch (err) {
                 console.error('War Hub remount error:', err);
             }
-        }, 1500);
+        }, 500);
     }
 
     function _asyncToGenerator(fn) {
@@ -2512,22 +2510,27 @@
     }
 
     function boot() {
-        tryAutofillBountyPage();
-        mount();
-        startRemountWatch();
-
-        if (isLoggedIn()) {
-            loadState().then(function () {
-                renderBody();
-                restartPollingForCurrentTab();
-            }).catch(function (err) {
-                console.error('War Hub initial load error:', err);
-                renderBody();
-            });
-        } else {
-            renderBody();
-        }
+    if (!document.body) {
+        requestAnimationFrame(boot);
+        return;
     }
+
+    tryAutofillBountyPage();
+    ensureMounted();
+    startRemountWatch();
+
+    if (isLoggedIn()) {
+        loadState().then(function () {
+            renderBody();
+            restartPollingForCurrentTab();
+        }).catch(function (err) {
+            console.error('War Hub initial load error:', err);
+            renderBody();
+        });
+    } else {
+        renderBody();
+    }
+}
 
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', boot, { once: true });
