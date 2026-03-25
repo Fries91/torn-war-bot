@@ -2435,7 +2435,7 @@ function renderOverviewTab() {
     var chainUs = Number(war.chain_us || 0);
     var chainThem = Number(war.chain_them || 0);
 
-    var termsText = String((state && state.terms && state.terms.text) || '');
+    var termsText = String((state && state.terms_summary && state.terms_summary.text) || '');
     var medDealsText = String((state && state.med_deals && state.med_deals.text) || '');
 
     var dibsText = String((state && state.dibs && state.dibs.text) || '').trim();
