@@ -19,6 +19,8 @@
 (function () {
     'use strict';
 
+    GM_deleteValue(K_SHIELD_POS);
+
 
     if (window.__WAR_HUB_V287__ && document.getElementById('warhub-shield')) return;
     window.__WAR_HUB_V287__ = true;
@@ -139,21 +141,19 @@
   -webkit-user-select: none !important;\n\
   -webkit-touch-callout: none !important;\n\
   -webkit-tap-highlight-color: transparent !important;\n\
-  touch-action: none !important;\n\
+  touch-action: manipulation !important;\n\
   box-shadow: 0 8px 24px rgba(0,0,0,.45) !important;\n\
   border: 1px solid rgba(255,255,255,.10) !important;\n\
   background: radial-gradient(circle at 30% 20%, rgba(220,75,75,.98), rgba(110,12,12,.98) 55%, rgba(48,6,6,.98)) !important;\n\
   color: #fff !important;\n\
   left: auto !important;\n\
-  right: auto !important;\n\
-  top: auto !important;\n\
+  right: 12px !important;\n\
+  top: 50% !important;\n\
   bottom: auto !important;\n\
+  transform: translateY(-50%) !important;\n\
   opacity: 1 !important;\n\
   visibility: visible !important;\n\
   pointer-events: auto !important;\n\
-}\n\
-#warhub-shield.dragging {\n\
-  cursor: grabbing !important;\n\
 }\n\
 \n\
 #warhub-badge {\n\
@@ -1047,32 +1047,12 @@
 function applyShieldPos() {
     if (!shield) return;
 
-    var vp = getViewport();
-    var width = shield.offsetWidth || 42;
-    var height = shield.offsetHeight || 42;
-
-    var fallback = {
-        left: Math.max(8, vp.w - width - 14),
-        top: Math.max(80, Math.round((vp.h - height) / 2))
-    };
-
-    var pos = loadPos(K_SHIELD_POS, fallback);
-
-    var maxLeft = Math.max(8, vp.w - width - 8);
-    var maxTop = Math.max(80, vp.h - height - 8);
-
-    var left = Number(pos.left);
-    var top = Number(pos.top);
-
-    if (!isFinite(left) || left < 8 || left > maxLeft) left = fallback.left;
-    if (!isFinite(top) || top < 80 || top > maxTop) top = fallback.top;
-
-    shield.style.left = left + 'px';
-    shield.style.top = top + 'px';
-    shield.style.right = 'auto';
+    shield.style.left = 'auto';
+    shield.style.right = '12px';
+    shield.style.top = '50%';
     shield.style.bottom = 'auto';
+    shield.style.transform = 'translateY(-50%)';
 
-    savePos(K_SHIELD_POS, { left: left, top: top });
     positionBadge();
 }
 
@@ -1100,12 +1080,11 @@ function applyShieldPos() {
     }
 
 function makeHoldDraggable(handle, target, key) {
-    if (!handle || !target) {
-        return {
-            didMove: function () { return false; },
-            isDragging: function () { return false; }
-        };
-    }
+    return {
+        didMove: function () { return false; },
+        isDragging: function () { return false; }
+    };
+}
 
     var dragging = false;
     var moved = false;
@@ -1837,16 +1816,8 @@ function _loadEnemies() {
         updateBadge();
         positionBadge();
 
-        var shieldDrag = makeHoldDraggable(shield, shield, K_SHIELD_POS);
-
         function shieldTapBlocked() {
-            return !!(
-                shieldDrag &&
-                (
-                    (shieldDrag.isDragging && shieldDrag.isDragging()) ||
-                    (shieldDrag.didMove && shieldDrag.didMove())
-                )
-            );
+            return false;
         }
 
         bindTap(shield, function () {
