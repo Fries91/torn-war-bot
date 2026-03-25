@@ -563,11 +563,118 @@
         return isLeaderLike();
     }
 
+    function canSeeAdmin() {
+        return canSeeAdminTab();
+    }
+
+    function canManageFaction() {
+        return isLeaderLike();
+    }
+
+    function canSeeSummary() {
+        return isLoggedIn();
+    }
+
     function getVisibleTabs(rows) {
         return rows.filter(function (pair) {
             if (pair[0] === 'admin') return canSeeAdminTab();
             return true;
         });
+    }
+
+    function cleanInputValue(v) {
+        return String(v == null ? '' : v).trim();
+    }
+
+    function getSession() {
+        return GM_getValue(K_SESSION, null);
+    }
+
+    function setSession(session) {
+        GM_setValue(K_SESSION, session || null);
+    }
+
+    function clearSession() {
+        GM_deleteValue(K_SESSION);
+        saveAccessCache(null);
+    }
+
+    function getHeaders(extra) {
+        var session = getSession();
+        var headers = Object.assign({
+            'Content-Type': 'application/json'
+        }, extra || {});
+        if (session && session.session_id) {
+            headers['X-Session-Id'] = session.session_id;
+        }
+        return headers;
+    }
+
+    function apiRequest(method, path, body) {
+        return new Promise(function (resolve, reject) {
+            GM_xmlhttpRequest({
+                method: method,
+                url: BASE_URL + path,
+                headers: getHeaders(),
+                data: body == null ? null : JSON.stringify(body),
+                timeout: 30000,
+                onload: function (resp) {
+                    var text = resp && resp.responseText ? resp.responseText : '';
+                    var json = null;
+
+                    try {
+                        json = text ? JSON.parse(text) : {};
+                    } catch (_) {
+                        json = null;
+                    }
+
+                    if (resp.status >= 200 && resp.status < 300) {
+                        resolve(json || {});
+                        return;
+                    }
+
+                    var err = new Error((json && (json.error || json.message)) || ('HTTP ' + resp.status));
+                    err.status = resp.status;
+                    err.payload = json;
+                    reject(err);
+                },
+                onerror: function () {
+                    reject(new Error('Network request failed'));
+                },
+                ontimeout: function () {
+                    reject(new Error('Request timed out'));
+                }
+            });
+        });
+    }
+
+    function authedReq(method, path, body) {
+        return apiRequest(method, path, body)
+            .then(function (json) {
+                return { ok: true, json: json };
+            })
+            .catch(function (err) {
+                return {
+                    ok: false,
+                    json: err && err.payload ? err.payload : null,
+                    error: err
+                };
+            });
+    }
+
+    function adminReq(method, path, body) {
+        return authedReq(method, path, body);
+    }
+
+    function setStatus(msg, isErr) {
+        lastStatusMsg = String(msg || '');
+        lastStatusErr = !!isErr;
+        renderBody();
+    }
+
+    function clearStatus() {
+        lastStatusMsg = '';
+        lastStatusErr = false;
     }
 
     function getStateFactionId() {
@@ -725,12 +832,17 @@
         return cur + '/' + max;
     }
 
-    function medCooldownValue(member) {
-        var secs = Number(member && (
+    function medCooldownSeconds(member) {
+        var n = Number(member && (
             member.med_cd ||
             member.med_cooldown ||
             member.medical_cooldown
         )) || 0;
+        return Math.max(0, n);
+    }
+
+    function medCooldownValue(member) {
+        var secs = medCooldownSeconds(member);
         return secs > 0 ? shortCd(secs, 'Ready') : 'Ready';
     }
 
@@ -831,79 +943,11 @@
             }
         }, 300);
     }
+        // ============================================================
+    // 07. HOSPITAL HELPERS
+    // ============================================================
 
-    function setStatus(msg, isErr) {
-        lastStatusMsg = String(msg || '');
-        lastStatusErr = !!isErr;
-        renderBody();
-    }
-
-    function clearStatus() {
-        lastStatusMsg = '';
-        lastStatusErr = false;
-    }
-
-    function getSession() {
-        return GM_getValue(K_SESSION, null);
-    }
-
-    function setSession(session) {
-        GM_setValue(K_SESSION, session || null);
-    }
-
-    function clearSession() {
-        GM_deleteValue(K_SESSION);
-        saveAccessCache(null);
-    }
-
-    function getHeaders(extra) {
-        var session = getSession();
-        var headers = Object.assign({
-            'Content-Type': 'application/json'
-        }, extra || {});
-        if (session && session.session_id) {
-            headers['X-Session-Id'] = session.session_id;
-        }
-        return headers;
-    }
-
-    function apiRequest(method, path, body) {
-        return new Promise(function (resolve, reject) {
-            GM_xmlhttpRequest({
-                method: method,
-                url: BASE_URL + path,
-                headers: getHeaders(),
-                data: body == null ? null : JSON.stringify(body),
-                timeout: 30000,
-                onload: function (resp) {
-                    var text = resp && resp.responseText ? resp.responseText : '';
-                    var json = null;
-                    try {
-                        json = text ? JSON.parse(text) : {};
-                    } catch (_) {
-                        json = null;
-                    }
-
-                    if (resp.status >= 200 && resp.status < 300) {
-                        resolve(json || {});
-                        return;
-                    }
-
-                    var err = new Error((json && (json.error || json.message)) || ('HTTP ' + resp.status));
-                    err.status = resp.status;
-                    err.payload = json;
-                    reject(err);
-                },
-                onerror: function () {
-                    reject(new Error('Network request failed'));
-                },
-                ontimeout: function () {
-                    reject(new Error('Request timed out'));
-                }
-            });
-        });
-    }
-        function hospitalEnemyId(item) {
+    function hospitalEnemyId(item) {
         return String(
             (item && (
                 item.enemy_id ||
@@ -925,7 +969,7 @@
     }
 
     function hospitalOutSeconds(item) {
-        var nowSec = Math.floor(Date.now() / 1000);
+        var now = Math.floor(Date.now() / 1000);
 
         var secs = Number(
             (item && (
@@ -943,8 +987,8 @@
                 item.until
             )) || 0
         );
-        if (Number.isFinite(untilTs) && untilTs > nowSec) {
-            return Math.max(0, untilTs - nowSec);
+        if (Number.isFinite(untilTs) && untilTs > now) {
+            return Math.max(0, untilTs - now);
         }
 
         return 0;
@@ -982,7 +1026,7 @@
     }
 
     function hospitalDibsLockSeconds(item) {
-        var nowSec = Math.floor(Date.now() / 1000);
+        var now = Math.floor(Date.now() / 1000);
 
         var lockTs = Number(
             (item && (
@@ -990,8 +1034,8 @@
                 item.locked_until_ts
             )) || 0
         );
-        if (Number.isFinite(lockTs) && lockTs > nowSec) {
-            return Math.max(0, lockTs - nowSec);
+        if (Number.isFinite(lockTs) && lockTs > now) {
+            return Math.max(0, lockTs - now);
         }
 
         return 0;
@@ -1007,6 +1051,133 @@
         if (lockSecs > 0) return 'Open in ' + shortCd(lockSecs, '0s');
 
         return 'Unavailable';
+    }
+
+    // ============================================================
+    // 08. DATA LOADERS
+    // ============================================================
+
+    function loadState() {
+        return _loadState.apply(this, arguments);
+    }
+
+    function _loadState() {
+        _loadState = _asyncToGenerator(function* () {
+            if (!isLoggedIn()) return null;
+
+            var res = yield authedReq('GET', '/api/state');
+            if (!res.ok || !res.json) return state;
+
+            state = res.json;
+            updateBadge();
+            return state;
+        });
+
+        return _loadState.apply(this, arguments);
+    }
+
+    function loadFactionMembers(force) {
+        return _loadFactionMembers.apply(this, arguments);
+    }
+
+    function _loadFactionMembers() {
+        _loadFactionMembers = _asyncToGenerator(function* (force) {
+            if (!isLoggedIn()) return [];
+
+            if (!force && factionMembersCache && Array.isArray(factionMembersCache)) {
+                return factionMembersCache;
+            }
+
+            var res = yield authedReq('GET', '/api/state');
+            if (!res.ok || !res.json) return factionMembersCache || [];
+
+            state = res.json;
+            factionMembersCache = getOwnMembers();
+            currentFactionMembers = factionMembersCache.slice();
+            updateBadge();
+            return factionMembersCache;
+        });
+
+        return _loadFactionMembers.apply(this, arguments);
+    }
+
+    function loadWarData(force) {
+        return _loadWarData.apply(this, arguments);
+    }
+
+    function _loadWarData() {
+        _loadWarData = _asyncToGenerator(function* (force) {
+            if (!isLoggedIn()) return null;
+            if (!force && state && state.war) return state.war;
+
+            var res = yield authedReq('GET', '/api/state');
+            if (!res.ok || !res.json) return state && state.war ? state.war : null;
+
+            state = res.json;
+            updateBadge();
+            return state.war || null;
+        });
+
+        return _loadWarData.apply(this, arguments);
+    }
+
+    function loadEnemies(force) {
+        return _loadEnemies.apply(this, arguments);
+    }
+
+    function _loadEnemies() {
+        _loadEnemies = _asyncToGenerator(function* (force) {
+            if (!isLoggedIn()) return [];
+
+            if (!force && warEnemiesCache && warEnemiesCache.length) {
+                return warEnemiesCache;
+            }
+
+            var res = yield authedReq('GET', '/api/enemies');
+            if (res.ok && res.json) {
+                warEnemiesCache = Array.isArray(res.json.enemies) ? res.json.enemies : (Array.isArray(res.json) ? res.json : []);
+                warEnemiesFactionName = String(res.json.enemy_faction_name || res.json.faction_name || warEnemiesFactionName || '');
+                warEnemiesFactionId = String(res.json.enemy_faction_id || res.json.faction_id || warEnemiesFactionId || '');
+                warEnemiesLoadedAt = Date.now();
+                return warEnemiesCache;
+            }
+
+            var war = (state && state.war) || {};
+            warEnemiesFactionName = String(war.enemy_faction_name || warEnemiesFactionName || '');
+            warEnemiesFactionId = String(war.enemy_faction_id || warEnemiesFactionId || '');
+            return warEnemiesCache || [];
+        });
+
+        return _loadEnemies.apply(this, arguments);
+    }
+
+    function loadHospital(force) {
+        return _loadHospital.apply(this, arguments);
+    }
+
+    function _loadHospital() {
+        _loadHospital = _asyncToGenerator(function* (force) {
+            if (!isLoggedIn()) return [];
+
+            if (!force && state && Array.isArray(state.hospital)) {
+                return state.hospital;
+            }
+
+            var res = yield authedReq('GET', '/api/hospital');
+            if (res.ok && res.json) {
+                if (!state) state = {};
+                state.hospital = Array.isArray(res.json.hospital) ? res.json.hospital : (Array.isArray(res.json) ? res.json : []);
+                return state.hospital;
+            }
+
+            return (state && state.hospital) || [];
+        });
+
+        return _loadHospital.apply(this, arguments);
+    }
+
+    function loadLiveSummary(force) {
+        return _loadLiveSummary.apply(this, arguments);
     }
 
     function _loadLiveSummary() {
@@ -1077,7 +1248,6 @@
     function _loadAdminDashboard() {
         _loadAdminDashboard = _asyncToGenerator(function* (force) {
             if (!canSeeAdmin()) return null;
-
             if (!force && analyticsCache) return analyticsCache;
 
             var res = yield adminReq('GET', '/api/admin/dashboard');
@@ -1097,7 +1267,6 @@
     function _loadAdminTopFive() {
         _loadAdminTopFive = _asyncToGenerator(function* (force) {
             if (!canSeeAdmin()) return null;
-
             if (!force && adminTopFiveCache) return adminTopFiveCache;
 
             var res = yield adminReq('GET', '/api/admin/top-five');
@@ -1111,105 +1280,104 @@
     }
 
     // ============================================================
-    // 13. TAB / POLLING FLOW
+    // 09. TAB / POLLING FLOW
     // ============================================================
 
     function tabNeedsLivePolling(tab) {
-    return tab === 'summary' || tab === 'enemies' || tab === 'hospital' || tab === 'overview' || tab === 'members';
-}
+        return tab === 'summary' || tab === 'enemies' || tab === 'hospital' || tab === 'overview' || tab === 'members';
+    }
 
-function tickCurrentTab() {
-    return _tickCurrentTab.apply(this, arguments);
-}
+    function tickCurrentTab() {
+        return _tickCurrentTab.apply(this, arguments);
+    }
 
-function _tickCurrentTab() {
-    _tickCurrentTab = _asyncToGenerator(function* () {
-        if (!isLoggedIn()) return;
+    function _tickCurrentTab() {
+        _tickCurrentTab = _asyncToGenerator(function* () {
+            if (!isLoggedIn()) return;
 
-        try {
-            if (currentTab === 'summary') {
-                yield loadLiveSummary(true);
-                return;
+            try {
+                if (currentTab === 'summary') {
+                    yield loadLiveSummary(true);
+                    return;
+                }
+
+                if (currentTab === 'enemies') {
+                    yield loadWarData(true);
+                    yield loadEnemies(true);
+                    return;
+                }
+
+                if (currentTab === 'hospital') {
+                    yield loadWarData(true);
+                    yield loadEnemies(true);
+                    yield loadHospital(true);
+                    return;
+                }
+
+                if (currentTab === 'overview') {
+                    yield loadState();
+                    return;
+                }
+
+                if (currentTab === 'members') {
+                    yield loadState();
+                    return;
+                }
+            } catch (err) {
+                console.error('War Hub tab tick error:', err);
             }
+        });
 
-            if (currentTab === 'enemies') {
-                yield loadWarData(true);
-                yield loadEnemies(true);
-                return;
-            }
+        return _tickCurrentTab.apply(this, arguments);
+    }
 
-            if (currentTab === 'hospital') {
-                yield loadWarData(true);
-                yield loadEnemies(true);
-                yield loadHospital(true);
-                return;
-            }
+    function handleTabClick(tab) {
+        return _handleTabClick.apply(this, arguments);
+    }
 
-            if (currentTab === 'overview') {
-                yield loadState();
-                return;
-            }
+    function _handleTabClick() {
+        _handleTabClick = _asyncToGenerator(function* (tab) {
+            currentTab = String(tab || 'overview');
+            GM_setValue(K_TAB, currentTab);
 
-            if (currentTab === 'members') {
-                yield loadState();
-                return;
-            }
-        } catch (err) {
-            console.error('War Hub tab tick error:', err);
-        }
-    });
-
-    return _tickCurrentTab.apply(this, arguments);
-}
-
-function handleTabClick(tab) {
-    return _handleTabClick.apply(this, arguments);
-}
-
-function _handleTabClick() {
-    _handleTabClick = _asyncToGenerator(function* (tab) {
-        currentTab = String(tab || 'overview');
-        GM_setValue(K_TAB, currentTab);
-
-        try {
-            if (currentTab === 'members') {
-                yield loadFactionMembers(true);
-                membersLiveStamp = Date.now();
-            } else if (currentTab === 'enemies') {
-                yield loadWarData(true);
-                yield loadEnemies(true);
-            } else if (currentTab === 'hospital') {
-                yield loadWarData(true);
-                yield loadEnemies(true);
-                yield loadHospital(true);
-            } else if (currentTab === 'summary') {
-                yield loadLiveSummary(true);
-            } else if (currentTab === 'faction') {
-                if (canManageFaction()) {
+            try {
+                if (currentTab === 'members') {
                     yield loadFactionMembers(true);
-                    yield refreshFactionPaymentData();
+                    membersLiveStamp = Date.now();
+                } else if (currentTab === 'enemies') {
+                    yield loadWarData(true);
+                    yield loadEnemies(true);
+                } else if (currentTab === 'hospital') {
+                    yield loadWarData(true);
+                    yield loadEnemies(true);
+                    yield loadHospital(true);
+                } else if (currentTab === 'summary') {
+                    yield loadLiveSummary(true);
+                } else if (currentTab === 'faction') {
+                    if (canManageFaction()) {
+                        yield loadFactionMembers(true);
+                        yield refreshFactionPaymentData();
+                    }
+                } else if (currentTab === 'admin') {
+                    if (canSeeAdmin()) {
+                        yield loadAdminDashboard(true);
+                        yield loadAdminTopFive(true);
+                    }
+                } else if (currentTab === 'overview') {
+                    yield loadState();
                 }
-            } else if (currentTab === 'admin') {
-                if (canSeeAdmin()) {
-                    yield loadAdminDashboard(true);
-                    yield loadAdminTopFive(true);
-                }
-            } else if (currentTab === 'overview') {
-                yield loadState();
+            } catch (err) {
+                console.error('War Hub tab load error:', err);
             }
-        } catch (err) {
-            console.error('War Hub tab load error:', err);
-        }
 
-        renderBody();
-        restartPollingForCurrentTab();
-    });
+            renderBody();
+            restartPollingForCurrentTab();
+        });
 
-    return _handleTabClick.apply(this, arguments);
-}
-
-    // ============================================================
-    // 14. OVERLAY MOUNT / DOM
+        return _handleTabClick.apply(this, arguments);
+    }
+        // ============================================================
+    // 10. OVERLAY MOUNT / DOM
     // ============================================================
 
     function bindTap(el, handler) {
@@ -1320,6 +1488,16 @@ function _handleTabClick() {
             }
         }, { passive: false });
 
+        overlay.addEventListener('click', function (e) {
+            var bountyLink = e.target.closest('[data-bounty-player]');
+            if (bountyLink) {
+                savePendingBounty(
+                    bountyLink.getAttribute('data-bounty-player'),
+                    bountyLink.getAttribute('data-bounty-name')
+                );
+            }
+        }, true);
+
         overlay.addEventListener('change', function (e) {
             var t = e.target;
 
@@ -1341,16 +1519,6 @@ function _handleTabClick() {
                 GM_setValue(K_OWNER_TOKEN, cleanInputValue(t.value));
             }
         });
-        overlay.addEventListener('click', function (e) {
-            var bountyLink = e.target.closest('[data-bounty-player]');
-            if (bountyLink) {
-                savePendingBounty(
-                    bountyLink.getAttribute('data-bounty-player'),
-                    bountyLink.getAttribute('data-bounty-name')
-                );
-            }
-        }, true);
-
 
         window.addEventListener('resize', function () {
             applyShieldPos();
@@ -1381,8 +1549,9 @@ function _handleTabClick() {
     function toggleOverlay() {
         setOverlayOpen(!isOpen);
     }
-        // ============================================================
-    // 15. GROUP COLLAPSE STATE
+
+    // ============================================================
+    // 11. GROUP COLLAPSE STATE
     // ============================================================
 
     function isGroupOpen(key, defaultOpen) {
@@ -1398,181 +1567,8 @@ function _handleTabClick() {
     }
 
     // ============================================================
-    // 16. MEMBER / WAR HELPERS
+    // 12. MEMBER RENDERING
     // ============================================================
-
-    function shortCd(v, fallback) {
-        var n = Number(v || 0);
-        if (!Number.isFinite(n) || n <= 0) return String(fallback || 'Ready');
-
-        var h = Math.floor(n / 3600);
-        var m = Math.floor((n % 3600) / 60);
-        var s = Math.floor(n % 60);
-
-        if (h > 0) return h + 'h ' + String(m).padStart(2, '0') + 'm';
-        if (m > 0) return m + 'm ' + String(s).padStart(2, '0') + 's';
-        return s + 's';
-    }
-
-    function getMemberId(member) {
-        return String(
-            (member && (member.user_id || member.id || member.player_id)) ||
-            ''
-        );
-    }
-
-    function getMemberName(member) {
-        return String(
-            (member && (member.name || member.player_name || member.username)) ||
-            'Unknown'
-        );
-    }
-
-    function profileUrl(member) {
-        var id = getMemberId(member);
-        return id ? ('https://www.torn.com/profiles.php?XID=' + encodeURIComponent(id)) : '#';
-    }
-
-    function energyValue(member) {
-        var v = member && (
-            member.energy_current ||
-            member.energy ||
-            member.e ||
-            member.energy_now
-        );
-        if (v === null || v === undefined || v === '') return null;
-        var n = Number(v);
-        return Number.isFinite(n) ? n : null;
-    }
-
-    function lifeValue(member) {
-        var cur = Number(member && (
-            member.life_current ||
-            member.life ||
-            member.hp ||
-            member.life_now
-        ));
-        var max = Number(member && (
-            member.life_max ||
-            member.max_life ||
-            member.hp_max
-        ));
-
-        if (!Number.isFinite(cur) && !Number.isFinite(max)) return '—';
-        if (!Number.isFinite(cur)) cur = 0;
-        if (!Number.isFinite(max) || max <= 0) return String(cur);
-        return cur + '/' + max;
-    }
-
-    function medCooldownSeconds(member) {
-        var n = Number(member && (
-            member.med_cd ||
-            member.med_cooldown ||
-            member.medical_cooldown
-        )) || 0;
-        return Math.max(0, n);
-    }
-
-    function medCooldownValue(member) {
-        var secs = medCooldownSeconds(member);
-        return secs > 0 ? shortCd(secs, 'Ready') : 'Ready';
-    }
-
-    function stateLabel(member) {
-        var raw = String(
-            (member && (
-                member.state ||
-                member.status ||
-                member.user_state ||
-                member.presence
-            )) || ''
-        ).toLowerCase();
-
-        if (!raw) {
-            var until = Number(member && (member.status_until || member.until || 0)) || 0;
-            var detail = String((member && (member.status_detail || member.details || '')) || '').toLowerCase();
-            if (detail.indexOf('hospital') !== -1) return 'hospital';
-            if (detail.indexOf('travel') !== -1 || detail.indexOf('flying') !== -1) return 'travel';
-            if (detail.indexOf('jail') !== -1) return 'jail';
-            if (until > nowSec()) return 'idle';
-            return 'offline';
-        }
-
-        if (raw.indexOf('hospital') !== -1) return 'hospital';
-        if (raw.indexOf('travel') !== -1 || raw.indexOf('fly') !== -1 || raw.indexOf('abroad') !== -1) return 'travel';
-        if (raw.indexOf('jail') !== -1) return 'jail';
-        if (raw.indexOf('idle') !== -1 || raw.indexOf('away') !== -1) return 'idle';
-        if (raw.indexOf('online') !== -1 || raw.indexOf('active') !== -1) return 'online';
-        if (raw.indexOf('offline') !== -1) return 'offline';
-        return raw || 'offline';
-    }
-
-    function humanStateLabel(st) {
-        st = String(st || '').toLowerCase();
-        if (st === 'online') return 'Online';
-        if (st === 'idle') return 'Idle';
-        if (st === 'offline') return 'Offline';
-        if (st === 'travel') return 'Travel';
-        if (st === 'hospital') return 'Hospital';
-        if (st === 'jail') return 'Jail';
-        return st ? (st.charAt(0).toUpperCase() + st.slice(1)) : 'Unknown';
-    }
-
-    function stateCountdown(member) {
-        var until = Number(
-            member && (
-                member.status_until ||
-                member.until ||
-                member.state_until ||
-                member.travel_until ||
-                member.hospital_until ||
-                member.jail_until
-            )
-        ) || 0;
-        return Math.max(0, until - nowSec());
-    }
-
-    function travelText(member) {
-        var to = String(
-            (member && (
-                member.travel_to ||
-                member.destination ||
-                member.travel_destination ||
-                member.abroad_in ||
-                member.traveling_to
-            )) || ''
-        ).trim();
-
-        var from = String(
-            (member && (
-                member.travel_from ||
-                member.origin ||
-                member.travel_origin ||
-                member.traveling_from
-            )) || ''
-        ).trim();
-
-        if (from && to) return from + ' → ' + to;
-        if (to) return 'To ' + to;
-        if (from) return 'From ' + from;
-        return '';
-    }
-
-    function hospitalText(member) {
-        var secs = stateCountdown(member);
-        if (stateLabel(member) !== 'hospital') return '';
-        return secs > 0 ? ('Hospital: ' + shortCd(secs, 'Hospital')) : 'Hospital';
-    }
-
-    function lastActionText(member) {
-        return String(
-            (member && (
-                member.last_action ||
-                member.lastAction ||
-                member.last_action_text
-            )) || ''
-        ).trim();
-    }
 
     function sortMembers(items) {
         return (Array.isArray(items) ? items.slice() : []).sort(function (a, b) {
@@ -1735,6 +1731,10 @@ function _handleTabClick() {
         ].join('');
     }
 
+    // ============================================================
+    // 13. OTHER TAB RENDERS
+    // ============================================================
+
     function renderOverviewTab() {
         var war = (state && state.war) || {};
         var ownFaction = (state && state.faction) || {};
@@ -1793,7 +1793,8 @@ function _handleTabClick() {
             '</div>'
         ].join('');
     }
-        function renderEnemiesTab() {
+
+    function renderEnemiesTab() {
         var enemies = Array.isArray(warEnemiesCache) ? warEnemiesCache : [];
         var factionName = warEnemiesFactionName || 'Enemy Faction';
 
@@ -1886,8 +1887,7 @@ function _handleTabClick() {
             '</div>'
         ].join('');
     }
-
-    function renderTargetsTab() {
+        function renderTargetsTab() {
         var targets = Array.isArray((state && state.targets) || []) ? state.targets : [];
         return [
             '<div class="warhub-card">',
@@ -2119,7 +2119,7 @@ function _handleTabClick() {
     }
 
     // ============================================================
-    // 17. POSITION / DRAG
+    // 14. POSITION / DRAG
     // ============================================================
 
     function viewportSize() {
@@ -2211,7 +2211,8 @@ function _handleTabClick() {
             badge.textContent = '';
         }
     }
-        function makeHoldDraggable(handle, target, key) {
+
+    function makeHoldDraggable(handle, target, key) {
         if (!handle || !target) {
             return {
                 didMove: function () { return false; },
@@ -2319,164 +2320,7 @@ function _handleTabClick() {
     }
 
     // ============================================================
-    // 18. API WRAPPERS
-    // ============================================================
-
-    function cleanInputValue(v) {
-        return String(v == null ? '' : v).trim();
-    }
-
-    function canSeeAdmin() {
-        return canSeeAdminTab();
-    }
-
-    function canManageFaction() {
-        return isLeaderLike();
-    }
-
-    function canSeeSummary() {
-        return isLoggedIn();
-    }
-
-    function authedReq(method, path, body) {
-        return apiRequest(method, path, body)
-            .then(function (json) {
-                return { ok: true, json: json };
-            })
-            .catch(function (err) {
-                return {
-                    ok: false,
-                    json: err && err.payload ? err.payload : null,
-                    error: err
-                };
-            });
-    }
-
-    function adminReq(method, path, body) {
-        return authedReq(method, path, body);
-    }
-
-    function loadState() {
-        return _loadState.apply(this, arguments);
-    }
-
-    function _loadState() {
-        _loadState = _asyncToGenerator(function* () {
-            if (!isLoggedIn()) return null;
-
-            var res = yield authedReq('GET', '/api/state');
-            if (!res.ok || !res.json) return state;
-
-            state = res.json;
-            updateBadge();
-            return state;
-        });
-
-        return _loadState.apply(this, arguments);
-    }
-
-    function loadFactionMembers(force) {
-        return _loadFactionMembers.apply(this, arguments);
-    }
-
-    function _loadFactionMembers() {
-        _loadFactionMembers = _asyncToGenerator(function* (force) {
-            if (!isLoggedIn()) return [];
-
-            if (!force && factionMembersCache && Array.isArray(factionMembersCache)) {
-                return factionMembersCache;
-            }
-
-            var res = yield authedReq('GET', '/api/state');
-            if (!res.ok || !res.json) return factionMembersCache || [];
-
-            state = res.json;
-            factionMembersCache = getOwnMembers();
-            currentFactionMembers = factionMembersCache.slice();
-            updateBadge();
-            return factionMembersCache;
-        });
-
-        return _loadFactionMembers.apply(this, arguments);
-    }
-
-    function loadWarData(force) {
-        return _loadWarData.apply(this, arguments);
-    }
-
-    function _loadWarData() {
-        _loadWarData = _asyncToGenerator(function* (force) {
-            if (!isLoggedIn()) return null;
-            if (!force && state && state.war) return state.war;
-
-            var res = yield authedReq('GET', '/api/state');
-            if (!res.ok || !res.json) return state && state.war ? state.war : null;
-
-            state = res.json;
-            updateBadge();
-            return state.war || null;
-        });
-
-        return _loadWarData.apply(this, arguments);
-    }
-
-    function loadEnemies(force) {
-        return _loadEnemies.apply(this, arguments);
-    }
-
-    function _loadEnemies() {
-        _loadEnemies = _asyncToGenerator(function* (force) {
-            if (!isLoggedIn()) return [];
-
-            if (!force && warEnemiesCache && warEnemiesCache.length) {
-                return warEnemiesCache;
-            }
-
-            var res = yield authedReq('GET', '/api/enemies');
-            if (res.ok && res.json) {
-                warEnemiesCache = Array.isArray(res.json.enemies) ? res.json.enemies : (Array.isArray(res.json) ? res.json : []);
-                warEnemiesFactionName = String(res.json.enemy_faction_name || res.json.faction_name || warEnemiesFactionName || '');
-                warEnemiesFactionId = String(res.json.enemy_faction_id || res.json.faction_id || warEnemiesFactionId || '');
-                warEnemiesLoadedAt = Date.now();
-                return warEnemiesCache;
-            }
-
-            var war = (state && state.war) || {};
-            warEnemiesFactionName = String(war.enemy_faction_name || warEnemiesFactionName || '');
-            warEnemiesFactionId = String(war.enemy_faction_id || warEnemiesFactionId || '');
-            return warEnemiesCache || [];
-        });
-
-        return _loadEnemies.apply(this, arguments);
-    }
-
-    function loadHospital(force) {
-        return _loadHospital.apply(this, arguments);
-    }
-
-    function _loadHospital() {
-        _loadHospital = _asyncToGenerator(function* (force) {
-            if (!isLoggedIn()) return [];
-
-            if (!force && state && Array.isArray(state.hospital)) {
-                return state.hospital;
-            }
-
-            var res = yield authedReq('GET', '/api/hospital');
-            if (res.ok && res.json) {
-                if (!state) state = {};
-                state.hospital = Array.isArray(res.json.hospital) ? res.json.hospital : (Array.isArray(res.json) ? res.json : []);
-                return state.hospital;
-            }
-
-            return (state && state.hospital) || [];
-        });
-
-        return _loadHospital.apply(this, arguments);
-    }
-
-    // ============================================================
-    // 19. ACTION HANDLERS
+    // 15. ACTION HANDLERS / POLLING / BOOT
     // ============================================================
 
     function loginFlow() {
@@ -2588,10 +2432,6 @@ function _handleTabClick() {
         }
     }
 
-    // ============================================================
-    // 20. POLLING / REMOUNT
-    // ============================================================
-
     function restartPollingForCurrentTab() {
         if (pollTimer) {
             clearInterval(pollTimer);
@@ -2642,10 +2482,6 @@ function _handleTabClick() {
         }, 1500);
     }
 
-    // ============================================================
-    // 21. ASYNC HELPER
-    // ============================================================
-
     function _asyncToGenerator(fn) {
         return function () {
             var self = this, args = arguments;
@@ -2674,10 +2510,6 @@ function _handleTabClick() {
             });
         };
     }
-
-    // ============================================================
-    // 22. BOOT
-    // ============================================================
 
     function boot() {
         tryAutofillBountyPage();
