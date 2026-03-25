@@ -2336,7 +2336,7 @@ function _handleTabClick() {
                         ) + '</span>',
                     '</div>',
                     '<div class="warhub-row">',
-                        '<a class="warhub-btn ghost" href="' + esc(bountyUrl(member)) + '" target="_blank" rel="noopener noreferrer">Bounty</a>',
+                        '<a class="warhub-btn" href="' + esc(bountyUrl(member)) + '" target="_blank" rel="noopener noreferrer">Bounty</a>',
                     '</div>',
                 '</div>',
                 '<div class="warhub-statline">',
