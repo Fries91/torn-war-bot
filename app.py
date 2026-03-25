@@ -38,8 +38,12 @@ from db import (
     get_faction_member_access,
     get_faction_terms_summary,
     upsert_faction_terms_summary,
+    sync_hospital_dibs_snapshot,
+    claim_hospital_dib,
+    list_hospital_dibs,
+    list_overview_dibs,
 )
-from torn_api import me_basic, faction_basic, ranked_war_summary, member_live_bars, profile_url, attack_url, bounty_url
+from torn_api import me_basic, faction_basic, ranked_war_summary, member_live_bars, profile_url, attack_url, bounty_url, hospital_members_from_enemies
 from payment_service import (
     activate_faction_member_for_billing,
     confirm_faction_payment_and_renew,
@@ -533,6 +537,81 @@ def _build_enemy_member_payload(member: Dict[str, Any], enemy_faction_id: str, e
     }
 
 
+def _build_hospital_payload(user: Dict[str, Any], war_payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    user = user or {}
+    faction_id = str(user.get("faction_id") or "").strip()
+    faction_name = str(user.get("faction_name") or "").strip()
+    if not faction_id:
+        return {
+            "items": [],
+            "count": 0,
+            "overview_items": [],
+            "overview_count": 0,
+            "enemy_faction_id": "",
+            "enemy_faction_name": "",
+        }
+
+    payload = war_payload or _build_war_and_enemy_payload(user)
+    war = payload.get("war") or {}
+    enemies = payload.get("enemies") or []
+    enemy_faction_id = str(war.get("enemy_faction_id") or "").strip()
+    enemy_faction_name = str(war.get("enemy_faction_name") or "").strip()
+
+    hospital_members = hospital_members_from_enemies(enemies)
+    synced = sync_hospital_dibs_snapshot(
+        faction_id=faction_id,
+        faction_name=faction_name,
+        enemy_faction_id=enemy_faction_id,
+        enemy_faction_name=enemy_faction_name,
+        members=hospital_members,
+    )
+
+    dib_map = {str(item.get("enemy_user_id") or ""): item for item in synced}
+    now_ts = int(datetime.now(timezone.utc).timestamp())
+    out = []
+    for member in hospital_members:
+        enemy_user_id = str(member.get("user_id") or "").strip()
+        dib = dib_map.get(enemy_user_id) or {}
+        dibbed_by_name = str(dib.get("dibbed_by_name") or "").strip()
+        dibs_lock_until_ts = _to_int(dib.get("dibs_lock_until_ts"), 0)
+        dibs_available = not dibbed_by_name and (dibs_lock_until_ts <= now_ts)
+        out.append({
+            **member,
+            "enemy_user_id": enemy_user_id,
+            "dibbed_by_user_id": str(dib.get("dibbed_by_user_id") or ""),
+            "dibbed_by_name": dibbed_by_name,
+            "dibbed_at": str(dib.get("dibbed_at") or ""),
+            "left_hospital_at": str(dib.get("left_hospital_at") or ""),
+            "dibs_lock_until_ts": dibs_lock_until_ts,
+            "overview_remove_after_ts": _to_int(dib.get("overview_remove_after_ts"), 0),
+            "dibs_available": bool(dibs_available),
+            "dibs_locked": bool(dibs_lock_until_ts > now_ts),
+        })
+
+    overview_items = []
+    for dib in list_overview_dibs(faction_id):
+        overview_items.append({
+            "enemy_user_id": str(dib.get("enemy_user_id") or ""),
+            "enemy_name": str(dib.get("enemy_name") or ""),
+            "dibbed_by_user_id": str(dib.get("dibbed_by_user_id") or ""),
+            "dibbed_by_name": str(dib.get("dibbed_by_name") or ""),
+            "dibbed_at": str(dib.get("dibbed_at") or ""),
+            "in_hospital": bool(dib.get("in_hospital")),
+            "left_hospital_at": str(dib.get("left_hospital_at") or ""),
+            "overview_remove_after_ts": _to_int(dib.get("overview_remove_after_ts"), 0),
+        })
+
+    out.sort(key=lambda x: (str(x.get("name") or "").lower(), str(x.get("user_id") or "")))
+    return {
+        "items": out,
+        "count": len(out),
+        "overview_items": overview_items,
+        "overview_count": len(overview_items),
+        "enemy_faction_id": enemy_faction_id,
+        "enemy_faction_name": enemy_faction_name,
+    }
+
+
 def _build_war_and_enemy_payload(user: Dict[str, Any]) -> Dict[str, Any]:
     user = user or {}
     api_key = str(user.get("api_key") or "").strip()
@@ -651,6 +730,7 @@ def _build_state_payload(user: Dict[str, Any]) -> Dict[str, Any]:
     }
     notifications = list_notifications(str(user.get("user_id") or ""), limit=25)
     terms_summary_row = get_faction_terms_summary(faction_id) if faction_id else {}
+    hospital_payload = _build_hospital_payload(user, war_payload=war_payload) if faction_id else {"items": [], "overview_items": []}
 
     return {
         "app_name": APP_NAME,
@@ -683,6 +763,16 @@ def _build_state_payload(user: Dict[str, Any]) -> Dict[str, Any]:
             "updated_by_user_id": str((terms_summary_row or {}).get("updated_by_user_id") or ""),
             "updated_by_name": str((terms_summary_row or {}).get("updated_by_name") or ""),
             "updated_at": str((terms_summary_row or {}).get("updated_at") or ""),
+        },
+        "dibs": {
+            "items": hospital_payload.get("overview_items") or [],
+            "count": len(hospital_payload.get("overview_items") or []),
+        },
+        "hospital": {
+            "items": hospital_payload.get("items") or [],
+            "count": len(hospital_payload.get("items") or []),
+            "enemy_faction_id": hospital_payload.get("enemy_faction_id") or "",
+            "enemy_faction_name": hospital_payload.get("enemy_faction_name") or "",
         },
         "payment": {
             "payment_player": PAYMENT_PLAYER,
@@ -926,6 +1016,66 @@ def api_enemies():
         counts_by_state=payload.get("enemy_bucket_counts") or {key: 0 for key in _enemy_bucket_order()},
         order=payload.get("enemy_bucket_order") or _enemy_bucket_order(),
         war=war,
+    )
+
+
+@app.route("/api/hospital", methods=["GET"])
+@require_session
+def api_hospital():
+    user = request.user or {}
+    faction_id = str(user.get("faction_id") or "").strip()
+    if not faction_id:
+        return ok(items=[], count=0, overview_items=[], overview_count=0, faction_id="", faction_name="", enemy_faction_id="", enemy_faction_name="")
+    access_error = _require_feature_access()
+    if access_error:
+        return access_error
+    war_payload = _build_war_and_enemy_payload(user)
+    hospital_payload = _build_hospital_payload(user, war_payload=war_payload)
+    return ok(
+        items=hospital_payload.get("items") or [],
+        count=hospital_payload.get("count") or 0,
+        overview_items=hospital_payload.get("overview_items") or [],
+        overview_count=hospital_payload.get("overview_count") or 0,
+        faction_id=faction_id,
+        faction_name=str(user.get("faction_name") or ""),
+        enemy_faction_id=hospital_payload.get("enemy_faction_id") or "",
+        enemy_faction_name=hospital_payload.get("enemy_faction_name") or "",
+        war=war_payload.get("war") or {},
+    )
+
+
+@app.route("/api/hospital/dibs/<enemy_user_id>", methods=["POST"])
+@require_session
+def api_hospital_dibs_claim(enemy_user_id: str):
+    user = request.user or {}
+    faction_id = str(user.get("faction_id") or "").strip()
+    if not faction_id:
+        return err("No faction found.", 400)
+    access_error = _require_feature_access()
+    if access_error:
+        return access_error
+
+    war_payload = _build_war_and_enemy_payload(user)
+    _build_hospital_payload(user, war_payload=war_payload)
+
+    result = claim_hospital_dib(
+        faction_id=faction_id,
+        enemy_user_id=str(enemy_user_id),
+        dibbed_by_user_id=str(user.get("user_id") or ""),
+        dibbed_by_name=str(user.get("name") or ""),
+    )
+    if not result.get("ok"):
+        return err(str(result.get("error") or "Could not dib enemy."), 400)
+
+    hospital_payload = _build_hospital_payload(user, war_payload=war_payload)
+    claimed = result.get("item") or {}
+    return ok(
+        message="Dibs claimed.",
+        item=claimed,
+        overview_items=hospital_payload.get("overview_items") or [],
+        overview_count=hospital_payload.get("overview_count") or 0,
+        hospital_items=hospital_payload.get("items") or [],
+        hospital_count=hospital_payload.get("count") or 0,
     )
 
 
