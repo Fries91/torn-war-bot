@@ -19,33 +19,6 @@
 (function () {
     'use strict';
 
-    setTimeout(function () {
-    if (document.getElementById('warhub-start-dot')) return;
-    var dot = document.createElement('div');
-    dot.id = 'warhub-start-dot';
-    dot.textContent = '●';
-    dot.style.position = 'fixed';
-    dot.style.left = '8px';
-    dot.style.top = '8px';
-    dot.style.zIndex = '2147483647';
-    dot.style.fontSize = '18px';
-    dot.style.lineHeight = '18px';
-    dot.style.color = '#ff4d4f';
-    dot.style.background = 'rgba(0,0,0,.65)';
-    dot.style.padding = '2px 6px';
-    dot.style.borderRadius = '10px';
-
-    function place() {
-        if (!document.body) {
-            requestAnimationFrame(place);
-            return;
-        }
-        document.body.appendChild(dot);
-    }
-
-    place();
-}, 0);
-
     if (window.__WAR_HUB_V287__ && document.getElementById('warhub-shield')) return;
     window.__WAR_HUB_V287__ = true;
 
