@@ -1471,67 +1471,110 @@ function _loadEnemies() {
         return _loadAdminTopFive.apply(this, arguments);
     }
 
+        function refreshOverviewLive() {
+        return _refreshOverviewLive.apply(this, arguments);
+    }
+
+    function _refreshOverviewLive() {
+        _refreshOverviewLive = _asyncToGenerator(function* () {
+            yield loadState();
+        });
+
+        return _refreshOverviewLive.apply(this, arguments);
+    }
+
+    function refreshMembersLive() {
+        return _refreshMembersLive.apply(this, arguments);
+    }
+
+    function _refreshMembersLive() {
+        _refreshMembersLive = _asyncToGenerator(function* () {
+            yield loadFactionMembers(true);
+            membersLiveStamp = Date.now();
+        });
+
+        return _refreshMembersLive.apply(this, arguments);
+    }
+
+    function refreshEnemiesLive() {
+        return _refreshEnemiesLive.apply(this, arguments);
+    }
+
+    function _refreshEnemiesLive() {
+        _refreshEnemiesLive = _asyncToGenerator(function* () {
+            yield loadWarData(true);
+            yield loadEnemies(true);
+        });
+
+        return _refreshEnemiesLive.apply(this, arguments);
+    }
+
+    function refreshHospitalLive() {
+        return _refreshHospitalLive.apply(this, arguments);
+    }
+
+    function _refreshHospitalLive() {
+        _refreshHospitalLive = _asyncToGenerator(function* () {
+            yield loadWarData(true);
+            yield loadEnemies(true);
+            if (typeof loadHospital === 'function') {
+                yield loadHospital(true);
+            }
+        });
+
+        return _refreshHospitalLive.apply(this, arguments);
+    }
+
+    function refreshSummaryLive() {
+        return _refreshSummaryLive.apply(this, arguments);
+    }
+
+    function _refreshSummaryLive() {
+        _refreshSummaryLive = _asyncToGenerator(function* () {
+            yield loadLiveSummary(true);
+        });
+
+        return _refreshSummaryLive.apply(this, arguments);
+    }
+
     // ============================================================
     // 13. TAB / POLLING FLOW
     // ============================================================
 
     function tabNeedsLivePolling(tab) {
-        return tab === 'summary' || tab === 'enemies';
+        return tab === 'overview'
+            || tab === 'members'
+            || tab === 'enemies'
+            || tab === 'hospital'
+            || tab === 'summary';
     }
 
-    function restartPolling() {
+    function getTabPollMs(tab) {
+        if (tab === 'hospital') return 6000;
+        if (tab === 'enemies') return 7000;
+        if (tab === 'members') return 10000;
+        if (tab === 'overview') return 12000;
+        if (tab === 'summary') return 12000;
+        if (tab === 'faction') return 30000;
+        if (tab === 'admin') return 30000;
+        return 0;
+    }
+
+    function restartPollingForCurrentTab() {
         if (pollTimer) {
             clearInterval(pollTimer);
             pollTimer = null;
         }
 
-        var refreshMs = Number(GM_getValue(K_REFRESH, 30000) || 30000);
+        if (!isLoggedIn()) return;
+        if (!tabNeedsLivePolling(currentTab)) return;
+
+        var refreshMs = getTabPollMs(currentTab);
         if (!Number.isFinite(refreshMs) || refreshMs < 5000) refreshMs = 5000;
 
         pollTimer = setInterval(function () {
-            tick();
+            tickCurrentTab();
         }, refreshMs);
-    }
-
-    function restartPollingForCurrentTab() {
-        restartPolling();
-    }
-
-    function tick() {
-        return _tick.apply(this, arguments);
-    }
-
-    function _tick() {
-        _tick = _asyncToGenerator(function* () {
-            if (loadInFlight) return;
-            if (!isLoggedIn()) return;
-
-            loadInFlight = true;
-            try {
-                yield loadState();
-
-                if (tabNeedsLivePolling(currentTab)) {
-                    yield tickCurrentTab();
-                }
-
-                if (canManageFaction()) {
-                    yield refreshFactionPaymentData();
-                }
-
-                if (canSeeAdmin() && currentTab === 'admin') {
-                    yield loadAdminDashboard(true);
-                    yield loadAdminTopFive(true);
-                }
-
-                renderBody();
-            } catch (err) {
-                console.error('War Hub tick error:', err);
-            } finally {
-                loadInFlight = false;
-            }
-        });
-
-        return _tick.apply(this, arguments);
     }
 
     function tickCurrentTab() {
@@ -1540,21 +1583,51 @@ function _loadEnemies() {
 
     function _tickCurrentTab() {
         _tickCurrentTab = _asyncToGenerator(function* () {
+            if (loadInFlight) return;
             if (!isLoggedIn()) return;
+            if (!tabNeedsLivePolling(currentTab)) return;
 
+            loadInFlight = true;
             try {
-                if (currentTab === 'summary') {
-                    yield loadLiveSummary(true);
-                    return;
-                }
+                if (currentTab === 'overview') {
+    yield loadState();
+    renderLiveTabOnly();
+    return;
+}
 
-                if (currentTab === 'enemies') {
-                    yield loadWarData(true);
-                    yield loadEnemies(true);
-                    return;
-                }
+if (currentTab === 'members') {
+    yield loadFactionMembers(true);
+    membersLiveStamp = Date.now();
+    renderLiveTabOnly();
+    return;
+}
+
+if (currentTab === 'summary') {
+    yield loadLiveSummary(true);
+    renderLiveTabOnly();
+    return;
+}
+
+if (currentTab === 'enemies') {
+    yield loadWarData(true);
+    yield loadEnemies(true);
+    renderLiveTabOnly();
+    return;
+}
+
+if (currentTab === 'hospital') {
+    yield loadWarData(true);
+    yield loadEnemies(true);
+    if (typeof loadHospital === 'function') {
+        yield loadHospital(true);
+    }
+    renderLiveTabOnly();
+    return;
+}
             } catch (err) {
                 console.error('War Hub tab tick error:', err);
+            } finally {
+                loadInFlight = false;
             }
         });
 
@@ -1577,6 +1650,12 @@ function _loadEnemies() {
                 } else if (currentTab === 'enemies') {
                     yield loadWarData(true);
                     yield loadEnemies(true);
+                } else if (currentTab === 'hospital') {
+                    yield loadWarData(true);
+                    yield loadEnemies(true);
+                    if (typeof loadHospital === 'function') {
+                        yield loadHospital(true);
+                    }
                 } else if (currentTab === 'summary') {
                     yield loadLiveSummary(true);
                 } else if (currentTab === 'faction') {
@@ -1602,7 +1681,50 @@ function _loadEnemies() {
 
         return _handleTabClick.apply(this, arguments);
     }
+        // ============================================================
+    // 14. VISIBILITY / OPEN STATE
+    // ============================================================
 
+    function isOverlayOpen() {
+        return !!(overlay && overlay.classList.contains('show'));
+    }
+
+    function shouldRunLivePolling() {
+        if (!isLoggedIn()) return false;
+        if (!tabNeedsLivePolling(currentTab)) return false;
+        if (document.hidden) return false;
+        if (!isOverlayOpen()) return false;
+        return true;
+    }
+
+    function restartPollingForCurrentTab() {
+        if (pollTimer) {
+            clearInterval(pollTimer);
+            pollTimer = null;
+        }
+
+        if (!shouldRunLivePolling()) return;
+
+        var refreshMs = getTabPollMs(currentTab);
+        if (!Number.isFinite(refreshMs) || refreshMs < 5000) refreshMs = 5000;
+
+        pollTimer = setInterval(function () {
+            if (!shouldRunLivePolling()) {
+                if (pollTimer) {
+                    clearInterval(pollTimer);
+                    pollTimer = null;
+                }
+                return;
+            }
+            tickCurrentTab();
+        }, refreshMs);
+    }
+
+    function bindVisibilityPolling() {
+        document.addEventListener('visibilitychange', function () {
+            restartPollingForCurrentTab();
+        });
+    }
     // ============================================================
     // 14. OVERLAY MOUNT / DOM
     // ============================================================
@@ -1727,11 +1849,12 @@ function _loadEnemies() {
         });
 
         mounted = true;
+        bindVisibilityPolling();
         setOverlayOpen(isOpen);
         renderBody();
     }
 
-    function setOverlayOpen(open) {
+        function setOverlayOpen(open) {
         isOpen = !!open;
         GM_setValue(K_OPEN, isOpen);
 
@@ -1743,9 +1866,14 @@ function _loadEnemies() {
             applyOverlayPos();
             positionBadge();
             renderBody();
+            restartPollingForCurrentTab();
+        } else {
+            if (pollTimer) {
+                clearInterval(pollTimer);
+                pollTimer = null;
+            }
         }
     }
-
     function toggleOverlay() {
         setOverlayOpen(!isOpen);
     }
@@ -3279,6 +3407,16 @@ function _handleActionClick() {
         }).join('');
     }
 
+    function renderLiveTabOnly() {
+        if (!overlay) return;
+
+        var content = overlay.querySelector('#warhub-content');
+        if (!content) return;
+
+        content.innerHTML = renderCurrentTab();
+        bindDynamicBits();
+    }
+
     function renderCurrentTab() {
         if (!isLoggedIn()) return renderLoginView();
 
@@ -3333,6 +3471,25 @@ function _handleActionClick() {
                 }, { passive: true });
             }
         }
+    }
+
+        function renderLiveTabOnly() {
+        if (!overlay) return;
+
+        var content = overlay.querySelector('#warhub-content');
+        if (content) {
+            content.innerHTML = renderCurrentTab();
+        }
+
+        renderStatus();
+
+        if (currentTab === 'members') {
+            startMembersCountdownLoop();
+        } else {
+            stopMembersCountdownLoop();
+        }
+
+        bindDynamicInputs();
     }
 
     function bindDynamicInputs() {
