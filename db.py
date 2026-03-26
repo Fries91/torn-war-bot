@@ -303,6 +303,25 @@ def init_db():
         """
     )
 
+
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS user_targets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            owner_user_id TEXT NOT NULL,
+            owner_name TEXT DEFAULT '',
+            faction_id TEXT DEFAULT '',
+            faction_name TEXT DEFAULT '',
+            target_user_id TEXT NOT NULL,
+            target_name TEXT DEFAULT '',
+            note TEXT DEFAULT '',
+            created_at TEXT DEFAULT '',
+            updated_at TEXT DEFAULT '',
+            UNIQUE(owner_user_id, faction_id, target_user_id)
+        )
+        """
+    )
+
     _ensure_column(cur, "faction_members", "activated_at", "activated_at TEXT DEFAULT ''")
     _ensure_column(cur, "faction_members", "last_renewed_at", "last_renewed_at TEXT DEFAULT ''")
     _ensure_column(cur, "faction_members", "cycle_locked", "cycle_locked INTEGER DEFAULT 0")
@@ -334,6 +353,9 @@ def init_db():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_hospital_dibs_faction_id ON hospital_dibs(faction_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_hospital_dibs_enemy_faction_id ON hospital_dibs(enemy_faction_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_hospital_dibs_in_hospital ON hospital_dibs(faction_id, in_hospital)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_user_targets_owner_user_id ON user_targets(owner_user_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_user_targets_owner_faction ON user_targets(owner_user_id, faction_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_user_targets_target_user_id ON user_targets(target_user_id)")
 
     con.commit()
     con.close()
@@ -1223,6 +1245,137 @@ def upsert_faction_terms_summary(
     return get_faction_terms_summary(faction_id) or {}
 
 
+
+
+# -----------------------------
+# personal user targets
+# -----------------------------
+
+def list_user_targets(user_id: str, faction_id: str = "") -> List[Dict[str, Any]]:
+    user_id = _clean_text(user_id)
+    faction_id = _clean_text(faction_id)
+    if not user_id:
+        return []
+
+    con = _con()
+    cur = con.cursor()
+    if faction_id:
+        cur.execute(
+            """
+            SELECT *
+            FROM user_targets
+            WHERE owner_user_id = ? AND faction_id = ?
+            ORDER BY LOWER(COALESCE(NULLIF(target_name, ''), target_user_id)) ASC, id ASC
+            """,
+            (user_id, faction_id),
+        )
+    else:
+        cur.execute(
+            """
+            SELECT *
+            FROM user_targets
+            WHERE owner_user_id = ?
+            ORDER BY LOWER(COALESCE(NULLIF(target_name, ''), target_user_id)) ASC, id ASC
+            """,
+            (user_id,),
+        )
+    rows = [dict(r) for r in cur.fetchall()]
+    con.close()
+    return rows
+
+
+def upsert_user_target(
+    owner_user_id: str,
+    owner_name: str = "",
+    faction_id: str = "",
+    faction_name: str = "",
+    target_user_id: str = "",
+    target_name: str = "",
+    note: str = "",
+) -> Dict[str, Any]:
+    owner_user_id = _clean_text(owner_user_id)
+    faction_id = _clean_text(faction_id)
+    target_user_id = _clean_text(target_user_id)
+    if not owner_user_id:
+        raise ValueError("Missing owner_user_id.")
+    if not target_user_id:
+        raise ValueError("Missing target_user_id.")
+
+    now = _utc_now()
+    con = _con()
+    cur = con.cursor()
+    cur.execute(
+        """
+        INSERT INTO user_targets (
+            owner_user_id, owner_name, faction_id, faction_name,
+            target_user_id, target_name, note, created_at, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(owner_user_id, faction_id, target_user_id) DO UPDATE SET
+            owner_name = excluded.owner_name,
+            faction_name = excluded.faction_name,
+            target_name = excluded.target_name,
+            note = excluded.note,
+            updated_at = excluded.updated_at
+        """,
+        (
+            owner_user_id,
+            _clean_text(owner_name),
+            faction_id,
+            _clean_text(faction_name),
+            target_user_id,
+            _clean_text(target_name),
+            str(note or ""),
+            now,
+            now,
+        ),
+    )
+    con.commit()
+    con.close()
+
+    add_audit_log(
+        owner_user_id,
+        _clean_text(owner_name),
+        "user_target_upserted",
+        f"faction_id={faction_id};target_user_id={target_user_id}"
+    )
+
+    items = list_user_targets(owner_user_id, faction_id=faction_id)
+    for item in items:
+        if _clean_text(item.get("target_user_id")) == target_user_id:
+            return item
+    return {}
+
+
+def delete_user_target(owner_user_id: str, target_user_id: str, faction_id: str = ""):
+    owner_user_id = _clean_text(owner_user_id)
+    target_user_id = _clean_text(target_user_id)
+    faction_id = _clean_text(faction_id)
+    if not owner_user_id or not target_user_id:
+        return
+
+    con = _con()
+    cur = con.cursor()
+    if faction_id:
+        cur.execute(
+            "DELETE FROM user_targets WHERE owner_user_id = ? AND faction_id = ? AND target_user_id = ?",
+            (owner_user_id, faction_id, target_user_id),
+        )
+    else:
+        cur.execute(
+            "DELETE FROM user_targets WHERE owner_user_id = ? AND target_user_id = ?",
+            (owner_user_id, target_user_id),
+        )
+    con.commit()
+    con.close()
+
+    add_audit_log(
+        owner_user_id,
+        "",
+        "user_target_deleted",
+        f"faction_id={faction_id};target_user_id={target_user_id}"
+    )
+
 # -----------------------------
 # hospital dibs
 # -----------------------------
@@ -1504,4 +1657,3 @@ def delete_faction_terms_summary(faction_id: str):
     cur.execute("DELETE FROM faction_terms_summary WHERE faction_id = ?", (faction_id,))
     con.commit()
     con.close()
-
