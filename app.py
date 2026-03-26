@@ -917,27 +917,47 @@ def api_state():
 @app.route("/api/overview/live", methods=["GET"])
 @require_session
 def api_overview_live():
-    user = request.current_user
-    faction_id = int(user.get("faction_id") or 0)
+    user = request.user or {}
+    faction_id = str(user.get("faction_id") or "").strip()
+    faction_name = str(user.get("faction_name") or "").strip()
 
-    war = get_active_war_for_faction(faction_id) if faction_id else {}
-    faction = get_faction_summary(faction_id) if faction_id else {}
+    if not faction_id:
+        return ok(
+            overview={
+                "faction_id": "",
+                "faction_name": faction_name,
+                "war_id": 0,
+                "our_faction_name": faction_name,
+                "enemy_faction_name": "",
+                "score_us": 0,
+                "score_them": 0,
+                "chain_us": 0,
+                "chain_them": 0,
+                "updated_at": utc_now(),
+            }
+        )
 
-    return jsonify({
-        "ok": True,
-        "overview": {
+    access_error = _require_feature_access()
+    if access_error:
+        return access_error
+
+    war_payload = _build_war_and_enemy_payload(user)
+    war = war_payload.get("war") or {}
+
+    return ok(
+        overview={
             "faction_id": faction_id,
-            "faction_name": faction.get("name") or user.get("faction_name") or "",
-            "war_id": war.get("war_id") or 0,
-            "our_faction_name": war.get("our_faction_name") or faction.get("name") or "",
+            "faction_name": faction_name,
+            "war_id": war.get("war_id") or war.get("ranked_war_id") or 0,
+            "our_faction_name": war.get("our_faction_name") or faction_name,
             "enemy_faction_name": war.get("enemy_faction_name") or "",
-            "score_us": war.get("score_us") or 0,
-            "score_them": war.get("score_them") or 0,
+            "score_us": war.get("score_us") or war.get("our_score") or 0,
+            "score_them": war.get("score_them") or war.get("enemy_score") or 0,
             "chain_us": war.get("chain_us") or 0,
             "chain_them": war.get("chain_them") or 0,
-            "updated_at": datetime.utcnow().isoformat() + "Z"
+            "updated_at": utc_now(),
         }
-    })
+    )
     
 @app.route("/api/notifications/seen", methods=["POST"])
 @require_session
