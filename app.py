@@ -42,6 +42,9 @@ from db import (
     claim_hospital_dib,
     list_hospital_dibs,
     list_overview_dibs,
+    list_user_targets,
+    upsert_user_target,
+    delete_user_target,
 )
 
 from torn_identity import me_basic
@@ -619,6 +622,35 @@ def _build_hospital_payload(user: Dict[str, Any], war_payload: Optional[Dict[str
     }
 
 
+def _build_targets_payload(user: Dict[str, Any]) -> Dict[str, Any]:
+    user = user or {}
+    owner_user_id = str(user.get("user_id") or "").strip()
+    faction_id = str(user.get("faction_id") or "").strip()
+    if not owner_user_id:
+        return {"items": [], "count": 0}
+
+    items = list_user_targets(user_id=owner_user_id, faction_id=faction_id) or []
+    cleaned: List[Dict[str, Any]] = []
+    for item in items:
+        target_user_id = str(item.get("target_user_id") or item.get("user_id") or "").strip()
+        target_name = str(item.get("target_name") or item.get("name") or "").strip()
+        cleaned.append(
+            {
+                **item,
+                "user_id": target_user_id,
+                "target_user_id": target_user_id,
+                "name": target_name,
+                "target_name": target_name,
+                "profile_url": profile_url(target_user_id) if target_user_id else "",
+                "attack_url": attack_url(target_user_id) if target_user_id else "",
+                "bounty_url": bounty_url(target_user_id) if target_user_id else "",
+            }
+        )
+
+    cleaned.sort(key=lambda x: (str(x.get("name") or "").lower(), str(x.get("user_id") or "")))
+    return {"items": cleaned, "count": len(cleaned)}
+
+
 def _build_war_and_enemy_payload(user: Dict[str, Any]) -> Dict[str, Any]:
     user = user or {}
     api_key = str(user.get("api_key") or "").strip()
@@ -697,6 +729,7 @@ def _build_state_payload(user: Dict[str, Any]) -> Dict[str, Any]:
     notifications = list_notifications(str(user.get("user_id") or ""), limit=25)
     terms_summary_row = get_faction_terms_summary(faction_id) if faction_id else {}
     hospital_payload = _build_hospital_payload(user, war_payload=war_payload) if faction_id else {"items": [], "overview_items": []}
+    targets_payload = _build_targets_payload(user)
 
     return {
         "app_name": APP_NAME,
@@ -730,6 +763,8 @@ def _build_state_payload(user: Dict[str, Any]) -> Dict[str, Any]:
             "updated_by_name": str((terms_summary_row or {}).get("updated_by_name") or ""),
             "updated_at": str((terms_summary_row or {}).get("updated_at") or ""),
         },
+        "targets": targets_payload.get("items") or [],
+        "targets_count": targets_payload.get("count") or 0,
         "dibs": {
             "items": hospital_payload.get("overview_items") or [],
             "count": len(hospital_payload.get("overview_items") or []),
@@ -914,6 +949,7 @@ def api_state():
     user = request.user or {}
     return ok(**_build_state_payload(user))
 
+
 @app.route("/api/overview/live", methods=["GET"])
 @require_session
 def api_overview_live():
@@ -958,7 +994,8 @@ def api_overview_live():
             "updated_at": utc_now(),
         }
     )
-    
+
+
 @app.route("/api/notifications/seen", methods=["POST"])
 @require_session
 def api_notifications_seen():
@@ -1087,6 +1124,79 @@ def api_hospital_dibs_claim(enemy_user_id: str):
         hospital_items=hospital_payload.get("items") or [],
         hospital_count=hospital_payload.get("count") or 0,
     )
+
+
+@app.route("/api/targets", methods=["GET"])
+@require_session
+def api_targets():
+    user = request.user or {}
+    access_error = _require_feature_access()
+    if access_error:
+        return access_error
+    payload = _build_targets_payload(user)
+    return ok(items=payload.get("items") or [], count=payload.get("count") or 0)
+
+
+@app.route("/api/targets", methods=["POST"])
+@require_session
+def api_targets_save():
+    user = request.user or {}
+    owner_user_id = str(user.get("user_id") or "").strip()
+    owner_name = str(user.get("name") or "").strip()
+    faction_id = str(user.get("faction_id") or "").strip()
+    faction_name = str(user.get("faction_name") or "").strip()
+
+    if not owner_user_id:
+        return err("Unauthorized.", 401)
+
+    access_error = _require_feature_access()
+    if access_error:
+        return access_error
+
+    data = _require_json()
+    target_user_id = str(data.get("user_id") or data.get("target_user_id") or "").strip()
+    target_name = str(data.get("name") or data.get("target_name") or "").strip()
+    note = str(data.get("note") or "").strip()
+
+    if not target_user_id:
+        return err("Missing target user ID.", 400)
+    if not target_name:
+        return err("Missing target name.", 400)
+
+    item = upsert_user_target(
+        owner_user_id=owner_user_id,
+        owner_name=owner_name,
+        faction_id=faction_id,
+        faction_name=faction_name,
+        target_user_id=target_user_id,
+        target_name=target_name,
+        note=note,
+    )
+
+    return ok(message="Target saved.", item=item)
+
+
+@app.route("/api/targets/<target_user_id>", methods=["DELETE"])
+@require_session
+def api_targets_delete(target_user_id: str):
+    user = request.user or {}
+    owner_user_id = str(user.get("user_id") or "").strip()
+    faction_id = str(user.get("faction_id") or "").strip()
+
+    if not owner_user_id:
+        return err("Unauthorized.", 401)
+
+    access_error = _require_feature_access()
+    if access_error:
+        return access_error
+
+    delete_user_target(
+        owner_user_id=owner_user_id,
+        faction_id=faction_id,
+        target_user_id=str(target_user_id or "").strip(),
+    )
+
+    return ok(message="Target deleted.", target_user_id=str(target_user_id or "").strip())
 
 
 @app.route("/api/faction/members", methods=["GET"])
