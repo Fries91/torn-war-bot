@@ -784,6 +784,280 @@ def _build_state_payload(user: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+
+
+def _coerce_float(value: Any, default: float = 0.0) -> float:
+    try:
+        if value is None or value == "":
+            return default
+        return float(value)
+    except Exception:
+        return default
+
+
+def _coerce_member_list(value: Any) -> List[Dict[str, Any]]:
+    if isinstance(value, list):
+        return [x for x in value if isinstance(x, dict)]
+    if isinstance(value, dict):
+        for key in ("items", "members", "rows", "players", "data"):
+            maybe = value.get(key)
+            if isinstance(maybe, list):
+                return [x for x in maybe if isinstance(x, dict)]
+    return []
+
+
+def _extract_first_list(payload: Dict[str, Any], *keys: str) -> List[Dict[str, Any]]:
+    payload = payload or {}
+    for key in keys:
+        if key in payload:
+            found = _coerce_member_list(payload.get(key))
+            if found:
+                return found
+    return []
+
+
+def _member_status_text(member: Dict[str, Any]) -> str:
+    member = member or {}
+    for key in ("online_state", "status", "state", "status_text"):
+        value = member.get(key)
+        if isinstance(value, dict):
+            text = str(value.get("description") or value.get("state") or "").strip()
+            if text:
+                return text.title()
+        text = str(value or "").strip()
+        if text:
+            return text.title()
+    return "Unknown"
+
+
+def _member_hospital_eta_seconds(member: Dict[str, Any]) -> int:
+    member = member or {}
+    for key in ("hospital_seconds", "hospital_time_left", "hospital_eta_seconds", "time_left", "until", "seconds_left"):
+        val = _to_int(member.get(key), -1)
+        if val >= 0:
+            return val
+    status = member.get("status") or {}
+    if isinstance(status, dict):
+        for key in ("until", "time_left", "seconds_left"):
+            val = _to_int(status.get(key), -1)
+            if val >= 0:
+                return val
+    return 0
+
+
+def _summary_member_row(member: Dict[str, Any], hospital_map: Dict[str, Dict[str, Any]], member_stats_map: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+    member = member or {}
+    user_id = str(member.get("user_id") or member.get("id") or "").strip()
+    name = str(member.get("name") or member.get("user_name") or "Player").strip() or "Player"
+    stats = member_stats_map.get(user_id) or {}
+    hospital_item = hospital_map.get(user_id) or {}
+
+    hits = _to_int(stats.get("hits", stats.get("attack_count", stats.get("attacks", stats.get("hits_made", 0)))), 0)
+    respect_gain = _coerce_float(stats.get("respect_gain", stats.get("respect_gained", stats.get("respect", 0.0))), 0.0)
+    respect_lost = _coerce_float(stats.get("respect_lost", stats.get("points_lost", stats.get("points_bleed", 0.0))), 0.0)
+    hits_taken = _to_int(stats.get("hits_taken", stats.get("attacked_by", stats.get("defends", 0))), 0)
+    net_impact = _coerce_float(stats.get("net_impact"), respect_gain - respect_lost)
+    efficiency = _coerce_float(stats.get("efficiency"), (respect_gain / hits) if hits > 0 else 0.0)
+
+    hospital_eta_seconds = _member_hospital_eta_seconds(hospital_item)
+    recovering_soon = hospital_eta_seconds > 0 and hospital_eta_seconds <= 1800
+    no_show = hits <= 0
+    online_state = str(member.get("online_state") or "").strip().lower()
+    is_online = online_state in {"online", "idle"}
+
+    flags: List[str] = []
+    if no_show:
+        flags.append("No Show")
+    if net_impact >= 100 or respect_gain >= 100:
+        flags.append("Carry")
+    if respect_lost >= 25:
+        flags.append("Bleeding")
+    if hits_taken >= 8:
+        flags.append("Under Fire")
+    if efficiency >= 5 and hits >= 3:
+        flags.append("Efficient")
+    if recovering_soon:
+        flags.append("Recovering")
+    if is_online and no_show:
+        flags.append("Online Idle")
+
+    last_action = str(
+        stats.get("last_action")
+        or stats.get("last_hit")
+        or member.get("last_action")
+        or member.get("last_action_text")
+        or member.get("last_seen")
+        or ""
+    ).strip()
+
+    return {
+        "user_id": user_id,
+        "name": name,
+        "role": str(member.get("position") or member.get("role") or "").strip(),
+        "status": _member_status_text(member),
+        "hits": hits,
+        "respect_gain": round(respect_gain, 2),
+        "respect_lost": round(respect_lost, 2),
+        "net_impact": round(net_impact, 2),
+        "hits_taken": hits_taken,
+        "efficiency": round(efficiency, 2),
+        "last_action": last_action,
+        "hospital_eta": _seconds_to_text(hospital_eta_seconds) if hospital_eta_seconds > 0 else "",
+        "hospital_eta_seconds": hospital_eta_seconds,
+        "no_show": no_show,
+        "recovering_soon": recovering_soon,
+        "flags": flags,
+    }
+
+
+def _top_name(rows: List[Dict[str, Any]], key: str, default: str = "—") -> str:
+    if not rows:
+        return default
+    ranked = sorted(rows, key=lambda r: r.get(key) or 0, reverse=True)
+    top = ranked[0] if ranked else {}
+    if not top or not (top.get(key) or 0):
+        return default
+    return f"{top.get('name') or 'Player'} [{top.get('user_id') or ''}]".strip()
+
+
+def _live_summary_payload(user: Dict[str, Any]) -> Dict[str, Any]:
+    user = user or {}
+    faction_id = str(user.get("faction_id") or "").strip()
+    faction_name = str(user.get("faction_name") or "").strip()
+
+    members = _build_live_faction_members(user) if faction_id else []
+    war_payload = _build_war_and_enemy_payload(user) if faction_id else {
+        "war": {},
+        "enemies": [],
+        "enemy_buckets": _empty_enemy_buckets(),
+        "enemy_bucket_counts": {key: 0 for key in _enemy_bucket_order()},
+        "enemy_bucket_order": _enemy_bucket_order(),
+        "enemy_total": 0,
+    }
+    war = war_payload.get("war") or {}
+    hospital_payload = _build_hospital_payload(user, war_payload=war_payload) if faction_id else {"items": []}
+    hospital_items = hospital_payload.get("items") or []
+    hospital_map = {
+        str(item.get("enemy_user_id") or item.get("user_id") or ""): item
+        for item in hospital_items
+        if str(item.get("enemy_user_id") or item.get("user_id") or "").strip()
+    }
+
+    member_stats_source = _extract_first_list(
+        war,
+        "member_summary",
+        "member_stats",
+        "faction_member_stats",
+        "our_member_stats",
+        "our_members",
+        "members",
+        "leaderboard",
+        "scoreboard",
+        "stats",
+        "rows",
+    )
+    member_stats_map = {
+        str(item.get("user_id") or item.get("id") or ""): item
+        for item in member_stats_source
+        if str(item.get("user_id") or item.get("id") or "").strip()
+    }
+
+    rows = [_summary_member_row(member, hospital_map, member_stats_map) for member in members]
+    rows.sort(key=lambda r: ((r.get("net_impact") or 0), (r.get("respect_gain") or 0), (r.get("hits") or 0)), reverse=True)
+
+    total_respect_gain = round(sum(_coerce_float(r.get("respect_gain"), 0.0) for r in rows), 2)
+    total_respect_lost = round(sum(_coerce_float(r.get("respect_lost"), 0.0) for r in rows), 2)
+    total_hits = sum(_to_int(r.get("hits"), 0) for r in rows)
+    total_hits_taken = sum(_to_int(r.get("hits_taken"), 0) for r in rows)
+    net_impact = round(total_respect_gain - total_respect_lost, 2)
+    active_hitters = sum(1 for r in rows if _to_int(r.get("hits"), 0) > 0)
+    no_shows = [r for r in rows if r.get("no_show")]
+    recovering_soon = [r for r in rows if r.get("recovering_soon")]
+    bleeding = sorted([r for r in rows if (r.get("respect_lost") or 0) > 0], key=lambda r: (r.get("respect_lost") or 0), reverse=True)
+    under_fire = sorted([r for r in rows if (r.get("hits_taken") or 0) > 0], key=lambda r: (r.get("hits_taken") or 0), reverse=True)
+    carrying = sorted(rows, key=lambda r: ((r.get("net_impact") or 0), (r.get("respect_gain") or 0), (r.get("hits") or 0)), reverse=True)
+
+    top_hitters = sorted(rows, key=lambda r: ((r.get("hits") or 0), (r.get("respect_gain") or 0)), reverse=True)
+    top_respect_gain = sorted(rows, key=lambda r: ((r.get("respect_gain") or 0), (r.get("hits") or 0)), reverse=True)
+    top_respect_lost = sorted(rows, key=lambda r: ((r.get("respect_lost") or 0), (r.get("hits_taken") or 0)), reverse=True)
+    top_hits_taken = sorted(rows, key=lambda r: ((r.get("hits_taken") or 0), (r.get("respect_lost") or 0)), reverse=True)
+    top_net_impact = sorted(rows, key=lambda r: ((r.get("net_impact") or 0), (r.get("respect_gain") or 0)), reverse=True)
+    best_efficiency = sorted(rows, key=lambda r: ((r.get("efficiency") or 0), (r.get("respect_gain") or 0)), reverse=True)
+
+    our_score = _coerce_float(war.get("score_us", war.get("our_score", 0.0)), 0.0)
+    enemy_score = _coerce_float(war.get("score_them", war.get("enemy_score", 0.0)), 0.0)
+    our_chain = _to_int(war.get("chain_us"), 0)
+    enemy_chain = _to_int(war.get("chain_them"), 0)
+
+    cards = [
+        {"label": "Respect Gained", "value": total_respect_gain, "cls": "good"},
+        {"label": "Respect Lost", "value": total_respect_lost, "cls": "bad"},
+        {"label": "Net Impact", "value": net_impact, "cls": "good" if net_impact >= 0 else "bad"},
+        {"label": "Hits Made", "value": total_hits, "cls": ""},
+        {"label": "Hits Taken", "value": total_hits_taken, "cls": ""},
+        {"label": "Active Hitters", "value": active_hitters, "cls": ""},
+        {"label": "No Shows", "value": len(no_shows), "cls": "warn" if no_shows else ""},
+        {"label": "Recovering Soon", "value": len(recovering_soon), "cls": "warn" if recovering_soon else ""},
+    ]
+
+    overall = {
+        "respect_gain": total_respect_gain,
+        "respect_lost": total_respect_lost,
+        "net": net_impact,
+        "hits": total_hits,
+        "hits_taken": total_hits_taken,
+    }
+
+    return {
+        "cards": cards,
+        "top": {
+            "top_hitter": _top_name(top_hitters, "hits"),
+            "top_respect_gain": _top_name(top_respect_gain, "respect_gain"),
+            "top_respect_lost": _top_name(top_respect_lost, "respect_lost"),
+            "top_hits_taken": _top_name(top_hits_taken, "hits_taken"),
+            "best_efficiency": _top_name(best_efficiency, "efficiency"),
+            "best_finisher": _top_name(top_net_impact, "net_impact"),
+        },
+        "rows": rows,
+        "top_five": {
+            "top_hitters": top_hitters[:5],
+            "top_respect_gain": top_respect_gain[:5],
+            "top_respect_lost": top_respect_lost[:5],
+            "top_hits_taken": top_hits_taken[:5],
+            "top_net_impact": top_net_impact[:5],
+            "no_shows": no_shows[:5],
+            "recovering_soon": sorted(recovering_soon, key=lambda r: r.get("hospital_eta_seconds") or 0)[:5],
+        },
+        "alerts": {
+            "no_shows": no_shows[:5],
+            "bleeding": bleeding[:5],
+            "under_fire": under_fire[:5],
+            "recovering_soon": sorted(recovering_soon, key=lambda r: r.get("hospital_eta_seconds") or 0)[:5],
+            "carrying": carrying[:5],
+        },
+        "trend": {
+            "last_15m": overall,
+            "last_60m": overall,
+            "overall": overall,
+        },
+        "war": {
+            "war_id": war.get("war_id") or war.get("ranked_war_id") or 0,
+            "our_faction_name": str(war.get("our_faction_name") or faction_name),
+            "enemy_faction_name": str(war.get("enemy_faction_name") or ""),
+            "score_us": our_score,
+            "score_them": enemy_score,
+            "chain_us": our_chain,
+            "chain_them": enemy_chain,
+            "enemy_members_count": _to_int(war.get("enemy_members_count"), len(war_payload.get("enemies") or [])),
+        },
+        "meta": {
+            "faction_id": faction_id,
+            "faction_name": faction_name,
+            "generated_at": utc_now(),
+            "member_rows": len(rows),
+        },
+    }
+
 @app.route("/api/terms-summary", methods=["GET"])
 @require_session
 def api_terms_summary_get():
@@ -995,6 +1269,48 @@ def api_overview_live():
         }
     )
 
+
+
+
+@app.route("/api/live-summary", methods=["GET"])
+@require_session
+def api_live_summary():
+    user = request.user or {}
+    faction_id = str(user.get("faction_id") or "").strip()
+    faction_name = str(user.get("faction_name") or "").strip()
+
+    if not faction_id:
+        return ok(
+            cards=[],
+            top={},
+            rows=[],
+            top_five={},
+            alerts={},
+            trend={},
+            war={
+                "war_id": 0,
+                "our_faction_name": faction_name,
+                "enemy_faction_name": "",
+                "score_us": 0,
+                "score_them": 0,
+                "chain_us": 0,
+                "chain_them": 0,
+                "enemy_members_count": 0,
+            },
+            meta={
+                "faction_id": "",
+                "faction_name": faction_name,
+                "generated_at": utc_now(),
+                "member_rows": 0,
+            },
+        )
+
+    access_error = _require_feature_access()
+    if access_error:
+        return access_error
+
+    payload = _live_summary_payload(user)
+    return ok(**payload)
 
 @app.route("/api/notifications/seen", methods=["POST"])
 @require_session
