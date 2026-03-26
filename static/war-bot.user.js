@@ -255,48 +255,39 @@
   -webkit-tap-highlight-color: transparent !important;\n\
 }\n\
 \n\
-.warhub-tab {\n\
-  appearance: none !important;\n\
-  -webkit-appearance: none !important;\n\
-  border: 1px solid rgba(255,255,255,.16) !important;\n\
-  background: rgba(255,255,255,.10) !important;\n\
-  color: #ffffff !important;\n\
-  border-radius: 10px !important;\n\
-  padding: 9px 13px !important;\n\
-  min-height: 38px !important;\n\
-  font-size: 13px !important;\n\
-  font-weight: 800 !important;\n\
-  letter-spacing: .2px !important;\n\
-  line-height: 1 !important;\n\
-  white-space: nowrap !important;\n\
-  cursor: pointer !important;\n\
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.06) !important;\n\
-  flex: 0 0 auto !important;\n\
-  text-shadow: 0 1px 0 rgba(0,0,0,.35) !important;\n\
-  -webkit-tap-highlight-color: transparent !important;\n\
-}\n\
-.warhub-tab.active {\n\
-  background: linear-gradient(180deg, rgba(220,50,50,.95), rgba(145,18,18,.98)) !important;\n\
-  border-color: rgba(255,255,255,.22) !important;\n\
-  box-shadow: 0 6px 16px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.10) !important;\n\
-}\n\
-\n\
 .warhub-tabs {\n\
   display: flex !important;\n\
-  flex-wrap: nowrap !important;\n\
+  gap: 4px !important;\n\
+  padding: 6px 8px !important;\n\
   overflow-x: auto !important;\n\
   overflow-y: hidden !important;\n\
-  gap: 8px !important;\n\
-  padding: 9px 10px !important;\n\
-  border-bottom: 1px solid rgba(255,255,255,.08) !important;\n\
-  background: rgba(255,255,255,.03) !important;\n\
   -webkit-overflow-scrolling: touch !important;\n\
   scrollbar-width: none !important;\n\
+  flex-wrap: nowrap !important;\n\
 }\n\
 .warhub-tabs::-webkit-scrollbar {\n\
   display: none !important;\n\
 }\n\
-\n\
+.warhub-tab {\n\
+  appearance: none !important;\n\
+  -webkit-appearance: none !important;\n\
+  border: 1px solid rgba(255,255,255,.10) !important;\n\
+  background: rgba(255,255,255,.06) !important;\n\
+  color: #fff !important;\n\
+  border-radius: 10px !important;\n\
+  padding: 7px 9px !important;\n\
+  min-height: 34px !important;\n\
+  min-width: 78px !important;\n\
+  font-size: 12px !important;\n\
+  font-weight: 700 !important;\n\
+  line-height: 1.1 !important;\n\
+  white-space: nowrap !important;\n\
+  flex: 0 0 auto !important;\n\
+}\n\
+.warhub-tab.active {\n\
+  background: linear-gradient(180deg, rgba(220,50,50,.95), rgba(145,18,18,.98)) !important;\n\
+  border-color: rgba(255,255,255,.16) !important;\n\
+}\n\
 .warhub-body {\n\
   flex: 1 1 auto !important;\n\
   min-height: 0 !important;\n\
@@ -581,10 +572,17 @@
     padding: 8px 6px !important;\n\
     gap: 6px !important;\n\
   }\n\
+    .warhub-tabs {\n\
+    min-height: 46px !important;\n\
+    max-height: 46px !important;\n\
+    padding: 6px 5px !important;\n\
+    gap: 4px !important;\n\
+  }\n\
   .warhub-tab {\n\
-    font-size: 12px !important;\n\
-    padding: 8px 10px !important;\n\
-    min-height: 36px !important;\n\
+    font-size: 11px !important;\n\
+    padding: 7px 8px !important;\n\
+    min-height: 34px !important;\n\
+    min-width: 70px !important;\n\
   }\n\
   .warhub-body { padding: 10px !important; }\n\
 }\n\
