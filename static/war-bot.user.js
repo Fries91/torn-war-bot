@@ -1471,13 +1471,28 @@ function _loadEnemies() {
         return _loadAdminTopFive.apply(this, arguments);
     }
 
-        function refreshOverviewLive() {
+        function loadOverviewLive() {
+        return apiGet('/api/overview/live').then(function (res) {
+            if (!res || !res.ok) return res;
+
+            state = state || {};
+            state.war = Object.assign({}, state.war || {}, res.overview || {});
+            state.faction = Object.assign({}, state.faction || {}, {
+                faction_id: (res.overview && res.overview.faction_id) || '',
+                name: (res.overview && res.overview.faction_name) || ''
+            });
+
+            return res;
+        });
+    }
+
+            function refreshOverviewLive() {
         return _refreshOverviewLive.apply(this, arguments);
     }
 
     function _refreshOverviewLive() {
         _refreshOverviewLive = _asyncToGenerator(function* () {
-            yield loadState();
+            yield loadOverviewLive();
         });
 
         return _refreshOverviewLive.apply(this, arguments);
