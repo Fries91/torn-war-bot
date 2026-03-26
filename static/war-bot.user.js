@@ -2520,48 +2520,63 @@ function renderEnemiesTab() {
     }
 
     function renderTargetsTab() {
-        var targets = arr((state && state.targets) || []);
+    var targets = arr((state && state.targets) || []);
+    var enemies = sortMembers(arr((state && state.enemies) || warEnemiesCache || []));
 
-        return [
-            '<div class="warhub-grid">',
-                '<div class="warhub-hero-card">',
-                    '<div class="warhub-title">Targets</div>',
-                    '<div class="warhub-sub">Shared target tools</div>',
-                '</div>',
-                targets.length ? [
-                    '<div class="warhub-card warhub-col">',
-                        targets.map(function (t) {
-                            return [
-                                '<div class="warhub-member-row">',
-                                    '<div class="warhub-member-main">',
-                                        '<div class="warhub-row">',
-                                            '<span class="warhub-member-name">' + esc(String(t.name || 'Target')) + '</span>',
-                                            t.user_id ? '<span class="warhub-pill neutral">#' + esc(String(t.user_id)) + '</span>' : '',
-                                        '</div>',
-                                        '<div class="warhub-row">',
-                                            t.user_id ? '<a class="warhub-btn" href="https://www.torn.com/loader.php?sid=attack&user2ID=' + esc(String(t.user_id)) + '" target="_blank" rel="noopener noreferrer">Attack</a>' : '',
-                                        '</div>',
-                                    '</div>',
-                                    t.note ? '<div class="warhub-spy-box">' + esc(String(t.note)) + '</div>' : '',
-                                '</div>'
-                            ].join('');
-                        }).join(''),
-                    '</div>'
-                ].join('') : '<div class="warhub-card">No targets added yet.</div>',
+    return [
+        '<div class="warhub-grid">',
+            '<div class="warhub-hero-card">',
+                '<div class="warhub-title">Targets</div>',
+                '<div class="warhub-sub">Personal target picks from current war enemies</div>',
+            '</div>',
+
+            targets.length ? [
                 '<div class="warhub-card warhub-col">',
-                    '<label class="warhub-label" for="warhub-target-name">Target name</label>',
-                    '<input id="warhub-target-name" class="warhub-input" type="text" placeholder="Player name" />',
-                    '<label class="warhub-label" for="warhub-target-id">Target ID</label>',
-                    '<input id="warhub-target-id" class="warhub-input" type="text" placeholder="Player ID" />',
-                    '<label class="warhub-label" for="warhub-target-note">Note</label>',
-                    '<textarea id="warhub-target-note" class="warhub-textarea" placeholder="Reason, timing, or instructions"></textarea>',
-                    '<div class="warhub-row">',
-                        '<button type="button" class="warhub-btn" data-action="target-save">Save Target</button>',
-                    '</div>',
+                    '<h3>Saved Targets</h3>',
+                    targets.map(function (t) {
+                        var id = String(t.user_id || t.id || t.player_id || '');
+                        var name = String(t.name || t.player_name || 'Target');
+                        var note = String(t.note || '');
+
+                        return [
+                            '<div class="warhub-member-row">',
+                                '<div class="warhub-member-main">',
+                                    '<div class="warhub-row">',
+                                        '<a class="warhub-member-name" href="https://www.torn.com/profiles.php?XID=' + esc(id) + '" target="_blank" rel="noopener noreferrer">' + esc(name) + '</a>',
+                                    '</div>',
+                                    '<div class="warhub-row">',
+                                        id ? '<a class="warhub-btn" href="https://www.torn.com/loader.php?sid=attack&user2ID=' + esc(id) + '" target="_blank" rel="noopener noreferrer">Attack</a>' : '',
+                                        id ? '<button type="button" class="warhub-btn gray" data-action="target-delete" data-user-id="' + esc(id) + '">Delete Target</button>' : '',
+                                    '</div>',
+                                '</div>',
+                                note ? '<div class="warhub-spy-box">' + esc(note) + '</div>' : '',
+                            '</div>'
+                        ].join('');
+                    }).join(''),
+                '</div>'
+            ].join('') : '<div class="warhub-card">No saved targets yet.</div>',
+
+            '<div class="warhub-card warhub-col">',
+                '<label class="warhub-label" for="warhub-target-name">Target name</label>',
+                '<select id="warhub-target-name" class="warhub-select">',
+                    '<option value="">Select enemy member</option>',
+                    enemies.map(function (m) {
+                        var id = getMemberId(m);
+                        var name = getMemberName(m);
+                        return '<option value="' + esc(id) + '">' + esc(name) + '</option>';
+                    }).join(''),
+                '</select>',
+
+                '<label class="warhub-label" for="warhub-target-note">Note (optional)</label>',
+                '<textarea id="warhub-target-note" class="warhub-textarea" placeholder="Optional note for yourself"></textarea>',
+
+                '<div class="warhub-row">',
+                    '<button type="button" class="warhub-btn green" data-action="target-save">Save Target</button>',
                 '</div>',
-            '</div>'
-        ].join('');
-    }
+            '</div>',
+        '</div>'
+    ].join('');
+}
 
     function renderMedDealsTab() {
         var medDeals = (state && state.med_deals) || {};
@@ -3250,27 +3265,61 @@ function _handleActionClick() {
             }
 
             if (action === 'target-save') {
-                var targetNameEl = overlay && overlay.querySelector('#warhub-target-name');
-                var targetIdEl = overlay && overlay.querySelector('#warhub-target-id');
-                var targetNoteEl = overlay && overlay.querySelector('#warhub-target-note');
+    var targetSelectEl = overlay && overlay.querySelector('#warhub-target-name');
+    var targetNoteEl = overlay && overlay.querySelector('#warhub-target-note');
 
-                var targetPayload = {
-                    name: String((targetNameEl && targetNameEl.value) || ''),
-                    user_id: cleanInputValue(targetIdEl && targetIdEl.value),
-                    note: String((targetNoteEl && targetNoteEl.value) || '')
-                };
+    var selectedUserId = cleanInputValue(targetSelectEl && targetSelectEl.value);
+    if (!selectedUserId) {
+        setStatus('Select an enemy target first.', true);
+        return;
+    }
 
-                var targetRes = yield authedReq('POST', '/api/targets', targetPayload);
-                if (!targetRes.ok) {
-                    setStatus((targetRes.json && targetRes.json.error) || 'Failed to save target.', true);
-                    return;
-                }
+    var enemies = arr((state && state.enemies) || warEnemiesCache || []);
+    var picked = enemies.find(function (m) {
+        return getMemberId(m) === selectedUserId;
+    });
 
-                yield loadState();
-                renderBody();
-                setStatus('Target saved.', false);
-                return;
-            }
+    if (!picked) {
+        setStatus('Selected enemy was not found in current war list.', true);
+        return;
+    }
+
+    var targetPayload = {
+        name: getMemberName(picked),
+        user_id: selectedUserId,
+        note: String((targetNoteEl && targetNoteEl.value) || '')
+    };
+
+    var targetRes = yield authedReq('POST', '/api/targets', targetPayload);
+    if (!targetRes.ok) {
+        setStatus((targetRes.json && targetRes.json.error) || 'Failed to save target.', true);
+        return;
+    }
+
+    yield loadState();
+    renderBody();
+    setStatus('Target saved.', false);
+    return;
+}
+
+            if (action === 'target-delete') {
+    var deleteTargetUserId = cleanInputValue(el && el.getAttribute('data-user-id'));
+    if (!deleteTargetUserId) {
+        setStatus('Missing target ID.', true);
+        return;
+    }
+
+    var deleteTargetRes = yield authedReq('DELETE', '/api/targets/' + encodeURIComponent(deleteTargetUserId), null);
+    if (!deleteTargetRes.ok) {
+        setStatus((deleteTargetRes.json && deleteTargetRes.json.error) || 'Failed to delete target.', true);
+        return;
+    }
+
+    yield loadState();
+    renderBody();
+    setStatus('Target deleted.', false);
+    return;
+}
 
             if (action === 'activate-member') {
                 var activateUserId = el.getAttribute('data-user-id');
