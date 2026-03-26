@@ -2778,76 +2778,81 @@ function renderTermsTab() {
     // ============================================================
 
     function renderSettingsTab() {
-        var viewer = (state && state.viewer) || {};
-        var access = normalizeAccessCache((state && state.access) || accessState);
-        var maskedKey = getApiKey() ? '********' : '';
+    var viewer = (state && state.viewer) || {};
+    var access = normalizeAccessCache((state && state.access) || accessState);
+    var maskedKey = getApiKey() ? '********' : '';
 
-        return [
-            '<div class="warhub-grid">',
-                '<div class="warhub-hero-card">',
-                    '<div class="warhub-title">Settings</div>',
-                    '<div class="warhub-sub">Account and local script settings</div>',
-                '</div>',
+    return [
+        '<div class="warhub-grid">',
+            '<div class="warhub-hero-card">',
+                '<div class="warhub-title">Settings</div>',
+                '<div class="warhub-sub">Account and local script settings</div>',
+            '</div>',
 
-                '<div class="warhub-card warhub-col">',
-                    '<label class="warhub-label" for="warhub-api-key">Torn API Key</label>',
-                    '<input id="warhub-api-key" class="warhub-input" type="password" value="' + esc(maskedKey) + '" placeholder="Saved API key" />',
-                    '<div class="warhub-row">',
-                        '<button type="button" class="warhub-btn" data-action="login">Re-login</button>',
-                        '<button type="button" class="warhub-btn gray" data-action="logout">Logout</button>',
-                    '</div>',
+            '<div class="warhub-card warhub-col">',
+                '<label class="warhub-label" for="warhub-api-key">Torn API Key</label>',
+                '<input id="warhub-api-key" class="warhub-input" type="password" value="' + esc(maskedKey) + '" placeholder="Saved API key" />',
+                '<div class="warhub-row">',
+                    '<button type="button" class="warhub-btn" data-action="login">Re-login</button>',
+                    '<button type="button" class="warhub-btn gray" data-action="logout">Logout</button>',
                 '</div>',
+            '</div>',
 
-                '<div class="warhub-card">',
-                    '<div class="warhub-kv"><div>User</div><div>' + esc(String(viewer.name || 'Logged out')) + '</div></div>',
-                    '<div class="warhub-kv"><div>User ID</div><div>' + esc(String(viewer.user_id || '—')) + '</div></div>',
-                    '<div class="warhub-kv"><div>Faction active</div><div>' + (canUseFeatures() ? 'Yes' : 'No') + '</div></div>',
-                    '<div class="warhub-kv"><div>Leader activated</div><div>' + (access.member_enabled ? 'Yes' : 'No') + '</div></div>',
-                '</div>',
-
-                '<div class="warhub-card">',
-                    '<h3>Suggestions</h3>',
-                    '<div class="warhub-col">',
-                        '<div>• Keep using backend-fed data for members and enemies only.</div>',
-                        '<div>• Avoid page scraping for war members.</div>',
-                        '<div>• Keep live polling only on Summary and Enemies.</div>',
-                    '</div>',
-                '</div>',
-            '</div>'
-        ].join('');
-    }
+            '<div class="warhub-card">',
+                '<div class="warhub-kv"><div>User</div><div>' + esc(String(viewer.name || 'Logged out')) + '</div></div>',
+                '<div class="warhub-kv"><div>User ID</div><div>' + esc(String(viewer.user_id || '—')) + '</div></div>',
+                '<div class="warhub-kv"><div>Faction active</div><div>' + (canUseFeatures() ? 'Yes' : 'No') + '</div></div>',
+                '<div class="warhub-kv"><div>Leader activated</div><div>' + (access.member_enabled ? 'Yes' : 'No') + '</div></div>',
+            '</div>',
+        '</div>'
+    ].join('');
+}
 
     function renderInstructionsTab() {
-        return [
-            '<div class="warhub-grid">',
-                '<div class="warhub-hero-card">',
-                    '<div class="warhub-title">Instructions</div>',
-                    '<div class="warhub-sub">How to use War Hub</div>',
-                '</div>',
+    return [
+        '<div class="warhub-grid">',
+            '<div class="warhub-hero-card">',
+                '<div class="warhub-title">Instructions</div>',
+                '<div class="warhub-sub">How to start and how War Hub works</div>',
+            '</div>',
 
-                '<div class="warhub-card warhub-col">',
-                    '<h3>Getting started</h3>',
-                    '<div>1. Open Settings and log in with your Torn API key.</div>',
-                    '<div>2. Leaders can activate faction members in the Faction tab.</div>',
-                    '<div>3. Members get Overview, Members, Enemies, Hospital and other shared tools once access is enabled.</div>',
-                '</div>',
+            '<div class="warhub-card warhub-col">',
+                '<h3>How to start</h3>',
+                '<div>1. Open the Settings tab and log in with your Torn API key.</div>',
+                '<div>2. Once logged in, War Hub loads your faction access and current war data from the backend.</div>',
+                '<div>3. Leaders can go to the Faction tab to activate members for access.</div>',
+                '<div>4. Members with access can then use tabs like Overview, Members, Enemies, Hospital, Chain, Targets, Terms, and Med Deals.</div>',
+                '<div>5. Use the refresh buttons in each tab if you want a fresh pull right away.</div>',
+            '</div>',
 
-                '<div class="warhub-card warhub-col">',
-                    '<h3>Live tabs</h3>',
-                    '<div>• Summary and Enemies use live polling when open.</div>',
-                    '<div>• Members uses backend faction data only.</div>',
-                    '<div>• Enemies uses current war enemy data only.</div>',
-                '</div>',
+            '<div class="warhub-card warhub-col">',
+                '<h3>Terms of use</h3>',
+                '<div>War Hub is for faction organization and war support only.</div>',
+                '<div>Use your own Torn API key and do not share it with people you do not trust.</div>',
+                '<div>Access to tabs depends on your faction status, your member activation status, and leader or admin permissions.</div>',
+                '<div>Leader and admin tools should only be used by the people meant to manage faction access, payments, settings, and war coordination.</div>',
+                '<div>By using the script, you accept that live war and faction information shown in the overlay depends on Torn API data and backend updates.</div>',
+            '</div>',
 
-                '<div class="warhub-card warhub-col">',
-                    '<h3>PDA tips</h3>',
-                    '<div>• Tap the shield to open or close the overlay.</div>',
-                    '<div>• Hold the shield briefly, then drag to move it.</div>',
-                    '<div>• Tabs scroll sideways on smaller screens.</div>',
-                '</div>',
-            '</div>'
-        ].join('');
-    }
+            '<div class="warhub-card warhub-col">',
+                '<h3>How your API key is stored and used</h3>',
+                '<div>Your API key is stored locally in your userscript storage on your device/browser through the script settings.</div>',
+                '<div>When you log in, the script sends your key to the War Hub backend to create or refresh your session and load your faction-linked data.</div>',
+                '<div>After login, the script mainly works from the saved session and backend responses for state, members, enemies, hospital, targets, chain, and other tab data.</div>',
+                '<div>Your saved session, open tab, overlay state, and other local preferences are also kept in userscript storage for convenience.</div>',
+                '<div>If you log out or your session expires, you will need to log in again.</div>',
+            '</div>',
+
+            '<div class="warhub-card warhub-col">',
+                '<h3>What War Hub does</h3>',
+                '<div><b>For members:</b> War Hub gives a cleaner place to view shared war information like faction overview, members, enemy roster, hospital tracking, targets, terms, med deals, and chain tools.</div>',
+                '<div><b>For leaders:</b> War Hub adds faction management tools like member activation, payment-linked access, war summary tools, and faction control features.</div>',
+                '<div><b>For admins:</b> War Hub includes admin-only controls for faction licenses, exemptions, renewals, expiries, and dashboard management.</div>',
+                '<div>The goal is to keep war coordination, access control, and important shared information in one overlay instead of spreading it across chat and separate pages.</div>',
+            '</div>',
+        '</div>'
+    ].join('');
+}
 
     function renderWarTop5Tab() {
         var top = adminTopFiveCache || {};
