@@ -1166,79 +1166,103 @@ function makeHoldDraggable(handle, target, key) {
     // ============================================================
 
     function loadState() {
-        return _loadState.apply(this, arguments);
-    }
+    return _loadState.apply(this, arguments);
+}
 
-    function _loadState() {
-        _loadState = _asyncToGenerator(function* () {
-            if (!isLoggedIn()) {
+function _loadState() {
+    _loadState = _asyncToGenerator(function* () {
+        if (!isLoggedIn()) {
+            state = null;
+            currentFactionMembers = [];
+            factionMembersCache = [];
+            warEnemiesCache = [];
+            warEnemiesFactionId = '';
+            warEnemiesFactionName = '';
+            renderBody();
+            return null;
+        }
+
+        var res = yield authedReq('GET', '/api/state');
+        if (!res.ok) {
+            if (res.status === 401 || res.status === 403) {
+                GM_deleteValue(K_SESSION);
                 state = null;
-                renderBody();
-                return null;
-            }
-
-            var res = yield authedReq('GET', '/api/state');
-            if (!res.ok) {
-                if (res.status === 401 || res.status === 403) {
-                    GM_deleteValue(K_SESSION);
-                    state = null;
-                    setAccessCache({
-                        status: 'unauthorized',
-                        message: 'Session expired. Please log in again.',
-                        can_use_features: false
-                    });
-                    renderBody();
-                }
-                return null;
-            }
-
-            state = (res.json && typeof res.json === 'object') ? res.json : {};
-            setAccessCache(state.access || {});
-
-            currentFactionMembers = arr(state.members);
-            factionMembersCache = currentFactionMembers.slice();
-
-            if (state.war && typeof state.war === 'object') {
-                warEnemiesFactionId = String(state.war.enemy_faction_id || '');
-                warEnemiesFactionName = String(state.war.enemy_faction_name || '');
-            } else {
+                currentFactionMembers = [];
+                factionMembersCache = [];
+                warEnemiesCache = [];
                 warEnemiesFactionId = '';
                 warEnemiesFactionName = '';
+                setAccessCache({
+                    status: 'unauthorized',
+                    message: 'Session expired. Please log in again.',
+                    can_use_features: false
+                });
+                renderBody();
             }
+            return null;
+        }
 
-            if (Array.isArray(state.enemies)) {
-                warEnemiesCache = state.enemies.slice();
-                warEnemiesLoadedAt = Date.now();
-            }
+        state = (res.json && typeof res.json === 'object') ? res.json : {};
+        setAccessCache(state.access || {});
 
-            membersLiveStamp = Date.now();
-            return state;
-        });
+        currentFactionMembers = arr(state.members);
+        factionMembersCache = currentFactionMembers.slice();
+        state.members = factionMembersCache.slice();
 
-        return _loadState.apply(this, arguments);
-    }
+        if (state.war && typeof state.war === 'object') {
+            warEnemiesFactionId = String(state.war.enemy_faction_id || '');
+            warEnemiesFactionName = String(state.war.enemy_faction_name || '');
+        } else {
+            warEnemiesFactionId = '';
+            warEnemiesFactionName = '';
+            state.war = {};
+        }
 
+        if (Array.isArray(state.enemies)) {
+            warEnemiesCache = state.enemies.slice();
+            warEnemiesLoadedAt = Date.now();
+        } else {
+            warEnemiesCache = [];
+            state.enemies = [];
+        }
+
+        if (!Array.isArray(state.targets)) {
+            state.targets = [];
+        }
+
+        if (!state.faction || typeof state.faction !== 'object') {
+            state.faction = {};
+        }
+
+        membersLiveStamp = Date.now();
+        return state;
+    });
+
+    return _loadState.apply(this, arguments);
+}
     function loadFactionMembers(force) {
-        return _loadFactionMembers.apply(this, arguments);
-    }
+    return _loadFactionMembers.apply(this, arguments);
+}
 
-    function _loadFactionMembers() {
-        _loadFactionMembers = _asyncToGenerator(function* (force) {
-            if (!isLoggedIn()) return [];
-            if (!force && factionMembersCache && factionMembersCache.length) return factionMembersCache;
+function _loadFactionMembers() {
+    _loadFactionMembers = _asyncToGenerator(function* (force) {
+        if (!isLoggedIn()) return [];
+        if (!force && factionMembersCache && factionMembersCache.length) return factionMembersCache;
 
-            var res = yield authedReq('GET', '/api/state');
-            if (!res.ok || !res.json) return factionMembersCache || [];
+        var res = yield authedReq('GET', '/api/state');
+        if (!res.ok || !res.json) return factionMembersCache || [];
 
-            state = res.json;
-            currentFactionMembers = arr(state.members);
-            factionMembersCache = currentFactionMembers.slice();
-            membersLiveStamp = Date.now();
-            return factionMembersCache;
-        });
+        state = (res.json && typeof res.json === 'object') ? res.json : {};
+        currentFactionMembers = arr(state.members);
+        factionMembersCache = currentFactionMembers.slice();
+        state.members = factionMembersCache.slice();
+        membersLiveStamp = Date.now();
 
-        return _loadFactionMembers.apply(this, arguments);
-    }
+        return factionMembersCache;
+    });
+
+    return _loadFactionMembers.apply(this, arguments);
+}
 
     function loadWarData(force) {
         return _loadWarData.apply(this, arguments);
@@ -1277,19 +1301,20 @@ function _loadEnemies() {
     _loadEnemies = _asyncToGenerator(function* (force) {
         if (!isLoggedIn()) return [];
 
-        if (!force && warEnemiesCache && warEnemiesCache.length && (Date.now() - warEnemiesLoadedAt) < 15000) {
-            return warEnemiesCache;
+        if (!force && state && Array.isArray(state.enemies) && state.enemies.length && (Date.now() - warEnemiesLoadedAt) < 15000) {
+            warEnemiesCache = state.enemies.slice();
+            return state.enemies.slice();
         }
 
         var res = yield authedReq('GET', '/api/enemies');
-        if (!res.ok || !res.json) return warEnemiesCache || [];
+        if (!res.ok || !res.json) return arr((state && state.enemies) || warEnemiesCache || []);
 
         var payload = res.json || {};
         var war = (payload.war && typeof payload.war === 'object') ? payload.war : {};
 
         var ownFactionId = String(
-            (state && state.faction && state.faction.id) ||
-            (state && state.faction && state.faction.faction_id) ||
+            (state && state.faction && (state.faction.faction_id || state.faction.id)) ||
+            (state && state.viewer && state.viewer.faction_id) ||
             (state && state.me && state.me.faction_id) ||
             (state && state.license && state.license.faction_id) ||
             war.my_faction_id ||
@@ -1297,7 +1322,8 @@ function _loadEnemies() {
         ).trim();
 
         var ownFactionName = String(
-            (state && state.faction && state.faction.name) ||
+            (state && state.faction && (state.faction.faction_name || state.faction.name)) ||
+            (state && state.viewer && state.viewer.faction_name) ||
             (state && state.me && state.me.faction_name) ||
             (state && state.license && state.license.faction_name) ||
             war.my_faction_name ||
@@ -1316,23 +1342,18 @@ function _loadEnemies() {
             ''
         ).trim();
 
-        var ownMembers = arr(
-            (state && state.members) ||
-            currentFactionMembers ||
-            factionMembersCache ||
-            []
-        );
+        var apiEnemies = arr(payload.items || payload.enemies || []);
+        var enemies = apiEnemies.filter(function (m) {
+            var memberFactionId = String(
+                (m && (m.faction_id || m.source_faction_id || m.enemy_faction_id)) || ''
+            ).trim();
 
-        var ownIds = {};
-        ownMembers.forEach(function (m) {
-            var id = String((m && (m.user_id || m.id)) || '').trim();
-            if (id) ownIds[id] = true;
-        });
+            var memberFactionName = String(
+                (m && (m.faction_name || m.source_faction_name || m.enemy_faction_name)) || ''
+            ).trim().toLowerCase();
 
-        var enemies = arr(payload.items || payload.enemies || []).filter(function (m) {
-            var id = String((m && (m.user_id || m.id)) || '').trim();
-            if (!id) return false;
-            if (ownIds[id]) return false;
+            if (ownFactionId && memberFactionId && memberFactionId === ownFactionId) return false;
+            if (ownFactionName && memberFactionName && memberFactionName === ownFactionName) return false;
             return true;
         });
 
@@ -1353,14 +1374,15 @@ function _loadEnemies() {
         warEnemiesFactionId = enemyFactionId;
         warEnemiesFactionName = enemyFactionName;
         warEnemiesLoadedAt = Date.now();
-                state = state || {};
+
+        state = state || {};
         state.enemies = enemies.slice();
         state.war = Object.assign({}, state.war || {}, war, {
             enemy_faction_id: warEnemiesFactionId,
             enemy_faction_name: warEnemiesFactionName
         });
 
-        return warEnemiesCache;
+        return enemies.slice();
     });
 
     return _loadEnemies.apply(this, arguments);
@@ -1642,52 +1664,61 @@ function _loadEnemies() {
     }
 
     function handleTabClick(tab) {
-        return _handleTabClick.apply(this, arguments);
-    }
+    return _handleTabClick.apply(this, arguments);
+}
 
-    function _handleTabClick() {
-        _handleTabClick = _asyncToGenerator(function* (tab) {
-            currentTab = String(tab || 'overview');
-            GM_setValue(K_TAB, currentTab);
+function _handleTabClick() {
+    _handleTabClick = _asyncToGenerator(function* (tab) {
+        currentTab = String(tab || 'overview');
+        GM_setValue(K_TAB, currentTab);
 
-            try {
-                if (currentTab === 'members') {
-                    yield loadFactionMembers(true);
-                    membersLiveStamp = Date.now();
-                } else if (currentTab === 'enemies') {
-                    yield loadWarData(true);
-                    yield loadEnemies(true);
-                } else if (currentTab === 'hospital') {
-                    yield loadWarData(true);
-                    yield loadEnemies(true);
-                    if (typeof loadHospital === 'function') {
-                        yield loadHospital(true);
-                    }
-                } else if (currentTab === 'summary') {
-                    yield loadLiveSummary(true);
-                } else if (currentTab === 'faction') {
-                    if (canManageFaction()) {
-                        yield loadFactionMembers(true);
-                        yield refreshFactionPaymentData();
-                    }
-                } else if (currentTab === 'admin') {
-                    if (canSeeAdmin()) {
-                        yield loadAdminDashboard(true);
-                        yield loadAdminTopFive(true);
-                    }
-                } else if (currentTab === 'overview') {
-                    yield refreshOverviewLive();
+        if (loadInFlight) return;
+
+        loadInFlight = true;
+        try {
+            if (currentTab === 'members') {
+                yield loadFactionMembers(true);
+                membersLiveStamp = Date.now();
+            } else if (currentTab === 'enemies') {
+                yield loadWarData(true);
+                yield loadEnemies(true);
+            } else if (currentTab === 'hospital') {
+                yield loadWarData(true);
+                yield loadEnemies(true);
+                if (typeof loadHospital === 'function') {
+                    yield loadHospital(true);
                 }
-            } catch (err) {
-                console.error('War Hub tab load error:', err);
+            } else if (currentTab === 'targets') {
+                yield loadWarData(true);
+                yield loadEnemies(true);
+                yield loadState();
+            } else if (currentTab === 'summary') {
+                yield loadLiveSummary(true);
+            } else if (currentTab === 'faction') {
+                if (canManageFaction()) {
+                    yield loadFactionMembers(true);
+                    yield refreshFactionPaymentData();
+                }
+            } else if (currentTab === 'admin') {
+                if (canSeeAdmin()) {
+                    yield loadAdminDashboard(true);
+                    yield loadAdminTopFive(true);
+                }
+            } else if (currentTab === 'overview') {
+                yield refreshOverviewLive();
             }
+        } catch (err) {
+            console.error('War Hub tab load error:', err);
+        } finally {
+            loadInFlight = false;
+        }
 
-            renderBody();
-            restartPollingForCurrentTab();
-        });
+        renderBody();
+        restartPollingForCurrentTab();
+    });
 
-        return _handleTabClick.apply(this, arguments);
-    }
+    return _handleTabClick.apply(this, arguments);
+}
     // ============================================================
     // 14. VISIBILITY / OPEN STATE
     // ============================================================
@@ -2328,7 +2359,7 @@ function renderOverviewTab() {
     ].join('');
 }
     function renderMembersTab() {
-        var members = arr((state && state.members) || currentFactionMembers || factionMembersCache || []);
+        var members = arr((state && state.members) || []);
         var search = String(GM_getValue('warhub_members_search', '') || '').trim().toLowerCase();
 
         var filtered = members.filter(function (m) {
@@ -2374,7 +2405,7 @@ function renderOverviewTab() {
     }
 
 function renderEnemiesTab() {
-    var enemies = arr((state && state.enemies) || warEnemiesCache || []);
+    var enemies = arr((state && state.enemies) || []);
     var war = (state && state.war) || {};
 
     var ownFactionId = String(
@@ -2521,7 +2552,7 @@ function renderEnemiesTab() {
 
     function renderTargetsTab() {
     var targets = arr((state && state.targets) || []);
-    var enemies = sortMembers(arr((state && state.enemies) || warEnemiesCache || []));
+    var enemies = sortMembers(arr((state && state.enemies) || []));
 
     return [
         '<div class="warhub-grid">',
@@ -2534,8 +2565,8 @@ function renderEnemiesTab() {
                 '<div class="warhub-card warhub-col">',
                     '<h3>Saved Targets</h3>',
                     targets.map(function (t) {
-                        var id = String(t.user_id || t.id || t.player_id || '');
-                        var name = String(t.name || t.player_name || 'Target');
+                        var id = String(t.user_id || t.target_user_id || t.id || t.player_id || '');
+                        var name = String(t.name || t.target_name || t.player_name || 'Target');
                         var note = String(t.note || '');
 
                         return [
@@ -2577,7 +2608,6 @@ function renderEnemiesTab() {
         '</div>'
     ].join('');
 }
-
     function renderMedDealsTab() {
         var medDeals = (state && state.med_deals) || {};
         var text = String(medDeals.text || '');
@@ -3239,7 +3269,6 @@ function _handleActionClick() {
                 state = state || {};
                 state.terms_summary = state.terms_summary || {};
                 state.terms_summary.text = boxText;
-
                 renderBody();
                 setStatus('Terms / Summary saved.', false);
                 return;
@@ -3258,68 +3287,67 @@ function _handleActionClick() {
                 state = state || {};
                 state.terms_summary = state.terms_summary || {};
                 state.terms_summary.text = '';
-
                 renderBody();
                 setStatus('Terms / Summary cleared.', false);
                 return;
             }
 
             if (action === 'target-save') {
-    var targetSelectEl = overlay && overlay.querySelector('#warhub-target-name');
-    var targetNoteEl = overlay && overlay.querySelector('#warhub-target-note');
+                var targetSelectEl = overlay && overlay.querySelector('#warhub-target-name');
+                var targetNoteEl = overlay && overlay.querySelector('#warhub-target-note');
 
-    var selectedUserId = cleanInputValue(targetSelectEl && targetSelectEl.value);
-    if (!selectedUserId) {
-        setStatus('Select an enemy target first.', true);
-        return;
-    }
+                var selectedUserId = cleanInputValue(targetSelectEl && targetSelectEl.value);
+                if (!selectedUserId) {
+                    setStatus('Select an enemy target first.', true);
+                    return;
+                }
 
-    var enemies = arr((state && state.enemies) || warEnemiesCache || []);
-    var picked = enemies.find(function (m) {
-        return getMemberId(m) === selectedUserId;
-    });
+                var enemies = arr((state && state.enemies) || []);
+                var picked = enemies.find(function (m) {
+                    return getMemberId(m) === selectedUserId;
+                });
 
-    if (!picked) {
-        setStatus('Selected enemy was not found in current war list.', true);
-        return;
-    }
+                if (!picked) {
+                    setStatus('Selected enemy was not found in current war list.', true);
+                    return;
+                }
 
-    var targetPayload = {
-        name: getMemberName(picked),
-        user_id: selectedUserId,
-        note: String((targetNoteEl && targetNoteEl.value) || '')
-    };
+                var targetPayload = {
+                    name: getMemberName(picked),
+                    user_id: selectedUserId,
+                    note: String((targetNoteEl && targetNoteEl.value) || '').trim()
+                };
 
-    var targetRes = yield authedReq('POST', '/api/targets', targetPayload);
-    if (!targetRes.ok) {
-        setStatus((targetRes.json && targetRes.json.error) || 'Failed to save target.', true);
-        return;
-    }
+                var targetRes = yield authedReq('POST', '/api/targets', targetPayload);
+                if (!targetRes.ok) {
+                    setStatus((targetRes.json && targetRes.json.error) || 'Failed to save target.', true);
+                    return;
+                }
 
-    yield loadState();
-    renderBody();
-    setStatus('Target saved.', false);
-    return;
-}
+                yield loadState();
+                renderBody();
+                setStatus('Target saved.', false);
+                return;
+            }
 
             if (action === 'target-delete') {
-    var deleteTargetUserId = cleanInputValue(el && el.getAttribute('data-user-id'));
-    if (!deleteTargetUserId) {
-        setStatus('Missing target ID.', true);
-        return;
-    }
+                var deleteTargetUserId = cleanInputValue(el && el.getAttribute('data-user-id'));
+                if (!deleteTargetUserId) {
+                    setStatus('Missing target ID.', true);
+                    return;
+                }
 
-    var deleteTargetRes = yield authedReq('DELETE', '/api/targets/' + encodeURIComponent(deleteTargetUserId), null);
-    if (!deleteTargetRes.ok) {
-        setStatus((deleteTargetRes.json && deleteTargetRes.json.error) || 'Failed to delete target.', true);
-        return;
-    }
+                var deleteTargetRes = yield authedReq('DELETE', '/api/targets/' + encodeURIComponent(deleteTargetUserId), null);
+                if (!deleteTargetRes.ok) {
+                    setStatus((deleteTargetRes.json && deleteTargetRes.json.error) || 'Failed to delete target.', true);
+                    return;
+                }
 
-    yield loadState();
-    renderBody();
-    setStatus('Target deleted.', false);
-    return;
-}
+                yield loadState();
+                renderBody();
+                setStatus('Target deleted.', false);
+                return;
+            }
 
             if (action === 'activate-member') {
                 var activateUserId = el.getAttribute('data-user-id');
@@ -3410,6 +3438,7 @@ function _handleActionClick() {
                     setStatus((chainAvailableRes.json && chainAvailableRes.json.error) || 'Failed to update chain.', true);
                     return;
                 }
+
                 yield loadState();
                 renderBody();
                 setStatus('Chain marked available.', false);
@@ -3422,6 +3451,7 @@ function _handleActionClick() {
                     setStatus((chainUnavailableRes.json && chainUnavailableRes.json.error) || 'Failed to update chain.', true);
                     return;
                 }
+
                 yield loadState();
                 renderBody();
                 setStatus('Chain marked unavailable.', false);
@@ -3435,6 +3465,7 @@ function _handleActionClick() {
                     setStatus((chainSitterRes.json && chainSitterRes.json.error) || 'Failed to update chain sitter.', true);
                     return;
                 }
+
                 yield loadState();
                 renderBody();
                 setStatus('Chain sitter updated.', false);
@@ -3445,6 +3476,7 @@ function _handleActionClick() {
             setStatus('Action failed: ' + action, true);
         }
     });
+
     return _handleActionClick.apply(this, arguments);
 }
     // ============================================================
