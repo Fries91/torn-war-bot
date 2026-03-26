@@ -1759,127 +1759,118 @@ function _loadEnemies() {
     }
 
     function mount() {
-        if (mounted) return;
+    if (mounted) return;
 
-        shield = document.createElement('div');
-        shield.id = 'warhub-shield';
-        shield.textContent = '⚔️';
-        shield.setAttribute('aria-label', 'Open War Hub');
-        shield.setAttribute('title', 'War Hub');
+    shield = document.createElement('div');
+    shield.id = 'warhub-shield';
+    shield.textContent = '⚔️';
+    shield.setAttribute('aria-label', 'Open War Hub');
+    shield.setAttribute('title', 'War Hub');
 
-        badge = document.createElement('div');
-        badge.id = 'warhub-badge';
-        
-        overlay = document.createElement('div');
-        overlay.id = 'warhub-overlay';
-        overlay.innerHTML = [
-            '<div class="warhub-head" id="warhub-head">',
-                '<div class="warhub-toprow">',
-                    '<div>',
-                        '<div class="warhub-title">War Hub ⚔️</div>',
-                        '<div class="warhub-sub">Faction tools, payments, access, and war data</div>',
-                    '</div>',
-                    '<button class="warhub-close" id="warhub-close" type="button">Close</button>',
+    badge = document.createElement('div');
+    badge.id = 'warhub-badge';
+    
+    overlay = document.createElement('div');
+    overlay.id = 'warhub-overlay';
+    overlay.innerHTML = [
+        '<div class="warhub-head" id="warhub-head">',
+            '<div class="warhub-toprow">',
+                '<div>',
+                    '<div class="warhub-title">War Hub ⚔️</div>',
+                    '<div class="warhub-sub">Faction tools, payments, access, and war data</div>',
                 '</div>',
+                '<button class="warhub-close" id="warhub-close" type="button">Close</button>',
             '</div>',
-            '<div class="warhub-tabs" id="warhub-tabs-row-1"></div>',
-            '<div class="warhub-tabs" id="warhub-tabs-row-2"></div>',
-            '<div class="warhub-body" id="warhub-body">',
-                '<div class="warhub-status-wrap"><div id="warhub-status" style="display:none;"></div></div>',
-                '<div id="warhub-content"></div>',
-            '</div>'
-        ].join('');
-
-        document.body.appendChild(shield);
-        document.body.appendChild(badge);
-        document.body.appendChild(overlay);
-
-        applyShieldPos();
-        applyOverlayPos();
-        updateBadge();
-        positionBadge();
-
-        function shieldTapBlocked() {
-            return false;
-        }
-
-            ''
-    ).trim().toLowerCase();
-
-    var enemyFactionId = String(war.enemy_faction_id || warEnemiesFactionId || '').trim();
-    var enemyFactionName = String(war.enemy_faction_name || warEnemiesFactionName || 'Enemy Faction');
-    var enemyFactionNameLc = enemyFactionName.trim().toLowerCase();
-
-    var ownMembers = arr(
-        (state && state.members) ||
-        currentFactionMembers ||
-        factionMembersCache ||
-        []
-    );
-
-    var ownIds = {};
-    ownMembers.forEach(function (m) {
-        var id = String((m && (m.user_id || m.id)) || '').trim();
-        if (id) ownIds[id] = true;
-    });
-
-    enemies = enemies.filter(function (m) {
-        var id = String((m && (m.user_id || m.id)) || '').trim();
-        if (!id) return false;
-        if (ownIds[id]) return false;
-        return true;
-    });
-
-    if (
-        !enemyFactionId ||
-        (ownFactionId && enemyFactionId === ownFactionId) ||
-        (enemyFactionNameLc && ownFactionName && enemyFactionNameLc === ownFactionName)
-    ) {
-        enemies = [];
-    }
-
-    var searchRaw = String(GM_getValue('warhub_enemies_search', '') || '').trim();
-    var search = searchRaw.toLowerCase();
-
-    var filtered = enemies.filter(function (m) {
-        if (!search) return true;
-        return memberSearchText(m).indexOf(search) >= 0;
-    });
-
-    var grouped = groupMembers(filtered);
-
-    return [
-        '<div class="warhub-grid">',
-            '<div class="warhub-hero-card">',
-                '<div class="warhub-title">Enemies</div>',
-                '<div class="warhub-sub">' + esc(enemyFactionName) + '</div>',
-            '</div>',
-
-            '<div class="warhub-card">',
-                '<div class="warhub-kv"><div>Enemy faction</div><div>' + esc(enemyFactionName) + '</div></div>',
-                '<div class="warhub-kv"><div>Enemy faction ID</div><div>' + esc(String(enemyFactionId || '—')) + '</div></div>',
-                '<div class="warhub-kv"><div>Loaded members</div><div>' + esc(String(filtered.length)) + '</div></div>',
-            '</div>',
-
-            '<div class="warhub-card">',
-                '<div class="warhub-row">',
-                    '<input id="warhub-enemies-search" class="warhub-input" type="text" value="' + esc(searchRaw) + '" placeholder="Search enemy name or ID" />',
-                    '<button type="button" class="warhub-btn ghost" data-action="enemies-refresh">Refresh</button>',
-                '</div>',
-            '</div>',
-
-            filtered.length ? [
-                '<div class="warhub-grid">',
-                    renderGroupBlock('enemies_online', grouped.online, renderEnemyRow, true),
-                    renderGroupBlock('enemies_idle', grouped.idle, renderEnemyRow, true),
-                    renderGroupBlock('enemies_travel', grouped.travel, renderEnemyRow, false),
-                    renderGroupBlock('enemies_jail', grouped.jail, renderEnemyRow, false),
-                    renderGroupBlock('enemies_hospital', grouped.hospital, renderEnemyRow, true),
-                    renderGroupBlock('enemies_offline', grouped.offline, renderEnemyRow, false),
-                '</div>'
-            ].join('') : '<div class="warhub-card">No enemy members loaded from the current war.</div>',
+        '</div>',
+        '<div class="warhub-tabs" id="warhub-tabs-row-1"></div>',
+        '<div class="warhub-tabs" id="warhub-tabs-row-2"></div>',
+        '<div class="warhub-body" id="warhub-body">',
+            '<div class="warhub-status-wrap"><div id="warhub-status" style="display:none;"></div></div>',
+            '<div id="warhub-content"></div>',
         '</div>'
     ].join('');
+
+    document.body.appendChild(shield);
+    document.body.appendChild(badge);
+    document.body.appendChild(overlay);
+
+    applyShieldPos();
+    applyOverlayPos();
+    updateBadge();
+    positionBadge();
+
+    function shieldTapBlocked() {
+        return false;
+    }
+
+    bindTap(shield, function () {
+        if (shieldTapBlocked()) return;
+        toggleOverlay();
+    });
+
+    bindTap(overlay.querySelector('#warhub-close'), function () {
+        setOverlayOpen(false);
+    });
+
+    overlay.addEventListener('touchend', function (e) {
+        var tabBtn = e.target.closest('[data-tab]');
+        if (tabBtn) {
+            if (e.cancelable) e.preventDefault();
+            e.stopPropagation();
+            handleTabClick(tabBtn.getAttribute('data-tab'));
+            return;
+        }
+
+        var act = e.target.closest('[data-action]');
+        if (act) {
+            if (e.cancelable) e.preventDefault();
+            e.stopPropagation();
+            handleActionClick(act);
+            return;
+        }
+
+        var groupHead = e.target.closest('[data-group-toggle]');
+        if (groupHead) {
+            if (e.cancelable) e.preventDefault();
+            e.stopPropagation();
+            var key = groupHead.getAttribute('data-group-toggle');
+            toggleGroup(key);
+            return;
+        }
+    }, { passive: false });
+
+    overlay.addEventListener('change', function (e) {
+        var t = e.target;
+
+        if (t && t.id === 'warhub-api-key') {
+            GM_setValue(K_API_KEY, cleanInputValue(t.value));
+        }
+        if (t && t.id === 'warhub-owner-token') {
+            GM_setValue(K_OWNER_TOKEN, cleanInputValue(t.value));
+        }
+    });
+
+    overlay.addEventListener('input', function (e) {
+        var t = e.target;
+
+        if (t && t.id === 'warhub-api-key') {
+            GM_setValue(K_API_KEY, cleanInputValue(t.value));
+        }
+        if (t && t.id === 'warhub-owner-token') {
+            GM_setValue(K_OWNER_TOKEN, cleanInputValue(t.value));
+        }
+    });
+
+    window.addEventListener('resize', function () {
+        applyShieldPos();
+        applyOverlayPos();
+        positionBadge();
+    });
+
+    mounted = true;
+    bindVisibilityPolling();
+    setOverlayOpen(isOpen);
+    renderBody();
 }
         // ============================================================
     // 19. TAB RENDERS: HOSPITAL / CHAIN / TARGETS / MED DEALS / TERMS / SUMMARY
