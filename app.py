@@ -914,7 +914,31 @@ def api_state():
     user = request.user or {}
     return ok(**_build_state_payload(user))
 
+@app.route("/api/overview/live", methods=["GET"])
+@require_session
+def api_overview_live():
+    user = request.current_user
+    faction_id = int(user.get("faction_id") or 0)
 
+    war = get_active_war_for_faction(faction_id) if faction_id else {}
+    faction = get_faction_summary(faction_id) if faction_id else {}
+
+    return jsonify({
+        "ok": True,
+        "overview": {
+            "faction_id": faction_id,
+            "faction_name": faction.get("name") or user.get("faction_name") or "",
+            "war_id": war.get("war_id") or 0,
+            "our_faction_name": war.get("our_faction_name") or faction.get("name") or "",
+            "enemy_faction_name": war.get("enemy_faction_name") or "",
+            "score_us": war.get("score_us") or 0,
+            "score_them": war.get("score_them") or 0,
+            "chain_us": war.get("chain_us") or 0,
+            "chain_them": war.get("chain_them") or 0,
+            "updated_at": datetime.utcnow().isoformat() + "Z"
+        }
+    })
+    
 @app.route("/api/notifications/seen", methods=["POST"])
 @require_session
 def api_notifications_seen():
