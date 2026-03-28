@@ -1649,17 +1649,17 @@ function _loadEnemies() {
     }
 
     function refreshEnemiesLive() {
-        return _refreshEnemiesLive.apply(this, arguments);
-    }
+    return _refreshEnemiesLive.apply(this, arguments);
+}
 
-    function _refreshEnemiesLive() {
-        _refreshEnemiesLive = _asyncToGenerator(function* () {
-            yield loadWarData(true);
-            yield loadEnemies(true);
-        });
+function _refreshEnemiesLive() {
+    _refreshEnemiesLive = _asyncToGenerator(function* () {
+        yield loadLiveSummary(true);
+        yield loadWarEnemiesById(true);
+    });
 
-        return _refreshEnemiesLive.apply(this, arguments);
-    }
+    return _refreshEnemiesLive.apply(this, arguments);
+}
 
     function refreshHospitalLive() {
         return _refreshHospitalLive.apply(this, arguments);
@@ -1750,7 +1750,7 @@ function _loadEnemies() {
                     yield refreshEnemiesLive();
                     renderLiveTabOnly();
                     return;
-                }
+}
 
                 if (currentTab === 'hospital') {
                     yield refreshHospitalLive();
@@ -2463,53 +2463,64 @@ function renderOverviewTab() {
     ].join('');
 }
     function renderMembersTab() {
-        var members = arr((state && state.members) || []);
-        var search = String(GM_getValue('warhub_members_search', '') || '').trim().toLowerCase();
+    var members = arr(
+        currentFactionMembers ||
+        factionMembersCache ||
+        (state && state.members) ||
+        []
+    );
 
-        var filtered = members.filter(function (m) {
-            if (!search) return true;
-            return memberSearchText(m).indexOf(search) >= 0;
-        });
+    var search = String(GM_getValue('warhub_members_search', '') || '').trim().toLowerCase();
 
-        var grouped = groupMembers(filtered);
+    var filtered = members.filter(function (m) {
+        if (!search) return true;
+        return memberSearchText(m).indexOf(search) >= 0;
+    });
 
-        return [
-            '<div class="warhub-grid">',
-                '<div class="warhub-hero-card">',
-                    '<div class="warhub-title">Members</div>',
-                    '<div class="warhub-sub">Your faction only</div>',
+    var grouped = groupMembers(filtered);
+
+    return [
+        '<div class="warhub-grid">',
+            '<div class="warhub-hero-card">',
+                '<div class="warhub-title">Members</div>',
+                '<div class="warhub-sub">Your faction only</div>',
+            '</div>',
+
+            '<div class="warhub-card">',
+                '<div class="warhub-row">',
+                    '<input id="warhub-members-search" class="warhub-input" type="text" value="' + esc(search) + '" placeholder="Search member name, ID, status or position" />',
+                    '<button type="button" class="warhub-btn ghost" data-action="members-refresh">Refresh</button>',
                 '</div>',
+            '</div>',
 
-                '<div class="warhub-card">',
-                    '<div class="warhub-row">',
-                        '<input id="warhub-members-search" class="warhub-input" type="text" value="' + esc(search) + '" placeholder="Search member name, ID, status or position" />',
-                        '<button type="button" class="warhub-btn ghost" data-action="members-refresh">Refresh</button>',
-                    '</div>',
+            '<div class="warhub-card">',
+                '<div class="warhub-row">',
+                    '<span class="warhub-pill online">Online ' + esc(String(grouped.online.length)) + '</span>',
+                    '<span class="warhub-pill idle">Idle ' + esc(String(grouped.idle.length)) + '</span>',
+                    '<span class="warhub-pill travel">Travel ' + esc(String(grouped.travel.length)) + '</span>',
+                    '<span class="warhub-pill jail">Jail ' + esc(String(grouped.jail.length)) + '</span>',
+                    '<span class="warhub-pill hospital">Hospital ' + esc(String(grouped.hospital.length)) + '</span>',
+                    '<span class="warhub-pill offline">Offline ' + esc(String(grouped.offline.length)) + '</span>',
                 '</div>',
+            '</div>',
 
-                '<div class="warhub-card">',
-                    '<div class="warhub-row">',
-                        '<span class="warhub-pill online">Online ' + esc(String(grouped.online.length)) + '</span>',
-                        '<span class="warhub-pill idle">Idle ' + esc(String(grouped.idle.length)) + '</span>',
-                        '<span class="warhub-pill travel">Travel ' + esc(String(grouped.travel.length)) + '</span>',
-                        '<span class="warhub-pill jail">Jail ' + esc(String(grouped.jail.length)) + '</span>',
-                                    '<span class="warhub-pill hospital">Hospital ' + esc(String(grouped.hospital.length)) + '</span>',
-                        '<span class="warhub-pill offline">Offline ' + esc(String(grouped.offline.length)) + '</span>',
-                    '</div>',
-                '</div>',
-
-                renderGroupBlock('members_online', grouped.online, renderMemberRow, true),
-                renderGroupBlock('members_idle', grouped.idle, renderMemberRow, true),
-                renderGroupBlock('members_travel', grouped.travel, renderMemberRow, false),
-                renderGroupBlock('members_jail', grouped.jail, renderMemberRow, false),
-                renderGroupBlock('members_hospital', grouped.hospital, renderMemberRow, true),
-                renderGroupBlock('members_offline', grouped.offline, renderMemberRow, false),
-            '</div>'
-        ].join('');
-    }
-
+            renderGroupBlock('members_online', grouped.online, renderMemberRow, true),
+            renderGroupBlock('members_idle', grouped.idle, renderMemberRow, true),
+            renderGroupBlock('members_travel', grouped.travel, renderMemberRow, false),
+            renderGroupBlock('members_jail', grouped.jail, renderMemberRow, false),
+            renderGroupBlock('members_hospital', grouped.hospital, renderMemberRow, true),
+            renderGroupBlock('members_offline', grouped.offline, renderMemberRow, false),
+        '</div>'
+    ].join('');
+}
+    
 function renderEnemiesTab() {
-    var enemies = arr((state && state.enemies) || []);
+    var enemies = arr(
+        warEnemiesCache ||
+        (state && state.enemies) ||
+        []
+    );
+
     var war = (state && state.war) || {};
 
     var ownFactionId = String(
@@ -2534,9 +2545,9 @@ function renderEnemiesTab() {
     var enemyFactionNameLc = enemyFactionName.trim().toLowerCase();
 
     var ownMembers = arr(
-        (state && state.members) ||
         currentFactionMembers ||
         factionMembersCache ||
+        (state && state.members) ||
         []
     );
 
