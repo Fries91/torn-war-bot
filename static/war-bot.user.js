@@ -1,4 +1,3 @@
-War Hub updated userscript
 // ==UserScript==
 // @name         War Hub ⚔️
 // @namespace    fries91-war-hub
