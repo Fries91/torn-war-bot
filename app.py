@@ -45,6 +45,11 @@ from db import (
     list_user_targets,
     upsert_user_target,
     delete_user_target,
+    list_chain_statuses,
+    upsert_chain_status,
+    list_med_deals,
+    upsert_med_deal,
+    delete_med_deal,
 )
 
 from torn_identity import me_basic
@@ -74,7 +79,7 @@ load_dotenv()
 
 APP_NAME = "War Hub"
 PAYMENT_PLAYER = str(os.getenv("PAYMENT_PLAYER", "Fries91")).strip() or "Fries91"
-FACTION_MEMBER_PRICE = int(os.getenv("PAYMENT_XANAX_PER_MEMBER", os.getenv("PAYMENT_PER_MEMBER", "3")))
+FACTION_MEMBER_PRICE = int(os.getenv("PAYMENT_XANAX_PER_MEMBER", os.getenv("PAYMENT_PER_MEMBER", "2")))
 DEFAULT_REFRESH_SECONDS = int(os.getenv("DEFAULT_REFRESH_SECONDS", "30"))
 LICENSE_ADMIN_TOKEN = str(os.getenv("LICENSE_ADMIN_TOKEN", "")).strip()
 ALLOWED_SCRIPT_ORIGINS = {"https://www.torn.com", "https://torn.com", ""}
@@ -710,6 +715,35 @@ def _build_war_and_enemy_payload(user: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+
+def _build_chain_payload(user: Dict[str, Any], war: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    user = user or {}
+    faction_id = str(user.get("faction_id") or "").strip()
+    user_id = str(user.get("user_id") or "").strip()
+    rows = list_chain_statuses(faction_id) if faction_id else []
+    mine = next((r for r in rows if str(r.get("user_id") or "") == user_id), {})
+    available_items = [r for r in rows if _safe_bool(r.get("available"))]
+    sitter_items = [r for r in rows if _safe_bool(r.get("sitter_enabled"))]
+    war = war or {}
+    return {
+        "available": bool(mine.get("available")),
+        "sitter_enabled": bool(mine.get("sitter_enabled")),
+        "current": _to_int(war.get("chain_us") or war.get("our_chain") or 0, 0),
+        "cooldown": _to_int(war.get("chain_cooldown") or 0, 0),
+        "available_items": available_items,
+        "available_count": len(available_items),
+        "sitter_items": sitter_items,
+        "sitter_count": len(sitter_items),
+    }
+
+
+def _build_med_deals_payload(user: Dict[str, Any]) -> Dict[str, Any]:
+    user = user or {}
+    faction_id = str(user.get("faction_id") or "").strip()
+    rows = list_med_deals(faction_id) if faction_id else []
+    text = "\n".join([f"{str(r.get('user_name') or r.get('user_id') or '').strip()} → {str(r.get('enemy_name') or r.get('enemy_user_id') or '').strip()}" for r in rows if str(r.get('user_id') or '').strip()])
+    return {"items": rows, "count": len(rows), "text": text}
+
 def _build_state_payload(user: Dict[str, Any]) -> Dict[str, Any]:
     user = user or {}
     faction_id = str(user.get("faction_id") or "").strip()
@@ -730,6 +764,8 @@ def _build_state_payload(user: Dict[str, Any]) -> Dict[str, Any]:
     terms_summary_row = get_faction_terms_summary(faction_id) if faction_id else {}
     hospital_payload = _build_hospital_payload(user, war_payload=war_payload) if faction_id else {"items": [], "overview_items": []}
     targets_payload = _build_targets_payload(user)
+    chain_payload = _build_chain_payload(user, war_payload.get("war") or {})
+    med_deals_payload = _build_med_deals_payload(user)
 
     return {
         "app_name": APP_NAME,
@@ -763,6 +799,8 @@ def _build_state_payload(user: Dict[str, Any]) -> Dict[str, Any]:
             "updated_by_name": str((terms_summary_row or {}).get("updated_by_name") or ""),
             "updated_at": str((terms_summary_row or {}).get("updated_at") or ""),
         },
+        "med_deals": med_deals_payload,
+        "chain": chain_payload,
         "targets": targets_payload.get("items") or [],
         "targets_count": targets_payload.get("count") or 0,
         "dibs": {
@@ -1057,6 +1095,85 @@ def _live_summary_payload(user: Dict[str, Any]) -> Dict[str, Any]:
             "member_rows": len(rows),
         },
     }
+
+
+@app.route("/api/meddeals", methods=["GET"])
+@require_session
+def api_meddeals_get():
+    user = request.user or {}
+    access_error = _require_feature_access()
+    if access_error:
+        return access_error
+    return ok(**_build_med_deals_payload(user))
+
+
+@app.route("/api/meddeals", methods=["POST"])
+@require_session
+def api_meddeals_save():
+    user = request.user or {}
+    faction_id = str(user.get("faction_id") or "").strip()
+    if not faction_id:
+        return err("No faction found.", 400)
+    access_error = _require_feature_access()
+    if access_error:
+        return access_error
+    data = _require_json()
+    deal_user_id = str(data.get("user_id") or user.get("user_id") or "").strip()
+    deal_user_name = str(data.get("user_name") or user.get("name") or "").strip()
+    enemy_user_id = str(data.get("enemy_user_id") or "").strip()
+    enemy_name = str(data.get("enemy_name") or "").strip()
+    if not deal_user_id:
+        return err("Missing member.", 400)
+    if not enemy_user_id:
+        delete_med_deal(faction_id, deal_user_id)
+        return ok(message="Med deal cleared.", items=_build_med_deals_payload(user).get("items") or [])
+    item = upsert_med_deal(faction_id=faction_id, faction_name=str(user.get("faction_name") or ""), user_id=deal_user_id, user_name=deal_user_name, enemy_user_id=enemy_user_id, enemy_name=enemy_name)
+    return ok(message="Med deal saved.", item=item, items=_build_med_deals_payload(user).get("items") or [])
+
+
+@app.route("/api/meddeals/<user_id>", methods=["DELETE"])
+@require_session
+def api_meddeals_delete(user_id: str):
+    user = request.user or {}
+    faction_id = str(user.get("faction_id") or "").strip()
+    if not faction_id:
+        return err("No faction found.", 400)
+    access_error = _require_feature_access()
+    if access_error:
+        return access_error
+    delete_med_deal(faction_id, str(user_id or ""))
+    return ok(message="Med deal deleted.", user_id=str(user_id or ""), items=_build_med_deals_payload(user).get("items") or [])
+
+
+@app.route("/api/chain", methods=["POST"])
+@require_session
+def api_chain_save():
+    user = request.user or {}
+    faction_id = str(user.get("faction_id") or "").strip()
+    if not faction_id:
+        return err("No faction found.", 400)
+    access_error = _require_feature_access()
+    if access_error:
+        return access_error
+    data = _require_json()
+    row = upsert_chain_status(faction_id=faction_id, faction_name=str(user.get("faction_name") or ""), user_id=str(user.get("user_id") or ""), user_name=str(user.get("name") or ""), available=_safe_bool(data.get("available", False)), sitter_enabled=None)
+    return ok(message="Chain availability updated.", item=row, chain=_build_chain_payload(user, (_build_war_and_enemy_payload(user) or {}).get("war") or {}))
+
+
+@app.route("/api/chain/sitter", methods=["POST"])
+@require_session
+def api_chain_sitter_save():
+    user = request.user or {}
+    faction_id = str(user.get("faction_id") or "").strip()
+    if not faction_id:
+        return err("No faction found.", 400)
+    access_error = _require_feature_access()
+    if access_error:
+        return access_error
+    data = _require_json()
+    row = upsert_chain_status(faction_id=faction_id, faction_name=str(user.get("faction_name") or ""), user_id=str(user.get("user_id") or ""), user_name=str(user.get("name") or ""), available=None, sitter_enabled=_safe_bool(data.get("enabled", False)))
+    return ok(message="Chain sitter updated.", item=row, chain=_build_chain_payload(user, (_build_war_and_enemy_payload(user) or {}).get("war") or {}))
+
 
 @app.route("/api/terms-summary", methods=["GET"])
 @require_session
