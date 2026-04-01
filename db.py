@@ -9,7 +9,7 @@ TRIAL_DAYS = int(os.getenv("TRIAL_DAYS", "45"))
 DEFAULT_PAID_DAYS = int(os.getenv("DEFAULT_PAID_DAYS", "45"))
 PAYMENT_PLAYER = str(os.getenv("PAYMENT_PLAYER", "Fries91")).strip() or "Fries91"
 PAYMENT_KIND = str(os.getenv("PAYMENT_KIND", "xanax")).strip() or "xanax"
-PAYMENT_XANAX_PER_MEMBER = int(os.getenv("PAYMENT_XANAX_PER_MEMBER", "3"))
+PAYMENT_XANAX_PER_MEMBER = int(os.getenv("PAYMENT_XANAX_PER_MEMBER", "2"))
 PAYMENT_NOTIFY_USER_ID = str(os.getenv("PAYMENT_NOTIFY_USER_ID", "3679030")).strip() or "3679030"
 
 
@@ -322,6 +322,40 @@ def init_db():
         """
     )
 
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS chain_statuses (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            faction_id TEXT NOT NULL,
+            faction_name TEXT DEFAULT '',
+            user_id TEXT NOT NULL,
+            user_name TEXT DEFAULT '',
+            available INTEGER DEFAULT 0,
+            sitter_enabled INTEGER DEFAULT 0,
+            created_at TEXT DEFAULT '',
+            updated_at TEXT DEFAULT '',
+            UNIQUE(faction_id, user_id)
+        )
+        """
+    )
+
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS med_deals (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            faction_id TEXT NOT NULL,
+            faction_name TEXT DEFAULT '',
+            user_id TEXT NOT NULL,
+            user_name TEXT DEFAULT '',
+            enemy_user_id TEXT NOT NULL,
+            enemy_name TEXT DEFAULT '',
+            created_at TEXT DEFAULT '',
+            updated_at TEXT DEFAULT '',
+            UNIQUE(faction_id, user_id)
+        )
+        """
+    )
+
     _ensure_column(cur, "faction_members", "activated_at", "activated_at TEXT DEFAULT ''")
     _ensure_column(cur, "faction_members", "last_renewed_at", "last_renewed_at TEXT DEFAULT ''")
     _ensure_column(cur, "faction_members", "cycle_locked", "cycle_locked INTEGER DEFAULT 0")
@@ -356,6 +390,10 @@ def init_db():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_targets_owner_user_id ON user_targets(owner_user_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_targets_owner_faction ON user_targets(owner_user_id, faction_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_targets_target_user_id ON user_targets(target_user_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_chain_statuses_faction_id ON chain_statuses(faction_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_chain_statuses_user_id ON chain_statuses(user_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_med_deals_faction_id ON med_deals(faction_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_med_deals_user_id ON med_deals(user_id)")
 
     con.commit()
     con.close()
@@ -1154,6 +1192,12 @@ def get_faction_admin_dashboard_summary() -> Dict[str, Any]:
     faction_exemptions_total = int((cur.fetchone() or {"c": 0})["c"])
     cur.execute("SELECT COUNT(*) AS c FROM user_exemptions")
     user_exemptions_total = int((cur.fetchone() or {"c": 0})["c"])
+    cur.execute("SELECT COUNT(DISTINCT faction_id) AS c FROM users WHERE TRIM(COALESCE(faction_id, '')) <> ''")
+    factions_using_bot = int((cur.fetchone() or {"c": 0})["c"])
+    cur.execute("SELECT COUNT(*) AS c FROM users WHERE TRIM(COALESCE(faction_id, '')) <> ''")
+    members_using_bot = int((cur.fetchone() or {"c": 0})["c"])
+    cur.execute("SELECT COUNT(*) AS c FROM users WHERE TRIM(COALESCE(faction_id, '')) <> '' AND user_id IN (SELECT DISTINCT leader_user_id FROM faction_licenses WHERE TRIM(COALESCE(leader_user_id, '')) <> '')")
+    leaders_using_bot = int((cur.fetchone() or {"c": 0})["c"])
     con.close()
     return {
         "payment_player": PAYMENT_PLAYER,
@@ -1168,6 +1212,9 @@ def get_faction_admin_dashboard_summary() -> Dict[str, Any]:
         "projected_renewal_total": projected_renewal_total,
         "faction_exemptions_total": faction_exemptions_total,
         "user_exemptions_total": user_exemptions_total,
+        "factions_using_bot": factions_using_bot,
+        "members_using_bot": members_using_bot,
+        "leaders_using_bot": leaders_using_bot,
     }
 # -----------------------------
 # faction shared notes
@@ -1333,15 +1380,8 @@ def upsert_user_target(
     con.commit()
     con.close()
 
-    add_audit_log(
-        owner_user_id,
-        _clean_text(owner_name),
-        "user_target_upserted",
-        f"faction_id={faction_id};target_user_id={target_user_id}"
-    )
-
-    items = list_user_targets(owner_user_id, faction_id=faction_id)
-    for item in items:
+    add_audit_log(owner_user_id, _clean_text(owner_name), "user_target_upserted", f"faction_id={faction_id};target_user_id={target_user_id}")
+    for item in list_user_targets(owner_user_id, faction_id=faction_id):
         if _clean_text(item.get("target_user_id")) == target_user_id:
             return item
     return {}
@@ -1353,28 +1393,137 @@ def delete_user_target(owner_user_id: str, target_user_id: str, faction_id: str 
     faction_id = _clean_text(faction_id)
     if not owner_user_id or not target_user_id:
         return
-
     con = _con()
     cur = con.cursor()
     if faction_id:
-        cur.execute(
-            "DELETE FROM user_targets WHERE owner_user_id = ? AND faction_id = ? AND target_user_id = ?",
-            (owner_user_id, faction_id, target_user_id),
-        )
+        cur.execute("DELETE FROM user_targets WHERE owner_user_id = ? AND faction_id = ? AND target_user_id = ?", (owner_user_id, faction_id, target_user_id))
     else:
-        cur.execute(
-            "DELETE FROM user_targets WHERE owner_user_id = ? AND target_user_id = ?",
-            (owner_user_id, target_user_id),
-        )
+        cur.execute("DELETE FROM user_targets WHERE owner_user_id = ? AND target_user_id = ?", (owner_user_id, target_user_id))
     con.commit()
     con.close()
+    add_audit_log(owner_user_id, "", "user_target_deleted", f"faction_id={faction_id};target_user_id={target_user_id}")
 
-    add_audit_log(
-        owner_user_id,
-        "",
-        "user_target_deleted",
-        f"faction_id={faction_id};target_user_id={target_user_id}"
+
+# -----------------------------
+# chain / med deals
+# -----------------------------
+
+def get_chain_status(faction_id: str, user_id: str) -> Optional[Dict[str, Any]]:
+    faction_id = _clean_text(faction_id)
+    user_id = _clean_text(user_id)
+    if not faction_id or not user_id:
+        return None
+    con = _con()
+    cur = con.cursor()
+    cur.execute("SELECT * FROM chain_statuses WHERE faction_id = ? AND user_id = ? LIMIT 1", (faction_id, user_id))
+    row = cur.fetchone()
+    con.close()
+    return _row_to_dict(row)
+
+
+def upsert_chain_status(faction_id: str, faction_name: str = "", user_id: str = "", user_name: str = "", available: Optional[bool] = None, sitter_enabled: Optional[bool] = None) -> Dict[str, Any]:
+    faction_id = _clean_text(faction_id)
+    user_id = _clean_text(user_id)
+    if not faction_id or not user_id:
+        return {}
+    existing = get_chain_status(faction_id, user_id) or {}
+    now = _utc_now()
+    available_val = _safe_bool(existing.get("available")) if available is None else bool(available)
+    sitter_val = _safe_bool(existing.get("sitter_enabled")) if sitter_enabled is None else bool(sitter_enabled)
+    con = _con()
+    cur = con.cursor()
+    cur.execute(
+        """
+        INSERT INTO chain_statuses (faction_id, faction_name, user_id, user_name, available, sitter_enabled, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(faction_id, user_id) DO UPDATE SET
+            faction_name = excluded.faction_name,
+            user_name = excluded.user_name,
+            available = excluded.available,
+            sitter_enabled = excluded.sitter_enabled,
+            updated_at = excluded.updated_at
+        """,
+        (faction_id, _clean_text(faction_name), user_id, _clean_text(user_name), 1 if available_val else 0, 1 if sitter_val else 0, now, now),
     )
+    con.commit()
+    con.close()
+    return get_chain_status(faction_id, user_id) or {}
+
+
+def list_chain_statuses(faction_id: str) -> List[Dict[str, Any]]:
+    faction_id = _clean_text(faction_id)
+    if not faction_id:
+        return []
+    con = _con()
+    cur = con.cursor()
+    cur.execute("SELECT * FROM chain_statuses WHERE faction_id = ? ORDER BY LOWER(COALESCE(NULLIF(user_name, ''), user_id)) ASC", (faction_id,))
+    rows = [dict(r) for r in cur.fetchall()]
+    con.close()
+    return rows
+
+
+def get_med_deal(faction_id: str, user_id: str) -> Optional[Dict[str, Any]]:
+    faction_id = _clean_text(faction_id)
+    user_id = _clean_text(user_id)
+    if not faction_id or not user_id:
+        return None
+    con = _con()
+    cur = con.cursor()
+    cur.execute("SELECT * FROM med_deals WHERE faction_id = ? AND user_id = ? LIMIT 1", (faction_id, user_id))
+    row = cur.fetchone()
+    con.close()
+    return _row_to_dict(row)
+
+
+def upsert_med_deal(faction_id: str, faction_name: str = "", user_id: str = "", user_name: str = "", enemy_user_id: str = "", enemy_name: str = "") -> Dict[str, Any]:
+    faction_id = _clean_text(faction_id)
+    user_id = _clean_text(user_id)
+    enemy_user_id = _clean_text(enemy_user_id)
+    if not faction_id or not user_id or not enemy_user_id:
+        return {}
+    now = _utc_now()
+    con = _con()
+    cur = con.cursor()
+    cur.execute(
+        """
+        INSERT INTO med_deals (faction_id, faction_name, user_id, user_name, enemy_user_id, enemy_name, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(faction_id, user_id) DO UPDATE SET
+            faction_name = excluded.faction_name,
+            user_name = excluded.user_name,
+            enemy_user_id = excluded.enemy_user_id,
+            enemy_name = excluded.enemy_name,
+            updated_at = excluded.updated_at
+        """,
+        (faction_id, _clean_text(faction_name), user_id, _clean_text(user_name), enemy_user_id, _clean_text(enemy_name), now, now),
+    )
+    con.commit()
+    con.close()
+    return get_med_deal(faction_id, user_id) or {}
+
+
+def list_med_deals(faction_id: str) -> List[Dict[str, Any]]:
+    faction_id = _clean_text(faction_id)
+    if not faction_id:
+        return []
+    con = _con()
+    cur = con.cursor()
+    cur.execute("SELECT * FROM med_deals WHERE faction_id = ? ORDER BY LOWER(COALESCE(NULLIF(user_name, ''), user_id)) ASC", (faction_id,))
+    rows = [dict(r) for r in cur.fetchall()]
+    con.close()
+    return rows
+
+
+def delete_med_deal(faction_id: str, user_id: str):
+    faction_id = _clean_text(faction_id)
+    user_id = _clean_text(user_id)
+    if not faction_id or not user_id:
+        return
+    con = _con()
+    cur = con.cursor()
+    cur.execute("DELETE FROM med_deals WHERE faction_id = ? AND user_id = ?", (faction_id, user_id))
+    con.commit()
+    con.close()
 
 # -----------------------------
 # hospital dibs
