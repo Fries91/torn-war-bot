@@ -3962,14 +3962,23 @@ function _handleActionClick() {
     }
 
     function renderLiveTabOnly() {
-        if (!overlay) return;
+    if (!overlay) return;
 
-        var content = overlay.querySelector('#warhub-content');
-        if (!content) return;
-
+    var content = overlay.querySelector('#warhub-content');
+    if (content) {
         content.innerHTML = renderCurrentTab();
-        bindDynamicBits();
     }
+
+    renderStatus();
+
+    if (currentTab === 'members') {
+        startMembersCountdownLoop();
+    } else {
+        stopMembersCountdownLoop();
+    }
+
+    bindDynamicInputs();
+}
 
     function renderCurrentTab() {
         if (!isLoggedIn()) return renderLoginView();
