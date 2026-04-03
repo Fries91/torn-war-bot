@@ -1,3 +1,4 @@
+War Hub copy-paste userscript
 // ==UserScript==
 // @name         War Hub ⚔️
 // @namespace    fries91-war-hub
@@ -1214,14 +1215,74 @@
         });
     }
 
+
+function getHeaderActionAnchor() {
+    var selectors = [
+        'a[href*="company"]',
+        'a[href*="joblist"]',
+        'a[href*="factions.php"]',
+        'a[href*="faction"]',
+        '[href*="company"]',
+        '[href*="factions.php"]',
+        '[href*="faction"]',
+        '[class*="company"] a',
+        '[class*="faction"] a'
+    ];
+
+    for (var i = 0; i < selectors.length; i++) {
+        var list = document.querySelectorAll(selectors[i]);
+        if (!list || !list.length) continue;
+        for (var j = 0; j < list.length; j++) {
+            var el = list[j];
+            if (el && el.offsetParent !== null) return el;
+        }
+    }
+    return null;
+}
+
+function getHeaderMountHost() {
+    var anchor = getHeaderActionAnchor();
+    if (!anchor) return null;
+
+    var item = anchor.closest('li, .icon, .menu-item, .nav-item, .headerIcon, .header-icon, [class*="icon"], [class*="nav"]');
+    if (item && item.parentElement) return { host: item.parentElement, after: item };
+    if (anchor.parentElement) return { host: anchor.parentElement, after: anchor };
+    return null;
+}
+
+function mountShieldIntoHeader() {
+    if (!shield) return false;
+    var target = getHeaderMountHost();
+    if (!target || !target.host) return false;
+
+    shield.classList.add('warhub-header-mounted');
+    try {
+        target.host.insertBefore(shield, target.after ? target.after.nextSibling : null);
+    } catch (_unusedHeaderMount) {
+        target.host.appendChild(shield);
+    }
+    return true;
+}
+
 function applyShieldPos() {
     if (!shield) return;
 
-    shield.style.left = 'auto';
-    shield.style.right = '12px';
-    shield.style.top = '50%';
-    shield.style.bottom = 'auto';
-    shield.style.transform = 'translateY(-50%)';
+    var mountedInHeader = mountShieldIntoHeader();
+    if (mountedInHeader) {
+        shield.style.left = 'auto';
+        shield.style.right = 'auto';
+        shield.style.top = 'auto';
+        shield.style.bottom = 'auto';
+        shield.style.transform = 'none';
+    } else {
+        shield.classList.remove('warhub-header-mounted');
+        if (document.body && shield.parentNode !== document.body) document.body.appendChild(shield);
+        shield.style.left = 'auto';
+        shield.style.right = '12px';
+        shield.style.top = '50%';
+        shield.style.bottom = 'auto';
+        shield.style.transform = 'translateY(-50%)';
+    }
 
     positionBadge();
 }
@@ -1245,8 +1306,19 @@ function applyShieldPos() {
         if (!badge || !shield) return;
 
         var rect = shield.getBoundingClientRect();
-        badge.style.left = Math.round(rect.right - 6) + 'px';
-        badge.style.top = Math.round(rect.top - 6) + 'px';
+        if (shield.classList.contains('warhub-header-mounted')) {
+            badge.classList.add('warhub-header-badge');
+            shield.appendChild(badge);
+            badge.style.left = 'auto';
+            badge.style.right = '-4px';
+            badge.style.top = '-4px';
+        } else {
+            badge.classList.remove('warhub-header-badge');
+            if (document.body && badge.parentNode !== document.body) document.body.appendChild(badge);
+            badge.style.left = Math.round(rect.right - 6) + 'px';
+            badge.style.top = Math.round(rect.top - 6) + 'px';
+            badge.style.right = 'auto';
+        }
     }
 
 function makeHoldDraggable(handle, target, key) {
@@ -2180,7 +2252,7 @@ function _handleTabClick() {
 
     function getMemberName(member) {
         return String(
-            (member && (member.name || member.user_name || member.member_name || member.player_name || member.username)) ||
+            (member && (member.name || member.player_name || member.username)) ||
             'Unknown'
         );
     }
@@ -2196,18 +2268,13 @@ function _handleTabClick() {
     }
 
     function stateLabel(member) {
-        var nowSec = Math.floor(Date.now() / 1000);
-        var inHospital = Number((member && member.in_hospital) || 0) > 0;
-        var hospitalUntil = Number((member && (member.hospital_until_ts || member.hospital_until || member.status_until)) || 0);
-        if (inHospital || hospitalUntil > nowSec) return 'hospital';
-
         var raw = String(
             (member && (
                 member.state ||
                 member.presence ||
+                member.status ||
                 member.status_state ||
-                member.online_state ||
-                member.status
+                member.online_state
             )) || ''
         ).toLowerCase();
 
@@ -2218,10 +2285,41 @@ function _handleTabClick() {
         if (raw.indexOf('online') >= 0) return 'online';
         if (raw.indexOf('offline') >= 0) return 'offline';
 
-        var detail = String((member && (member.status_detail || member.detail || member.description)) || '').toLowerCase();
+        var detail = String(
+            (member && (member.status_detail || member.detail || member.description)) || ''
+        ).toLowerCase();
+
         if (detail.indexOf('hospital') >= 0) return 'hospital';
         if (detail.indexOf('jail') >= 0) return 'jail';
         if (detail.indexOf('travel') >= 0 || detail.indexOf('abroad') >= 0) return 'travel';
+
+        var until = Number(
+            (member && (
+                member.status_until ||
+                member.until ||
+                member.hospital_until ||
+                member.jail_until ||
+                member.travel_until
+            )) || 0
+        );
+
+        var nowSec = Math.floor(Date.now() / 1000);
+        if (until > nowSec) {
+            if (detail.indexOf('hospital') >= 0) return 'hospital';
+            if (detail.indexOf('jail') >= 0) return 'jail';
+            if (detail.indexOf('travel') >= 0) return 'travel';
+        }
+
+        var online = member && (member.online === true || member.is_online === true);
+        if (online) return 'online';
+
+        var lastAction = String(
+            (member && (member.last_action || member.lastAction || '')) || ''
+        ).toLowerCase();
+
+        if (lastAction.indexOf('idle') >= 0) return 'idle';
+        if (lastAction.indexOf('online') >= 0) return 'online';
+
         return 'offline';
     }
 
@@ -2232,7 +2330,6 @@ function _handleTabClick() {
             (member && (
                 member.status_until ||
                 member.until ||
-                member.hospital_until_ts ||
                 member.hospital_until ||
                 member.jail_until ||
                 member.travel_until
@@ -2264,17 +2361,6 @@ function _handleTabClick() {
             member.med_cd ||
             member.med_cooldown ||
             member.medical_cooldown ||
-            member.drug_cd
-        ));
-        if (!Number.isFinite(v) || v <= 0) return 'Ready';
-        return shortCd(v, 'Ready');
-    }
-
-    function boosterCooldownValue(member) {
-        var v = Number(member && (
-            member.booster_cooldown ||
-            member.drug_cooldown ||
-            member.booster_cd ||
             member.drug_cd
         ));
         if (!Number.isFinite(v) || v <= 0) return 'Ready';
@@ -2842,8 +2928,7 @@ function renderEnemiesTab() {
         var hospitalState = (state && state.hospital) || {};
         var enemies = arr((hospitalState && hospitalState.items) || []);
         var hospitalOnly = enemies.filter(function (m) {
-            var nowSec = Math.floor(Date.now() / 1000);
-            return Number((m && m.in_hospital) || 0) > 0 || Number((m && (m.hospital_until_ts || m.hospital_until || m.status_until)) || 0) > nowSec || stateLabel(m) === 'hospital';
+            return stateLabel(m) === 'hospital';
         }).sort(function (a, b) {
             var aCd = Number(stateCountdown(a) || 0);
             var bCd = Number(stateCountdown(b) || 0);
@@ -2880,14 +2965,10 @@ function renderEnemiesTab() {
         function renderChainPersonRow(item, mode) {
             var uid = String((item && item.user_id) || '');
             var name = getMemberName(item);
-            var profile = uid ? profileUrl(item) : '';
+            var profile = uid ? profileUrl(uid) : '';
             var statusText = mode === 'sitter'
-                ? 'Chain sitter enabled'
+                ? 'Chain sitter ' + ((item && item.sitter_enabled) ? 'enabled' : 'disabled')
                 : 'Marked available';
-            var energyCur = Number((item && (item.energy_current || (item.energy && item.energy.current))) || 0);
-            var energyMax = Number((item && (item.energy_max || (item.energy && item.energy.maximum))) || 0);
-            var energyText = energyMax > 0 ? (energyCur + '/' + energyMax) : (energyCur > 0 ? String(energyCur) : '—');
-            var boosterText = boosterCooldownValue(item);
             return [
                 '<div class="chain-person-row">',
                     '<div class="warhub-col">',
@@ -2895,7 +2976,6 @@ function renderEnemiesTab() {
                             ? '<a class="warhub-member-name" href="' + esc(profile) + '" target="_blank" rel="noopener noreferrer">' + esc(name) + '</a>'
                             : '<div class="warhub-member-name">' + esc(name) + '</div>',
                         '<div class="warhub-summary-meta">' + esc(statusText) + '</div>',
-                        '<div class="warhub-summary-meta">Energy: ' + esc(energyText) + ' • Booster CD: ' + esc(boosterText) + '</div>',
                     '</div>',
                     '<div class="warhub-flag-row">',
                         mode === 'sitter'
@@ -4379,6 +4459,9 @@ function _handleActionClick() {
                     overlay = null;
                     ensureMounted();
                     renderBody();
+                } else {
+                    applyShieldPos();
+                    positionBadge();
                 }
             } catch (err) {
                 console.error('War Hub remount watch error:', err);
