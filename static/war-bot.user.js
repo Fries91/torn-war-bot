@@ -3125,7 +3125,7 @@ function renderTermsTab() {
         items = arr(items);
 
         if (!items.length) {
-            return '<tr><td colspan="10">No summary rows yet.</td></tr>';
+            return '<tr><td colspan="13">No summary rows yet.</td></tr>';
         }
 
         return items.map(function (r) {
@@ -3139,7 +3139,12 @@ function renderTermsTab() {
             var efficiency = num(r.efficiency);
             var lastAction = txt(r.last_action, '—');
             var hospitalEta = txt(r.hospital_eta, '—');
-            var profile = userId ? 'https://www.torn.com/profiles.php?XID=' + encodeURIComponent(userId) : '';
+            var role = txt(r.role, 'Member');
+            var status = txt(r.status, '—');
+            var isEnabled = !!r.enabled;
+            var hasLogin = !!r.has_stored_api_key;
+            var onlineState = txt(r.online_state, '').toLowerCase();
+            var profile = txt(r.profile_url, '') || (userId ? 'https://www.torn.com/profiles.php?XID=' + encodeURIComponent(userId) : '');
 
             return [
                 '<tr>',
@@ -3148,6 +3153,10 @@ function renderTermsTab() {
                             ? '<a class="warhub-member-name" href="' + esc(profile) + '" target="_blank" rel="noopener noreferrer">' + esc(name) + '</a>'
                             : '<span class="warhub-member-name">' + esc(name) + '</span>',
                     '</td>',
+                    '<td>' + esc(role) + '</td>',
+                    '<td>' + (isEnabled ? '<span class="warhub-pill good">Enabled</span>' : '<span class="warhub-pill bad">Off</span>') + '</td>',
+                    '<td>' + (hasLogin ? '<span class="warhub-pill good">Logged In</span>' : '<span class="warhub-pill neutral">No Login</span>') + '</td>',
+                    '<td>' + (onlineState ? '<span class="warhub-pill ' + esc(onlineState) + '">' + esc(status) + '</span>' : esc(status)) + '</td>',
                     '<td>' + esc(fmtNum(hits)) + '</td>',
                     '<td>' + esc(fmtNum(gained)) + '</td>',
                     '<td>' + esc(fmtNum(lost)) + '</td>',
@@ -3171,6 +3180,7 @@ function renderTermsTab() {
                 rowsList.length ? [
                     '<div class="warhub-col">',
                         rowsList.map(function (row, idx) {
+                            var userId = txt(row.user_id, '');
                             var name = txt(row.name || row.user_name || row.player_name, 'Player');
                             var gained = num(row.respect_gain);
                             var lost = num(row.respect_lost);
@@ -3178,11 +3188,24 @@ function renderTermsTab() {
                             var hits = num(row.hits);
                             var taken = num(row.hits_taken);
                             var efficiency = num(row.efficiency);
+                            var role = txt(row.role, 'Member');
+                            var status = txt(row.status, '—');
+                            var isEnabled = !!row.enabled;
+                            var hasLogin = !!row.has_stored_api_key;
+                            var onlineState = txt(row.online_state, '').toLowerCase();
+                            var profile = txt(row.profile_url, '') || (userId ? 'https://www.torn.com/profiles.php?XID=' + encodeURIComponent(userId) : '');
 
                             return [
                                 '<details class="warhub-dropbox">',
                                     '<summary class="warhub-dropbox-head">#' + esc(String(idx + 1)) + ' ' + esc(name) + '</summary>',
                                     '<div class="warhub-dropbox-body">',
+                                        '<div class="warhub-row" style="margin-bottom:8px;">',
+                                            profile ? '<a class="warhub-btn ghost" href="' + esc(profile) + '" target="_blank" rel="noopener noreferrer">Open Profile</a>' : '',
+                                            '<span class="warhub-pill neutral">' + esc(role) + '</span>',
+                                            (isEnabled ? '<span class="warhub-pill good">Enabled</span>' : '<span class="warhub-pill bad">Off</span>'),
+                                            (hasLogin ? '<span class="warhub-pill good">Logged In</span>' : '<span class="warhub-pill neutral">No Login</span>'),
+                                            (onlineState ? '<span class="warhub-pill ' + esc(onlineState) + '">' + esc(status) + '</span>' : '<span class="warhub-pill neutral">' + esc(status) + '</span>'),
+                                        '</div>',
                                         '<div class="warhub-kv"><div>Hits</div><div>' + esc(fmtNum(hits)) + '</div></div>',
                                         '<div class="warhub-kv"><div>Respect Gained</div><div>' + esc(fmtNum(gained)) + '</div></div>',
                                         '<div class="warhub-kv"><div>Respect Lost</div><div>' + esc(fmtNum(lost)) + '</div></div>',
@@ -3252,7 +3275,8 @@ function renderTermsTab() {
 
             '<div class="warhub-card warhub-col">',
                 '<div class="warhub-row" style="justify-content:space-between;align-items:center;">',
-                    '<h3>Member Performance</h3>',
+                    '<h3>Member Performance</h3>'
+                    '<span class="warhub-sub">Shows leader activation, login presence, live status, and war output together</span>',
                     '<span class="warhub-pill neutral">' + esc(fmtNum(rows.length)) + ' rows</span>',
                 '</div>',
                 '<div class="warhub-table-wrap">',
@@ -3260,6 +3284,10 @@ function renderTermsTab() {
                         '<thead>',
                             '<tr>',
                                 '<th>Name</th>',
+                                '<th>Role</th>',
+                                '<th>Access</th>',
+                                '<th>Login</th>',
+                                '<th>Status</th>',
                                 '<th>Hits</th>',
                                 '<th>Respect Gained</th>',
                                 '<th>Respect Lost</th>',
@@ -3487,20 +3515,31 @@ function renderTermsTab() {
             '<div class="warhub-card warhub-col">',
                 '<h3>' + esc(title) + '</h3>',
                 rows.length ? rows.map(function (row, idx) {
+                    var userId = txt(row.user_id, '');
                     var name = txt(row.name || row.user_name || row.player_name, 'Player');
                     var hits = num(row.hits);
                     var gain = num(row.respect_gain);
                     var lost = num(row.respect_lost);
                     var taken = num(row.hits_taken);
                     var net = num(row.net_impact, gain - lost);
+                    var role = txt(row.role, 'Member');
+                    var isEnabled = !!row.enabled;
+                    var hasLogin = !!row.has_stored_api_key;
+                    var profile = txt(row.profile_url, '') || (userId ? 'https://www.torn.com/profiles.php?XID=' + encodeURIComponent(userId) : '');
 
                     return [
-                        '<div class="warhub-summary-item">',
-                            '<div>',
-                                '<div class="warhub-summary-name">#' + esc(String(idx + 1)) + ' ' + esc(name) + '</div>',
+                        '<details class="warhub-dropbox">',
+                            '<summary class="warhub-dropbox-head">#' + esc(String(idx + 1)) + ' ' + esc(name) + '</summary>',
+                            '<div class="warhub-dropbox-body">',
+                                '<div class="warhub-row" style="margin-bottom:8px;">',
+                                    profile ? '<a class="warhub-btn ghost" href="' + esc(profile) + '" target="_blank" rel="noopener noreferrer">Open Profile</a>' : '',
+                                    '<span class="warhub-pill neutral">' + esc(role) + '</span>',
+                                    (isEnabled ? '<span class="warhub-pill good">Enabled</span>' : '<span class="warhub-pill bad">Off</span>'),
+                                    (hasLogin ? '<span class="warhub-pill good">Logged In</span>' : '<span class="warhub-pill neutral">No Login</span>'),
+                                '</div>',
                                 '<div class="warhub-summary-meta">Hits ' + esc(fmtNum(hits)) + ' • Gain ' + esc(fmtNum(gain)) + ' • Lost ' + esc(fmtNum(lost)) + ' • Taken ' + esc(fmtNum(taken)) + ' • Net ' + esc(fmtNum(net)) + '</div>',
                             '</div>',
-                        '</div>'
+                        '</details>'
                     ].join('');
                 }).join('') : '<div class="warhub-sub">No data yet.</div>',
             '</div>'
@@ -3511,7 +3550,7 @@ function renderTermsTab() {
         '<div class="warhub-grid">',
             '<div class="warhub-hero-card">',
                 '<div class="warhub-title">Top 5</div>',
-                '<div class="warhub-sub">Quick leader ranking view</div>',
+                '<div class="warhub-sub">Quick leader ranking view with profile, login, and activation status</div>',
             '</div>',
 
             renderQuickBox('Top Hitters', pickList(topFive.top_hitters, topFive.top_hitter)),
