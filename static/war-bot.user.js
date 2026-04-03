@@ -1,3 +1,4 @@
+War Hub copy-paste userscript
 // ==UserScript==
 // @name         War Hub ⚔️
 // @namespace    fries91-war-hub
@@ -692,6 +693,94 @@
   }\n\
   .warhub-body { padding: 10px !important; }\n\
 }\n\
+.chain-meter-card {
+  border-radius: 14px !important;
+  background: linear-gradient(180deg, rgba(90,18,18,.35), rgba(20,20,20,.92)) !important;
+  border: 1px solid rgba(255,255,255,.10) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.05) !important;
+  overflow: hidden !important;
+}
+.chain-meter-top {
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+  gap: 10px !important;
+  padding: 12px !important;
+  border-bottom: 1px solid rgba(255,255,255,.08) !important;
+}
+.chain-meter-big {
+  font-size: 34px !important;
+  line-height: 1 !important;
+  font-weight: 900 !important;
+  letter-spacing: .4px !important;
+  color: #fff !important;
+}
+.chain-meter-sub {
+  font-size: 11px !important;
+  opacity: .75 !important;
+}
+.chain-meter-track {
+  position: relative !important;
+  height: 10px !important;
+  margin: 0 12px 12px !important;
+  border-radius: 999px !important;
+  background: rgba(255,255,255,.08) !important;
+  overflow: hidden !important;
+}
+.chain-meter-fill {
+  height: 100% !important;
+  border-radius: 999px !important;
+  background: linear-gradient(90deg, rgba(165,24,24,.98), rgba(235,76,76,.98)) !important;
+}
+.chain-box-grid {
+  display: grid !important;
+  grid-template-columns: 1fr 1fr !important;
+  gap: 10px !important;
+}
+.chain-list-card {
+  border-radius: 12px !important;
+  background: rgba(255,255,255,.04) !important;
+  border: 1px solid rgba(255,255,255,.08) !important;
+  overflow: hidden !important;
+}
+.chain-list-head {
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+  gap: 8px !important;
+  padding: 10px !important;
+  font-weight: 800 !important;
+  background: rgba(255,255,255,.05) !important;
+}
+.chain-list-body {
+  display: flex !important;
+  flex-direction: column !important;
+}
+.chain-person-row {
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+  gap: 8px !important;
+  padding: 9px 10px !important;
+  border-top: 1px solid rgba(255,255,255,.06) !important;
+}
+.chain-person-meta {
+  font-size: 11px !important;
+  opacity: .75 !important;
+}
+.chain-empty {
+  padding: 14px 10px !important;
+  opacity: .72 !important;
+  font-size: 12px !important;
+}
+@media (max-width: 520px) {
+  .chain-box-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .chain-meter-big {
+    font-size: 28px !important;
+  }
+}
 ";
 
     GM_addStyle(css);
@@ -2820,34 +2909,102 @@ function renderEnemiesTab() {
             '<div class="warhub-card">',
                 '<div class="warhub-row">',
                     '<span class="warhub-pill online">Online ' + esc(String(grouped.online.length)) + '</span>',
-                    '<span class="warhub-pill idle">Idle ' + esc(String(grouped.idle.length)) + '</span>',
-                    '<span class="warhub-pill travel">Travel ' + esc(String(grouped.travel.length)) + '</span>',
-                    '<span class="warhub-pill jail">Jail ' + esc(String(grouped.jail.length)) + '</span>',
-                    '<span class="warhub-pill hospital">Hospital ' + esc(String(grouped.hospital.length)) + '</span>',
-                    '<span class="warhub-pill offline">Offline ' + esc(String(grouped.offline.length)) + '</span>',
+                    '<span class="warhufunction renderChainTab() {
+        var chain = (state && state.chain) || {};
+        var ownFactionName = String((state && state.faction && state.faction.name) || 'Your Faction');
+        var availableItems = arr(chain.available_items).slice().sort(function (a, b) {
+            return getMemberName(a).localeCompare(getMemberName(b));
+        });
+        var sitterItems = arr(chain.sitter_items).slice().sort(function (a, b) {
+            return getMemberName(a).localeCompare(getMemberName(b));
+        });
+        var current = Number(chain.current || 0);
+        var cooldown = Number(chain.cooldown || 0);
+        var meterPct = Math.max(4, Math.min(100, current > 0 ? Math.round((current % 100) || 100) : 4));
+
+        function renderChainPersonRow(item, mode) {
+            var uid = String((item && item.user_id) || '');
+            var name = getMemberName(item);
+            var profile = uid ? profileUrl(uid) : '';
+            var statusText = mode === 'sitter'
+                ? 'Chain sitter ' + (item && item.sitter_enabled ? 'enabled' : 'disabled')
+                : 'Marked available';
+            return [
+                '<div class="chain-person-row">',
+                    '<div class="warhub-col">',
+                        profile
+                            ? '<a class="warhub-member-name" href="' + esc(profile) + '" target="_blank" rel="noopener noreferrer">' + esc(name) + '</a>'
+                            : '<div class="warhub-member-name">' + esc(name) + '</div>',
+                        '<div class="chain-person-meta">[' + esc(uid || '—') + '] • ' + esc(statusText) + '</div>',
+                    '</div>',
+                    mode === 'sitter'
+                        ? '<span class="warhub-pill warn">Sitter</span>'
+                        : '<span class="warhub-pill good">Available</span>',
+                '</div>'
+            ].join('');
+        }
+
+        function renderChainList(title, items, mode, emptyText) {
+            return [
+                '<div class="chain-list-card">',
+                    '<div class="chain-list-head">',
+                        '<span>' + esc(title) + '</span>',
+                        '<span class="warhub-pill neutral">' + esc(String(items.length)) + '</span>',
+                    '</div>',
+                    '<div class="chain-list-body">',
+                        items.length
+                            ? items.map(function (item) { return renderChainPersonRow(item, mode); }).join('')
+                            : '<div class="chain-empty">' + esc(emptyText) + '</div>',
+                    '</div>',
+                '</div>'
+            ].join('');
+        }
+
+        return [
+            '<div class="warhub-grid">',
+                '<div class="chain-meter-card">',
+                    '<div class="chain-meter-top">',
+                        '<div class="warhub-col">',
+                            '<div class="warhub-title">Chain Rack</div>',
+                            '<div class="chain-meter-sub">' + esc(ownFactionName) + ' live chain board</div>',
+                        '</div>',
+                        '<div class="warhub-col" style="align-items:flex-end;">',
+                            '<div class="chain-meter-big">' + esc(fmtNum(current)) + '</div>',
+                            '<div class="chain-meter-sub">Current chain</div>',
+                        '</div>',
+                    '</div>',
+                    '<div class="warhub-row" style="padding:0 12px 12px;">',
+                        '<span class="warhub-pill ' + (chain.available ? 'good' : 'neutral') + '">' + esc(chain.available ? 'You are available' : 'You are unavailable') + '</span>',
+                        '<span class="warhub-pill ' + (chain.sitter_enabled ? 'warn' : 'neutral') + '">' + esc(chain.sitter_enabled ? 'Sitter enabled' : 'Sitter disabled') + '</span>',
+                        '<span class="warhub-pill ' + (cooldown > 0 ? 'bad' : 'good') + '">' + esc('Cooldown ' + shortCd(cooldown, 'Ready')) + '</span>',
+                    '</div>',
+                    '<div class="chain-meter-track">',
+                        '<div class="chain-meter-fill" style="width:' + esc(String(meterPct)) + '%;"></div>',
+                    '</div>',
                 '</div>',
-            '</div>',
 
-            enemyFactionId || enemies.length ? '' : '<div class="warhub-card">No current enemy faction detected yet.</div>',
-            renderGroupBlock('enemies_online', grouped.online, renderEnemyRow, true),
-            renderGroupBlock('enemies_idle', grouped.idle, renderEnemyRow, true),
-            renderGroupBlock('enemies_travel', grouped.travel, renderEnemyRow, false),
-            renderGroupBlock('enemies_jail', grouped.jail, renderEnemyRow, false),
-            renderGroupBlock('enemies_hospital', grouped.hospital, renderEnemyRow, true),
-            renderGroupBlock('enemies_offline', grouped.offline, renderEnemyRow, false),
-        '</div>'
-    ].join('');
-}
+                '<div class="warhub-card">',
+                    '<div class="warhub-row">',
+                        '<button type="button" class="warhub-btn green" data-action="chain-available">Available</button>',
+                        '<button type="button" class="warhub-btn gray" data-action="chain-unavailable">Unavailable</button>',
+                        '<button type="button" class="warhub-btn warn" data-action="chain-toggle-sitter">' + esc(chain.sitter_enabled ? 'Disable sitter' : 'Enable sitter') + '</button>',
+                    '</div>',
+                    '<div class="warhub-space"></div>',
+                    '<div class="warhub-row">',
+                        '<span class="warhub-pill good">Available ' + esc(String(chain.available_count || availableItems.length)) + '</span>',
+                        '<span class="warhub-pill warn">Chain sitters ' + esc(String(chain.sitter_count || sitterItems.length)) + '</span>',
+                    '</div>',
+                '</div>',
 
+                '<div class="chain-box-grid">',
+                    renderChainList('Available', availableItems, 'available', 'Nobody marked available right now.'),
+                    renderChainList('Chain Sitters', sitterItems, 'sitter', 'No chain sitters enabled right now.'),
+                '</div>',
+            '</div>'
+        ].join('');
+    }
 
-    function renderHospitalTab() {
-        var hospitalState = (state && state.hospital) || {};
-        var enemies = arr((hospitalState && hospitalState.items) || (state && state.enemies) || warEnemiesCache || []);
-        var hospitalOnly = enemies.filter(function (m) {
-            return stateLabel(m) === 'hospital';
-        }).sort(function (a, b) {
-            var aCd = Number(stateCountdown(a) || 0);
-            var bCd = Number(stateCountdown(b) || 0);
+     var bCd = Number(stateCountdown(b) || 0);
             if (aCd !== bCd) return aCd - bCd;
             return getMemberName(a).localeCompare(getMemberName(b));
         });
@@ -4323,3 +4480,4 @@ function _handleActionClick() {
     boot();
 
 })();
+    
