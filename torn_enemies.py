@@ -43,6 +43,73 @@ def hospital_members_from_enemies(enemies: List[Dict[str, Any]]) -> List[Dict[st
     return out
 
 
+
+
+def _predict_battle_stats(member: Dict[str, Any]) -> Dict[str, Any]:
+    state = str(member.get("online_state") or "offline").strip().lower()
+    level = to_int(member.get("level"), 0)
+    position = str(member.get("position") or "").strip().lower()
+
+    score = 35 + min(45, max(0, int(round(level * 0.75))))
+
+    if state == "online":
+        score += 16
+    elif state == "idle":
+        score += 9
+    elif state == "travel":
+        score -= 8
+    elif state == "jail":
+        score -= 18
+    elif state == "hospital":
+        score -= 32
+    else:
+        score -= 12
+
+    if "leader" in position:
+        score += 10
+    elif position in {"co-leader", "co leader", "coleader", "officer"} or "co" in position:
+        score += 6
+
+    score = max(1, min(99, int(round(score))))
+
+    if score >= 82:
+        tier = "High"
+    elif score >= 58:
+        tier = "Medium"
+    else:
+        tier = "Low"
+
+    if state in {"hospital", "jail"}:
+        attack_window = "Best now"
+    elif state in {"offline", "travel"}:
+        attack_window = "Good"
+    elif state == "idle":
+        attack_window = "Okay"
+    else:
+        attack_window = "Risky"
+
+    if state == "hospital":
+        summary = "Hospitalized target with reduced immediate threat."
+    elif state == "jail":
+        summary = "Jailed target and usually safe to line up."
+    elif state == "travel":
+        summary = "Traveling target with limited immediate pressure."
+    elif state == "offline":
+        summary = "Offline target with moderate uncertainty."
+    elif state == "idle":
+        summary = "Idle target that may react slower than active enemies."
+    else:
+        summary = "Active target with the highest chance to fight back quickly."
+
+    return {
+        "score": score,
+        "tier": tier,
+        "threat": tier,
+        "attack_window": attack_window,
+        "confidence": "Estimate",
+        "summary": summary,
+    }
+
 def build_enemy_cards(enemies: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     cards: List[Dict[str, Any]] = []
 
@@ -60,6 +127,7 @@ def build_enemy_cards(enemies: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         if not user_id:
             continue
 
+        battle_prediction = _predict_battle_stats(member)
         cards.append({
             "user_id": user_id,
             "name": str(member.get("name") or "Unknown"),
@@ -75,6 +143,9 @@ def build_enemy_cards(enemies: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             "profile_url": str(member.get("profile_url") or ""),
             "attack_url": str(member.get("attack_url") or ""),
             "bounty_url": str(member.get("bounty_url") or ""),
+            "battle_prediction": battle_prediction,
+            "battle_score": battle_prediction.get("score"),
+            "battle_tier": battle_prediction.get("tier"),
         })
 
     cards.sort(
