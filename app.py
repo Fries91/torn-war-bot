@@ -458,14 +458,12 @@ def _sync_login_user_to_billing(user_row: Dict[str, Any]):
 def _build_member_bar_payload(member: Dict[str, Any], api_key: str = "") -> Dict[str, Any]:
     bars = {}
     med_cd = 0
-    booster_cd = 0
     if api_key:
         live = member_live_bars(api_key, user_id=str(member.get("user_id") or ""))
         if live.get("ok"):
             bars = live.get("bars") or {}
             med_cd = _to_int(live.get("medical_cooldown"), 0)
-            booster_cd = _to_int(live.get("booster_cooldown"), 0)
-    return {"bars": bars, "medical_cooldown": med_cd, "booster_cooldown": booster_cd}
+    return {"bars": bars, "medical_cooldown": med_cd}
 
 
 def _build_live_faction_members(user: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -502,8 +500,6 @@ def _build_live_faction_members(user: Dict[str, Any]) -> List[Dict[str, Any]]:
                 "happy": (live_bar_payload.get("bars") or {}).get("happy") or {},
                 "medical_cooldown": _to_int(live_bar_payload.get("medical_cooldown"), 0),
                 "medical_cooldown_text": _seconds_to_text(_to_int(live_bar_payload.get("medical_cooldown"), 0)),
-                "booster_cooldown": _to_int(live_bar_payload.get("booster_cooldown"), 0),
-                "booster_cooldown_text": _seconds_to_text(_to_int(live_bar_payload.get("booster_cooldown"), 0)),
             }
         )
 
@@ -605,8 +601,6 @@ def _build_hospital_payload(user: Dict[str, Any], war_payload: Optional[Dict[str
             "overview_remove_after_ts": _to_int(dib.get("overview_remove_after_ts"), 0),
             "dibs_available": bool(dibs_available),
             "dibs_locked": bool(dibs_lock_until_ts > now_ts),
-            "hospital_until": _to_int(member.get("hospital_until_ts"), 0),
-            "status_until": _to_int(member.get("hospital_until_ts"), 0),
         })
 
     overview_items = []
@@ -722,32 +716,14 @@ def _build_war_and_enemy_payload(user: Dict[str, Any]) -> Dict[str, Any]:
 
 
 
-def _build_chain_payload(user: Dict[str, Any], war: Optional[Dict[str, Any]] = None, live_members: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+def _build_chain_payload(user: Dict[str, Any], war: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     user = user or {}
     faction_id = str(user.get("faction_id") or "").strip()
     user_id = str(user.get("user_id") or "").strip()
     rows = list_chain_statuses(faction_id) if faction_id else []
     mine = next((r for r in rows if str(r.get("user_id") or "") == user_id), {})
-    live_map = {str(m.get("user_id") or ""): m for m in list(live_members or []) if isinstance(m, dict)}
-
-    def enrich(row: Dict[str, Any]) -> Dict[str, Any]:
-        row = row or {}
-        uid = str(row.get("user_id") or "").strip()
-        live = live_map.get(uid) or {}
-        energy = (live.get("energy") or {}) if isinstance(live.get("energy"), dict) else {}
-        return {
-            **row,
-            **live,
-            "user_id": uid,
-            "name": str(live.get("name") or row.get("user_name") or row.get("member_name") or row.get("name") or uid or "Unknown"),
-            "energy_current": _to_int(energy.get("current") if isinstance(energy, dict) else live.get("energy_current"), _to_int(live.get("energy_current"), 0)),
-            "energy_max": _to_int(energy.get("maximum") if isinstance(energy, dict) else live.get("energy_max"), _to_int(live.get("energy_max"), 0)),
-            "booster_cooldown": _to_int(live.get("booster_cooldown"), _to_int(row.get("booster_cooldown"), 0)),
-            "booster_cooldown_text": str(live.get("booster_cooldown_text") or row.get("booster_cooldown_text") or "0m"),
-        }
-
-    available_items = [enrich(r) for r in rows if _safe_bool(r.get("available"))]
-    sitter_items = [enrich(r) for r in rows if _safe_bool(r.get("sitter_enabled"))]
+    available_items = [r for r in rows if _safe_bool(r.get("available"))]
+    sitter_items = [r for r in rows if _safe_bool(r.get("sitter_enabled"))]
     war = war or {}
     return {
         "available": bool(mine.get("available")),
@@ -888,7 +864,7 @@ def _build_state_payload(user: Dict[str, Any]) -> Dict[str, Any]:
     terms_summary_row = get_faction_terms_summary(faction_id) if faction_id else {}
     hospital_payload = _build_hospital_payload(user, war_payload=war_payload) if faction_id else {"items": [], "overview_items": []}
     targets_payload = _build_targets_payload(user)
-    chain_payload = _build_chain_payload(user, war_payload.get("war") or {}, live_members=members)
+    chain_payload = _build_chain_payload(user, war_payload.get("war") or {})
     med_deals_payload = _build_med_deals_payload(user)
     viewer_stats_payload = _build_viewer_stats_payload(user)
 
@@ -1059,12 +1035,12 @@ def _summary_member_row(member: Dict[str, Any], hospital_map: Dict[str, Dict[str
     return {
         "user_id": user_id,
         "name": name,
-        "role": str(member.get("position") or member.get("role") or "").strip(),
+        "role": str(member.get("position") or member.get("role") or (member.get("member_access") or {}).get("position") or "").strip(),
         "status": _member_status_text(member),
         "profile_url": str(member.get("profile_url") or profile_url(user_id)),
-        "enabled": bool(member.get("enabled")),
+        "enabled": bool(member.get("enabled") or (member.get("member_access") or {}).get("enabled")),
         "member_access": member.get("member_access") or {},
-        "has_stored_api_key": bool(member.get("has_stored_api_key")),
+        "has_stored_api_key": bool(member.get("has_stored_api_key") or (member.get("member_access") or {}).get("member_api_key")),
         "online_state": str(member.get("online_state") or "").strip().lower(),
         "hits": hits,
         "respect_gain": round(respect_gain, 2),
