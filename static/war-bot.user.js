@@ -3275,7 +3275,7 @@ function renderTermsTab() {
 
             '<div class="warhub-card warhub-col">',
                 '<div class="warhub-row" style="justify-content:space-between;align-items:center;">',
-                    '<h3>Member Performance</h3>'
+                    '<h3>Member Performance</h3>',
                     '<span class="warhub-sub">Shows leader activation, login presence, live status, and war output together</span>',
                     '<span class="warhub-pill neutral">' + esc(fmtNum(rows.length)) + ' rows</span>',
                 '</div>',
@@ -4323,4 +4323,3 @@ function _handleActionClick() {
     boot();
 
 })();
-    
