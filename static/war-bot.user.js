@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         War Hub ⚔️
 // @namespace    fries91-war-hub
-// @version      3.2.6
+// @version      3.2.7
 // @description  War Hub by Fries91. Faction-license aware overlay with draggable icon, PDA friendly, shared war tools, faction member management, and payment lock handling.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -20,8 +20,8 @@
     'use strict';
 
 
-    if (window.__WAR_HUB_V289__ && document.getElementById('warhub-shield')) return;
-    window.__WAR_HUB_V289__ = true;
+    if (window.__WAR_HUB_V290__ && document.getElementById('warhub-shield')) return;
+    window.__WAR_HUB_V290__ = true;
 
     // ============================================================
     // 01. CORE CONFIG / STORAGE KEYS
@@ -60,7 +60,6 @@
 
     var TAB_ROW_1 = [
         ['overview', 'Overview'],
-        ['members', 'Members'],
         ['enemies', 'Enemies'],
         ['hospital', 'Hospital'],
         ['chain', 'Chain'],
@@ -105,8 +104,9 @@
     var mounted = false;
     var dragMoved = false;
     var isOpen = !!GM_getValue(K_OPEN, false);
-    var currentTab = GM_getValue(K_TAB, 'settings');
+    var currentTab = GM_getValue(K_TAB, 'enemies');
     if (currentTab === 'owner') currentTab = 'admin';
+    if (currentTab === 'members') currentTab = 'enemies';
 
     var pollTimer = null;
     var remountTimer = null;
@@ -845,7 +845,7 @@
     }
 
     function tickMembersCountdowns() {
-        if (!overlay || currentTab !== 'members') return;
+        if (!overlay || currentTab !== 'enemies') return;
         if (!membersLiveStamp) return;
 
         var elapsed = Math.floor((Date.now() - membersLiveStamp) / 1000);
@@ -885,7 +885,7 @@
 
     function startMembersCountdownLoop() {
         stopMembersCountdownLoop();
-        if (currentTab !== 'members') return;
+        if (currentTab !== 'enemies') return;
 
         membersCountdownTimer = setInterval(function () {
             tickMembersCountdowns();
@@ -1803,7 +1803,6 @@ function _refreshEnemiesLive() {
 
     function tabNeedsLivePolling(tab) {
         return tab === 'overview'
-            || tab === 'members'
             || tab === 'enemies'
             || tab === 'hospital'
             || tab === 'summary';
@@ -1812,7 +1811,6 @@ function _refreshEnemiesLive() {
     function getTabPollMs(tab) {
         if (tab === 'hospital') return 6000;
         if (tab === 'enemies') return 7000;
-        if (tab === 'members') return 10000;
         if (tab === 'overview') return 12000;
         if (tab === 'summary') return 12000;
         if (tab === 'faction') return 30000;
@@ -1838,12 +1836,6 @@ function _refreshEnemiesLive() {
             try {
                 if (currentTab === 'overview') {
                     yield refreshOverviewLive();
-                    renderLiveTabOnly();
-                    return;
-                }
-
-                if (currentTab === 'members') {
-                    yield refreshMembersLive();
                     renderLiveTabOnly();
                     return;
                 }
@@ -1888,10 +1880,7 @@ function _handleTabClick() {
 
         loadInFlight = true;
         try {
-            if (currentTab === 'members') {
-                yield loadFactionMembers(true);
-                membersLiveStamp = Date.now();
-            } else if (currentTab === 'enemies') {
+            if (currentTab === 'enemies') {
                 yield loadWarData(true);
                 yield loadEnemies(true);
             } else if (currentTab === 'hospital') {
@@ -2572,57 +2561,10 @@ function renderOverviewTab() {
     ].join('');
 }
     function renderMembersTab() {
-    var members = arr(
-        currentFactionMembers ||
-        factionMembersCache ||
-        (state && state.members) ||
-        []
-    );
+        setCurrentTab('enemies');
+        return '<div class="warhub-card">Members tab removed. Enemy roster now lives in Enemies only.</div>';
+    }
 
-    var search = String(GM_getValue('warhub_members_search', '') || '').trim().toLowerCase();
-
-    var filtered = members.filter(function (m) {
-        if (!search) return true;
-        return memberSearchText(m).indexOf(search) >= 0;
-    });
-
-    var grouped = groupMembers(filtered);
-
-    return [
-        '<div class="warhub-grid">',
-            '<div class="warhub-hero-card">',
-                '<div class="warhub-title">Members</div>',
-                '<div class="warhub-sub">Your faction only</div>',
-            '</div>',
-
-            '<div class="warhub-card">',
-                '<div class="warhub-row">',
-                    '<input id="warhub-members-search" class="warhub-input" type="text" value="' + esc(search) + '" placeholder="Search member name, ID, status or position" />',
-                    '<button type="button" class="warhub-btn ghost" data-action="members-refresh">Refresh</button>',
-                '</div>',
-            '</div>',
-
-            '<div class="warhub-card">',
-                '<div class="warhub-row">',
-                    '<span class="warhub-pill online">Online ' + esc(String(grouped.online.length)) + '</span>',
-                    '<span class="warhub-pill idle">Idle ' + esc(String(grouped.idle.length)) + '</span>',
-                    '<span class="warhub-pill travel">Travel ' + esc(String(grouped.travel.length)) + '</span>',
-                    '<span class="warhub-pill jail">Jail ' + esc(String(grouped.jail.length)) + '</span>',
-                    '<span class="warhub-pill hospital">Hospital ' + esc(String(grouped.hospital.length)) + '</span>',
-                    '<span class="warhub-pill offline">Offline ' + esc(String(grouped.offline.length)) + '</span>',
-                '</div>',
-            '</div>',
-
-            renderGroupBlock('members_online', grouped.online, renderMemberRow, true),
-            renderGroupBlock('members_idle', grouped.idle, renderMemberRow, true),
-            renderGroupBlock('members_travel', grouped.travel, renderMemberRow, false),
-            renderGroupBlock('members_jail', grouped.jail, renderMemberRow, false),
-            renderGroupBlock('members_hospital', grouped.hospital, renderMemberRow, true),
-            renderGroupBlock('members_offline', grouped.offline, renderMemberRow, false),
-        '</div>'
-    ].join('');
-}
-    
 function renderEnemiesTab() {
     var enemies = arr(
         warEnemiesCache ||
@@ -2695,7 +2637,7 @@ function renderEnemiesTab() {
         '<div class="warhub-grid">',
             '<div class="warhub-hero-card">',
                 '<div class="warhub-title">Enemies</div>',
-                '<div class="warhub-sub">' + esc(enemyFactionName) + '</div>',
+                '<div class="warhub-sub">' + esc(enemyFactionName) + ' • live status auto-updates</div>',
             '</div>',
 
             '<div class="warhub-card">',
@@ -2707,7 +2649,6 @@ function renderEnemiesTab() {
             '<div class="warhub-card">',
                 '<div class="warhub-row">',
                     '<input id="warhub-enemies-search" class="warhub-input" type="text" value="' + esc(searchRaw) + '" placeholder="Search enemy name or ID" />',
-                    '<button type="button" class="warhub-btn ghost" data-action="enemies-refresh">Refresh</button>',
                 '</div>',
             '</div>',
 
@@ -3275,8 +3216,8 @@ function renderTermsTab() {
                 '<div>1. Open the Settings tab and log in with your Torn API key.</div>',
                 '<div>2. Once logged in, War Hub loads your faction access and current war data from the backend.</div>',
                 '<div>3. Leaders can go to the Faction tab to activate members for access.</div>',
-                '<div>4. Members with access can then use tabs like Overview, Members, Enemies, Hospital, Chain, Targets, Terms, and Med Deals.</div>',
-                '<div>5. Use the refresh buttons in each tab if you want a fresh pull right away.</div>',
+                '<div>4. Members with access can then use tabs like Overview, Enemies, Hospital, Chain, Targets, Terms, and Med Deals.</div>',
+                '<div>5. Enemy status updates live while the Enemies tab is open.</div>',
             '</div>',
 
             '<div class="warhub-card warhub-col">',
@@ -3292,14 +3233,14 @@ function renderTermsTab() {
                 '<h3>How your API key is stored and used</h3>',
                 '<div>Your API key is stored locally in your userscript storage on your device/browser through the script settings.</div>',
                 '<div>When you log in, the script sends your key to the War Hub backend to create or refresh your session and load your faction-linked data.</div>',
-                '<div>After login, the script mainly works from the saved session and backend responses for state, members, enemies, hospital, targets, chain, and other tab data.</div>',
+                '<div>After login, the script mainly works from the saved session and backend responses for state, faction members, enemies, hospital, targets, chain, and other tab data.</div>',
                 '<div>Your saved session, open tab, overlay state, and other local preferences are also kept in userscript storage for convenience.</div>',
                 '<div>If you log out or your session expires, you will need to log in again.</div>',
             '</div>',
 
             '<div class="warhub-card warhub-col">',
                 '<h3>What War Hub does</h3>',
-                '<div><b>For members:</b> War Hub gives a cleaner place to view shared war information like faction overview, members, enemy roster, hospital tracking, targets, terms, med deals, and chain tools.</div>',
+                '<div><b>For members:</b> War Hub gives a cleaner place to view shared war information like faction overview, enemy roster, hospital tracking, targets, terms, med deals, and chain tools.</div>',
                 '<div><b>For leaders:</b> War Hub adds faction management tools like member activation, payment-linked access, war summary tools, and faction control features.</div>',
                 '<div><b>For admins:</b> War Hub includes admin-only controls for faction licenses, exemptions, renewals, expiries, and dashboard management.</div>',
                 '<div>The goal is to keep war coordination, access control, and important shared information in one overlay instead of spreading it across chat and separate pages.</div>',
@@ -3685,24 +3626,6 @@ function _handleActionClick() {
                 return;
             }
 
-            if (action === 'members-refresh') {
-                setStatus('Refreshing members...', false);
-                yield loadFactionMembers(true);
-                membersLiveStamp = Date.now();
-                renderBody();
-                setStatus('Members refreshed.', false);
-                return;
-            }
-
-            if (action === 'enemies-refresh') {
-                setStatus('Refreshing enemies...', false);
-                yield loadWarData(true);
-                yield loadEnemies(true);
-                renderBody();
-                setStatus('Enemies refreshed.', false);
-                return;
-            }
-
             if (action === 'meddeals-save') {
                 var medDealsTextEl = overlay && overlay.querySelector('#warhub-meddeals-text');
                 var medDealsText = String((medDealsTextEl && medDealsTextEl.value) || '');
@@ -3988,7 +3911,6 @@ function _handleActionClick() {
         if (!isLoggedIn()) return renderLoginView();
 
         if (currentTab === 'overview') return renderOverviewTab();
-        if (currentTab === 'members') return renderMembersTab();
         if (currentTab === 'enemies') return renderEnemiesTab();
         if (currentTab === 'hospital') return renderHospitalTab();
         if (currentTab === 'chain') return renderChainTab();
@@ -4018,7 +3940,7 @@ function _handleActionClick() {
 
         renderStatus();
 
-        if (currentTab === 'members') {
+        if (currentTab === 'enemies') {
             startMembersCountdownLoop();
         } else {
             stopMembersCountdownLoop();
@@ -4050,7 +3972,7 @@ function _handleActionClick() {
 
         renderStatus();
 
-        if (currentTab === 'members') {
+        if (currentTab === 'enemies') {
             startMembersCountdownLoop();
         } else {
             stopMembersCountdownLoop();
@@ -4061,15 +3983,6 @@ function _handleActionClick() {
 
     function bindDynamicInputs() {
         if (!overlay) return;
-
-        var membersSearch = overlay.querySelector('#warhub-members-search');
-        if (membersSearch && !membersSearch.__warhubBound) {
-            membersSearch.__warhubBound = true;
-            membersSearch.addEventListener('input', function () {
-                GM_setValue('warhub_members_search', String(membersSearch.value || ''));
-                if (currentTab === 'members') renderBody();
-            });
-        }
 
         var enemiesSearch = overlay.querySelector('#warhub-enemies-search');
         if (enemiesSearch && !enemiesSearch.__warhubBound) {
