@@ -1609,7 +1609,7 @@ def api_targets_save():
     return ok(message="Target saved.", item=item)
 
 
-@app.route("/api/targets/<target_user_id>", methods=["DELETE"])
+@app.route("/api/targets/<target_user_id>", methods=["DELETE", "POST"])
 @require_session
 def api_targets_delete(target_user_id: str):
     user = request.user or {}
@@ -1629,7 +1629,8 @@ def api_targets_delete(target_user_id: str):
         target_user_id=str(target_user_id or "").strip(),
     )
 
-    return ok(message="Target deleted.", target_user_id=str(target_user_id or "").strip())
+    payload = _build_targets_payload(user)
+    return ok(message="Target deleted.", target_user_id=str(target_user_id or "").strip(), items=payload.get("items") or [], count=payload.get("count") or 0)
 
 
 @app.route("/api/faction/members", methods=["GET"])
@@ -1798,7 +1799,25 @@ def api_faction_payment_request_renewal():
 @app.route("/api/admin/dashboard", methods=["GET"])
 @require_owner
 def api_admin_dashboard():
-    return ok(summary=get_faction_admin_dashboard_summary(), payment=get_payment_dashboard())
+    summary = get_faction_admin_dashboard_summary() or {}
+    licenses = list_all_faction_licenses() or []
+    user_items = list_user_exemptions() or []
+    faction_items = list_faction_exemptions() or []
+    payload = {
+        **summary,
+        "summary": summary,
+        "payment": get_payment_dashboard(),
+        "faction_licenses": licenses,
+        "licenses": licenses,
+        "user_exemption_items": user_items,
+        "faction_exemption_items": faction_items,
+        "user_exemptions": int(summary.get("user_exemptions_total") or 0),
+        "faction_exemptions": int(summary.get("faction_exemptions_total") or 0),
+        "total_factions": int(summary.get("faction_licenses_total") or 0),
+        "active_licenses": int(summary.get("paid_total") or 0),
+        "users_using_script": int(summary.get("members_using_bot") or 0),
+    }
+    return ok(**payload)
 
 
 @app.route("/api/admin/factions", methods=["GET"])
