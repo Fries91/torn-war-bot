@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         War Hub ⚔️
 // @namespace    fries91-war-hub
-// @version      3.2.6
+// @version      3.2.7
 // @description  War Hub by Fries91. Faction-license aware overlay with draggable icon, PDA friendly, shared war tools, faction member management, and payment lock handling.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -20,8 +20,8 @@
     'use strict';
 
 
-    if (window.__WAR_HUB_V289__ && document.getElementById('warhub-shield')) return;
-    window.__WAR_HUB_V289__ = true;
+    if (window.__WAR_HUB_V290__ && document.getElementById('warhub-shield')) return;
+    window.__WAR_HUB_V290__ = true;
 
     // ============================================================
     // 01. CORE CONFIG / STORAGE KEYS
@@ -43,7 +43,6 @@
     var K_OVERVIEW_BOXES = 'warhub_overview_boxes_v3';
     var K_OVERLAY_SCROLL = 'warhub_overlay_scroll_v3';
     var K_SIDE_LOCKS = 'warhub_side_locks_v1';
-    var K_MY_BATTLE_STATS = 'warhub_my_battle_stats_m_v1';
 
     
     // ============================================================
@@ -2429,9 +2428,15 @@ function _handleTabClick() {
     }
 
 function getMyBattleStatsMillions() {
-    var raw = cleanInputValue(GM_getValue(K_MY_BATTLE_STATS, ''));
-    var n = Number(String(raw).replace(/,/g, ''));
-    return Number.isFinite(n) && n > 0 ? n : 0;
+    var viewer = (state && state.viewer) || {};
+    var direct = Number(viewer && (viewer.battle_stats_total_m || viewer.battle_stats_m || viewer.total_battle_stats_m));
+    if (Number.isFinite(direct) && direct > 0) return direct;
+
+    var total = Number(viewer && (viewer.battle_stats_total || viewer.total_battle_stats || 0));
+    if (Number.isFinite(total) && total > 0) {
+        return total >= 100000 ? (total / 1000000) : total;
+    }
+    return 0;
 }
 
 function formatBattleMillions(n) {
@@ -2491,7 +2496,7 @@ function enemyPredictionData(member) {
     var pct = myStatsM > 0 && enemyStatsM > 0 ? Math.round((enemyStatsM / myStatsM) * 100) : 0;
     var color = 'neutral';
     var tier = 'Estimate';
-    var summary = 'Set your battle stats total in Settings for better color matching.';
+    var summary = 'Your live battle stats were not available from the backend yet.';
 
     if (myStatsM > 0 && enemyStatsM > 0) {
         if (enemyStatsM <= myStatsM * 0.9) {
@@ -3400,12 +3405,9 @@ function renderTermsTab() {
             '</div>',
 
             '<div class="warhub-card warhub-col">',
-                '<label class="warhub-label" for="warhub-my-battle-stats">Your total battle stats (millions)</label>',
-                '<input id="warhub-my-battle-stats" class="warhub-input" type="text" value="' + esc(String(GM_getValue(K_MY_BATTLE_STATS, '') || '')) + '" placeholder="Example: 250" />',
-                '<div class="warhub-sub">Used for Enemies difficulty colors and percent compare.</div>',
-                '<div class="warhub-row">',
-                    '<button type="button" class="warhub-btn" data-action="save-my-battle-stats">Save Battle Stats</button>',
-                '</div>',
+                '<h3>Battle stats compare</h3>',
+                '<div class="warhub-kv"><div>Total battle stats</div><div>' + esc(formatBattleMillions(getMyBattleStatsMillions())) + '</div></div>',
+                '<div class="warhub-sub">This now pulls automatically from your logged-in account when available.</div>',
             '</div>',
         '</div>'
     ].join('');
@@ -3776,26 +3778,6 @@ function _handleActionClick() {
                 yield loadAdminDashboard(true);
                 setStatus('Faction marked exempt.', false);
                 renderBody();
-                return;
-            }
-
-            if (action === 'save-my-battle-stats') {
-                var myStatsInput = overlay && overlay.querySelector('#warhub-my-battle-stats');
-                var myStatsVal = cleanInputValue(myStatsInput && myStatsInput.value);
-                if (!myStatsVal) {
-                    GM_setValue(K_MY_BATTLE_STATS, '');
-                    renderBody();
-                    setStatus('Your battle stats compare was cleared.', false);
-                    return;
-                }
-                var parsedMyStats = Number(String(myStatsVal).replace(/,/g, ''));
-                if (!Number.isFinite(parsedMyStats) || parsedMyStats <= 0) {
-                    setStatus('Enter your total battle stats in millions, like 250.', true);
-                    return;
-                }
-                GM_setValue(K_MY_BATTLE_STATS, String(parsedMyStats));
-                renderBody();
-                setStatus('Your battle stats compare was saved.', false);
                 return;
             }
 
