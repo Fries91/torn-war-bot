@@ -3785,8 +3785,7 @@ function _handleActionClick() {
                 state.med_deals.items = arr(saveMedDealsRes.json && saveMedDealsRes.json.items);
                 state.med_deals.text = state.med_deals.items.map(function (row) {
                     return String((row.user_name || row.user_id || '') + ' → ' + (row.enemy_name || row.enemy_user_id || '')).trim();
-                }).filter(Boolean).join('
-');
+                }).filter(Boolean).join('\n');
                 renderBody();
                 setStatus('Med deal saved.', false);
                 return;
@@ -3810,8 +3809,7 @@ function _handleActionClick() {
                 state.med_deals.items = arr(clearMedDealsRes.json && clearMedDealsRes.json.items);
                 state.med_deals.text = state.med_deals.items.map(function (row) {
                     return String((row.user_name || row.user_id || '') + ' → ' + (row.enemy_name || row.enemy_user_id || '')).trim();
-                }).filter(Boolean).join('
-');
+                }).filter(Boolean).join('\n');
                 renderBody();
                 setStatus('Med deal cleared.', false);
                 return;
