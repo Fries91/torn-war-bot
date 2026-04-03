@@ -20,8 +20,8 @@
     'use strict';
 
 
-    if (window.__WAR_HUB_V288__ && document.getElementById('warhub-shield')) return;
-    window.__WAR_HUB_V288__ = true;
+    if (window.__WAR_HUB_V289__ && document.getElementById('warhub-shield')) return;
+    window.__WAR_HUB_V289__ = true;
 
     // ============================================================
     // 01. CORE CONFIG / STORAGE KEYS
