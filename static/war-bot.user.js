@@ -845,7 +845,8 @@
     }
 
     function tickMembersCountdowns() {
-        if (!overlay || currentTab !== 'members') return;
+        if (!overlay) return;
+        if (currentTab !== 'members' && currentTab !== 'hospital') return;
         if (!membersLiveStamp) return;
 
         var elapsed = Math.floor((Date.now() - membersLiveStamp) / 1000);
@@ -854,6 +855,7 @@
         rows.forEach(function (row) {
             var medEl = row.querySelector('[data-medcd]');
             var statusEl = row.querySelector('[data-statuscd]');
+            var etaEl = row.querySelector('[data-hospital-eta]');
 
             if (medEl) {
                 var baseMed = Number(row.getAttribute('data-medcd-base') || 0);
@@ -861,11 +863,11 @@
                 medEl.textContent = liveMed > 0 ? formatCountdown(liveMed) : 'Ready';
             }
 
-            if (statusEl) {
-                var baseStatus = Number(row.getAttribute('data-statuscd-base') || 0);
-                var stateName = String(row.getAttribute('data-state-name') || '').toLowerCase();
-                var liveStatus = Math.max(0, baseStatus - elapsed);
+            var baseStatus = Number(row.getAttribute('data-statuscd-base') || 0);
+            var stateName = String(row.getAttribute('data-state-name') || '').toLowerCase();
+            var liveStatus = Math.max(0, baseStatus - elapsed);
 
+            if (statusEl) {
                 if (stateName === 'hospital') {
                     statusEl.textContent = liveStatus > 0 ? 'Hospital (' + formatCountdown(liveStatus) + ')' : 'Hospital';
                 } else if (stateName === 'jail') {
@@ -880,12 +882,16 @@
                     statusEl.textContent = 'Offline';
                 }
             }
+
+            if (etaEl) {
+                etaEl.textContent = liveStatus > 0 ? formatCountdown(liveStatus) : 'Out now';
+            }
         });
     }
 
     function startMembersCountdownLoop() {
         stopMembersCountdownLoop();
-        if (currentTab !== 'members') return;
+        if (currentTab !== 'members' && currentTab !== 'hospital') return;
 
         membersCountdownTimer = setInterval(function () {
             tickMembersCountdowns();
@@ -2422,6 +2428,10 @@ function renderEnemyRow(member) {
     var name = getMemberName(member);
     var st = stateLabel(member);
     var spy = spyText(member);
+    var stateCd = stateCountdown(member);
+    var hospitalEta = st === 'hospital' ? (stateCd > 0 ? formatCountdown(stateCd) : 'Out now') : '';
+    var dibbedBy = String((member && (member.dibbed_by_name || member.dibbedByName)) || '').trim();
+    var dibText = dibbedBy ? ('Dibbed by ' + dibbedBy) : '';
 
     if (state && state.members && arr(state.members).length) {
         var ownIds = {};
@@ -2436,15 +2446,24 @@ function renderEnemyRow(member) {
     }
 
     return [
-        '<div class="warhub-member-row">',
+        '<div class="warhub-member-row" ' +
+            'data-statuscd-base="' + esc(String(stateCd)) + '" ' +
+            'data-state-name="' + esc(st) + '">',
             '<div class="warhub-member-main">',
                 '<div class="warhub-row">',
                     '<a class="warhub-member-name" href="' + esc(profileUrl(member)) + '" target="_blank" rel="noopener noreferrer">' + esc(name) + '</a>',
                     id ? '<span class="warhub-pill neutral">#' + esc(id) + '</span>' : '',
-                    '<span class="warhub-pill ' + esc(st) + '">' + esc(humanStateLabel(st)) + '</span>',
+                    '<span class="warhub-pill ' + esc(st) + '" data-statuscd>' + esc(
+                        st === 'hospital' ? (stateCd > 0 ? 'Hospital (' + shortCd(stateCd, 'Hospital') + ')' : 'Hospital') :
+                        st === 'jail' ? (stateCd > 0 ? 'Jail (' + shortCd(stateCd, 'Jail') + ')' : 'Jail') :
+                        st === 'travel' ? (stateCd > 0 ? 'Travel (' + shortCd(stateCd, 'Travel') + ')' : 'Travel') :
+                        humanStateLabel(st)
+                    ) + '</span>',
                 '</div>',
                 '<div class="warhub-row">',
                     '<a class="warhub-btn" href="' + esc(attackUrl(member)) + '" target="_blank" rel="noopener noreferrer">Attack</a>',
+                    st === 'hospital' ? '<span class="warhub-pill neutral">ETA <span data-hospital-eta>' + esc(hospitalEta) + '</span></span>' : '',
+                    dibText ? '<span class="warhub-pill warn">' + esc(dibText) + '</span>' : '',
                 '</div>',
             '</div>',
             spy ? '<div class="warhub-spy-box">' + esc(spy) + '</div>' : '',
@@ -2729,16 +2748,22 @@ function renderEnemiesTab() {
     // ============================================================
 
     function renderHospitalTab() {
-        var enemies = arr((state && state.enemies) || warEnemiesCache || []);
+        var hospitalState = (state && state.hospital) || {};
+        var enemies = arr((hospitalState && hospitalState.items) || (state && state.enemies) || warEnemiesCache || []);
         var hospitalOnly = enemies.filter(function (m) {
             return stateLabel(m) === 'hospital';
+        }).sort(function (a, b) {
+            var aCd = Number(stateCountdown(a) || 0);
+            var bCd = Number(stateCountdown(b) || 0);
+            if (aCd !== bCd) return aCd - bCd;
+            return getMemberName(a).localeCompare(getMemberName(b));
         });
 
         return [
             '<div class="warhub-grid">',
                 '<div class="warhub-hero-card">',
                     '<div class="warhub-title">Hospital</div>',
-                    '<div class="warhub-sub">Enemy hospital list from current war</div>',
+                    '<div class="warhub-sub">Enemy hospital list from current war, lowest timer first</div>',
                 '</div>',
                 hospitalOnly.length
                     ? renderGroupBlock('hospital_enemies', hospitalOnly, renderEnemyRow, true)
@@ -2845,22 +2870,49 @@ function renderEnemiesTab() {
 }
     function renderMedDealsTab() {
         var medDeals = (state && state.med_deals) || {};
-        var text = String(medDeals.text || '');
+        var items = arr(medDeals.items || []);
+        var enemies = sortMembers(arr((state && state.enemies) || warEnemiesCache || []));
+        var viewer = (state && state.viewer) || {};
+        var viewerUserId = String(viewer.user_id || '').trim();
+        var viewerName = String(viewer.name || 'You');
+        var mine = items.find(function (row) {
+            return String((row && row.user_id) || '').trim() === viewerUserId;
+        }) || {};
+        var selectedEnemyUserId = String(mine.enemy_user_id || '');
 
         return [
             '<div class="warhub-grid">',
                 '<div class="warhub-hero-card">',
                     '<div class="warhub-title">Med Deals</div>',
-                    '<div class="warhub-sub">Shared with faction members</div>',
+                    '<div class="warhub-sub">Pick your enemy from current war. Shared on Overview for the faction.</div>',
                 '</div>',
                 '<div class="warhub-card warhub-col">',
-                    '<label class="warhub-label" for="warhub-meddeals-text">Med deals</label>',
-                    '<textarea id="warhub-meddeals-text" class="warhub-textarea" placeholder="Write med deal info here...">' + esc(text) + '</textarea>',
+                    '<div class="warhub-kv"><div>Your member</div><div>' + esc(viewerName) + '</div></div>',
+                    '<label class="warhub-label" for="warhub-meddeals-enemy">Enemy player</label>',
+                    '<select id="warhub-meddeals-enemy" class="warhub-select">',
+                        '<option value="">Select enemy player</option>',
+                        enemies.map(function (m) {
+                            var id = getMemberId(m);
+                            var name = getMemberName(m);
+                            var selected = id && selectedEnemyUserId && String(id) === String(selectedEnemyUserId) ? ' selected' : '';
+                            return '<option value="' + esc(id) + '"' + selected + '>' + esc(name) + '</option>';
+                        }).join(''),
+                    '</select>',
                     '<div class="warhub-row">',
                         '<button type="button" class="warhub-btn" data-action="meddeals-save">Save</button>',
                         '<button type="button" class="warhub-btn gray" data-action="meddeals-clear">Delete</button>',
                     '</div>',
                 '</div>',
+                items.length ? [
+                    '<div class="warhub-card warhub-col">',
+                        '<h3>Current Med Deals</h3>',
+                        items.map(function (row) {
+                            var userName = String(row.user_name || row.user_id || 'Member');
+                            var enemyName = String(row.enemy_name || row.enemy_user_id || 'Enemy');
+                            return '<div class="warhub-spy-box">' + esc(userName + ' → ' + enemyName) + '</div>';
+                        }).join(''),
+                    '</div>'
+                ].join('') : '<div class="warhub-card">No med deals posted yet.</div>',
             '</div>'
         ].join('');
     }
@@ -3704,11 +3756,23 @@ function _handleActionClick() {
             }
 
             if (action === 'meddeals-save') {
-                var medDealsTextEl = overlay && overlay.querySelector('#warhub-meddeals-text');
-                var medDealsText = String((medDealsTextEl && medDealsTextEl.value) || '');
+                var medDealsEnemyEl = overlay && overlay.querySelector('#warhub-meddeals-enemy');
+                var chosenEnemyUserId = cleanInputValue(medDealsEnemyEl && medDealsEnemyEl.value);
+                var enemiesForMedDeals = sortMembers(arr((state && state.enemies) || warEnemiesCache || []));
+                var chosenEnemy = enemiesForMedDeals.find(function (m) {
+                    return String(getMemberId(m)) === String(chosenEnemyUserId);
+                }) || {};
+
+                if (!chosenEnemyUserId) {
+                    setStatus('Select an enemy player first.', true);
+                    return;
+                }
 
                 var saveMedDealsRes = yield authedReq('POST', '/api/meddeals', {
-                    text: medDealsText
+                    user_id: String((state && state.viewer && state.viewer.user_id) || ''),
+                    user_name: String((state && state.viewer && state.viewer.name) || ''),
+                    enemy_user_id: chosenEnemyUserId,
+                    enemy_name: String(getMemberName(chosenEnemy) || chosenEnemyUserId)
                 });
 
                 if (!saveMedDealsRes.ok) {
@@ -3718,15 +3782,22 @@ function _handleActionClick() {
 
                 state = state || {};
                 state.med_deals = state.med_deals || {};
-                state.med_deals.text = medDealsText;
+                state.med_deals.items = arr(saveMedDealsRes.json && saveMedDealsRes.json.items);
+                state.med_deals.text = state.med_deals.items.map(function (row) {
+                    return String((row.user_name || row.user_id || '') + ' → ' + (row.enemy_name || row.enemy_user_id || '')).trim();
+                }).filter(Boolean).join('
+');
                 renderBody();
-                setStatus('Med deals saved.', false);
+                setStatus('Med deal saved.', false);
                 return;
             }
 
             if (action === 'meddeals-clear') {
                 var clearMedDealsRes = yield authedReq('POST', '/api/meddeals', {
-                    text: ''
+                    user_id: String((state && state.viewer && state.viewer.user_id) || ''),
+                    user_name: String((state && state.viewer && state.viewer.name) || ''),
+                    enemy_user_id: '',
+                    enemy_name: ''
                 });
 
                 if (!clearMedDealsRes.ok) {
@@ -3736,9 +3807,13 @@ function _handleActionClick() {
 
                 state = state || {};
                 state.med_deals = state.med_deals || {};
-                state.med_deals.text = '';
+                state.med_deals.items = arr(clearMedDealsRes.json && clearMedDealsRes.json.items);
+                state.med_deals.text = state.med_deals.items.map(function (row) {
+                    return String((row.user_name || row.user_id || '') + ' → ' + (row.enemy_name || row.enemy_user_id || '')).trim();
+                }).filter(Boolean).join('
+');
                 renderBody();
-                setStatus('Med deals cleared.', false);
+                setStatus('Med deal cleared.', false);
                 return;
             }
 
@@ -3827,9 +3902,6 @@ function _handleActionClick() {
                 }
 
                 var deleteTargetRes = yield authedReq('DELETE', '/api/targets/' + encodeURIComponent(deleteTargetUserId), null);
-                if ((!deleteTargetRes || !deleteTargetRes.ok) && deleteTargetRes && Number(deleteTargetRes.status || 0) === 405) {
-                    deleteTargetRes = yield authedReq('POST', '/api/targets/' + encodeURIComponent(deleteTargetUserId), null);
-                }
                 if (!deleteTargetRes.ok) {
                     setStatus((deleteTargetRes.json && deleteTargetRes.json.error) || 'Failed to delete target.', true);
                     return;
