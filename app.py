@@ -1037,6 +1037,11 @@ def _summary_member_row(member: Dict[str, Any], hospital_map: Dict[str, Dict[str
         "name": name,
         "role": str(member.get("position") or member.get("role") or "").strip(),
         "status": _member_status_text(member),
+        "profile_url": str(member.get("profile_url") or profile_url(user_id)),
+        "enabled": bool(member.get("enabled")),
+        "member_access": member.get("member_access") or {},
+        "has_stored_api_key": bool(member.get("has_stored_api_key")),
+        "online_state": str(member.get("online_state") or "").strip().lower(),
         "hits": hits,
         "respect_gain": round(respect_gain, 2),
         "respect_lost": round(respect_lost, 2),
@@ -1131,6 +1136,9 @@ def _live_summary_payload(user: Dict[str, Any]) -> Dict[str, Any]:
     our_chain = _to_int(war.get("chain_us"), 0)
     enemy_chain = _to_int(war.get("chain_them"), 0)
 
+    enabled_members = sum(1 for r in rows if bool(r.get("enabled")))
+    logged_in_members = sum(1 for r in rows if bool(r.get("has_stored_api_key")))
+
     cards = [
         {"label": "Respect Gained", "value": total_respect_gain, "cls": "good"},
         {"label": "Respect Lost", "value": total_respect_lost, "cls": "bad"},
@@ -1138,6 +1146,8 @@ def _live_summary_payload(user: Dict[str, Any]) -> Dict[str, Any]:
         {"label": "Hits Made", "value": total_hits, "cls": ""},
         {"label": "Hits Taken", "value": total_hits_taken, "cls": ""},
         {"label": "Active Hitters", "value": active_hitters, "cls": ""},
+        {"label": "Enabled Members", "value": enabled_members, "cls": ""},
+        {"label": "Logged In", "value": logged_in_members, "cls": ""},
         {"label": "No Shows", "value": len(no_shows), "cls": "warn" if no_shows else ""},
         {"label": "Recovering Soon", "value": len(recovering_soon), "cls": "warn" if recovering_soon else ""},
     ]
