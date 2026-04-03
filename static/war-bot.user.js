@@ -156,6 +156,38 @@
   pointer-events: auto !important;\n\
 }\n\
 \n\
+.warhub-header-slot {\n\
+  display: inline-flex !important;\n\
+  align-items: center !important;\n\
+  justify-content: center !important;\n\
+  flex: 0 0 auto !important;\n\
+  margin: 0 4px !important;\n\
+}\n\
+#warhub-shield.warhub-header-mounted {\n\
+  position: relative !important;\n\
+  left: auto !important;\n\
+  right: auto !important;\n\
+  top: auto !important;\n\
+  bottom: auto !important;\n\
+  transform: none !important;\n\
+  width: 30px !important;\n\
+  height: 30px !important;\n\
+  min-width: 30px !important;\n\
+  min-height: 30px !important;\n\
+  margin: 0 !important;\n\
+  border-radius: 9px !important;\n\
+  font-size: 15px !important;\n\
+  line-height: 1 !important;\n\
+  box-shadow: 0 2px 8px rgba(0,0,0,.35) !important;\n\
+  z-index: auto !important;\n\
+  vertical-align: middle !important;\n\
+}\n\
+#warhub-badge.warhub-header-badge {\n\
+  position: absolute !important;\n\
+  left: auto !important;\n\
+  right: -4px !important;\n\
+  top: -4px !important;\n\
+}\n\
 #warhub-badge {\n\
   position: fixed !important;\n\
   z-index: 2147483647 !important;\n\
@@ -692,40 +724,6 @@
   }\n\
   .warhub-body { padding: 10px !important; }\n\
 }\n\
-.warhub-header-slot {\n\
-  display: inline-flex !important;\n\
-  align-items: center !important;\n\
-  justify-content: center !important;\n\
-  margin-left: 6px !important;\n\
-  vertical-align: middle !important;\n\
-  position: relative !important;\n\
-  z-index: 2147483647 !important;\n\
-}\n\
-#warhub-shield.warhub-header-mounted {\n\
-  position: relative !important;\n\
-  inset: auto !important;\n\
-  left: auto !important;\n\
-  right: auto !important;\n\
-  top: auto !important;\n\
-  bottom: auto !important;\n\
-  transform: none !important;\n\
-  width: 32px !important;\n\
-  height: 32px !important;\n\
-  min-width: 32px !important;\n\
-  min-height: 32px !important;\n\
-  margin: 0 !important;\n\
-  border-radius: 10px !important;\n\
-  font-size: 16px !important;\n\
-  box-shadow: 0 3px 10px rgba(0,0,0,.35) !important;\n\
-}\n\
-#warhub-shield.warhub-header-mounted + #warhub-badge,\n\
-#warhub-badge.warhub-header-badge {\n\
-  position: absolute !important;\n\
-  left: auto !important;\n\
-  right: -4px !important;\n\
-  top: -4px !important;\n\
-}\n\
-\n\
 ";
 
     GM_addStyle(css);
@@ -1249,71 +1247,138 @@
     }
 
 
-function getHeaderMountHost() {
+
+function getVisibleActionLinks() {
     var selectors = [
-        '#skip-to-content + div header',
-        'header',
-        '[role="banner"]',
-        '#topHeader',
-        '#header-root',
-        '[class*="header"]',
-        '[class*="topbar"]',
-        '[class*="nav"]'
+        'a[href*="joblist"]',
+        'a[href*="company"]',
+        'a[href*="factions.php"]',
+        'a[href*="faction"]',
+        '[href*="joblist"]',
+        '[href*="company"]',
+        '[href*="factions.php"]',
+        '[href*="faction"]'
     ];
+    var out = [];
+    var seen = new Set();
 
     for (var i = 0; i < selectors.length; i++) {
         var list = document.querySelectorAll(selectors[i]);
-        if (!list || !list.length) continue;
-
         for (var j = 0; j < list.length; j++) {
-            var host = list[j];
-            if (!host || host.offsetParent === null) continue;
+            var el = list[j];
+            if (!el || seen.has(el)) continue;
+            if (typeof el.getBoundingClientRect !== 'function') continue;
+            var rect = el.getBoundingClientRect();
+            if (!rect || rect.width < 16 || rect.height < 16) continue;
+            if (rect.top > 620 || rect.bottom < 80) continue;
+            var style = window.getComputedStyle(el);
+            if (!style || style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') continue;
+            seen.add(el);
+            out.push(el);
+        }
+    }
+    return out;
+}
 
-            var rect = host.getBoundingClientRect();
-            if (!rect || rect.height < 24 || rect.top > 140) continue;
+function getCompanyFactionAnchors() {
+    var links = getVisibleActionLinks();
+    var company = null;
+    var faction = null;
 
-            return host;
+    for (var i = 0; i < links.length; i++) {
+        var el = links[i];
+        var href = String(el.getAttribute('href') || el.href || '').toLowerCase();
+        if (!company && (href.indexOf('joblist') >= 0 || href.indexOf('company') >= 0)) company = el;
+        if (!faction && (href.indexOf('factions.php') >= 0 || href.indexOf('faction') >= 0)) faction = el;
+    }
+
+    return { company: company, faction: faction };
+}
+
+function getHeaderMountHost() {
+    var pair = getCompanyFactionAnchors();
+    var company = pair.company;
+    var faction = pair.faction;
+
+    if (company && faction) {
+        var companyItem = company.closest('a, li, div, span');
+        var factionItem = faction.closest('a, li, div, span');
+        if (companyItem && factionItem && companyItem.parentElement && companyItem.parentElement === factionItem.parentElement) {
+            return {
+                host: companyItem.parentElement,
+                before: factionItem,
+                after: companyItem
+            };
+        }
+    }
+
+    var selectors = [
+        'header',
+        '[class*="header"]',
+        '[class*="topbar"]',
+        '[class*="top-bar"]',
+        '[class*="topBar"]',
+        '[class*="menu"]',
+        '[class*="nav"]',
+        '#header-root',
+        '#header',
+        '#topHeaderBanner',
+        '#sidebarroot'
+    ];
+
+    function isVisible(el) {
+        if (!el) return false;
+        if (el === shield || el === overlay || el === badge) return false;
+        if (typeof el.getBoundingClientRect !== 'function') return false;
+        var rect = el.getBoundingClientRect();
+        if (!rect || rect.width < 120 || rect.height < 24) return false;
+        if (rect.bottom < 0 || rect.top > 260) return false;
+        var style = window.getComputedStyle(el);
+        if (!style) return false;
+        if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+        return true;
+    }
+
+    for (var s = 0; s < selectors.length; s++) {
+        var nodes = document.querySelectorAll(selectors[s]);
+        for (var n = 0; n < nodes.length; n++) {
+            var el = nodes[n];
+            if (!isVisible(el)) continue;
+            return { host: el, before: null, after: null };
         }
     }
 
     return null;
 }
 
-function ensureHeaderSlot(host) {
-    if (!host) return null;
-
-    var slot = host.querySelector('.warhub-header-slot');
-    if (slot) return slot;
-
-    slot = document.createElement('div');
-    slot.className = 'warhub-header-slot';
-
-    try {
-        host.appendChild(slot);
-    } catch (_unusedHeaderSlot) {
-        return null;
-    }
-
-    return slot;
-}
-
 function mountShieldIntoHeader() {
-    if (!shield) return false;
+    if (!shield || !document.body) return false;
+    var target = getHeaderMountHost();
+    if (!target || !target.host) return false;
 
-    var host = getHeaderMountHost();
-    if (!host) return false;
-
-    var slot = ensureHeaderSlot(host);
-    if (!slot) return false;
-
-    shield.classList.add('warhub-header-mounted');
-
-    try {
-        if (shield.parentNode !== slot) slot.appendChild(shield);
-    } catch (_unusedHeaderMount) {
-        return false;
+    var slot = document.getElementById('warhub-header-slot');
+    if (!slot) {
+        slot = document.createElement('div');
+        slot.id = 'warhub-header-slot';
+        slot.className = 'warhub-header-slot';
     }
 
+    if (slot.parentNode !== target.host) {
+        try {
+            if (target.before && target.before.parentNode === target.host) {
+                target.host.insertBefore(slot, target.before);
+            } else if (target.after && target.after.parentNode === target.host) {
+                target.host.insertBefore(slot, target.after.nextSibling);
+            } else {
+                target.host.appendChild(slot);
+            }
+        } catch (_unusedHeaderHost) {
+            return false;
+        }
+    }
+
+    if (shield.parentNode !== slot) slot.appendChild(shield);
+    shield.classList.add('warhub-header-mounted');
     return true;
 }
 
@@ -1321,51 +1386,60 @@ function applyShieldPos() {
     if (!shield) return;
 
     var mountedInHeader = mountShieldIntoHeader();
-
     if (mountedInHeader) {
-        shield.classList.add('warhub-header-mounted');
-        shield.style.position = 'relative';
         shield.style.left = 'auto';
         shield.style.right = 'auto';
         shield.style.top = 'auto';
         shield.style.bottom = 'auto';
         shield.style.transform = 'none';
-        shield.style.margin = '0';
     } else {
         shield.classList.remove('warhub-header-mounted');
+        var slot = document.getElementById('warhub-header-slot');
+        if (slot && slot.parentNode) slot.parentNode.removeChild(slot);
         if (document.body && shield.parentNode !== document.body) document.body.appendChild(shield);
-        shield.style.position = 'fixed';
         shield.style.left = 'auto';
         shield.style.right = '12px';
         shield.style.top = '50%';
         shield.style.bottom = 'auto';
         shield.style.transform = 'translateY(-50%)';
-        shield.style.margin = '0';
     }
 
     positionBadge();
 }
 
-function positionBadge() {
-    if (!badge || !shield) return;
+    function applyOverlayPos() {
+        if (!overlay) return;
 
-    if (shield.classList.contains('warhub-header-mounted')) {
-        badge.classList.add('warhub-header-badge');
-        if (badge.parentNode !== shield) shield.appendChild(badge);
-        badge.style.position = 'absolute';
-        badge.style.left = 'auto';
-        badge.style.right = '-4px';
-        badge.style.top = '-4px';
-    } else {
-        badge.classList.remove('warhub-header-badge');
-        if (document.body && badge.parentNode !== document.body) document.body.appendChild(badge);
-        var rect = shield.getBoundingClientRect();
-        badge.style.position = 'fixed';
-        badge.style.left = Math.round(rect.right - 6) + 'px';
-        badge.style.top = Math.round(rect.top - 6) + 'px';
-        badge.style.right = 'auto';
+        var vp = getViewport();
+        var width = Math.min(520, vp.w - 12);
+        var left = Math.max(6, Math.round((vp.w - width) / 2));
+
+        overlay.style.left = left + 'px';
+        overlay.style.right = 'auto';
+        overlay.style.top = '6px';
+        overlay.style.bottom = '6px';
+        overlay.style.width = width + 'px';
+        overlay.style.maxWidth = '520px';
     }
-}
+
+    function positionBadge() {
+        if (!badge || !shield) return;
+
+        var rect = shield.getBoundingClientRect();
+        if (shield.classList.contains('warhub-header-mounted')) {
+            badge.classList.add('warhub-header-badge');
+            shield.appendChild(badge);
+            badge.style.left = 'auto';
+            badge.style.right = '-4px';
+            badge.style.top = '-4px';
+        } else {
+            badge.classList.remove('warhub-header-badge');
+            if (document.body && badge.parentNode !== document.body) document.body.appendChild(badge);
+            badge.style.left = Math.round(rect.right - 6) + 'px';
+            badge.style.top = Math.round(rect.top - 6) + 'px';
+            badge.style.right = 'auto';
+        }
+    }
 
 function makeHoldDraggable(handle, target, key) {
     return {
@@ -4477,4 +4551,3 @@ function _handleActionClick() {
     boot();
 
 })();
-    
