@@ -157,6 +157,38 @@ War Hub copy-paste userscript
   pointer-events: auto !important;\n\
 }\n\
 \n\
+#warhub-shield.warhub-header-mounted {\n\
+  position: relative !important;\n\
+  left: auto !important;\n\
+  right: auto !important;\n\
+  top: auto !important;\n\
+  bottom: auto !important;\n\
+  transform: none !important;\n\
+  width: 32px !important;\n\
+  height: 32px !important;\n\
+  min-width: 32px !important;\n\
+  min-height: 32px !important;\n\
+  margin: 0 0 0 6px !important;\n\
+  border-radius: 10px !important;\n\
+  font-size: 16px !important;\n\
+  box-shadow: 0 2px 8px rgba(0,0,0,.35) !important;\n\
+  display: inline-flex !important;\n\
+  vertical-align: middle !important;\n\
+  flex: 0 0 auto !important;\n\
+  z-index: auto !important;\n\
+}\n\
+.warhub-header-slot {\n\
+  display: inline-flex !important;\n\
+  align-items: center !important;\n\
+  justify-content: center !important;\n\
+  flex: 0 0 auto !important;\n\
+}\n\
+#warhub-badge.warhub-header-badge {\n\
+  position: absolute !important;\n\
+  left: auto !important;\n\
+  right: -4px !important;\n\
+  top: -4px !important;\n\
+}\n\
 #warhub-badge {\n\
   position: fixed !important;\n\
   z-index: 2147483647 !important;\n\
@@ -1215,52 +1247,81 @@ War Hub copy-paste userscript
         });
     }
 
-
-function getHeaderActionAnchor() {
+function getHeaderMountHost() {
     var selectors = [
-        'a[href*="company"]',
-        'a[href*="joblist"]',
-        'a[href*="factions.php"]',
-        'a[href*="faction"]',
-        '[href*="company"]',
-        '[href*="factions.php"]',
-        '[href*="faction"]',
-        '[class*="company"] a',
-        '[class*="faction"] a'
+        'header',
+        '[class*="header"]',
+        '[class*="topbar"]',
+        '[class*="top-bar"]',
+        '[class*="topBar"]',
+        '[class*="menu"]',
+        '[class*="nav"]',
+        '#header-root',
+        '#header',
+        '#topHeaderBanner',
+        '#sidebarroot'
     ];
 
+    function isVisible(el) {
+        if (!el) return false;
+        if (el === shield || el === overlay || el === badge) return false;
+        if (typeof el.getBoundingClientRect !== 'function') return false;
+        var rect = el.getBoundingClientRect();
+        if (!rect || rect.width < 120 || rect.height < 24) return false;
+        if (rect.bottom < 0 || rect.top > 160) return false;
+        var style = window.getComputedStyle(el);
+        if (!style) return false;
+        if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+        return true;
+    }
+
     for (var i = 0; i < selectors.length; i++) {
-        var list = document.querySelectorAll(selectors[i]);
-        if (!list || !list.length) continue;
-        for (var j = 0; j < list.length; j++) {
-            var el = list[j];
-            if (el && el.offsetParent !== null) return el;
+        var nodes = document.querySelectorAll(selectors[i]);
+        for (var j = 0; j < nodes.length; j++) {
+            var el = nodes[j];
+            if (!isVisible(el)) continue;
+            return el;
         }
     }
-    return null;
-}
 
-function getHeaderMountHost() {
-    var anchor = getHeaderActionAnchor();
-    if (!anchor) return null;
+    var all = document.body ? document.body.querySelectorAll('div,nav,section,ul') : [];
+    for (var k = 0; k < all.length; k++) {
+        var node = all[k];
+        if (!isVisible(node)) continue;
+        var rect = node.getBoundingClientRect();
+        if (rect.top > 110) continue;
+        var style = window.getComputedStyle(node);
+        if (!style) continue;
+        if (style.position === 'fixed' || style.position === 'sticky' || style.display.indexOf('flex') >= 0 || style.display.indexOf('grid') >= 0) {
+            return node;
+        }
+    }
 
-    var item = anchor.closest('li, .icon, .menu-item, .nav-item, .headerIcon, .header-icon, [class*="icon"], [class*="nav"]');
-    if (item && item.parentElement) return { host: item.parentElement, after: item };
-    if (anchor.parentElement) return { host: anchor.parentElement, after: anchor };
     return null;
 }
 
 function mountShieldIntoHeader() {
-    if (!shield) return false;
-    var target = getHeaderMountHost();
-    if (!target || !target.host) return false;
+    if (!shield || !document.body) return false;
+    var host = getHeaderMountHost();
+    if (!host) return false;
 
-    shield.classList.add('warhub-header-mounted');
-    try {
-        target.host.insertBefore(shield, target.after ? target.after.nextSibling : null);
-    } catch (_unusedHeaderMount) {
-        target.host.appendChild(shield);
+    var slot = document.getElementById('warhub-header-slot');
+    if (!slot) {
+        slot = document.createElement('div');
+        slot.id = 'warhub-header-slot';
+        slot.className = 'warhub-header-slot';
     }
+
+    if (slot.parentNode !== host) {
+        try {
+            host.appendChild(slot);
+        } catch (_unusedHeaderHost) {
+            return false;
+        }
+    }
+
+    if (shield.parentNode !== slot) slot.appendChild(shield);
+    shield.classList.add('warhub-header-mounted');
     return true;
 }
 
@@ -1276,6 +1337,8 @@ function applyShieldPos() {
         shield.style.transform = 'none';
     } else {
         shield.classList.remove('warhub-header-mounted');
+        var slot = document.getElementById('warhub-header-slot');
+        if (slot && slot.parentNode) slot.parentNode.removeChild(slot);
         if (document.body && shield.parentNode !== document.body) document.body.appendChild(shield);
         shield.style.left = 'auto';
         shield.style.right = '12px';
@@ -1305,16 +1368,16 @@ function applyShieldPos() {
     function positionBadge() {
         if (!badge || !shield) return;
 
-        var rect = shield.getBoundingClientRect();
         if (shield.classList.contains('warhub-header-mounted')) {
             badge.classList.add('warhub-header-badge');
-            shield.appendChild(badge);
+            if (shield && badge.parentNode !== shield) shield.appendChild(badge);
             badge.style.left = 'auto';
-            badge.style.right = '-4px';
             badge.style.top = '-4px';
+            badge.style.right = '-4px';
         } else {
             badge.classList.remove('warhub-header-badge');
             if (document.body && badge.parentNode !== document.body) document.body.appendChild(badge);
+            var rect = shield.getBoundingClientRect();
             badge.style.left = Math.round(rect.right - 6) + 'px';
             badge.style.top = Math.round(rect.top - 6) + 'px';
             badge.style.right = 'auto';
@@ -4466,7 +4529,7 @@ function _handleActionClick() {
             } catch (err) {
                 console.error('War Hub remount watch error:', err);
             }
-        }, 2000);
+        }, 1500);
     }
 
     function boot() {
