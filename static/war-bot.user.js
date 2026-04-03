@@ -22,8 +22,8 @@ Copy everything inside the code block below and replace your whole userscript.
     'use strict';
 
 
-    if (window.__WAR_HUB_V287__ && document.getElementById('warhub-shield')) return;
-    window.__WAR_HUB_V287__ = true;
+    if (window.__WAR_HUB_V288__ && document.getElementById('warhub-shield')) return;
+    window.__WAR_HUB_V288__ = true;
 
     // ============================================================
     // 01. CORE CONFIG / STORAGE KEYS
