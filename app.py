@@ -744,6 +744,106 @@ def _build_med_deals_payload(user: Dict[str, Any]) -> Dict[str, Any]:
     text = "\n".join([f"{str(r.get('user_name') or r.get('user_id') or '').strip()} → {str(r.get('enemy_name') or r.get('enemy_user_id') or '').strip()}" for r in rows if str(r.get('user_id') or '').strip()])
     return {"items": rows, "count": len(rows), "text": text}
 
+def _to_float(value: Any, default: float = 0.0) -> float:
+    try:
+        if value is None or value == "":
+            return default
+        return float(value)
+    except Exception:
+        return default
+
+
+def _stats_to_millions(value: Any) -> float:
+    n = _to_float(value, 0.0)
+    if n <= 0:
+        return 0.0
+    return round((n / 1_000_000.0) if n >= 100000 else n, 2)
+
+
+def _extract_battle_stats_from_payload(payload: Any) -> Dict[str, Any]:
+    def as_dict(node: Any) -> Dict[str, Any]:
+        return node if isinstance(node, dict) else {}
+
+    root = as_dict(payload)
+    nodes = [
+        root,
+        as_dict(root.get("stats")),
+        as_dict(root.get("battle_stats")),
+        as_dict(root.get("battlestats")),
+        as_dict(root.get("personalstats")),
+        as_dict(as_dict(root.get("profile")).get("stats")),
+        as_dict(as_dict(root.get("player")).get("stats")),
+    ]
+
+    fields = {"strength": 0.0, "speed": 0.0, "defense": 0.0, "dexterity": 0.0}
+    aliases = {
+        "strength": ["strength", "str"],
+        "speed": ["speed", "spd"],
+        "defense": ["defense", "defence", "def"],
+        "dexterity": ["dexterity", "dex"],
+    }
+
+    for field, keys in aliases.items():
+        for node in nodes:
+            for key in keys:
+                num = _to_float(node.get(key), 0.0)
+                if num > 0:
+                    fields[field] = num
+                    break
+            if fields[field] > 0:
+                break
+
+    total = 0.0
+    total_keys = [
+        "total", "total_stats", "battle_stats_total", "total_battle_stats",
+        "stat_total", "battlestats_total", "combined", "overall"
+    ]
+    for node in nodes:
+        for key in total_keys:
+            num = _to_float(node.get(key), 0.0)
+            if num > 0:
+                total = num
+                break
+        if total > 0:
+            break
+
+    if total <= 0:
+        total = sum(v for v in fields.values() if v > 0)
+
+    return {
+        "strength": int(fields["strength"]) if fields["strength"] > 0 else 0,
+        "speed": int(fields["speed"]) if fields["speed"] > 0 else 0,
+        "defense": int(fields["defense"]) if fields["defense"] > 0 else 0,
+        "dexterity": int(fields["dexterity"]) if fields["dexterity"] > 0 else 0,
+        "total": int(total) if total > 0 else 0,
+        "total_m": _stats_to_millions(total),
+    }
+
+
+def _build_viewer_stats_payload(user: Dict[str, Any]) -> Dict[str, Any]:
+    user = user or {}
+    api_key = str(user.get("api_key") or "").strip()
+    if not api_key:
+        return {"battle_stats": {}, "battle_stats_total": 0, "battle_stats_total_m": 0.0}
+
+    try:
+        me = me_basic(api_key) or {}
+    except Exception:
+        me = {}
+
+    stats = _extract_battle_stats_from_payload(me)
+    return {
+        "battle_stats": {
+            "strength": stats.get("strength") or 0,
+            "speed": stats.get("speed") or 0,
+            "defense": stats.get("defense") or 0,
+            "dexterity": stats.get("dexterity") or 0,
+        },
+        "battle_stats_total": stats.get("total") or 0,
+        "battle_stats_total_m": stats.get("total_m") or 0.0,
+    }
+
+
 def _build_state_payload(user: Dict[str, Any]) -> Dict[str, Any]:
     user = user or {}
     faction_id = str(user.get("faction_id") or "").strip()
@@ -766,6 +866,7 @@ def _build_state_payload(user: Dict[str, Any]) -> Dict[str, Any]:
     targets_payload = _build_targets_payload(user)
     chain_payload = _build_chain_payload(user, war_payload.get("war") or {})
     med_deals_payload = _build_med_deals_payload(user)
+    viewer_stats_payload = _build_viewer_stats_payload(user)
 
     return {
         "app_name": APP_NAME,
@@ -774,6 +875,9 @@ def _build_state_payload(user: Dict[str, Any]) -> Dict[str, Any]:
             "name": str(user.get("name") or ""),
             "faction_id": faction_id,
             "faction_name": faction_name,
+            "battle_stats": viewer_stats_payload.get("battle_stats") or {},
+            "battle_stats_total": viewer_stats_payload.get("battle_stats_total") or 0,
+            "battle_stats_total_m": viewer_stats_payload.get("battle_stats_total_m") or 0.0,
         },
         "faction": {
             "faction_id": faction_id,
