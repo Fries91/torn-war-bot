@@ -4,6 +4,66 @@ from torn_shared import API_BASE, safe_get, to_int
 from torn_status import extract_medical_cooldown_seconds
 
 
+def _extract_booster_cooldown_seconds(data: Dict[str, Any]) -> int:
+    data = data or {}
+    cooldowns = data.get("cooldowns") or {}
+    candidates = [
+        cooldowns.get("booster"),
+        cooldowns.get("drug"),
+        cooldowns.get("boosters"),
+        cooldowns.get("drugs"),
+        data.get("booster_cooldown"),
+        data.get("drug_cooldown"),
+    ]
+    for value in candidates:
+        try:
+            n = int(value or 0)
+            if n > 0:
+                return n
+        except Exception:
+            pass
+    return 0
+
+
+def extract_booster_cooldown_seconds(payload: Dict[str, Any]) -> int:
+    if not isinstance(payload, dict):
+        return 0
+
+    candidates = []
+    cooldowns = payload.get("cooldowns")
+    if isinstance(cooldowns, dict):
+        for key in ("drug", "booster", "drugs", "boosters"):
+            value = cooldowns.get(key)
+            if isinstance(value, dict):
+                candidates.extend([
+                    value.get("remaining"),
+                    value.get("cooldown"),
+                    value.get("seconds"),
+                    value.get("time"),
+                    value.get("until"),
+                ])
+            else:
+                candidates.append(value)
+
+    for key in ("drug_cooldown", "booster_cooldown", "drugCooldown", "boosterCooldown"):
+        candidates.append(payload.get(key))
+
+    for value in candidates:
+        if isinstance(value, dict):
+            for subkey in ("remaining", "cooldown", "seconds", "time", "until"):
+                subval = value.get(subkey)
+                if isinstance(subval, (int, float)) and int(subval) >= 0:
+                    return int(subval)
+                if isinstance(subval, str) and subval.strip().isdigit():
+                    return int(subval.strip())
+        elif isinstance(value, (int, float)) and int(value) >= 0:
+            return int(value)
+        elif isinstance(value, str) and value.strip().isdigit():
+            return int(value.strip())
+
+    return 0
+
+
 def member_live_bars(api_key: str, user_id: str = "") -> Dict[str, Any]:
     api_key = str(api_key or "").strip()
     user_id = str(user_id or "").strip()
@@ -16,6 +76,8 @@ def member_live_bars(api_key: str, user_id: str = "") -> Dict[str, Any]:
             "bars": {},
             "status": {},
             "last_action": {},
+            "cooldowns": {},
+            "booster_cooldown": 0,
         }
 
     selections = "bars,profile,personalstats,cooldowns"
@@ -82,12 +144,15 @@ def member_live_bars(api_key: str, user_id: str = "") -> Dict[str, Any]:
 
         resolved_user_id = user_id or resolved_user_id
         medical_cooldown = extract_medical_cooldown_seconds(data)
+        booster_cooldown = _extract_booster_cooldown_seconds(data)
 
         return {
             "ok": True,
             "user_id": resolved_user_id,
             "name": str(data.get("name") or ""),
             "medical_cooldown": to_int(medical_cooldown, 0),
+            "booster_cooldown": to_int(booster_cooldown, 0),
+            "cooldowns": cooldowns if isinstance((cooldowns := data.get("cooldowns") or {}), dict) else {},
             "bars": {
                 "life": {
                     "current": to_int((life or {}).get("current"), 0),
@@ -117,4 +182,6 @@ def member_live_bars(api_key: str, user_id: str = "") -> Dict[str, Any]:
         "bars": {},
         "status": {},
         "last_action": {},
+        "cooldowns": {},
+        "booster_cooldown": 0,
     }
