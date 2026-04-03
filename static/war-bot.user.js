@@ -1,3 +1,4 @@
+War Hub copy-paste userscript
 // ==UserScript==
 // @name         War Hub ⚔️
 // @namespace    fries91-war-hub
@@ -2180,7 +2181,7 @@ function _handleTabClick() {
 
     function getMemberName(member) {
         return String(
-            (member && (member.name || member.player_name || member.username)) ||
+            (member && (member.name || member.user_name || member.member_name || member.player_name || member.username)) ||
             'Unknown'
         );
     }
@@ -2196,13 +2197,18 @@ function _handleTabClick() {
     }
 
     function stateLabel(member) {
+        var nowSec = Math.floor(Date.now() / 1000);
+        var inHospital = Number((member && member.in_hospital) || 0) > 0;
+        var hospitalUntil = Number((member && (member.hospital_until_ts || member.hospital_until || member.status_until)) || 0);
+        if (inHospital || hospitalUntil > nowSec) return 'hospital';
+
         var raw = String(
             (member && (
                 member.state ||
                 member.presence ||
-                member.status ||
                 member.status_state ||
-                member.online_state
+                member.online_state ||
+                member.status
             )) || ''
         ).toLowerCase();
 
@@ -2213,41 +2219,10 @@ function _handleTabClick() {
         if (raw.indexOf('online') >= 0) return 'online';
         if (raw.indexOf('offline') >= 0) return 'offline';
 
-        var detail = String(
-            (member && (member.status_detail || member.detail || member.description)) || ''
-        ).toLowerCase();
-
+        var detail = String((member && (member.status_detail || member.detail || member.description)) || '').toLowerCase();
         if (detail.indexOf('hospital') >= 0) return 'hospital';
         if (detail.indexOf('jail') >= 0) return 'jail';
         if (detail.indexOf('travel') >= 0 || detail.indexOf('abroad') >= 0) return 'travel';
-
-        var until = Number(
-            (member && (
-                member.status_until ||
-                member.until ||
-                member.hospital_until ||
-                member.jail_until ||
-                member.travel_until
-            )) || 0
-        );
-
-        var nowSec = Math.floor(Date.now() / 1000);
-        if (until > nowSec) {
-            if (detail.indexOf('hospital') >= 0) return 'hospital';
-            if (detail.indexOf('jail') >= 0) return 'jail';
-            if (detail.indexOf('travel') >= 0) return 'travel';
-        }
-
-        var online = member && (member.online === true || member.is_online === true);
-        if (online) return 'online';
-
-        var lastAction = String(
-            (member && (member.last_action || member.lastAction || '')) || ''
-        ).toLowerCase();
-
-        if (lastAction.indexOf('idle') >= 0) return 'idle';
-        if (lastAction.indexOf('online') >= 0) return 'online';
-
         return 'offline';
     }
 
@@ -2258,6 +2233,7 @@ function _handleTabClick() {
             (member && (
                 member.status_until ||
                 member.until ||
+                member.hospital_until_ts ||
                 member.hospital_until ||
                 member.jail_until ||
                 member.travel_until
@@ -2289,6 +2265,17 @@ function _handleTabClick() {
             member.med_cd ||
             member.med_cooldown ||
             member.medical_cooldown ||
+            member.drug_cd
+        ));
+        if (!Number.isFinite(v) || v <= 0) return 'Ready';
+        return shortCd(v, 'Ready');
+    }
+
+    function boosterCooldownValue(member) {
+        var v = Number(member && (
+            member.booster_cooldown ||
+            member.drug_cooldown ||
+            member.booster_cd ||
             member.drug_cd
         ));
         if (!Number.isFinite(v) || v <= 0) return 'Ready';
@@ -2856,7 +2843,8 @@ function renderEnemiesTab() {
         var hospitalState = (state && state.hospital) || {};
         var enemies = arr((hospitalState && hospitalState.items) || []);
         var hospitalOnly = enemies.filter(function (m) {
-            return stateLabel(m) === 'hospital';
+            var nowSec = Math.floor(Date.now() / 1000);
+            return Number((m && m.in_hospital) || 0) > 0 || Number((m && (m.hospital_until_ts || m.hospital_until || m.status_until)) || 0) > nowSec || stateLabel(m) === 'hospital';
         }).sort(function (a, b) {
             var aCd = Number(stateCountdown(a) || 0);
             var bCd = Number(stateCountdown(b) || 0);
@@ -2893,10 +2881,14 @@ function renderEnemiesTab() {
         function renderChainPersonRow(item, mode) {
             var uid = String((item && item.user_id) || '');
             var name = getMemberName(item);
-            var profile = uid ? profileUrl(uid) : '';
+            var profile = uid ? profileUrl(item) : '';
             var statusText = mode === 'sitter'
-                ? 'Chain sitter ' + ((item && item.sitter_enabled) ? 'enabled' : 'disabled')
+                ? 'Chain sitter enabled'
                 : 'Marked available';
+            var energyCur = Number((item && (item.energy_current || (item.energy && item.energy.current))) || 0);
+            var energyMax = Number((item && (item.energy_max || (item.energy && item.energy.maximum))) || 0);
+            var energyText = energyMax > 0 ? (energyCur + '/' + energyMax) : (energyCur > 0 ? String(energyCur) : '—');
+            var boosterText = boosterCooldownValue(item);
             return [
                 '<div class="chain-person-row">',
                     '<div class="warhub-col">',
@@ -2904,6 +2896,7 @@ function renderEnemiesTab() {
                             ? '<a class="warhub-member-name" href="' + esc(profile) + '" target="_blank" rel="noopener noreferrer">' + esc(name) + '</a>'
                             : '<div class="warhub-member-name">' + esc(name) + '</div>',
                         '<div class="warhub-summary-meta">' + esc(statusText) + '</div>',
+                        '<div class="warhub-summary-meta">Energy: ' + esc(energyText) + ' • Booster CD: ' + esc(boosterText) + '</div>',
                     '</div>',
                     '<div class="warhub-flag-row">',
                         mode === 'sitter'
