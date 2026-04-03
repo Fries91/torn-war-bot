@@ -847,7 +847,7 @@ War Hub copy-paste userscript
 
     function tickMembersCountdowns() {
         if (!overlay) return;
-        if (currentTab !== 'members' && currentTab !== 'hospital') return;
+        if (currentTab !== 'members' && currentTab !== 'hospital' && currentTab !== 'enemies') return;
         if (!membersLiveStamp) return;
 
         var elapsed = Math.floor((Date.now() - membersLiveStamp) / 1000);
@@ -892,7 +892,7 @@ War Hub copy-paste userscript
 
     function startMembersCountdownLoop() {
         stopMembersCountdownLoop();
-        if (currentTab !== 'members' && currentTab !== 'hospital') return;
+        if (currentTab !== 'members' && currentTab !== 'hospital' && currentTab !== 'enemies') return;
 
         membersCountdownTimer = setInterval(function () {
             tickMembersCountdowns();
@@ -2543,16 +2543,36 @@ function enemyPredictionData(member) {
 
 function renderEnemyPredictionBox(member) {
     var pred = enemyPredictionData(member);
-    return pred.pct ? ('<span class="warhub-pill ' + esc(pred.color) + '">' + esc(String(pred.pct) + '%') + '</span>') : ('<span class="warhub-pill ' + esc(pred.color) + '">' + esc(pred.tier) + '</span>');
+    return [
+        '<div class="warhub-predict-box">',
+            '<div class="warhub-predict-head">',
+                '<div class="warhub-predict-title">Predicted battle stats</div>',
+                '<span class="warhub-pill ' + esc(pred.color) + '">' + esc(pred.tier) + '</span>',
+            '</div>',
+            '<div class="warhub-predict-grid">',
+                '<div class="warhub-predict-item"><div class="warhub-predict-label">Enemy</div><div class="warhub-predict-value">' + esc(formatBattleMillions(pred.enemy_stats_m)) + '</div></div>',
+                '<div class="warhub-predict-item"><div class="warhub-predict-label">You</div><div class="warhub-predict-value">' + esc(formatBattleMillions(pred.my_stats_m)) + '</div></div>',
+                '<div class="warhub-predict-item"><div class="warhub-predict-label">Percent</div><div class="warhub-predict-value">' + esc(pred.pct ? (String(pred.pct) + '%') : '—') + '</div></div>',
+                '<div class="warhub-predict-item"><div class="warhub-predict-label">Gap</div><div class="warhub-predict-value">' + esc((Number.isFinite(pred.diff_m) && pred.enemy_stats_m > 0 && pred.my_stats_m > 0) ? formatBattleMillions(pred.diff_m) : '—') + '</div></div>',
+            '</div>',
+            '<div class="warhub-predict-summary">' + esc(pred.summary) + '</div>',
+        '</div>'
+    ].join('');
 }
 
-function renderEnemyRow(member) {
+function renderEnemyRow(member, opts) {
+    opts = opts || {};
     var id = getMemberId(member);
     var name = getMemberName(member);
     var st = stateLabel(member);
     var spy = spyText(member);
     var stateCd = stateCountdown(member);
-    var predBadge = renderEnemyPredictionBox(member);
+    var hospitalEta = st === 'hospital' ? (stateCd > 0 ? formatCountdown(stateCd) : 'Out now') : '';
+    var dibbedBy = String((member && (member.dibbed_by_name || member.dibbedByName)) || '').trim();
+    var dibText = dibbedBy ? ('Dibbed by ' + dibbedBy) : '';
+    var pred = enemyPredictionData(member);
+    var predText = pred && pred.pct ? (String(pred.pct) + '%') : '—';
+    var actionHtml = '';
 
     if (state && state.members && arr(state.members).length) {
         var ownIds = {};
@@ -2566,51 +2586,12 @@ function renderEnemyRow(member) {
         }
     }
 
-    return [
-        '<div class="warhub-member-row" ' +
-            'data-statuscd-base="' + esc(String(stateCd)) + '" ' +
-            'data-state-name="' + esc(st) + '">',
-            '<div class="warhub-member-main">',
-                '<div class="warhub-row">',
-                    '<a class="warhub-member-name" href="' + esc(profileUrl(member)) + '" target="_blank" rel="noopener noreferrer">' + esc(name) + '</a>',
-                    predBadge,
-                    '<span class="warhub-pill ' + esc(st) + '" data-statuscd>' + esc(
-                        st === 'hospital' ? (stateCd > 0 ? 'Hospital (' + shortCd(stateCd, 'Hospital') + ')' : 'Hospital') :
-                        st === 'jail' ? (stateCd > 0 ? 'Jail (' + shortCd(stateCd, 'Jail') + ')' : 'Jail') :
-                        st === 'travel' ? (stateCd > 0 ? 'Travel (' + shortCd(stateCd, 'Travel') + ')' : 'Travel') :
-                        humanStateLabel(st)
-                    ) + '</span>',
-                '</div>',
-                '<div class="warhub-row">',
-                    '<a class="warhub-btn" href="' + esc(attackUrl(member)) + '" target="_blank" rel="noopener noreferrer">Attack</a>',
-                    id ? '<span class="warhub-pill neutral">ID ' + esc(id) + '</span>' : '',
-                '</div>',
-            '</div>',
-            spy ? '<div class="warhub-spy-box">' + esc(spy) + '</div>' : '',
-        '</div>'
-    ].join('');
-}
-
-function renderHospitalEnemyRow(member) {
-    var id = getMemberId(member);
-    var name = getMemberName(member);
-    var st = stateLabel(member);
-    var spy = spyText(member);
-    var stateCd = stateCountdown(member);
-    var hospitalEta = stateCd > 0 ? formatCountdown(stateCd) : 'Out now';
-    var dibbedBy = String((member && (member.dibbed_by_name || member.dibbedByName)) || '').trim();
-    var dibText = dibbedBy ? ('Dibbed by ' + dibbedBy) : '';
-    var mine = String((state && state.viewer && state.viewer.name) || (state && state.me && state.me.name) || '').trim();
-    var dibCls = dibbedBy && dibbedBy !== mine ? 'gray' : 'warn';
-    var dibLabel = dibbedBy ? (dibbedBy === mine ? 'My Dibs' : 'Claimed') : 'Dibs';
-
-    if (state && state.members && arr(state.members).length) {
-        var ownIds = {};
-        arr(state.members).forEach(function (m) {
-            var ownId = String((m && (m.user_id || m.id)) || '').trim();
-            if (ownId) ownIds[ownId] = true;
-        });
-        if (id && ownIds[String(id)]) return '';
+    if (opts.mode === 'hospital') {
+        var dibsAvailable = !!(member && member.dibs_available);
+        var dibsLocked = !!(member && member.dibs_locked);
+        actionHtml = '<button type="button" class="warhub-btn ' + (dibsAvailable ? 'warn' : 'ghost') + '" data-action="hospital-dibs" data-user-id="' + esc(id) + '" ' + ((dibsAvailable && !dibbedBy && !dibsLocked) ? '' : 'disabled') + '>Dibs</button>';
+    } else {
+        actionHtml = '<a class="warhub-btn" href="' + esc(attackUrl(member)) + '" target="_blank" rel="noopener noreferrer">Attack</a>';
     }
 
     return [
@@ -2620,11 +2601,17 @@ function renderHospitalEnemyRow(member) {
             '<div class="warhub-member-main">',
                 '<div class="warhub-row">',
                     '<a class="warhub-member-name" href="' + esc(profileUrl(member)) + '" target="_blank" rel="noopener noreferrer">' + esc(name) + '</a>',
-                    '<span class="warhub-pill hospital" data-statuscd>' + esc(stateCd > 0 ? ('Hospital (' + shortCd(stateCd, 'Hospital') + ')') : 'Hospital') + '</span>',
-                    '<span class="warhub-pill neutral">ETA <span data-hospital-eta>' + esc(hospitalEta) + '</span></span>',
+                    '<span class="warhub-pill ' + esc(pred.color || 'neutral') + '">' + esc(predText) + '</span>',
+                    '<span class="warhub-pill ' + esc(st) + '" data-statuscd>' + esc(
+                        st === 'hospital' ? (stateCd > 0 ? 'Hospital (' + shortCd(stateCd, 'Hospital') + ')' : 'Hospital') :
+                        st === 'jail' ? (stateCd > 0 ? 'Jail (' + shortCd(stateCd, 'Jail') + ')' : 'Jail') :
+                        st === 'travel' ? (stateCd > 0 ? 'Travel (' + shortCd(stateCd, 'Travel') + ')' : 'Travel') :
+                        humanStateLabel(st)
+                    ) + '</span>',
                 '</div>',
                 '<div class="warhub-row">',
-                    '<button type="button" class="warhub-btn ' + esc(dibCls) + '" data-action="hospital-dib" data-user-id="' + esc(id) + '">' + esc(dibLabel) + '</button>',
+                    actionHtml,
+                    st === 'hospital' ? '<span class="warhub-pill neutral">ETA <span data-hospital-eta>' + esc(hospitalEta) + '</span></span>' : '',
                     dibText ? '<span class="warhub-pill warn">' + esc(dibText) + '</span>' : '',
                 '</div>',
             '</div>',
@@ -2855,12 +2842,12 @@ function renderEnemiesTab() {
             '</div>',
 
             enemyFactionId || enemies.length ? '' : '<div class="warhub-card">No current enemy faction detected yet.</div>',
-            renderGroupBlock('enemies_online', grouped.online, renderEnemyRow, true),
-            renderGroupBlock('enemies_idle', grouped.idle, renderEnemyRow, true),
-            renderGroupBlock('enemies_travel', grouped.travel, renderEnemyRow, false),
-            renderGroupBlock('enemies_jail', grouped.jail, renderEnemyRow, false),
-            renderGroupBlock('enemies_hospital', grouped.hospital, renderEnemyRow, true),
-            renderGroupBlock('enemies_offline', grouped.offline, renderEnemyRow, false),
+            renderGroupBlock('enemies_online', grouped.online, function (m) { return renderEnemyRow(m); }, true),
+            renderGroupBlock('enemies_idle', grouped.idle, function (m) { return renderEnemyRow(m); }, true),
+            renderGroupBlock('enemies_travel', grouped.travel, function (m) { return renderEnemyRow(m); }, false),
+            renderGroupBlock('enemies_jail', grouped.jail, function (m) { return renderEnemyRow(m); }, false),
+            renderGroupBlock('enemies_hospital', grouped.hospital, function (m) { return renderEnemyRow(m); }, true),
+            renderGroupBlock('enemies_offline', grouped.offline, function (m) { return renderEnemyRow(m); }, false),
         '</div>'
     ].join('');
 }
@@ -2885,7 +2872,7 @@ function renderEnemiesTab() {
                     '<div class="warhub-sub">Enemy hospital list from current war, lowest timer first</div>',
                 '</div>',
                 hospitalOnly.length
-                    ? renderGroupBlock('hospital_enemies', hospitalOnly, renderHospitalEnemyRow, true)
+                    ? renderGroupBlock('hospital_enemies', hospitalOnly, function (m) { return renderEnemyRow(m, { mode: 'hospital' }); }, true)
                     : '<div class="warhub-card">No hospital enemies right now.</div>',
             '</div>'
         ].join('');
@@ -4185,27 +4172,19 @@ function _handleActionClick() {
                 return;
             }
 
-            if (action === 'hospital-dib') {
-                var enemyUserId = String(el.getAttribute('data-user-id') || '').trim();
-                if (!enemyUserId) {
-                    setStatus('Missing hospital enemy ID.', true);
-                    return;
-                }
+            if (action === 'hospital-dibs') {
+                var dibEnemyId = String(el.getAttribute('data-user-id') || '').trim();
+                if (!dibEnemyId) return;
 
-                var dibRes = yield authedReq('POST', '/api/hospital/dibs/' + encodeURIComponent(enemyUserId), {});
+                var dibRes = yield authedReq('POST', '/api/hospital/dibs/' + encodeURIComponent(dibEnemyId), {});
                 if (!dibRes.ok) {
                     setStatus((dibRes.json && dibRes.json.error) || 'Failed to claim dibs.', true);
                     return;
                 }
 
-                if (!state) state = {};
-                state.hospital = state.hospital || {};
-                if (dibRes.json && Array.isArray(dibRes.json.hospital_items)) {
-                    state.hospital.items = dibRes.json.hospital_items;
-                    state.hospital.count = Number(dibRes.json.hospital_count || dibRes.json.hospital_items.length || 0);
-                }
+                yield loadState();
                 renderBody();
-                setStatus((dibRes.json && dibRes.json.message) || 'Dibs claimed.', false);
+                setStatus('Dibs claimed.', false);
                 return;
             }
 
