@@ -616,7 +616,7 @@ def _build_hospital_payload(user: Dict[str, Any], war_payload: Optional[Dict[str
             "overview_remove_after_ts": _to_int(dib.get("overview_remove_after_ts"), 0),
         })
 
-    out.sort(key=lambda x: (str(x.get("name") or "").lower(), str(x.get("user_id") or "")))
+    out.sort(key=lambda x: (_to_int(x.get("hospital_until_ts"), 0) if _to_int(x.get("hospital_until_ts"), 0) > 0 else 9999999999, str(x.get("name") or "").lower(), str(x.get("user_id") or "")))
     return {
         "items": out,
         "count": len(out),
@@ -1609,7 +1609,7 @@ def api_targets_save():
     return ok(message="Target saved.", item=item)
 
 
-@app.route("/api/targets/<target_user_id>", methods=["DELETE", "POST"])
+@app.route("/api/targets/<target_user_id>", methods=["DELETE"])
 @require_session
 def api_targets_delete(target_user_id: str):
     user = request.user or {}
