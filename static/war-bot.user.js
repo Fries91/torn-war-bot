@@ -1,9 +1,7 @@
-War Hub fixed userscript 3.2.5
-Copy everything inside the code block below and replace your whole userscript.
 // ==UserScript==
 // @name         War Hub ⚔️
 // @namespace    fries91-war-hub
-// @version      3.2.5
+// @version      3.2.6
 // @description  War Hub by Fries91. Faction-license aware overlay with draggable icon, PDA friendly, shared war tools, faction member management, and payment lock handling.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -3984,16 +3982,6 @@ function _handleActionClick() {
             var active = key === currentTab ? ' active' : '';
             return '<button type="button" class="warhub-tab' + active + '" data-tab="' + esc(key) + '">' + esc(label) + '</button>';
         }).join('');
-    }
-
-    function renderLiveTabOnly() {
-        if (!overlay) return;
-
-        var content = overlay.querySelector('#warhub-content');
-        if (!content) return;
-
-        content.innerHTML = renderCurrentTab();
-        bindDynamicInputs();
     }
 
     function renderCurrentTab() {
