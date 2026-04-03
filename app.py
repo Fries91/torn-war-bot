@@ -1495,6 +1495,8 @@ def api_enemies():
         buckets=payload.get("enemy_buckets") or _empty_enemy_buckets(),
         counts_by_state=payload.get("enemy_bucket_counts") or {key: 0 for key in _enemy_bucket_order()},
         order=payload.get("enemy_bucket_order") or _enemy_bucket_order(),
+        locked_to_current_war=True,
+        live_poll_ms=7000,
         war=war,
     )
 
