@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         War Hub ⚔️
 // @namespace    fries91-war-hub
-// @version      3.3.4
+// @version      3.3.5
 // @description  War Hub by Fries91. Clean split loaders: faction data only from faction routes, enemy data only from enemy routes.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -66,7 +66,7 @@
     var loading = false;
 
     GM_addStyle('\
-#warhub-shield{position:fixed!important;z-index:2147483647!important;width:32px!important;height:32px!important;border-radius:9px!important;display:flex!important;align-items:center!important;justify-content:center!important;font-size:16px!important;line-height:1!important;cursor:pointer!important;user-select:none!important;-webkit-user-select:none!important;-webkit-touch-callout:none!important;-webkit-tap-highlight-color:transparent!important;touch-action:none!important;box-shadow:0 6px 16px rgba(0,0,0,.38)!important;border:1px solid rgba(255,255,255,.12)!important;background:radial-gradient(circle at 30% 20%, rgba(232,87,87,.98), rgba(133,13,13,.98) 55%, rgba(56,7,7,.99))!important;color:#fff!important;right:12px!important;top:50%!important;transform:translateY(-50%)!important;opacity:1!important;visibility:visible!important;pointer-events:auto!important;}\
+#warhub-shield{position:fixed!important;z-index:2147483647!important;width:32px!important;height:32px!important;border-radius:9px!important;display:flex!important;align-items:center!important;justify-content:center!important;font-size:16px!important;line-height:1!important;cursor:pointer!important;user-select:none!important;-webkit-user-select:none!important;-webkit-touch-callout:none!important;-webkit-tap-highlight-color:transparent!important;touch-action:manipulation!important;box-shadow:0 6px 16px rgba(0,0,0,.38)!important;border:1px solid rgba(255,255,255,.12)!important;background:radial-gradient(circle at 30% 20%, rgba(232,87,87,.98), rgba(133,13,13,.98) 55%, rgba(56,7,7,.99))!important;color:#fff!important;right:12px!important;top:50%!important;transform:translateY(-50%)!important;opacity:1!important;visibility:visible!important;pointer-events:auto!important;}\
 #warhub-miniheader,#warhub-miniheader-inner,#warhub-miniheader-button,#warhub-nav-button-wrap,#warhub-nav-button{display:none!important;}\
 #warhub-overlay{position:fixed!important;left:8px!important;right:8px!important;top:8px!important;bottom:8px!important;max-width:580px!important;margin:0 auto!important;background:linear-gradient(180deg,#1a0d0d,#120909 18%,#0c0c0c 68%,#090909)!important;color:#f2f2f2!important;border:1px solid rgba(255,255,255,.08)!important;border-radius:16px!important;box-shadow:0 20px 44px rgba(0,0,0,.62)!important;display:none!important;flex-direction:column!important;z-index:2147483646!important;overflow:hidden!important;}\
 #warhub-overlay.open{display:flex!important;}\
@@ -193,15 +193,21 @@
         shield.style.transform = 'none';
     }
 
+
     function makeHoldDraggable(handle) {
         if (!handle) return;
+
+        var pointerId = null;
         var dragging = false;
         var moved = false;
         var pressTimer = null;
         var pressActive = false;
-        var startX = 0, startY = 0, startLeft = 0, startTop = 0;
-        var HOLD_MS = 260;
-        var DRAG_THRESHOLD = 8;
+        var startX = 0;
+        var startY = 0;
+        var startLeft = 0;
+        var startTop = 0;
+        var HOLD_MS = 220;
+        var DRAG_THRESHOLD = 6;
 
         function clearPressTimer() {
             if (pressTimer) {
@@ -210,41 +216,46 @@
             }
         }
 
-        function getPoint(ev) {
-            if (ev.touches && ev.touches[0]) return ev.touches[0];
-            if (ev.changedTouches && ev.changedTouches[0]) return ev.changedTouches[0];
-            return ev;
+        function iconSize() {
+            return Math.max(handle.offsetWidth || 32, handle.offsetHeight || 32, 32);
         }
 
-        function onDown(ev) {
-            var p = getPoint(ev);
+        function onPointerDown(ev) {
+            if (ev.button != null && ev.button !== 0) return;
             var rect = handle.getBoundingClientRect();
-            moved = false;
+            pointerId = ev.pointerId;
             dragging = false;
+            moved = false;
             pressActive = true;
-            startX = p.clientX;
-            startY = p.clientY;
+            startX = ev.clientX;
+            startY = ev.clientY;
             startLeft = rect.left;
             startTop = rect.top;
             clearPressTimer();
+            if (handle.setPointerCapture) {
+                try { handle.setPointerCapture(pointerId); } catch (_e) {}
+            }
             pressTimer = setTimeout(function () {
                 if (!pressActive) return;
                 dragging = true;
             }, HOLD_MS);
         }
 
-        function onMove(ev) {
+        function onPointerMove(ev) {
             if (!pressActive) return;
-            var p = getPoint(ev);
-            var dx = p.clientX - startX;
-            var dy = p.clientY - startY;
+            if (pointerId != null && ev.pointerId != null && ev.pointerId !== pointerId) return;
 
-            if (Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD) moved = true;
+            var dx = ev.clientX - startX;
+            var dy = ev.clientY - startY;
+
+            if (Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD) {
+                moved = true;
+            }
             if (!dragging) return;
 
             if (ev.cancelable) ev.preventDefault();
             var vp = getViewport();
-            var size = 32;
+            var size = iconSize();
             var left = clamp(startLeft + dx, 4, vp.w - size - 4);
             var top = clamp(startTop + dy, 4, vp.h - size - 4);
             handle.style.left = left + 'px';
@@ -254,26 +265,30 @@
             handle.style.transform = 'none';
         }
 
-        function onUp(ev) {
+        function finishPress(ev) {
             clearPressTimer();
             if (dragging) {
                 var rect = handle.getBoundingClientRect();
                 saveShieldPos({ left: rect.left, top: rect.top });
-                if (ev.cancelable) ev.preventDefault();
+                if (ev && ev.cancelable) ev.preventDefault();
             } else if (!moved) {
                 setOverlayOpen(!isOpen);
+                if (ev && ev.cancelable) ev.preventDefault();
             }
             pressActive = false;
             dragging = false;
+            if (pointerId != null && handle.releasePointerCapture) {
+                try { handle.releasePointerCapture(pointerId); } catch (_e2) {}
+            }
+            pointerId = null;
         }
 
-        handle.addEventListener('mousedown', onDown);
-        document.addEventListener('mousemove', onMove);
-        document.addEventListener('mouseup', onUp);
-        handle.addEventListener('touchstart', onDown, { passive: true });
-        document.addEventListener('touchmove', onMove, { passive: false });
-        document.addEventListener('touchend', onUp, { passive: false });
-        document.addEventListener('touchcancel', onUp, { passive: false });
+        handle.addEventListener('pointerdown', onPointerDown);
+        handle.addEventListener('pointermove', onPointerMove);
+        handle.addEventListener('pointerup', finishPress);
+        handle.addEventListener('pointercancel', finishPress);
+        handle.addEventListener('contextmenu', function (ev) { ev.preventDefault(); });
+        handle.addEventListener('click', function (ev) { ev.preventDefault(); ev.stopPropagation(); });
     }
 
     function req(method, path, body, extraHeaders) {
@@ -354,6 +369,7 @@
         overlay.addEventListener('click', handleClick);
         window.addEventListener('resize', applyShieldPos);
         setOverlayOpen(isOpen);
+        applyShieldPos();
         renderTabs();
         renderBody();
     }
