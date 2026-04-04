@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         War Hub ⚔️
 // @namespace    fries91-war-hub
-// @version      3.3.0
+// @version      3.3.1
 // @description  War Hub by Fries91. Clean split loaders: faction data only from faction routes, enemy data only from enemy routes.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -19,8 +19,8 @@
 (function () {
     'use strict';
 
-    if (window.__WAR_HUB_V330__) return;
-    window.__WAR_HUB_V330__ = true;
+    if (window.__WAR_HUB_V331__) return;
+    window.__WAR_HUB_V331__ = true;
 
     var BASE_URL = 'https://torn-war-bot.onrender.com';
     var K_API_KEY = 'warhub_api_key_v3';
@@ -65,29 +65,35 @@
     var loading = false;
 
     GM_addStyle('\
-#warhub-shield{position:fixed!important;right:12px!important;top:50%!important;transform:translateY(-50%)!important;z-index:2147483647!important;width:44px!important;height:44px!important;border-radius:12px!important;display:flex!important;align-items:center!important;justify-content:center!important;background:radial-gradient(circle at 30% 20%, rgba(220,75,75,.98), rgba(110,12,12,.98) 55%, rgba(48,6,6,.98))!important;color:#fff!important;border:1px solid rgba(255,255,255,.12)!important;box-shadow:0 8px 24px rgba(0,0,0,.45)!important;font-size:22px!important;}\
-#warhub-overlay{position:fixed!important;left:8px!important;right:8px!important;top:8px!important;bottom:8px!important;max-width:560px!important;margin:0 auto!important;background:linear-gradient(180deg,#171717,#0c0c0c)!important;color:#f2f2f2!important;border:1px solid rgba(255,255,255,.08)!important;border-radius:14px!important;box-shadow:0 16px 38px rgba(0,0,0,.54)!important;display:none!important;flex-direction:column!important;z-index:2147483646!important;overflow:hidden!important;}\
+#warhub-icon-slot{display:inline-flex!important;align-items:center!important;justify-content:center!important;flex:0 0 auto!important;margin-left:4px!important;vertical-align:middle!important;}\
+#warhub-shield{position:relative!important;right:auto!important;top:auto!important;left:auto!important;bottom:auto!important;transform:none!important;z-index:auto!important;width:40px!important;height:40px!important;border-radius:12px!important;display:inline-flex!important;align-items:center!important;justify-content:center!important;background:radial-gradient(circle at 30% 20%, rgba(232,87,87,.98), rgba(133,13,13,.98) 55%, rgba(56,7,7,.99))!important;color:#fff!important;border:1px solid rgba(255,255,255,.14)!important;box-shadow:0 6px 18px rgba(0,0,0,.40)!important;font-size:21px!important;cursor:pointer!important;flex:0 0 auto!important;}\
+#warhub-overlay{position:fixed!important;left:8px!important;right:8px!important;top:8px!important;bottom:8px!important;max-width:580px!important;margin:0 auto!important;background:linear-gradient(180deg,#1a0d0d,#120909 18%,#0c0c0c 68%,#090909)!important;color:#f2f2f2!important;border:1px solid rgba(255,255,255,.08)!important;border-radius:16px!important;box-shadow:0 20px 44px rgba(0,0,0,.62)!important;display:none!important;flex-direction:column!important;z-index:2147483646!important;overflow:hidden!important;}\
 #warhub-overlay.open{display:flex!important;}\
 #warhub-overlay *{box-sizing:border-box!important;font-family:inherit!important;}\
-.warhub-head{padding:12px!important;border-bottom:1px solid rgba(255,255,255,.08)!important;background:rgba(255,255,255,.03)!important;}\
+.warhub-head{padding:14px 12px 12px!important;border-bottom:1px solid rgba(255,255,255,.08)!important;background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(255,255,255,.02))!important;}\
 .warhub-row{display:flex!important;gap:8px!important;align-items:center!important;flex-wrap:wrap!important;}\
-.warhub-top{display:flex!important;justify-content:space-between!important;align-items:center!important;gap:8px!important;}\
-.warhub-title{font-weight:800!important;font-size:16px!important;color:#fff!important;}\
-.warhub-sub{opacity:.75!important;font-size:11px!important;color:#fff!important;}\
-.warhub-close,.warhub-btn,.warhub-tab{appearance:none!important;-webkit-appearance:none!important;border:1px solid rgba(255,255,255,.12)!important;color:#fff!important;border-radius:10px!important;min-height:36px!important;padding:8px 12px!important;font-weight:700!important;background:rgba(255,255,255,.08)!important;}\
-.warhub-btn.primary,.warhub-tab.active{background:linear-gradient(180deg, rgba(220,50,50,.95), rgba(145,18,18,.98))!important;}\
-.warhub-btn.green{background:linear-gradient(180deg, rgba(42,168,95,.98), rgba(21,120,64,.98))!important;}\
+.warhub-top{display:flex!important;justify-content:space-between!important;align-items:center!important;gap:10px!important;}\
+.warhub-title{font-weight:900!important;font-size:17px!important;color:#fff!important;letter-spacing:.2px!important;}\
+.warhub-sub{opacity:.82!important;font-size:11px!important;color:#f3dede!important;line-height:1.35!important;}\
+.warhub-close,.warhub-btn,.warhub-tab{appearance:none!important;-webkit-appearance:none!important;border:1px solid rgba(255,255,255,.12)!important;color:#fff!important;border-radius:10px!important;min-height:36px!important;padding:8px 12px!important;font-weight:800!important;background:rgba(255,255,255,.08)!important;}\
+.warhub-btn.primary,.warhub-tab.active{background:linear-gradient(180deg, rgba(221,59,59,.98), rgba(132,18,18,.99))!important;border-color:rgba(255,255,255,.16)!important;}\
+.warhub-btn.green{background:linear-gradient(180deg, rgba(45,171,98,.98), rgba(20,115,61,.98))!important;}\
 .warhub-btn.gray{background:rgba(255,255,255,.10)!important;}\
-.warhub-btn.warn{background:linear-gradient(180deg, rgba(226,154,27,.98), rgba(163,102,8,.98))!important;}\
-.warhub-tabs{display:flex!important;gap:4px!important;padding:6px 8px!important;overflow-x:auto!important;scrollbar-width:none!important;}\
+.warhub-btn.warn{background:linear-gradient(180deg, rgba(230,160,34,.98), rgba(156,99,7,.98))!important;}\
+.warhub-tabs{display:flex!important;gap:4px!important;padding:7px 8px!important;overflow-x:auto!important;scrollbar-width:none!important;background:rgba(255,255,255,.02)!important;}\
 .warhub-tabs::-webkit-scrollbar{display:none!important;}\
 .warhub-body{padding:12px!important;overflow:auto!important;flex:1 1 auto!important;}\
-.warhub-card{background:rgba(255,255,255,.04)!important;border:1px solid rgba(255,255,255,.08)!important;border-radius:12px!important;padding:10px!important;margin-bottom:10px!important;}\
+.warhub-card{background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(255,255,255,.035))!important;border:1px solid rgba(255,255,255,.08)!important;border-radius:14px!important;padding:11px!important;margin-bottom:10px!important;box-shadow:inset 0 1px 0 rgba(255,255,255,.03)!important;}\
+.warhub-hero{background:linear-gradient(180deg,rgba(165,28,28,.24),rgba(255,255,255,.03))!important;border-color:rgba(255,255,255,.10)!important;}\
+.warhub-command{background:linear-gradient(180deg,rgba(255,180,80,.10),rgba(255,255,255,.03))!important;border-color:rgba(255,188,96,.16)!important;}\
+.warhub-danger{background:linear-gradient(180deg,rgba(220,72,72,.14),rgba(255,255,255,.03))!important;border-color:rgba(220,72,72,.18)!important;}\
+.warhub-success{background:linear-gradient(180deg,rgba(60,180,100,.12),rgba(255,255,255,.03))!important;border-color:rgba(60,180,100,.18)!important;}\
 .warhub-input,.warhub-select,.warhub-textarea{width:100%!important;padding:10px 11px!important;border-radius:10px!important;border:1px solid rgba(255,255,255,.12)!important;background:rgba(255,255,255,.07)!important;color:#fff!important;font-size:16px!important;}\
 .warhub-textarea{min-height:110px!important;resize:vertical!important;}\
 .warhub-pill{display:inline-flex!important;align-items:center!important;min-height:24px!important;padding:4px 8px!important;border-radius:999px!important;font-size:12px!important;font-weight:800!important;background:rgba(255,255,255,.08)!important;border:1px solid rgba(255,255,255,.08)!important;color:#fff!important;}\
 .warhub-pill.good{background:rgba(36,140,82,.35)!important;}\
 .warhub-pill.bad{background:rgba(170,32,32,.35)!important;}\
+.warhub-pill.warn{background:rgba(190,128,26,.35)!important;}\
 .warhub-pill.online{background:rgba(42,168,95,.35)!important;}\
 .warhub-pill.idle{background:rgba(197,142,32,.35)!important;}\
 .warhub-pill.travel{background:rgba(66,124,206,.35)!important;}\
@@ -95,18 +101,25 @@
 .warhub-pill.hospital{background:rgba(199,70,70,.35)!important;}\
 .warhub-pill.offline{background:rgba(105,105,105,.35)!important;}\
 .warhub-grid2{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:8px!important;}\
-.warhub-stat{padding:10px!important;border-radius:12px!important;background:rgba(255,255,255,.05)!important;border:1px solid rgba(255,255,255,.08)!important;}\
-.warhub-stat-label{font-size:11px!important;opacity:.74!important;margin-bottom:5px!important;}\
+.warhub-grid3{display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:8px!important;}\
+.warhub-stat{padding:11px!important;border-radius:13px!important;background:linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,.035))!important;border:1px solid rgba(255,255,255,.08)!important;}\
+.warhub-stat.command{background:linear-gradient(180deg,rgba(165,28,28,.18),rgba(255,255,255,.03))!important;}\
+.warhub-stat-label{font-size:11px!important;opacity:.76!important;margin-bottom:5px!important;text-transform:uppercase!important;letter-spacing:.35px!important;}\
 .warhub-stat-value{font-size:22px!important;line-height:1!important;font-weight:900!important;color:#fff!important;}\
 .warhub-list{display:flex!important;flex-direction:column!important;gap:8px!important;}\
-.warhub-item{padding:10px!important;border-radius:12px!important;background:rgba(255,255,255,.04)!important;border:1px solid rgba(255,255,255,.08)!important;}\
+.warhub-item{padding:11px!important;border-radius:13px!important;background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(255,255,255,.035))!important;border:1px solid rgba(255,255,255,.08)!important;}\
 .warhub-item-head{display:flex!important;justify-content:space-between!important;align-items:center!important;gap:8px!important;flex-wrap:wrap!important;}\
 .warhub-name{font-weight:800!important;color:#fff!important;text-decoration:none!important;}\
-.warhub-meta{font-size:12px!important;opacity:.88!important;}\
+.warhub-meta{font-size:12px!important;opacity:.9!important;line-height:1.4!important;}\
 .warhub-kv{display:grid!important;grid-template-columns:1fr auto!important;gap:8px!important;align-items:center!important;padding:8px 0!important;border-bottom:1px solid rgba(255,255,255,.05)!important;}\
 .warhub-kv:last-child{border-bottom:0!important;}\
-.warhub-empty{opacity:.7!important;}\
-@media(max-width:520px){.warhub-grid2{grid-template-columns:1fr!important;}}\
+.warhub-empty{opacity:.72!important;}\
+.warhub-sep{height:1px!important;background:rgba(255,255,255,.07)!important;margin:10px 0!important;}\
+.warhub-board-title{font-size:13px!important;font-weight:900!important;color:#fff!important;margin-bottom:6px!important;letter-spacing:.2px!important;}\
+.warhub-small{font-size:11px!important;opacity:.78!important;}\
+.warhub-meter{margin-top:12px!important;height:12px!important;border-radius:999px!important;background:rgba(255,255,255,.08)!important;overflow:hidden!important;border:1px solid rgba(255,255,255,.06)!important;}\
+.warhub-meter-fill{height:100%!important;background:linear-gradient(90deg,rgba(221,59,59,.98),rgba(255,170,90,.98))!important;}\
+@media(max-width:520px){.warhub-grid2,.warhub-grid3{grid-template-columns:1fr!important;}}\
 ');
 
     function esc(v) {
@@ -184,6 +197,77 @@
         overlay.querySelector('#warhub-tabs-2').innerHTML = rowHtml(TAB_ROW_2);
     }
 
+    var mountObserver = null;
+    var iconSlot = null;
+
+    function scoreMountHost(el) {
+        if (!el || el === overlay || el === shield) return -1;
+        if (overlay && el.contains(overlay)) return -1;
+        var rect = el.getBoundingClientRect();
+        if (!rect || rect.width < 220 || rect.height < 24 || rect.height > 110) return -1;
+        var children = Array.prototype.slice.call(el.children || []).filter(function(child){
+            var r = child.getBoundingClientRect();
+            return r && r.width >= 18 && r.height >= 18;
+        });
+        var clickable = children.filter(function(child){
+            return child.matches('a,button,[role="button"]') || child.querySelector('a,button,[role="button"]');
+        });
+        if (children.length < 5 || clickable.length < 5) return -1;
+        var score = clickable.length * 20 + children.length * 5;
+        if (rect.top > 160 && rect.top < 720) score += 80;
+        if (rect.top > 300 && rect.top < 580) score += 60;
+        if (rect.width > (window.innerWidth * 0.70)) score += 40;
+        if (rect.height >= 30 && rect.height <= 80) score += 40;
+        var txt = ((el.id || '') + ' ' + (el.className || '')).toLowerCase();
+        if (/icon|toolbar|quick|shortcut|action|menu|status|properties|property/.test(txt)) score += 40;
+        if (/header|nav|sidebar|footer/.test(txt)) score -= 20;
+        return score;
+    }
+
+    function findMountHost() {
+        var selectors = [
+            '.property-info-cont', '.property-info', '.properties-wrap', '.properties',
+            '.user-information', '.user-info-wrap', '.user-info', '.status-icons', '.icons-row'
+        ];
+        for (var i = 0; i < selectors.length; i++) {
+            var found = document.querySelector(selectors[i]);
+            if (scoreMountHost(found) > 0) return found;
+        }
+        var best = null;
+        var bestScore = -1;
+        var nodes = document.querySelectorAll('div, ul, nav, section');
+        for (var j = 0; j < nodes.length; j++) {
+            var node = nodes[j];
+            var score = scoreMountHost(node);
+            if (score > bestScore) {
+                bestScore = score;
+                best = node;
+            }
+        }
+        return bestScore > 0 ? best : null;
+    }
+
+    function ensureShieldMounted() {
+        if (!shield) return false;
+        var host = findMountHost();
+        if (!host) return false;
+        if (!iconSlot) {
+            iconSlot = document.createElement('div');
+            iconSlot.id = 'warhub-icon-slot';
+        }
+        if (iconSlot.parentNode !== host) host.appendChild(iconSlot);
+        if (shield.parentNode !== iconSlot) iconSlot.appendChild(shield);
+        return true;
+    }
+
+    function startMountWatcher() {
+        if (mountObserver) mountObserver.disconnect();
+        mountObserver = new MutationObserver(function(){ ensureShieldMounted(); });
+        mountObserver.observe(document.documentElement || document.body, { childList: true, subtree: true });
+        window.addEventListener('resize', ensureShieldMounted, { passive: true });
+        setInterval(ensureShieldMounted, 2000);
+    }
+
     function mount() {
         shield = document.createElement('div');
         shield.id = 'warhub-shield';
@@ -204,10 +288,11 @@
                 '<div id="warhub-content"></div>',
             '</div>'
         ].join('');
-        document.body.appendChild(shield);
         document.body.appendChild(overlay);
         statusBox = overlay.querySelector('#warhub-status');
-        shield.addEventListener('click', function(){ setOverlayOpen(!isOpen); });
+        shield.addEventListener('click', function(e){ e.preventDefault(); e.stopPropagation(); setOverlayOpen(!isOpen); });
+        ensureShieldMounted();
+        startMountWatcher();
         overlay.querySelector('#warhub-close').addEventListener('click', function(){ setOverlayOpen(false); });
         overlay.addEventListener('click', handleClick);
         setOverlayOpen(isOpen);
@@ -398,15 +483,50 @@
 
     function renderChain() {
         var chain = (state && state.chain) || {};
+        var available = arr(chain.available_items).slice().sort(function(a,b){ return String(a.user_name || a.user_id || '').localeCompare(String(b.user_name || b.user_id || '')); });
+        var sitters = arr(chain.sitter_items).slice().sort(function(a,b){ return String(a.user_name || a.user_id || '').localeCompare(String(b.user_name || b.user_id || '')); });
+        var current = Number(chain.current || 0);
+        var cooldown = Number(chain.cooldown || 0);
+        var meterPct = Math.max(4, Math.min(100, current > 0 ? Math.round((current % 100) || 100) : 4));
+        var availableState = chain.available ? 'Ready for chain' : 'Not marked ready';
+        var sitterState = chain.sitter_enabled ? 'Sitter armed' : 'Sitter off';
+
+        function personRow(r, mode) {
+            var name = String(r.user_name || r.user_id || 'Member');
+            return [
+                '<div class="warhub-item">',
+                    '<div class="warhub-item-head">',
+                        '<div class="warhub-row"><div class="warhub-name">' + esc(name) + '</div></div>',
+                        '<div class="warhub-row">' + (mode === 'sitter' ? '<span class="warhub-pill warn">Chain Sitter</span>' : '<span class="warhub-pill good">Available</span>') + '</div>',
+                    '</div>',
+                    '<div class="warhub-meta" style="margin-top:8px;">' + esc(mode === 'sitter' ? 'Watching the rack and ready to sit missed hits or pressure moments.' : 'Marked ready to hit and keep the chain moving when called.') + '</div>',
+                '</div>'
+            ].join('');
+        }
+
         return [
-            '<div class="warhub-card"><div class="warhub-title">Chain</div><div class="warhub-sub">Mark yourself available, flip sitter mode, and watch live chain status without mixing enemy data</div></div>',
+            '<div class="warhub-card warhub-hero"><div class="warhub-title">Chain Command</div><div class="warhub-sub">Run the rack harder, see your live chain posture fast, and keep hitters and sitters organized like a war board.</div></div>',
             '<div class="warhub-grid2">',
-                '<div class="warhub-stat"><div class="warhub-stat-label">Current Chain</div><div class="warhub-stat-value">' + esc(fmtNum(chain.current || 0)) + '</div></div>',
-                '<div class="warhub-stat"><div class="warhub-stat-label">Cooldown</div><div class="warhub-stat-value">' + esc(fmtNum(chain.cooldown || 0)) + '</div></div>',
+                '<div class="warhub-stat command"><div class="warhub-stat-label">Current Chain</div><div class="warhub-stat-value">' + esc(fmtNum(current)) + '</div></div>',
+                '<div class="warhub-stat"><div class="warhub-stat-label">Cooldown</div><div class="warhub-stat-value">' + esc(fmtNum(cooldown)) + '</div></div>',
+                '<div class="warhub-stat"><div class="warhub-stat-label">Available Hitters</div><div class="warhub-stat-value">' + esc(fmtNum(available.length)) + '</div></div>',
+                '<div class="warhub-stat"><div class="warhub-stat-label">Chain Sitters</div><div class="warhub-stat-value">' + esc(fmtNum(sitters.length)) + '</div></div>',
             '</div>',
-            '<div class="warhub-card"><div class="warhub-row"><button type="button" class="warhub-btn green" data-action="chain-available">Available</button><button type="button" class="warhub-btn gray" data-action="chain-unavailable">Unavailable</button><button type="button" class="warhub-btn warn" data-action="chain-sitter">Toggle sitter</button></div></div>',
-            '<div class="warhub-card"><div class="warhub-title">Available</div>' + (arr(chain.available_items).map(function(r){ return '<div class="warhub-kv"><div>' + esc(r.user_name || r.user_id || '') + '</div><div><span class="warhub-pill good">Ready</span></div></div>'; }).join('') || '<div class="warhub-empty">No members marked available.</div>') + '</div>',
-            '<div class="warhub-card"><div class="warhub-title">Sitters</div>' + (arr(chain.sitter_items).map(function(r){ return '<div class="warhub-kv"><div>' + esc(r.user_name || r.user_id || '') + '</div><div><span class="warhub-pill">Sitter</span></div></div>'; }).join('') || '<div class="warhub-empty">No chain sitters enabled.</div>') + '</div>'
+            '<div class="warhub-card warhub-command">',
+                '<div class="warhub-board-title">Rack control</div>',
+                '<div class="warhub-meta">Use these controls to tell the faction if you are in the chain pool or sitting the chain. The goal is to keep misses lower and response faster.</div>',
+                '<div class="warhub-row" style="margin-top:10px;">',
+                    '<span class="warhub-pill ' + (chain.available ? 'good' : 'offline') + '">' + esc(availableState) + '</span>',
+                    '<span class="warhub-pill ' + (chain.sitter_enabled ? 'warn' : 'offline') + '">' + esc(sitterState) + '</span>',
+                '</div>',
+                '<div class="warhub-row" style="margin-top:10px;"><button type="button" class="warhub-btn green" data-action="chain-available">Mark available</button><button type="button" class="warhub-btn gray" data-action="chain-unavailable">Mark unavailable</button><button type="button" class="warhub-btn warn" data-action="chain-sitter">Toggle sitter</button></div>',
+                '<div class="warhub-meter"><div class="warhub-meter-fill" style="width:' + esc(String(meterPct)) + '%;"></div></div>',
+                '<div class="warhub-small" style="margin-top:8px;">Meter gives a quick visual feel for rack pressure and current chain momentum.</div>',
+            '</div>',
+            '<div class="warhub-card"><div class="warhub-title">Available Hitters</div><div class="warhub-sub">Members who marked themselves ready to hit when the chain needs pressure.</div></div>',
+            '<div class="warhub-list">' + (available.map(function(r){ return personRow(r, 'available'); }).join('') || '<div class="warhub-card"><div class="warhub-empty">No members marked available.</div></div>') + '</div>',
+            '<div class="warhub-card"><div class="warhub-title">Chain Sitters</div><div class="warhub-sub">Members covering misses, downtime, or thin pressure windows.</div></div>',
+            '<div class="warhub-list">' + (sitters.map(function(r){ return personRow(r, 'sitter'); }).join('') || '<div class="warhub-card"><div class="warhub-empty">No chain sitters enabled.</div></div>') + '</div>'
         ].join('');
     }
 
@@ -414,13 +534,20 @@
         var targets = (tabData.targets && tabData.targets.items) || [];
         var enemies = (tabData.enemies && tabData.enemies.items) || [];
         return [
-            '<div class="warhub-card"><div class="warhub-title">Targets</div><div class="warhub-sub">Save personal enemy picks from the current war and jump straight into attacks</div></div>',
-            '<div class="warhub-card">',
-                '<div class="warhub-row"><select id="warhub-target-select" class="warhub-select"><option value="">Select enemy member</option>' + enemies.map(function(m){ return '<option value="' + esc(memberId(m)) + '">' + esc(memberName(m)) + '</option>'; }).join('') + '</select></div>',
-                '<div class="warhub-row" style="margin-top:8px;"><textarea id="warhub-target-note" class="warhub-textarea" placeholder="Optional note"></textarea></div>',
-                '<div class="warhub-row" style="margin-top:10px;"><button type="button" class="warhub-btn green" data-action="target-save">Save Target</button></div>',
+            '<div class="warhub-card warhub-hero"><div class="warhub-title">Target Board</div><div class="warhub-sub">Build a personal war board from the live enemy roster, track your picks, and keep quick notes for pressure, travel, chain filler, or revenge windows.</div></div>',
+            '<div class="warhub-grid2">',
+                '<div class="warhub-stat"><div class="warhub-stat-label">Saved Targets</div><div class="warhub-stat-value">' + esc(fmtNum(targets.length)) + '</div></div>',
+                '<div class="warhub-stat"><div class="warhub-stat-label">Enemy Pool</div><div class="warhub-stat-value">' + esc(fmtNum(enemies.length)) + '</div></div>',
             '</div>',
-            '<div class="warhub-list">' + (targets.map(function(t){ var id = memberId(t); return '<div class="warhub-item"><div class="warhub-item-head"><div class="warhub-row"><a class="warhub-name" href="' + esc(profileUrl(id)) + '" target="_blank" rel="noopener noreferrer">' + esc(memberName(t)) + '</a></div><div class="warhub-row"><a class="warhub-btn primary" href="' + esc(attackUrl(id)) + '" target="_blank" rel="noopener noreferrer">Attack</a><button type="button" class="warhub-btn gray" data-action="target-delete" data-user-id="' + esc(id) + '">Delete</button></div></div>' + (t.note ? '<div class="warhub-meta" style="margin-top:8px;">' + esc(t.note) + '</div>' : '') + '</div>'; }).join('')) + (targets.length ? '' : '<div class="warhub-card"><div class="warhub-empty">No saved targets yet.</div></div>') + '</div>'
+            '<div class="warhub-card warhub-command">',
+                '<div class="warhub-title">Add target</div>',
+                '<div class="warhub-sub">Pull from current war enemies only so your saved board stays tied to the live war pool.</div>',
+                '<div class="warhub-row" style="margin-top:8px;"><select id="warhub-target-select" class="warhub-select"><option value="">Select enemy member</option>' + enemies.map(function(m){ return '<option value="' + esc(memberId(m)) + '">' + esc(memberName(m)) + '</option>'; }).join('') + '</select></div>',
+                '<div class="warhub-row" style="margin-top:8px;"><textarea id="warhub-target-note" class="warhub-textarea" placeholder="Examples: weak timing, chain filler, watch travel, bounty target, revenge, leave for med deal"></textarea></div>',
+                '<div class="warhub-row" style="margin-top:10px;"><button type="button" class="warhub-btn green" data-action="target-save">Save target</button></div>',
+            '</div>',
+            '<div class="warhub-card"><div class="warhub-title">Saved target board</div><div class="warhub-sub">Quick launch list for your live war picks.</div></div>',
+            '<div class="warhub-list">' + (targets.map(function(t){ var id = memberId(t); return '<div class="warhub-item"><div class="warhub-item-head"><div class="warhub-row"><a class="warhub-name" href="' + esc(profileUrl(id)) + '" target="_blank" rel="noopener noreferrer">' + esc(memberName(t)) + '</a><span class="warhub-pill">#' + esc(id) + '</span></div><div class="warhub-row"><a class="warhub-btn primary" href="' + esc(attackUrl(id)) + '" target="_blank" rel="noopener noreferrer">Attack</a><a class="warhub-btn gray" href="' + esc(bountyUrl(id)) + '" target="_blank" rel="noopener noreferrer">Bounty</a><button type="button" class="warhub-btn gray" data-action="target-delete" data-user-id="' + esc(id) + '">Delete</button></div></div>' + (t.note ? '<div class="warhub-meta" style="margin-top:8px;">' + esc(t.note) + '</div>' : '<div class="warhub-meta" style="margin-top:8px;">No note saved yet.</div>') + '</div>'; }).join('')) + (targets.length ? '' : '<div class="warhub-card"><div class="warhub-empty">No saved targets yet.</div></div>') + '</div>'
         ].join('');
     }
 
@@ -428,12 +555,19 @@
         var deals = (state && state.med_deals && state.med_deals.items) || [];
         var enemies = (tabData.enemies && tabData.enemies.items) || [];
         return [
-            '<div class="warhub-card"><div class="warhub-title">Med Deals</div><div class="warhub-sub">Post and manage shared med deals using only the current enemy war list</div></div>',
-            '<div class="warhub-card">',
-                '<div class="warhub-row"><select id="warhub-med-enemy" class="warhub-select"><option value="">Select enemy player</option>' + enemies.map(function(m){ return '<option value="' + esc(memberId(m)) + '">' + esc(memberName(m)) + '</option>'; }).join('') + '</select></div>',
-                '<div class="warhub-row" style="margin-top:10px;"><button type="button" class="warhub-btn primary" data-action="med-save">Save</button><button type="button" class="warhub-btn gray" data-action="med-clear">Delete</button></div>',
+            '<div class="warhub-card warhub-hero"><div class="warhub-title">Med Deals Board</div><div class="warhub-sub">Post your med claim cleanly, avoid overlap, and give the faction one quick place to see who is assigned to who.</div></div>',
+            '<div class="warhub-grid2">',
+                '<div class="warhub-stat"><div class="warhub-stat-label">Posted Deals</div><div class="warhub-stat-value">' + esc(fmtNum(deals.length)) + '</div></div>',
+                '<div class="warhub-stat"><div class="warhub-stat-label">Enemy Pool</div><div class="warhub-stat-value">' + esc(fmtNum(enemies.length)) + '</div></div>',
             '</div>',
-            '<div class="warhub-card"><div class="warhub-title">Current Med Deals</div>' + (deals.map(function(d){ return '<div class="warhub-kv"><div>' + esc((d.user_name || d.user_id || '') + ' → ' + (d.enemy_name || d.enemy_user_id || '')) + '</div><div></div></div>'; }).join('') || '<div class="warhub-empty">No med deals posted yet.</div>') + '</div>'
+            '<div class="warhub-card warhub-command">',
+                '<div class="warhub-title">Post your med target</div>',
+                '<div class="warhub-sub">Choose from the current live enemy roster. Saving here updates the shared deal board used by your faction.</div>',
+                '<div class="warhub-row" style="margin-top:8px;"><select id="warhub-med-enemy" class="warhub-select"><option value="">Select enemy member</option>' + enemies.map(function(m){ return '<option value="' + esc(memberId(m)) + '">' + esc(memberName(m)) + '</option>'; }).join('') + '</select></div>',
+                '<div class="warhub-row" style="margin-top:10px;"><button type="button" class="warhub-btn green" data-action="med-save">Save deal</button><button type="button" class="warhub-btn gray" data-action="med-clear">Clear mine</button></div>',
+            '</div>',
+            '<div class="warhub-card"><div class="warhub-title">Live faction assignments</div><div class="warhub-sub">Use this board to reduce overlap and keep med calls organized during chain and war pressure.</div></div>',
+            '<div class="warhub-list">' + (deals.map(function(d){ return '<div class="warhub-item"><div class="warhub-item-head"><div class="warhub-row"><div class="warhub-name">' + esc(String(d.user_name || d.user_id || 'Member')) + '</div><span class="warhub-pill warn">Med deal</span></div><div class="warhub-row"><span class="warhub-pill">' + esc(String(d.enemy_name || d.enemy_user_id || 'Enemy')) + '</span></div></div><div class="warhub-meta" style="margin-top:8px;">' + esc(String(d.user_name || d.user_id || 'Member') + ' is assigned to ' + String(d.enemy_name || d.enemy_user_id || 'Enemy')) + '</div></div>'; }).join('')) + (deals.length ? '' : '<div class="warhub-card"><div class="warhub-empty">No med deals posted yet.</div></div>') + '</div>'
         ].join('');
     }
 
@@ -504,12 +638,12 @@
 
     function renderInstructions() {
         return [
-            '<div class="warhub-card"><div class="warhub-title">War Hub ⚔️</div><div class="warhub-sub">Lead cleaner wars, chain faster, track targets, post med deals, and keep your faction organized from one overlay.</div></div>',
-            '<div class="warhub-card"><div class="warhub-title">Why members use War Hub</div><div class="warhub-kv"><div>Faster decisions</div><div>Enemy, hospital, chain, targets, and faction info in one place</div></div><div class="warhub-kv"><div>Cleaner coordination</div><div>Shared med deals, terms, and war reminders without bouncing between chats and pages</div></div><div class="warhub-kv"><div>Leader control</div><div>Faction access, member activation, admin tools, and live war visibility built into the same hub</div></div></div>',
+            '<div class="warhub-card warhub-hero"><div class="warhub-title">War Hub ⚔️</div><div class="warhub-sub">Turn your faction into a cleaner war machine: faster target choices, tighter med calls, sharper chain coordination, and one command board for the whole push.</div></div>',
+            '<div class="warhub-card warhub-command"><div class="warhub-title">Why War Hub hits harder</div><div class="warhub-kv"><div>War speed</div><div>Enemies, hospital, targets, chain, terms, and med deals stay in one overlay</div></div><div class="warhub-kv"><div>Cleaner chaining</div><div>Available hitters and sitters are easier to read during rack pressure</div></div><div class="warhub-kv"><div>Less overlap</div><div>Shared med deals and target notes reduce wasted hits and crossed calls</div></div><div class="warhub-kv"><div>Leader visibility</div><div>Faction control, summary, access, and admin tools stay inside the same hub</div></div></div>',
             '<div class="warhub-card"><div class="warhub-title">How to start</div><div>1. Open Settings or stay here in Help and log in with your Torn API key.</div><div>2. Once logged in, War Hub loads your viewer, faction, access, and war state.</div><div>3. Use Enemies for enemy-only war targets, Hospital for hospital-only enemy tracking, and Faction for your faction member control.</div><div>4. Use Targets to save personal picks, Med Deals to share assignments, and Chain to mark yourself available or as a sitter.</div><div>5. Leaders use Faction and Summary. Owner/admin uses the Admin tab.</div></div>',
-            '<div class="warhub-card"><div class="warhub-title">Terms of service</div><div>War Hub is a faction coordination overlay and should be used in line with Torn rules and your faction leadership rules.</div><div>Only use your own API key and only enter it into tools you trust.</div><div>Do not use War Hub to impersonate others, interfere with Torn services, or bypass Torn restrictions.</div><div>Leader and admin tabs are for real faction management only and should stay with the people meant to control access, payment, and settings.</div></div>',
-            '<div class="warhub-card"><div class="warhub-title">API key storage and Torn-safe use</div><div>Your API key is stored locally in your userscript storage on your own device/browser so the script can log you in again faster.</div><div>When you log in, the key is sent to your War Hub backend to authenticate you and pull your allowed faction and war data.</div><div>After login, the script mainly works through the saved session token and route-based API calls.</div><div>Keep your key private, rotate it if you think it was exposed, and only enable the access level your tab functions really need under Torn's API rules.</div><div>Logging out clears the session token from the script side, but your local stored key stays until you change or remove it.</div></div>',
-            '<div class="warhub-card"><div class="warhub-title">Route split now in place</div><div>Faction member data loads only from faction member routes.</div><div>Enemy war data loads only from enemy routes.</div><div>Hospital loads only from the hospital route.</div><div>Overview stays on overview/war data.</div><div>This keeps tabs cleaner and stops faction and enemy data from crossing over.</div></div>'
+            '<div class="warhub-card"><div class="warhub-title">Terms of service</div><div>War Hub is a faction coordination overlay and should be used in line with Torn rules and your faction leadership rules.</div><div>Only use your own API key and only enter it into tools you trust.</div><div>Do not use War Hub to impersonate others, automate forbidden actions, interfere with Torn services, or bypass Torn restrictions.</div><div>Leader and admin tabs should stay with the people meant to control access, payment, and faction settings.</div></div>',
+            '<div class="warhub-card"><div class="warhub-title">API key storage and Torn-safe use</div><div>Your API key is stored locally in your userscript storage on your own device/browser so the script can log you in faster.</div><div>When you log in, the key is sent to your War Hub backend to authenticate you and pull your allowed faction and war data.</div><div>After login, the script mainly works through the saved session token and route-based API calls.</div><div>Keep your key private, rotate it if you think it was exposed, and only enable the access level your War Hub functions really need under Torn rules.</div><div>Logging out clears the session token from the script side, but your locally stored key remains until you change or remove it.</div></div>',
+            '<div class="warhub-card warhub-success"><div class="warhub-title">Route split now in place</div><div>Faction member data loads only from faction member routes.</div><div>Enemy war data loads only from enemy routes.</div><div>Hospital loads only from the hospital route.</div><div>Overview stays on overview/war data.</div><div>This keeps tabs cleaner and stops faction and enemy data from crossing over.</div></div>'
         ].join('');
     }
 
@@ -517,11 +651,11 @@
         var ad = tabData.admin || {};
         var licenses = arr(ad.faction_licenses || ad.licenses);
         return [
-            '<div class="warhub-card"><div class="warhub-title">Admin</div><div class="warhub-sub">Manage exemptions, review licenses, and keep faction access under control</div></div>',
+            '<div class="warhub-card warhub-hero"><div class="warhub-title">Admin Command</div><div class="warhub-sub">Control exemptions, review faction licenses, and keep the wider War Hub network clean, organized, and paid up.</div></div>',
             '<div class="warhub-grid2"><div class="warhub-stat"><div class="warhub-stat-label">Factions</div><div class="warhub-stat-value">' + esc(fmtNum(ad.total_factions || 0)) + '</div></div><div class="warhub-stat"><div class="warhub-stat-label">Active Licenses</div><div class="warhub-stat-value">' + esc(fmtNum(ad.active_licenses || 0)) + '</div></div><div class="warhub-stat"><div class="warhub-stat-label">Users Using Script</div><div class="warhub-stat-value">' + esc(fmtNum(ad.users_using_script || 0)) + '</div></div><div class="warhub-stat"><div class="warhub-stat-label">User Exemptions</div><div class="warhub-stat-value">' + esc(fmtNum(ad.user_exemptions || 0)) + '</div></div></div>',
-            '<div class="warhub-card"><div class="warhub-title">Faction Exemption</div><div class="warhub-row"><input id="admin-faction-id" class="warhub-input" type="text" placeholder="Faction ID" /></div><div class="warhub-row" style="margin-top:8px;"><input id="admin-faction-name" class="warhub-input" type="text" placeholder="Faction name (optional)" /></div><div class="warhub-row" style="margin-top:8px;"><textarea id="admin-faction-note" class="warhub-textarea" placeholder="Reason"></textarea></div><div class="warhub-row" style="margin-top:10px;"><button type="button" class="warhub-btn green" data-action="admin-faction-save">Save</button><button type="button" class="warhub-btn gray" data-action="admin-faction-delete">Delete</button></div></div>',
-            '<div class="warhub-card"><div class="warhub-title">Player Exemption</div><div class="warhub-row"><input id="admin-user-id" class="warhub-input" type="text" placeholder="Player ID" /></div><div class="warhub-row" style="margin-top:8px;"><input id="admin-user-name" class="warhub-input" type="text" placeholder="Player name (optional)" /></div><div class="warhub-row" style="margin-top:8px;"><input id="admin-user-faction-id" class="warhub-input" type="text" placeholder="Faction ID (optional)" /></div><div class="warhub-row" style="margin-top:8px;"><input id="admin-user-faction-name" class="warhub-input" type="text" placeholder="Faction name (optional)" /></div><div class="warhub-row" style="margin-top:8px;"><textarea id="admin-user-note" class="warhub-textarea" placeholder="Reason"></textarea></div><div class="warhub-row" style="margin-top:10px;"><button type="button" class="warhub-btn green" data-action="admin-user-save">Save</button><button type="button" class="warhub-btn gray" data-action="admin-user-delete">Delete</button></div></div>',
-            '<div class="warhub-card"><div class="warhub-title">Faction Licenses</div>' + (licenses.map(function(r){ return '<div class="warhub-kv"><div>' + esc((r.faction_name || 'Faction') + ' #' + (r.faction_id || '')) + '</div><div>' + esc(fmtNum(r.enabled_member_count || 0)) + ' enabled</div></div>'; }).join('') || '<div class="warhub-empty">No faction license rows.</div>') + '</div>'
+            '<div class="warhub-card warhub-command"><div class="warhub-title">Faction exemption control</div><div class="warhub-sub">Grant or remove full faction exemption from payment and renewal checks.</div><div class="warhub-row" style="margin-top:8px;"><input id="admin-faction-id" class="warhub-input" type="text" placeholder="Faction ID" /></div><div class="warhub-row" style="margin-top:8px;"><input id="admin-faction-name" class="warhub-input" type="text" placeholder="Faction name (optional)" /></div><div class="warhub-row" style="margin-top:8px;"><textarea id="admin-faction-note" class="warhub-textarea" placeholder="Reason"></textarea></div><div class="warhub-row" style="margin-top:10px;"><button type="button" class="warhub-btn green" data-action="admin-faction-save">Save</button><button type="button" class="warhub-btn gray" data-action="admin-faction-delete">Delete</button></div></div>',
+            '<div class="warhub-card"><div class="warhub-title">Player exemption control</div><div class="warhub-sub">Grant or remove individual player exemption while leaving faction rules intact.</div><div class="warhub-row" style="margin-top:8px;"><input id="admin-user-id" class="warhub-input" type="text" placeholder="Player ID" /></div><div class="warhub-row" style="margin-top:8px;"><input id="admin-user-name" class="warhub-input" type="text" placeholder="Player name (optional)" /></div><div class="warhub-row" style="margin-top:8px;"><input id="admin-user-faction-id" class="warhub-input" type="text" placeholder="Faction ID (optional)" /></div><div class="warhub-row" style="margin-top:8px;"><input id="admin-user-faction-name" class="warhub-input" type="text" placeholder="Faction name (optional)" /></div><div class="warhub-row" style="margin-top:8px;"><textarea id="admin-user-note" class="warhub-textarea" placeholder="Reason"></textarea></div><div class="warhub-row" style="margin-top:10px;"><button type="button" class="warhub-btn green" data-action="admin-user-save">Save</button><button type="button" class="warhub-btn gray" data-action="admin-user-delete">Delete</button></div></div>',
+            '<div class="warhub-card"><div class="warhub-title">Faction license watch</div><div class="warhub-sub">Quick scan of enabled members and billing footprint by faction.</div>' + (licenses.map(function(r){ return '<div class="warhub-item"><div class="warhub-item-head"><div class="warhub-row"><div class="warhub-name">' + esc((r.faction_name || 'Faction') + ' #' + (r.faction_id || '')) + '</div></div><div class="warhub-row"><span class="warhub-pill good">' + esc(fmtNum(r.enabled_member_count || 0)) + ' enabled</span></div></div><div class="warhub-meta" style="margin-top:8px;">Billing watch card for this faction license row.</div></div>'; }).join('') || '<div class="warhub-empty">No faction license rows.</div>') + '</div>'
         ].join('');
     }
 
@@ -676,6 +810,7 @@
 
     async function boot() {
         mount();
+        ensureShieldMounted();
         if (isLoggedIn()) {
             await loadState();
             await loadCurrentTab(true);
