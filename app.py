@@ -308,6 +308,10 @@ def _is_faction_management_role(api_key: str, user_id: str, faction_id: str) -> 
     return False
 
 
+def _is_faction_leader(api_key: str, user_id: str, faction_id: str) -> bool:
+    return _is_faction_management_role(api_key, user_id, faction_id)
+
+
 def _can_manage_faction(user: Dict[str, Any], faction_id: str) -> bool:
     if _session_is_owner(user):
         return True
