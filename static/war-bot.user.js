@@ -209,7 +209,6 @@
   top: -4px !important;\n\
   left: auto !important;\n\
 }\n\
-}\n\
 \n\
 #warhub-overlay {\n\
   position: fixed !important;\n\
@@ -1315,20 +1314,23 @@ function applyShieldPos() {
     function positionBadge() {
         if (!badge || !shield) return;
 
-        var rect = shield.getBoundingClientRect();
         if (shield.classList.contains('warhub-header-mounted')) {
             badge.classList.add('warhub-header-badge');
-            shield.appendChild(badge);
+            if (badge.parentNode !== shield) shield.appendChild(badge);
             badge.style.left = 'auto';
             badge.style.right = '-4px';
             badge.style.top = '-4px';
-        } else {
-            badge.classList.remove('warhub-header-badge');
-            if (document.body && badge.parentNode !== document.body) document.body.appendChild(badge);
-            badge.style.left = Math.round(rect.right - 6) + 'px';
-            badge.style.top = Math.round(rect.top - 6) + 'px';
-            badge.style.right = 'auto';
+            badge.style.bottom = 'auto';
+            return;
         }
+
+        var rect = shield.getBoundingClientRect();
+        badge.classList.remove('warhub-header-badge');
+        if (document.body && badge.parentNode !== document.body) document.body.appendChild(badge);
+        badge.style.left = Math.round(rect.right - 6) + 'px';
+        badge.style.top = Math.round(rect.top - 6) + 'px';
+        badge.style.right = 'auto';
+        badge.style.bottom = 'auto';
     }
 
 function makeHoldDraggable(handle, target, key) {
@@ -1464,9 +1466,17 @@ function _loadState() {
         var warId = String(state.war.war_id || state.war.id || '').trim();
         var locks = clearSideLocksIfWarChanged(warId);
 
+        var ownFactionId = String(((state && state.faction && (state.faction.faction_id || state.faction.id)) || (state && state.viewer && state.viewer.faction_id) || (state && state.me && state.me.faction_id) || '').trim());
+        var ownFactionName = String(((state && state.faction && (state.faction.faction_name || state.faction.name)) || (state && state.viewer && state.viewer.faction_name) || (state && state.me && state.me.faction_name) || '').trim()).toLowerCase();
+
         currentFactionMembers = arr(state.members).filter(function (m) {
             var id = String((m && (m.user_id || m.id || m.player_id)) || '').trim();
-            return !!id && !locks.enemies[id];
+            var factionId = String((m && (m.faction_id || m.source_faction_id)) || '').trim();
+            var factionName = String((m && (m.faction_name || m.source_faction_name)) || '').trim().toLowerCase();
+            if (!id || locks.enemies[id]) return false;
+            if (ownFactionId && factionId && factionId !== ownFactionId) return false;
+            if (ownFactionName && factionName && factionName !== ownFactionName) return false;
+            return true;
         });
         factionMembersCache = currentFactionMembers.slice();
         state.members = factionMembersCache.slice();
@@ -1487,9 +1497,18 @@ function _loadState() {
         }
 
         if (Array.isArray(state.enemies)) {
+            var enemyFactionId = String((state.war && state.war.enemy_faction_id) || '').trim();
+            var enemyFactionName = String((state.war && state.war.enemy_faction_name) || '').trim().toLowerCase();
             state.enemies = state.enemies.filter(function (m) {
                 var id = String((m && (m.user_id || m.id || m.player_id)) || '').trim();
-                return !!id && !getSideLocks().members[id];
+                var factionId = String((m && (m.faction_id || m.source_faction_id || m.enemy_faction_id)) || '').trim();
+                var factionName = String((m && (m.faction_name || m.source_faction_name || m.enemy_faction_name)) || '').trim().toLowerCase();
+                if (!id || getSideLocks().members[id]) return false;
+                if (ownFactionId && factionId && factionId === ownFactionId) return false;
+                if (ownFactionName && factionName && factionName === ownFactionName) return false;
+                if (enemyFactionId && factionId && factionId !== enemyFactionId) return false;
+                if (enemyFactionName && factionName && factionName !== enemyFactionName) return false;
+                return true;
             });
             warEnemiesCache = state.enemies.slice();
             if (warEnemiesCache.length) rememberEnemyLocks(warEnemiesCache, warId);
@@ -2814,6 +2833,84 @@ function renderOverviewTab() {
         '</div>'
     ].join('');
 }
+
+    function ownFactionId() {
+        return String(
+            (state && state.faction && (state.faction.faction_id || state.faction.id)) ||
+            (state && state.viewer && state.viewer.faction_id) ||
+            (state && state.me && state.me.faction_id) ||
+            (state && state.license && state.license.faction_id) ||
+            ''
+        ).trim();
+    }
+
+    function ownFactionName() {
+        return String(
+            (state && state.faction && (state.faction.faction_name || state.faction.name)) ||
+            (state && state.viewer && state.viewer.faction_name) ||
+            (state && state.me && state.me.faction_name) ||
+            (state && state.license && state.license.faction_name) ||
+            ''
+        ).trim().toLowerCase();
+    }
+
+    function currentEnemyFactionId() {
+        return String(
+            (state && state.war && state.war.enemy_faction_id) ||
+            warEnemiesFactionId ||
+            ''
+        ).trim();
+    }
+
+    function currentEnemyFactionName() {
+        return String(
+            (state && state.war && state.war.enemy_faction_name) ||
+            warEnemiesFactionName ||
+            ''
+        ).trim().toLowerCase();
+    }
+
+    function filterOwnFactionMembers(items) {
+        var ownId = ownFactionId();
+        var ownName = ownFactionName();
+        var seen = {};
+        return arr(items).filter(function (m) {
+            var id = String((m && (m.user_id || m.id || m.player_id)) || '').trim();
+            var factionId = String((m && (m.faction_id || m.source_faction_id)) || '').trim();
+            var factionName = String((m && (m.faction_name || m.source_faction_name)) || '').trim().toLowerCase();
+            if (!id || seen[id]) return false;
+            if (ownId && factionId && factionId !== ownId) return false;
+            if (ownName && factionName && factionName !== ownName) return false;
+            seen[id] = true;
+            return true;
+        });
+    }
+
+    function filterEnemyFactionMembers(items) {
+        var ownId = ownFactionId();
+        var ownName = ownFactionName();
+        var enemyId = currentEnemyFactionId();
+        var enemyName = currentEnemyFactionName();
+        var ownIds = {};
+        arr((state && state.members) || currentFactionMembers || factionMembersCache || []).forEach(function (m) {
+            var id = String((m && (m.user_id || m.id || m.player_id)) || '').trim();
+            if (id) ownIds[id] = true;
+        });
+        var seen = {};
+        return arr(items).filter(function (m) {
+            var id = String((m && (m.user_id || m.id || m.player_id)) || '').trim();
+            var factionId = String((m && (m.faction_id || m.source_faction_id || m.enemy_faction_id)) || '').trim();
+            var factionName = String((m && (m.faction_name || m.source_faction_name || m.enemy_faction_name)) || '').trim().toLowerCase();
+            if (!id || seen[id] || ownIds[id]) return false;
+            if (ownId && factionId && factionId === ownId) return false;
+            if (ownName && factionName && factionName === ownName) return false;
+            if (enemyId && factionId && factionId !== enemyId) return false;
+            if (enemyName && factionName && factionName !== enemyName) return false;
+            seen[id] = true;
+            return true;
+        });
+    }
+
     function renderMembersTab() {
     var members = arr(
         currentFactionMembers ||
@@ -2867,10 +2964,7 @@ function renderOverviewTab() {
 }
     
 function renderEnemiesTab() {
-    var enemies = arr(warEnemiesCache || (state && state.enemies) || []).filter(function (m) {
-        var id = String((m && (m.user_id || m.id)) || '').trim();
-        return !!id;
-    });
+    var enemies = filterEnemyFactionMembers(warEnemiesCache || (state && state.enemies) || []);
     var war = (state && state.war) || {};
     var enemyFactionId = String(war.enemy_faction_id || warEnemiesFactionId || '').trim();
     var enemyFactionName = String(war.enemy_faction_name || warEnemiesFactionName || 'Enemy Faction');
@@ -2899,7 +2993,7 @@ function renderEnemiesTab() {
 
     function renderHospitalTab() {
         var hospitalState = (state && state.hospital) || {};
-        var enemies = arr((hospitalState && hospitalState.items) || (state && state.enemies) || warEnemiesCache || []);
+        var enemies = filterEnemyFactionMembers((hospitalState && hospitalState.items) || (state && state.enemies) || warEnemiesCache || []);
         var nowSec = Math.floor(Date.now() / 1000);
         var hospitalOnly = enemies.filter(function (m) {
             var untilTs = Number((m && (m.hospital_until_ts || m.hospital_until || m.status_until || m.until)) || 0);
@@ -3027,7 +3121,7 @@ function renderEnemiesTab() {
 
     function renderTargetsTab() {
     var targets = arr((state && state.targets) || []);
-    var enemies = sortMembers(arr((state && state.enemies) || warEnemiesCache || []));
+    var enemies = sortMembers(filterEnemyFactionMembers((state && state.enemies) || warEnemiesCache || []));
 
     return [
         '<div class="warhub-grid">',
@@ -3086,7 +3180,7 @@ function renderEnemiesTab() {
     function renderMedDealsTab() {
         var medDeals = (state && state.med_deals) || {};
         var items = arr(medDeals.items || []);
-        var enemies = sortMembers(arr((state && state.enemies) || warEnemiesCache || []));
+        var enemies = sortMembers(filterEnemyFactionMembers((state && state.enemies) || warEnemiesCache || []));
         var viewer = (state && state.viewer) || {};
         var viewerUserId = String(viewer.user_id || '').trim();
         var viewerName = String(viewer.name || 'You');
@@ -3472,7 +3566,7 @@ function renderTermsTab() {
 
     function renderFactionTab() {
         var license = (state && state.license) || {};
-        var members = arr((state && state.members) || currentFactionMembers || factionMembersCache || []);
+        var members = filterOwnFactionMembers((state && state.members) || currentFactionMembers || factionMembersCache || []);
         var factionName = String(
             (state && state.faction && state.faction.name) ||
             license.faction_name ||
@@ -4018,7 +4112,7 @@ function _handleActionClick() {
             if (action === 'meddeals-save') {
                 var medDealsEnemyEl = overlay && overlay.querySelector('#warhub-meddeals-enemy');
                 var chosenEnemyUserId = cleanInputValue(medDealsEnemyEl && medDealsEnemyEl.value);
-                var enemiesForMedDeals = sortMembers(arr((state && state.enemies) || warEnemiesCache || []));
+                var enemiesForMedDeals = sortMembers(filterEnemyFactionMembers((state && state.enemies) || warEnemiesCache || []));
                 var chosenEnemy = enemiesForMedDeals.find(function (m) {
                     return String(getMemberId(m)) === String(chosenEnemyUserId);
                 }) || {};
