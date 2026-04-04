@@ -289,7 +289,7 @@ def _exemption_admin_payload() -> Dict[str, Any]:
     }
 
 
-def _is_faction_leader(api_key: str, user_id: str, faction_id: str) -> bool:
+def _is_faction_management_role(api_key: str, user_id: str, faction_id: str) -> bool:
     api_key = str(api_key or "").strip()
     user_id = str(user_id or "").strip()
     faction_id = str(faction_id or "").strip()
@@ -302,7 +302,7 @@ def _is_faction_leader(api_key: str, user_id: str, faction_id: str) -> bool:
             mid = str(m.get("user_id") or m.get("id") or "").strip()
             pos = str(m.get("position") or "").strip().lower()
             if mid == user_id:
-                return pos == "leader"
+                return pos in {"leader", "co-leader", "co leader", "coleader"}
     except Exception:
         return False
     return False
@@ -319,7 +319,7 @@ def _can_manage_faction(user: Dict[str, Any], faction_id: str) -> bool:
     leader_user_id = str(license_status.get("leader_user_id") or "").strip()
     if leader_user_id == user_id:
         return True
-    return _is_faction_leader(str((user or {}).get("api_key") or ""), user_id, faction_id)
+    return _is_faction_management_role(str((user or {}).get("api_key") or ""), user_id, faction_id)
 
 
 def _feature_access_for_user(user: Dict[str, Any]) -> Dict[str, Any]:
@@ -331,7 +331,7 @@ def _feature_access_for_user(user: Dict[str, Any]) -> Dict[str, Any]:
     leader_user_id = str(license_status.get("leader_user_id") or "").strip()
     exemption = _get_exemption_payload(user_id=user_id, faction_id=faction_id)
 
-    is_leader = is_owner or (leader_user_id == user_id) or _is_faction_leader(str(user.get("api_key") or ""), user_id, faction_id)
+    is_leader = is_owner or (leader_user_id == user_id) or _is_faction_management_role(str(user.get("api_key") or ""), user_id, faction_id)
     member_row = get_faction_member_access(faction_id, user_id) if faction_id and user_id else {}
     member_enabled = True if is_leader else _safe_bool((member_row or {}).get("enabled"))
     payment_required = bool(license_status.get("payment_required")) and not bool(exemption.get("is_faction_exempt"))
@@ -355,6 +355,7 @@ def _feature_access_for_user(user: Dict[str, Any]) -> Dict[str, Any]:
         "is_owner": is_owner,
         "is_admin": is_owner,
         "is_faction_leader": is_leader,
+        "is_faction_co_leader": bool(member_row and str((member_row or {}).get("position") or "").strip().lower() in {"co-leader", "co leader", "coleader"}),
         "can_manage_faction": (is_owner or is_leader),
         "show_admin": is_owner,
         "show_all_tabs": is_owner,
@@ -1035,12 +1036,12 @@ def _summary_member_row(member: Dict[str, Any], hospital_map: Dict[str, Dict[str
     return {
         "user_id": user_id,
         "name": name,
-        "role": str(member.get("position") or member.get("role") or (member.get("member_access") or {}).get("position") or "").strip(),
+        "role": str(member.get("position") or member.get("role") or "").strip(),
         "status": _member_status_text(member),
         "profile_url": str(member.get("profile_url") or profile_url(user_id)),
-        "enabled": bool(member.get("enabled") or (member.get("member_access") or {}).get("enabled")),
+        "enabled": bool(member.get("enabled")),
         "member_access": member.get("member_access") or {},
-        "has_stored_api_key": bool(member.get("has_stored_api_key") or (member.get("member_access") or {}).get("member_api_key")),
+        "has_stored_api_key": bool(member.get("has_stored_api_key")),
         "online_state": str(member.get("online_state") or "").strip().lower(),
         "hits": hits,
         "respect_gain": round(respect_gain, 2),
