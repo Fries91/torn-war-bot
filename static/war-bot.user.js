@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         War Hub ⚔️
 // @namespace    fries91-war-hub
-// @version      3.3.5
+// @version      3.4.0
 // @description  War Hub by Fries91. Clean split loaders: faction data only from faction routes, enemy data only from enemy routes.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -326,6 +326,59 @@
         statusBox.innerHTML = msg ? ('<span class="warhub-pill ' + (bad ? 'bad' : 'good') + '">' + esc(msg) + '</span>') : '';
     }
 
+    function bindPress(el, handler) {
+        if (!el || el.__warhubPressBound) return;
+        el.__warhubPressBound = true;
+        var touchHandled = false;
+
+        el.addEventListener('click', function (ev) {
+            if (touchHandled) {
+                touchHandled = false;
+                ev.preventDefault();
+                ev.stopPropagation();
+                return;
+            }
+            handler(ev);
+        });
+
+        el.addEventListener('touchend', function (ev) {
+            touchHandled = true;
+            if (ev.cancelable) ev.preventDefault();
+            ev.stopPropagation();
+            handler(ev);
+        }, { passive: false });
+    }
+
+    function delegatePress(root, selector, handler) {
+        if (!root) return;
+        function run(ev) {
+            var target = ev.target && ev.target.closest ? ev.target.closest(selector) : null;
+            if (!target || !root.contains(target)) return;
+            if (ev.cancelable) ev.preventDefault();
+            ev.stopPropagation();
+            handler(ev, target);
+        }
+        root.addEventListener('click', run);
+        root.addEventListener('touchend', run, { passive: false });
+    }
+
+    function safeClosest(start, selector) {
+        return start && start.closest ? start.closest(selector) : null;
+    }
+
+    function ensureMounted() {
+        if (!document.body) return false;
+        var hasShield = !!document.getElementById('warhub-shield');
+        var hasOverlay = !!document.getElementById('warhub-overlay');
+        if (!hasShield || !hasOverlay || !shield || !overlay) {
+            shield = null;
+            overlay = null;
+            statusBox = null;
+            mount();
+        }
+        return true;
+    }
+
     function renderTabs() {
         function rowHtml(rows) {
             return rows.filter(function(pair){
@@ -365,8 +418,17 @@
         statusBox = overlay.querySelector('#warhub-status');
         applyShieldPos();
         makeHoldDraggable(shield);
-        overlay.querySelector('#warhub-close').addEventListener('click', function(){ setOverlayOpen(false); });
-        overlay.addEventListener('click', handleClick);
+        bindPress(overlay.querySelector('#warhub-close'), function(){ setOverlayOpen(false); });
+        delegatePress(overlay, '[data-tab]', async function(_ev, target){
+            currentTab = target.getAttribute('data-tab');
+            GM_setValue(K_TAB, currentTab);
+            await loadCurrentTab(true);
+            renderBody();
+            restartPolling();
+        });
+        delegatePress(overlay, '[data-action]', async function(ev){
+            await handleClick(ev);
+        });
         window.addEventListener('resize', applyShieldPos);
         setOverlayOpen(isOpen);
         applyShieldPos();
@@ -721,15 +783,6 @@
     }
 
     async function handleClick(e) {
-        var tab = e.target.closest('[data-tab]');
-        if (tab) {
-            currentTab = tab.getAttribute('data-tab');
-            GM_setValue(K_TAB, currentTab);
-            await loadCurrentTab(true);
-            renderBody();
-            restartPolling();
-            return;
-        }
         var actionEl = e.target.closest('[data-action]');
         if (!actionEl) return;
         var action = actionEl.getAttribute('data-action');
@@ -847,15 +900,30 @@
         }
     }
 
+
+    var remountTimer = null;
+
     async function boot() {
-        mount();
+        if (!document.body) return;
+        ensureMounted();
         if (isLoggedIn()) {
             await loadState();
             await loadCurrentTab(true);
             renderBody();
             restartPolling();
+        } else {
+            renderBody();
+        }
+        if (!remountTimer) {
+            remountTimer = setInterval(function () {
+                try { ensureMounted(); } catch (_e) {}
+            }, 2000);
         }
     }
 
-    boot();
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', function(){ boot(); }, { once: true });
+    } else {
+        boot();
+    }
 })();
