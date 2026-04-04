@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         War Hub ⚔️
 // @namespace    fries91-war-hub
-// @version      3.4.0
+// @version      3.4.1
 // @description  War Hub by Fries91. Clean split loaders: faction data only from faction routes, enemy data only from enemy routes.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -197,17 +197,17 @@
     function makeHoldDraggable(handle) {
         if (!handle) return;
 
-        var pointerId = null;
         var dragging = false;
         var moved = false;
-        var pressTimer = null;
         var pressActive = false;
+        var pressTimer = null;
         var startX = 0;
         var startY = 0;
         var startLeft = 0;
         var startTop = 0;
-        var HOLD_MS = 220;
-        var DRAG_THRESHOLD = 6;
+        var HOLD_MS = 260;
+        var DRAG_THRESHOLD = 8;
+        var activePointerId = null;
 
         function clearPressTimer() {
             if (pressTimer) {
@@ -220,20 +220,26 @@
             return Math.max(handle.offsetWidth || 32, handle.offsetHeight || 32, 32);
         }
 
-        function onPointerDown(ev) {
-            if (ev.button != null && ev.button !== 0) return;
+        function getPoint(ev) {
+            if (ev.touches && ev.touches[0]) return ev.touches[0];
+            if (ev.changedTouches && ev.changedTouches[0]) return ev.changedTouches[0];
+            return ev;
+        }
+
+        function beginPress(ev) {
+            var p = getPoint(ev);
             var rect = handle.getBoundingClientRect();
-            pointerId = ev.pointerId;
             dragging = false;
             moved = false;
             pressActive = true;
-            startX = ev.clientX;
-            startY = ev.clientY;
+            startX = p.clientX;
+            startY = p.clientY;
             startLeft = rect.left;
             startTop = rect.top;
+            activePointerId = ev.pointerId != null ? ev.pointerId : null;
             clearPressTimer();
-            if (handle.setPointerCapture) {
-                try { handle.setPointerCapture(pointerId); } catch (_e) {}
+            if (handle.setPointerCapture && activePointerId != null) {
+                try { handle.setPointerCapture(activePointerId); } catch (_e) {}
             }
             pressTimer = setTimeout(function () {
                 if (!pressActive) return;
@@ -241,12 +247,13 @@
             }, HOLD_MS);
         }
 
-        function onPointerMove(ev) {
+        function movePress(ev) {
             if (!pressActive) return;
-            if (pointerId != null && ev.pointerId != null && ev.pointerId !== pointerId) return;
+            if (activePointerId != null && ev.pointerId != null && ev.pointerId !== activePointerId) return;
 
-            var dx = ev.clientX - startX;
-            var dy = ev.clientY - startY;
+            var p = getPoint(ev);
+            var dx = p.clientX - startX;
+            var dy = p.clientY - startY;
 
             if (Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD) {
                 moved = true;
@@ -265,7 +272,8 @@
             handle.style.transform = 'none';
         }
 
-        function finishPress(ev) {
+        function endPress(ev) {
+            if (!pressActive) return;
             clearPressTimer();
             if (dragging) {
                 var rect = handle.getBoundingClientRect();
@@ -277,18 +285,66 @@
             }
             pressActive = false;
             dragging = false;
-            if (pointerId != null && handle.releasePointerCapture) {
-                try { handle.releasePointerCapture(pointerId); } catch (_e2) {}
+            if (handle.releasePointerCapture && activePointerId != null) {
+                try { handle.releasePointerCapture(activePointerId); } catch (_e2) {}
             }
-            pointerId = null;
+            activePointerId = null;
         }
 
-        handle.addEventListener('pointerdown', onPointerDown);
-        handle.addEventListener('pointermove', onPointerMove);
-        handle.addEventListener('pointerup', finishPress);
-        handle.addEventListener('pointercancel', finishPress);
+        // Pointer events
+        handle.addEventListener('pointerdown', function (ev) {
+            if (ev.button != null && ev.button !== 0) return;
+            beginPress(ev);
+        });
+        handle.addEventListener('pointermove', movePress);
+        handle.addEventListener('pointerup', endPress);
+        handle.addEventListener('pointercancel', endPress);
+
+        // Mouse/touch fallbacks for environments with flaky pointer events
+        handle.addEventListener('mousedown', function (ev) {
+            if (window.PointerEvent) return;
+            if (ev.button != null && ev.button !== 0) return;
+            beginPress(ev);
+        });
+        document.addEventListener('mousemove', function (ev) {
+            if (window.PointerEvent) return;
+            movePress(ev);
+        });
+        document.addEventListener('mouseup', function (ev) {
+            if (window.PointerEvent) return;
+            endPress(ev);
+        });
+
+        handle.addEventListener('touchstart', function (ev) {
+            if (window.PointerEvent) return;
+            beginPress(ev);
+        }, { passive: true });
+        document.addEventListener('touchmove', function (ev) {
+            if (window.PointerEvent) return;
+            movePress(ev);
+        }, { passive: false });
+        document.addEventListener('touchend', function (ev) {
+            if (window.PointerEvent) return;
+            endPress(ev);
+        }, { passive: false });
+        document.addEventListener('touchcancel', function (ev) {
+            if (window.PointerEvent) return;
+            endPress(ev);
+        }, { passive: false });
+
+        // Direct open fallback for engines that swallow pointerup/touchend weirdly
+        handle.addEventListener('click', function (ev) {
+            if (dragging || moved || pressActive) {
+                ev.preventDefault();
+                ev.stopPropagation();
+                return;
+            }
+            ev.preventDefault();
+            ev.stopPropagation();
+            setOverlayOpen(!isOpen);
+        });
+
         handle.addEventListener('contextmenu', function (ev) { ev.preventDefault(); });
-        handle.addEventListener('click', function (ev) { ev.preventDefault(); ev.stopPropagation(); });
     }
 
     function req(method, path, body, extraHeaders) {
