@@ -43,6 +43,7 @@
     var K_OVERVIEW_BOXES = 'warhub_overview_boxes_v3';
     var K_OVERLAY_SCROLL = 'warhub_overlay_scroll_v3';
     var K_SIDE_LOCKS = 'warhub_side_locks_v1';
+    var K_FACTION_ONLY_CACHE = 'warhub_faction_only_cache_v1';
 
     
     // ============================================================
@@ -801,6 +802,46 @@
             .trim();
     }
 
+
+    function getFactionOnlyCache() {
+        var raw = GM_getValue(K_FACTION_ONLY_CACHE, null);
+        if (!raw || typeof raw !== 'object') {
+            return { faction_id: '', faction_name: '', members: [], updated_at: '' };
+        }
+        return {
+            faction_id: String(raw.faction_id || '').trim(),
+            faction_name: String(raw.faction_name || '').trim(),
+            members: arr(raw.members),
+            updated_at: String(raw.updated_at || '')
+        };
+    }
+
+    function saveFactionOnlyCache(members, factionId, factionName) {
+        GM_setValue(K_FACTION_ONLY_CACHE, {
+            faction_id: String(factionId || '').trim(),
+            faction_name: String(factionName || '').trim(),
+            members: arr(members),
+            updated_at: new Date().toISOString()
+        });
+    }
+
+    function clearFactionOnlyCache() {
+        GM_deleteValue(K_FACTION_ONLY_CACHE);
+    }
+
+    function getFactionOnlyMembers() {
+        return arr(getFactionOnlyCache().members);
+    }
+
+    function getOwnFactionIdMap() {
+        var ids = {};
+        arr(currentFactionMembers && currentFactionMembers.length ? currentFactionMembers : (factionMembersCache && factionMembersCache.length ? factionMembersCache : getFactionOnlyMembers())).forEach(function (m) {
+            var id = String((m && (m.user_id || m.id || m.player_id)) || '').trim();
+            if (id) ids[id] = true;
+        });
+        return ids;
+    }
+
     function getSideLocks() {
         var raw = GM_getValue(K_SIDE_LOCKS, null);
         if (!raw || typeof raw !== 'object') {
@@ -1393,6 +1434,7 @@ function makeHoldDraggable(handle, target, key) {
 
     function doLogout() {
         GM_deleteValue(K_SESSION);
+        clearFactionOnlyCache();
         state = null;
         currentFactionMembers = [];
         factionMembersCache = null;
@@ -1473,13 +1515,27 @@ function _loadState() {
             var id = String((m && (m.user_id || m.id || m.player_id)) || '').trim();
             var factionId = String((m && (m.faction_id || m.source_faction_id)) || '').trim();
             var factionName = String((m && (m.faction_name || m.source_faction_name)) || '').trim().toLowerCase();
+            var enemyFactionId = String((m && (m.enemy_faction_id || m.source_enemy_faction_id)) || '').trim();
+            var enemyFactionName = String((m && (m.enemy_faction_name || m.source_enemy_faction_name)) || '').trim().toLowerCase();
             if (!id || locks.enemies[id]) return false;
-            if (ownFactionId && factionId && factionId !== ownFactionId) return false;
-            if (ownFactionName && factionName && factionName !== ownFactionName) return false;
+            if (m && m.enemy) return false;
+            if (enemyFactionId && ownFactionId && enemyFactionId === ownFactionId) return false;
+            if (enemyFactionName && ownFactionName && enemyFactionName === ownFactionName) return false;
+            if (ownFactionId) {
+                if (!factionId || factionId !== ownFactionId) return false;
+            } else if (factionId) {
+                return false;
+            }
+            if (ownFactionName) {
+                if (!factionName || factionName !== ownFactionName) return false;
+            } else if (factionName) {
+                return false;
+            }
             return true;
         });
         factionMembersCache = currentFactionMembers.slice();
         state.members = factionMembersCache.slice();
+        saveFactionOnlyCache(factionMembersCache, ownFactionId, ownFactionName);
         rememberMemberLocks(factionMembersCache, warId);
 
         if (state.war && typeof state.war === 'object') {
@@ -2667,16 +2723,9 @@ function renderEnemyRow(member, opts) {
     var travelArrival = st === 'travel' ? travelArrivalText(member) : '';
     var actionHtml = '';
 
-    if (state && state.members && arr(state.members).length) {
-        var ownIds = {};
-        arr(state.members).forEach(function (m) {
-            var ownId = String((m && (m.user_id || m.id)) || '').trim();
-            if (ownId) ownIds[ownId] = true;
-        });
-
-        if (id && ownIds[String(id)]) {
-            return '';
-        }
+    var ownIds = getOwnFactionIdMap();
+    if (id && ownIds[String(id)]) {
+        return '';
     }
 
     if (opts.mode === 'hospital') {
@@ -2873,14 +2922,36 @@ function renderOverviewTab() {
     function filterOwnFactionMembers(items) {
         var ownId = ownFactionId();
         var ownName = ownFactionName();
+        var enemyId = currentEnemyFactionId();
+        var enemyName = currentEnemyFactionName();
+        var trustedOwnIds = getOwnFactionIdMap();
         var seen = {};
         return arr(items).filter(function (m) {
             var id = String((m && (m.user_id || m.id || m.player_id)) || '').trim();
             var factionId = String((m && (m.faction_id || m.source_faction_id)) || '').trim();
             var factionName = String((m && (m.faction_name || m.source_faction_name)) || '').trim().toLowerCase();
             if (!id || seen[id]) return false;
-            if (ownId && factionId && factionId !== ownId) return false;
-            if (ownName && factionName && factionName !== ownName) return false;
+            if (m && m.enemy) return false;
+            if (enemyId && factionId && factionId === enemyId) return false;
+            if (enemyName && factionName && factionName === enemyName) return false;
+            if (ownId) {
+                if (factionId) {
+                    if (factionId !== ownId) return false;
+                } else if (!trustedOwnIds[id]) {
+                    return false;
+                }
+            } else if (factionId) {
+                return false;
+            }
+            if (ownName) {
+                if (factionName) {
+                    if (factionName !== ownName) return false;
+                } else if (!trustedOwnIds[id]) {
+                    return false;
+                }
+            } else if (factionName) {
+                return false;
+            }
             seen[id] = true;
             return true;
         });
@@ -2891,32 +2962,28 @@ function renderOverviewTab() {
         var ownName = ownFactionName();
         var enemyId = currentEnemyFactionId();
         var enemyName = currentEnemyFactionName();
-        var ownIds = {};
-        arr((state && state.members) || currentFactionMembers || factionMembersCache || []).forEach(function (m) {
-            var id = String((m && (m.user_id || m.id || m.player_id)) || '').trim();
-            if (id) ownIds[id] = true;
-        });
+        var ownIds = getOwnFactionIdMap();
         var seen = {};
         return arr(items).filter(function (m) {
             var id = String((m && (m.user_id || m.id || m.player_id)) || '').trim();
             var factionId = String((m && (m.faction_id || m.source_faction_id || m.enemy_faction_id)) || '').trim();
             var factionName = String((m && (m.faction_name || m.source_faction_name || m.enemy_faction_name)) || '').trim().toLowerCase();
+            var explicitEnemy = !!(m && m.enemy);
             if (!id || seen[id] || ownIds[id]) return false;
             if (ownId && factionId && factionId === ownId) return false;
             if (ownName && factionName && factionName === ownName) return false;
-            if (enemyId && factionId && factionId !== enemyId) return false;
-            if (enemyName && factionName && factionName !== enemyName) return false;
+            if (enemyId && factionId && factionId !== enemyId && !explicitEnemy) return false;
+            if (enemyName && factionName && factionName !== enemyName && !explicitEnemy) return false;
             seen[id] = true;
             return true;
         });
     }
 
     function renderMembersTab() {
-    var members = arr(
-        currentFactionMembers ||
-        factionMembersCache ||
-        (state && state.members) ||
-        []
+    var members = filterOwnFactionMembers(
+        (currentFactionMembers && currentFactionMembers.length ? currentFactionMembers :
+            (factionMembersCache && factionMembersCache.length ? factionMembersCache :
+                (getFactionOnlyMembers().length ? getFactionOnlyMembers() : ((state && state.members) || []))))
     );
 
     var search = String(GM_getValue('warhub_members_search', '') || '').trim().toLowerCase();
@@ -2964,7 +3031,9 @@ function renderOverviewTab() {
 }
     
 function renderEnemiesTab() {
-    var enemies = filterEnemyFactionMembers(warEnemiesCache || (state && state.enemies) || []);
+    var enemies = filterEnemyFactionMembers(
+        (warEnemiesCache && warEnemiesCache.length ? warEnemiesCache : ((state && state.enemies) || []))
+    );
     var war = (state && state.war) || {};
     var enemyFactionId = String(war.enemy_faction_id || warEnemiesFactionId || '').trim();
     var enemyFactionName = String(war.enemy_faction_name || warEnemiesFactionName || 'Enemy Faction');
@@ -3566,15 +3635,21 @@ function renderTermsTab() {
 
     function renderFactionTab() {
         var license = (state && state.license) || {};
-        var members = filterOwnFactionMembers((state && state.members) || currentFactionMembers || factionMembersCache || []);
+        var members = filterOwnFactionMembers(
+            (currentFactionMembers && currentFactionMembers.length ? currentFactionMembers :
+                (factionMembersCache && factionMembersCache.length ? factionMembersCache :
+                    (getFactionOnlyMembers().length ? getFactionOnlyMembers() : ((state && state.members) || []))))
+        );
         var factionName = String(
-            (state && state.faction && state.faction.name) ||
+            (state && state.faction && (state.faction.faction_name || state.faction.name)) ||
             license.faction_name ||
+            getFactionOnlyCache().faction_name ||
             'Your Faction'
         );
         var factionId = String(
             (state && state.faction && state.faction.faction_id) ||
             license.faction_id ||
+            getFactionOnlyCache().faction_id ||
             ''
         );
         var renewalCost = license.renewal_cost != null ? license.renewal_cost : ((license.enabled_member_count || 0) * PRICE_PER_MEMBER);
