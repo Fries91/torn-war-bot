@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         War Hub ⚔️
 // @namespace    fries91-war-hub
-// @version      3.4.4
+// @version      3.4.5
 // @description  War Hub by Fries91. Clean split loaders: faction data only from faction routes, enemy data only from enemy routes.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -65,7 +65,7 @@
     var loading = false;
 
     GM_addStyle('\
-#warhub-shield{position:fixed!important;z-index:2147483647!important;width:30px!important;height:30px!important;border-radius:8px!important;display:flex!important;align-items:center!important;justify-content:center!important;font-size:15px!important;line-height:1!important;cursor:pointer!important;user-select:none!important;-webkit-user-select:none!important;-webkit-touch-callout:none!important;-webkit-tap-highlight-color:transparent!important;touch-action:manipulation!important;box-shadow:0 6px 16px rgba(0,0,0,.38)!important;border:1px solid rgba(255,255,255,.12)!important;background:radial-gradient(circle at 30% 20%, rgba(232,87,87,.98), rgba(133,13,13,.98) 55%, rgba(56,7,7,.99))!important;color:#fff!important;left:auto!important;right:6px!important;top:405px!important;bottom:auto!important;transform:none!important;opacity:1!important;visibility:visible!important;pointer-events:auto!important;}\
+#warhub-shield{position:fixed!important;z-index:2147483647!important;width:30px!important;height:30px!important;border-radius:8px!important;display:flex!important;align-items:center!important;justify-content:center!important;font-size:15px!important;line-height:1!important;cursor:pointer!important;user-select:none!important;-webkit-user-select:none!important;-webkit-touch-callout:none!important;-webkit-tap-highlight-color:transparent!important;touch-action:none!important;box-shadow:0 6px 16px rgba(0,0,0,.38)!important;border:1px solid rgba(255,255,255,.12)!important;background:radial-gradient(circle at 30% 20%, rgba(232,87,87,.98), rgba(133,13,13,.98) 55%, rgba(56,7,7,.99))!important;color:#fff!important;left:auto!important;right:6px!important;top:405px!important;bottom:auto!important;transform:none!important;opacity:1!important;visibility:visible!important;pointer-events:auto!important;}\
 #warhub-miniheader,#warhub-miniheader-inner,#warhub-miniheader-button,#warhub-nav-button-wrap,#warhub-nav-button{display:none!important;}\
 #warhub-overlay{position:fixed!important;left:8px!important;right:8px!important;top:8px!important;bottom:8px!important;max-width:580px!important;margin:0 auto!important;background:linear-gradient(180deg,#1a0d0d,#120909 18%,#0c0c0c 68%,#090909)!important;color:#f2f2f2!important;border:1px solid rgba(255,255,255,.08)!important;border-radius:16px!important;box-shadow:0 20px 44px rgba(0,0,0,.62)!important;display:none!important;flex-direction:column!important;z-index:2147483646!important;overflow:hidden!important;}\
 #warhub-overlay.open{display:flex!important;}\
@@ -179,7 +179,7 @@
         if (!handle || handle.__warhubShieldBound) return;
         handle.__warhubShieldBound = true;
 
-        handle.addEventListener('touchend', function (ev) {
+        handle.addEventListener('touchstart', function (ev) {
             if (ev.cancelable) ev.preventDefault();
             ev.stopPropagation();
             setOverlayOpen(!isOpen);
@@ -229,7 +229,7 @@
         if (!el || el.__warhubPressBound) return;
         el.__warhubPressBound = true;
 
-        el.addEventListener('touchend', function (ev) {
+        el.addEventListener('touchstart', function (ev) {
             if (ev.cancelable) ev.preventDefault();
             ev.stopPropagation();
             handler(ev);
@@ -238,7 +238,7 @@
 
     function delegatePress(root, selector, handler) {
         if (!root) return;
-        root.addEventListener('touchend', function (ev) {
+        root.addEventListener('touchstart', function (ev) {
             var target = ev.target && ev.target.closest ? ev.target.closest(selector) : null;
             if (!target || !root.contains(target)) return;
             if (ev.cancelable) ev.preventDefault();
@@ -788,27 +788,18 @@
 
     var remountTimer = null;
 
-    async function boot() {
-        if (!document.body) return;
+    async 
+(function boot() {
+    function start() {
         ensureMounted();
-        if (isLoggedIn()) {
-            await loadState();
-            await loadCurrentTab(true);
-            renderBody();
-            restartPolling();
-        } else {
-            renderBody();
-        }
-        if (!remountTimer) {
-            remountTimer = setInterval(function () {
-                try { ensureMounted(); } catch (_e) {}
-            }, 2000);
-        }
+        applyShieldPos();
     }
 
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', function(){ boot(); }, { once: true });
-    } else {
-        boot();
-    }
+    start();
+    setTimeout(start, 250);
+    setTimeout(start, 1000);
+    setInterval(function () {
+        ensureMounted();
+        applyShieldPos();
+    }, 1500);
 })();
