@@ -50,6 +50,8 @@ from db import (
     list_med_deals,
     upsert_med_deal,
     delete_med_deal,
+    upsert_enemy_stat_prediction,
+    list_enemy_stat_predictions,
 )
 
 from torn_identity import me_basic
@@ -661,6 +663,71 @@ def _build_targets_payload(user: Dict[str, Any]) -> Dict[str, Any]:
     return {"items": cleaned, "count": len(cleaned)}
 
 
+def _store_enemy_predictions(faction_id: str, enemy_faction_id: str, enemies: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    faction_id = str(faction_id or "").strip()
+    enemy_faction_id = str(enemy_faction_id or "").strip()
+    if not faction_id:
+        return list(enemies or [])
+
+    stored_map = {
+        str(row.get("enemy_user_id") or "").strip(): row
+        for row in list_enemy_stat_predictions(faction_id)
+        if isinstance(row, dict)
+    }
+
+    out: List[Dict[str, Any]] = []
+    for member in list(enemies or []):
+        if not isinstance(member, dict):
+            continue
+
+        enemy_user_id = str(member.get("user_id") or member.get("player_id") or member.get("id") or "").strip()
+        if not enemy_user_id:
+            out.append(member)
+            continue
+
+        pred_total = int(member.get("predicted_total_stats") or 0)
+        pred_total_m = float(member.get("predicted_total_stats_m") or member.get("total_stats_m") or member.get("battle_stats_m") or 0.0)
+        confidence = str(member.get("prediction_confidence") or (member.get("battle_prediction") or {}).get("confidence") or "Estimate").strip()
+        source = str(member.get("prediction_source") or (member.get("battle_prediction") or {}).get("source") or "warhub_model").strip()
+        summary = str(member.get("prediction_summary") or (member.get("battle_prediction") or {}).get("summary") or "").strip()
+
+        if pred_total <= 0 and pred_total_m > 0:
+            pred_total = int(round(pred_total_m * 1_000_000))
+        if pred_total_m <= 0 and pred_total > 0:
+            pred_total_m = round(pred_total / 1_000_000, 2)
+
+        stored = None
+        if pred_total > 0 or pred_total_m > 0:
+            stored = upsert_enemy_stat_prediction(
+                faction_id=faction_id,
+                enemy_faction_id=enemy_faction_id,
+                enemy_user_id=enemy_user_id,
+                enemy_name=str(member.get("name") or "").strip(),
+                predicted_total_stats=pred_total,
+                predicted_total_stats_m=pred_total_m,
+                confidence=confidence,
+                source=source,
+                summary=summary,
+                raw_json=member,
+            )
+        else:
+            stored = stored_map.get(enemy_user_id) or {}
+
+        merged = dict(member)
+        if stored:
+            merged["predicted_total_stats"] = int(stored.get("predicted_total_stats") or pred_total or 0)
+            merged["predicted_total_stats_m"] = float(stored.get("predicted_total_stats_m") or pred_total_m or 0.0)
+            merged["total_stats_m"] = float(stored.get("predicted_total_stats_m") or pred_total_m or 0.0)
+            merged["battle_stats_m"] = float(stored.get("predicted_total_stats_m") or pred_total_m or 0.0)
+            merged["prediction_confidence"] = str(stored.get("confidence") or confidence or "Estimate")
+            merged["prediction_source"] = str(stored.get("source") or source or "warhub_model")
+            merged["prediction_summary"] = str(stored.get("summary") or summary or "")
+            merged["prediction_updated_at"] = str(stored.get("updated_at") or "")
+        out.append(merged)
+
+    return out
+
+
 def _build_war_and_enemy_payload(user: Dict[str, Any]) -> Dict[str, Any]:
     user = user or {}
     api_key = str(user.get("api_key") or "").strip()
@@ -691,7 +758,8 @@ def _build_war_and_enemy_payload(user: Dict[str, Any]) -> Dict[str, Any]:
         if enemy_payload.get("ok"):
             enemy_faction_id = str(enemy_payload.get("enemy_faction_id") or enemy_faction_id or "").strip()
             enemy_faction_name = str(enemy_payload.get("enemy_faction_name") or enemy_faction_name or "").strip()
-            enemies = list(enemy_payload.get("members") or [])
+            enemies = [_build_enemy_member_payload(m, enemy_faction_id, enemy_faction_name) for m in enemy_payload.get("members") or []]
+            enemies = _store_enemy_predictions(my_faction_id, enemy_faction_id, enemies)
         else:
             enemy_faction_id = ""
             enemy_faction_name = ""
