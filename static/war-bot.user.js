@@ -39,6 +39,7 @@
     var TAB_ROW_2 = [
         ['meddeals', 'Med Deals'],
         ['terms', 'Terms'],
+        ['summary', 'Summary'],
         ['faction', 'Faction'],
         ['settings', 'Settings'],
         ['instructions', 'Help'],
@@ -280,6 +281,9 @@
                 if (tg.ok && tg.json) tabData.targets = tg.json;
                 var en2 = await authedReq('GET', '/api/enemies');
                 if (en2.ok && en2.json) tabData.enemies = en2.json;
+            } else if (currentTab === 'summary') {
+                var sm = await authedReq('GET', '/api/live-summary');
+                if (sm.ok && sm.json) tabData.summary = sm.json;
             } else if (currentTab === 'faction') {
                 var fm = await authedReq('GET', '/api/faction/members');
                 if (fm.ok && fm.json) tabData.faction = fm.json;
@@ -308,7 +312,7 @@
         if (pollTimer) clearInterval(pollTimer);
         pollTimer = null;
         if (!isOpen || !isLoggedIn()) return;
-        if (['overview','enemies','hospital','chain'].indexOf(currentTab) === -1) return;
+        if (['overview','enemies','hospital','chain','summary'].indexOf(currentTab) === -1) return;
         var ms = {overview:12000,enemies:7000,hospital:6000,chain:10000}[currentTab] || 12000;
         pollTimer = setInterval(async function(){
             await loadCurrentTab(true);
@@ -453,6 +457,40 @@
         ].join('');
     }
 
+
+
+    function renderSummary() {
+        var s = tabData.summary || {};
+        var cards = arr(s.cards);
+        var top = s.top || {};
+        var rows = arr(s.rows);
+        var alerts = s.alerts || {};
+        function badge(cls, txt){ return '<span class="warhub-pill ' + esc(cls || 'neutral') + '">' + esc(String(txt || '—')) + '</span>'; }
+        function cardHtml(c){ return '<div class="warhub-card"><div class="warhub-sub">' + esc(String(c.label || 'Metric')) + '</div><div class="warhub-title">' + esc(String(c.value == null ? '—' : c.value)) + '</div></div>'; }
+        function listBox(title, items){
+            items = arr(items).slice(0,5);
+            return '<div class="warhub-card warhub-col"><h3>' + esc(title) + '</h3>' + (items.length ? items.map(function(it){ return '<div class="warhub-kv"><div>' + esc(String(it.name || 'Player')) + '</div><div>' + badge('neutral', it.metric_value != null ? it.metric_value : (it.value != null ? it.value : (it.net_impact != null ? it.net_impact : '—'))) + '</div></div>'; }).join('') : '<div class="warhub-sub">No data yet.</div>') + '</div>';
+        }
+        return [
+            '<div class="warhub-grid">',
+                '<div class="warhub-hero-card"><div class="warhub-title">Summary</div><div class="warhub-sub">Leader war snapshot</div></div>',
+                cards.length ? '<div class="warhub-mini-grid">' + cards.map(cardHtml).join('') + '</div>' : '<div class="warhub-card">No live summary yet.</div>',
+                '<div class="warhub-card warhub-col">',
+                    '<h3>Top</h3>',
+                    '<div class="warhub-kv"><div>Top Hitter</div><div>' + esc(String(top.top_hitter || '—')) + '</div></div>',
+                    '<div class="warhub-kv"><div>Top Respect Gain</div><div>' + esc(String(top.top_respect_gain || '—')) + '</div></div>',
+                    '<div class="warhub-kv"><div>Top Respect Lost</div><div>' + esc(String(top.top_respect_lost || '—')) + '</div></div>',
+                    '<div class="warhub-kv"><div>Top Hits Taken</div><div>' + esc(String(top.top_hits_taken || '—')) + '</div></div>',
+                    '<div class="warhub-kv"><div>Best Efficiency</div><div>' + esc(String(top.best_efficiency || '—')) + '</div></div>',
+                '</div>',
+                listBox('No Shows', alerts.no_shows),
+                listBox('Bleeding', alerts.bleeding),
+                listBox('Under Fire', alerts.under_fire),
+                '<div class="warhub-card warhub-col"><h3>Member Rows</h3>' + (rows.length ? rows.slice(0,15).map(function(r){ return '<div class="warhub-kv"><div>' + esc(String(r.name || 'Player')) + '</div><div>' + badge((r.net_impact || 0) >= 0 ? 'good' : 'bad', 'Net ' + String(r.net_impact == null ? 0 : r.net_impact)) + '</div></div>'; }).join('') : '<div class="warhub-sub">No rows yet.</div>') + '</div>',
+            '</div>'
+        ].join('');
+    }
+
     function renderSettings() {
         var v = viewer();
         var stats = v.battle_stats || {};
@@ -497,6 +535,7 @@
         else if (currentTab === 'targets') content.innerHTML = renderTargets();
         else if (currentTab === 'meddeals') content.innerHTML = renderMedDeals();
         else if (currentTab === 'terms') content.innerHTML = renderTerms();
+        else if (currentTab === 'summary') content.innerHTML = renderSummary();
         else if (currentTab === 'faction') content.innerHTML = renderFaction();
         else if (currentTab === 'settings') content.innerHTML = renderSettings();
         else if (currentTab === 'instructions') content.innerHTML = renderInstructions();
