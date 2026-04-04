@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         War Hub ⚔️
 // @namespace    fries91-war-hub
-// @version      3.3.1
+// @version      3.3.0
 // @description  War Hub by Fries91. Clean split loaders: faction data only from faction routes, enemy data only from enemy routes.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -19,8 +19,8 @@
 (function () {
     'use strict';
 
-    if (window.__WAR_HUB_V331__) return;
-    window.__WAR_HUB_V331__ = true;
+    if (window.__WAR_HUB_V330__) return;
+    window.__WAR_HUB_V330__ = true;
 
     var BASE_URL = 'https://torn-war-bot.onrender.com';
     var K_API_KEY = 'warhub_api_key_v3';
@@ -65,8 +65,9 @@
     var loading = false;
 
     GM_addStyle('\
-#warhub-icon-slot{display:inline-flex!important;align-items:center!important;justify-content:center!important;flex:0 0 auto!important;margin-left:4px!important;vertical-align:middle!important;}\
-#warhub-shield{position:relative!important;right:auto!important;top:auto!important;left:auto!important;bottom:auto!important;transform:none!important;z-index:auto!important;width:40px!important;height:40px!important;border-radius:12px!important;display:inline-flex!important;align-items:center!important;justify-content:center!important;background:radial-gradient(circle at 30% 20%, rgba(232,87,87,.98), rgba(133,13,13,.98) 55%, rgba(56,7,7,.99))!important;color:#fff!important;border:1px solid rgba(255,255,255,.14)!important;box-shadow:0 6px 18px rgba(0,0,0,.40)!important;font-size:21px!important;cursor:pointer!important;flex:0 0 auto!important;}\
+#warhub-shield{display:none!important;}\
+#warhub-nav-button{display:inline-flex!important;align-items:center!important;justify-content:center!important;width:42px!important;height:42px!important;border-radius:10px!important;margin:0 6px!important;background:radial-gradient(circle at 30% 20%, rgba(232,87,87,.98), rgba(133,13,13,.98) 55%, rgba(56,7,7,.99))!important;color:#fff!important;border:1px solid rgba(255,255,255,.14)!important;box-shadow:0 6px 16px rgba(0,0,0,.35)!important;font-size:21px!important;cursor:pointer!important;flex:0 0 auto!important;-webkit-tap-highlight-color:transparent!important;}\
+#warhub-nav-button.warhub-nav-button--small{width:38px!important;height:38px!important;font-size:19px!important;margin:0 4px!important;}\
 #warhub-overlay{position:fixed!important;left:8px!important;right:8px!important;top:8px!important;bottom:8px!important;max-width:580px!important;margin:0 auto!important;background:linear-gradient(180deg,#1a0d0d,#120909 18%,#0c0c0c 68%,#090909)!important;color:#f2f2f2!important;border:1px solid rgba(255,255,255,.08)!important;border-radius:16px!important;box-shadow:0 20px 44px rgba(0,0,0,.62)!important;display:none!important;flex-direction:column!important;z-index:2147483646!important;overflow:hidden!important;}\
 #warhub-overlay.open{display:flex!important;}\
 #warhub-overlay *{box-sizing:border-box!important;font-family:inherit!important;}\
@@ -197,75 +198,59 @@
         overlay.querySelector('#warhub-tabs-2').innerHTML = rowHtml(TAB_ROW_2);
     }
 
-    var mountObserver = null;
-    var iconSlot = null;
-
-    function scoreMountHost(el) {
-        if (!el || el === overlay || el === shield) return -1;
-        if (overlay && el.contains(overlay)) return -1;
-        var rect = el.getBoundingClientRect();
-        if (!rect || rect.width < 220 || rect.height < 24 || rect.height > 110) return -1;
-        var children = Array.prototype.slice.call(el.children || []).filter(function(child){
-            var r = child.getBoundingClientRect();
-            return r && r.width >= 18 && r.height >= 18;
-        });
-        var clickable = children.filter(function(child){
-            return child.matches('a,button,[role="button"]') || child.querySelector('a,button,[role="button"]');
-        });
-        if (children.length < 5 || clickable.length < 5) return -1;
-        var score = clickable.length * 20 + children.length * 5;
-        if (rect.top > 160 && rect.top < 720) score += 80;
-        if (rect.top > 300 && rect.top < 580) score += 60;
-        if (rect.width > (window.innerWidth * 0.70)) score += 40;
-        if (rect.height >= 30 && rect.height <= 80) score += 40;
-        var txt = ((el.id || '') + ' ' + (el.className || '')).toLowerCase();
-        if (/icon|toolbar|quick|shortcut|action|menu|status|properties|property/.test(txt)) score += 40;
-        if (/header|nav|sidebar|footer/.test(txt)) score -= 20;
-        return score;
-    }
-
-    function findMountHost() {
+    function getNavHost() {
         var selectors = [
-            '.property-info-cont', '.property-info', '.properties-wrap', '.properties',
-            '.user-information', '.user-info-wrap', '.user-info', '.status-icons', '.icons-row'
+            '.content-title > ul',
+            '.content-title ul',
+            'ul.info-cont-wrap',
+            '.info-cont-wrap',
+            '.icons-wrap ul',
+            '.icons-wrap',
+            '.header-wrapper-bottom ul',
+            '.header-wrapper-bottom .content-title'
         ];
         for (var i = 0; i < selectors.length; i++) {
-            var found = document.querySelector(selectors[i]);
-            if (scoreMountHost(found) > 0) return found;
+            var node = document.querySelector(selectors[i]);
+            if (node) return node;
         }
-        var best = null;
-        var bestScore = -1;
-        var nodes = document.querySelectorAll('div, ul, nav, section');
-        for (var j = 0; j < nodes.length; j++) {
-            var node = nodes[j];
-            var score = scoreMountHost(node);
-            if (score > bestScore) {
-                bestScore = score;
-                best = node;
-            }
-        }
-        return bestScore > 0 ? best : null;
+        return null;
     }
 
-    function ensureShieldMounted() {
-        if (!shield) return false;
-        var host = findMountHost();
+    function createNavButton() {
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.id = 'warhub-nav-button';
+        btn.setAttribute('aria-label', 'Open War Hub');
+        btn.setAttribute('title', 'War Hub');
+        btn.innerHTML = '⚔️';
+        btn.addEventListener('click', function(ev){ ev.preventDefault(); ev.stopPropagation(); setOverlayOpen(!isOpen); });
+        return btn;
+    }
+
+    function mountNavButton() {
+        var host = getNavHost();
         if (!host) return false;
-        if (!iconSlot) {
-            iconSlot = document.createElement('div');
-            iconSlot.id = 'warhub-icon-slot';
+        var btn = document.getElementById('warhub-nav-button');
+        if (!btn) btn = createNavButton();
+        var tag = String(host.tagName || '').toLowerCase();
+        if (tag === 'ul') {
+            var wrap = btn.parentNode;
+            if (!wrap || String(wrap.tagName || '').toLowerCase() !== 'li') {
+                wrap = document.createElement('li');
+                wrap.id = 'warhub-nav-button-wrap';
+                wrap.style.listStyle = 'none';
+                wrap.style.display = 'inline-flex';
+                wrap.style.alignItems = 'center';
+                wrap.style.justifyContent = 'center';
+                wrap.appendChild(btn);
+            }
+            if (wrap.parentNode !== host) host.appendChild(wrap);
+        } else {
+            if (btn.parentNode !== host) host.appendChild(btn);
         }
-        if (iconSlot.parentNode !== host) host.appendChild(iconSlot);
-        if (shield.parentNode !== iconSlot) iconSlot.appendChild(shield);
+        if (host.children && host.children.length > 9) btn.classList.add('warhub-nav-button--small');
+        else btn.classList.remove('warhub-nav-button--small');
         return true;
-    }
-
-    function startMountWatcher() {
-        if (mountObserver) mountObserver.disconnect();
-        mountObserver = new MutationObserver(function(){ ensureShieldMounted(); });
-        mountObserver.observe(document.documentElement || document.body, { childList: true, subtree: true });
-        window.addEventListener('resize', ensureShieldMounted, { passive: true });
-        setInterval(ensureShieldMounted, 2000);
     }
 
     function mount() {
@@ -288,16 +273,27 @@
                 '<div id="warhub-content"></div>',
             '</div>'
         ].join('');
+        document.body.appendChild(shield);
         document.body.appendChild(overlay);
         statusBox = overlay.querySelector('#warhub-status');
-        shield.addEventListener('click', function(e){ e.preventDefault(); e.stopPropagation(); setOverlayOpen(!isOpen); });
-        ensureShieldMounted();
-        startMountWatcher();
+        mountNavButton();
         overlay.querySelector('#warhub-close').addEventListener('click', function(){ setOverlayOpen(false); });
         overlay.addEventListener('click', handleClick);
         setOverlayOpen(isOpen);
         renderTabs();
         renderBody();
+    }
+
+    var navMountObserver = null;
+    function ensureNavMounted() {
+        mountNavButton();
+    }
+
+    function startNavMountWatcher() {
+        if (navMountObserver) return;
+        navMountObserver = new MutationObserver(function(){ mountNavButton(); });
+        navMountObserver.observe(document.documentElement || document.body, { childList: true, subtree: true });
+        setInterval(mountNavButton, 1500);
     }
 
     function setOverlayOpen(open) {
@@ -333,6 +329,18 @@
         setStatus('Logged out.', false);
         renderTabs();
         renderBody();
+    }
+
+    var navMountObserver = null;
+    function ensureNavMounted() {
+        mountNavButton();
+    }
+
+    function startNavMountWatcher() {
+        if (navMountObserver) return;
+        navMountObserver = new MutationObserver(function(){ mountNavButton(); });
+        navMountObserver.observe(document.documentElement || document.body, { childList: true, subtree: true });
+        setInterval(mountNavButton, 1500);
     }
 
     async function loadState() {
@@ -810,7 +818,6 @@
 
     async function boot() {
         mount();
-        ensureShieldMounted();
         if (isLoggedIn()) {
             await loadState();
             await loadCurrentTab(true);
