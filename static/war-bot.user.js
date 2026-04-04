@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         War Hub ⚔️
 // @namespace    fries91-war-hub
-// @version      3.4.1
+// @version      3.4.3
 // @description  War Hub by Fries91. Clean split loaders: faction data only from faction routes, enemy data only from enemy routes.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -66,7 +66,7 @@
     var loading = false;
 
     GM_addStyle('\
-#warhub-shield{position:fixed!important;z-index:2147483647!important;width:32px!important;height:32px!important;border-radius:9px!important;display:flex!important;align-items:center!important;justify-content:center!important;font-size:16px!important;line-height:1!important;cursor:pointer!important;user-select:none!important;-webkit-user-select:none!important;-webkit-touch-callout:none!important;-webkit-tap-highlight-color:transparent!important;touch-action:manipulation!important;box-shadow:0 6px 16px rgba(0,0,0,.38)!important;border:1px solid rgba(255,255,255,.12)!important;background:radial-gradient(circle at 30% 20%, rgba(232,87,87,.98), rgba(133,13,13,.98) 55%, rgba(56,7,7,.99))!important;color:#fff!important;right:12px!important;top:50%!important;transform:translateY(-50%)!important;opacity:1!important;visibility:visible!important;pointer-events:auto!important;}\
+#warhub-shield{position:fixed!important;z-index:2147483647!important;width:32px!important;height:32px!important;border-radius:9px!important;display:flex!important;align-items:center!important;justify-content:center!important;font-size:16px!important;line-height:1!important;cursor:pointer!important;user-select:none!important;-webkit-user-select:none!important;-webkit-touch-callout:none!important;-webkit-tap-highlight-color:transparent!important;touch-action:none!important;box-shadow:0 6px 16px rgba(0,0,0,.38)!important;border:1px solid rgba(255,255,255,.12)!important;background:radial-gradient(circle at 30% 20%, rgba(232,87,87,.98), rgba(133,13,13,.98) 55%, rgba(56,7,7,.99))!important;color:#fff!important;right:12px!important;top:50%!important;transform:translateY(-50%)!important;opacity:1!important;visibility:visible!important;pointer-events:auto!important;}\
 #warhub-miniheader,#warhub-miniheader-inner,#warhub-miniheader-button,#warhub-nav-button-wrap,#warhub-nav-button{display:none!important;}\
 #warhub-overlay{position:fixed!important;left:8px!important;right:8px!important;top:8px!important;bottom:8px!important;max-width:580px!important;margin:0 auto!important;background:linear-gradient(180deg,#1a0d0d,#120909 18%,#0c0c0c 68%,#090909)!important;color:#f2f2f2!important;border:1px solid rgba(255,255,255,.08)!important;border-radius:16px!important;box-shadow:0 20px 44px rgba(0,0,0,.62)!important;display:none!important;flex-direction:column!important;z-index:2147483646!important;overflow:hidden!important;}\
 #warhub-overlay.open{display:flex!important;}\
@@ -194,20 +194,21 @@
     }
 
 
+    
+    
     function makeHoldDraggable(handle) {
         if (!handle) return;
 
         var dragging = false;
         var moved = false;
-        var pressActive = false;
+        var touchActive = false;
         var pressTimer = null;
         var startX = 0;
         var startY = 0;
         var startLeft = 0;
         var startTop = 0;
-        var HOLD_MS = 260;
-        var DRAG_THRESHOLD = 8;
-        var activePointerId = null;
+        var HOLD_MS = 220;
+        var DRAG_THRESHOLD = 6;
 
         function clearPressTimer() {
             if (pressTimer) {
@@ -231,26 +232,18 @@
             var rect = handle.getBoundingClientRect();
             dragging = false;
             moved = false;
-            pressActive = true;
             startX = p.clientX;
             startY = p.clientY;
             startLeft = rect.left;
             startTop = rect.top;
-            activePointerId = ev.pointerId != null ? ev.pointerId : null;
             clearPressTimer();
-            if (handle.setPointerCapture && activePointerId != null) {
-                try { handle.setPointerCapture(activePointerId); } catch (_e) {}
-            }
             pressTimer = setTimeout(function () {
-                if (!pressActive) return;
                 dragging = true;
             }, HOLD_MS);
         }
 
         function movePress(ev) {
-            if (!pressActive) return;
-            if (activePointerId != null && ev.pointerId != null && ev.pointerId !== activePointerId) return;
-
+            if (!touchActive) return;
             var p = getPoint(ev);
             var dx = p.clientX - startX;
             var dy = p.clientY - startY;
@@ -261,10 +254,12 @@
             if (!dragging) return;
 
             if (ev.cancelable) ev.preventDefault();
+
             var vp = getViewport();
             var size = iconSize();
             var left = clamp(startLeft + dx, 4, vp.w - size - 4);
             var top = clamp(startTop + dy, 4, vp.h - size - 4);
+
             handle.style.left = left + 'px';
             handle.style.top = top + 'px';
             handle.style.right = 'auto';
@@ -273,8 +268,9 @@
         }
 
         function endPress(ev) {
-            if (!pressActive) return;
+            if (!touchActive) return;
             clearPressTimer();
+
             if (dragging) {
                 var rect = handle.getBoundingClientRect();
                 saveShieldPos({ left: rect.left, top: rect.top });
@@ -283,68 +279,24 @@
                 setOverlayOpen(!isOpen);
                 if (ev && ev.cancelable) ev.preventDefault();
             }
-            pressActive = false;
+
             dragging = false;
-            if (handle.releasePointerCapture && activePointerId != null) {
-                try { handle.releasePointerCapture(activePointerId); } catch (_e2) {}
-            }
-            activePointerId = null;
+            moved = false;
+            touchActive = false;
         }
 
-        // Pointer events
-        handle.addEventListener('pointerdown', function (ev) {
-            if (ev.button != null && ev.button !== 0) return;
-            beginPress(ev);
-        });
-        handle.addEventListener('pointermove', movePress);
-        handle.addEventListener('pointerup', endPress);
-        handle.addEventListener('pointercancel', endPress);
-
-        // Mouse/touch fallbacks for environments with flaky pointer events
-        handle.addEventListener('mousedown', function (ev) {
-            if (window.PointerEvent) return;
-            if (ev.button != null && ev.button !== 0) return;
-            beginPress(ev);
-        });
-        document.addEventListener('mousemove', function (ev) {
-            if (window.PointerEvent) return;
-            movePress(ev);
-        });
-        document.addEventListener('mouseup', function (ev) {
-            if (window.PointerEvent) return;
-            endPress(ev);
-        });
-
         handle.addEventListener('touchstart', function (ev) {
-            if (window.PointerEvent) return;
+            touchActive = true;
             beginPress(ev);
         }, { passive: true });
-        document.addEventListener('touchmove', function (ev) {
-            if (window.PointerEvent) return;
-            movePress(ev);
-        }, { passive: false });
-        document.addEventListener('touchend', function (ev) {
-            if (window.PointerEvent) return;
-            endPress(ev);
-        }, { passive: false });
-        document.addEventListener('touchcancel', function (ev) {
-            if (window.PointerEvent) return;
-            endPress(ev);
-        }, { passive: false });
 
-        // Direct open fallback for engines that swallow pointerup/touchend weirdly
-        handle.addEventListener('click', function (ev) {
-            if (dragging || moved || pressActive) {
-                ev.preventDefault();
-                ev.stopPropagation();
-                return;
-            }
+        document.addEventListener('touchmove', movePress, { passive: false });
+        document.addEventListener('touchend', endPress, { passive: false });
+        document.addEventListener('touchcancel', endPress, { passive: false });
+
+        handle.addEventListener('contextmenu', function (ev) {
             ev.preventDefault();
-            ev.stopPropagation();
-            setOverlayOpen(!isOpen);
         });
-
-        handle.addEventListener('contextmenu', function (ev) { ev.preventDefault(); });
     }
 
     function req(method, path, body, extraHeaders) {
@@ -385,20 +337,8 @@
     function bindPress(el, handler) {
         if (!el || el.__warhubPressBound) return;
         el.__warhubPressBound = true;
-        var touchHandled = false;
-
-        el.addEventListener('click', function (ev) {
-            if (touchHandled) {
-                touchHandled = false;
-                ev.preventDefault();
-                ev.stopPropagation();
-                return;
-            }
-            handler(ev);
-        });
 
         el.addEventListener('touchend', function (ev) {
-            touchHandled = true;
             if (ev.cancelable) ev.preventDefault();
             ev.stopPropagation();
             handler(ev);
@@ -407,15 +347,13 @@
 
     function delegatePress(root, selector, handler) {
         if (!root) return;
-        function run(ev) {
+        root.addEventListener('touchend', function (ev) {
             var target = ev.target && ev.target.closest ? ev.target.closest(selector) : null;
             if (!target || !root.contains(target)) return;
             if (ev.cancelable) ev.preventDefault();
             ev.stopPropagation();
             handler(ev, target);
-        }
-        root.addEventListener('click', run);
-        root.addEventListener('touchend', run, { passive: false });
+        }, { passive: false });
     }
 
     function safeClosest(start, selector) {
