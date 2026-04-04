@@ -146,6 +146,13 @@ def build_enemy_cards(enemies: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             "battle_prediction": battle_prediction,
             "battle_score": battle_prediction.get("score"),
             "battle_tier": battle_prediction.get("tier"),
+            "predicted_total_stats": battle_prediction.get("predicted_total_stats", 0),
+            "predicted_total_stats_m": battle_prediction.get("predicted_total_stats_m", 0.0),
+            "total_stats_m": battle_prediction.get("predicted_total_stats_m", 0.0),
+            "battle_stats_m": battle_prediction.get("predicted_total_stats_m", 0.0),
+            "prediction_confidence": battle_prediction.get("confidence", "Estimate"),
+            "prediction_source": battle_prediction.get("source", "warhub_model"),
+            "prediction_summary": battle_prediction.get("summary", ""),
         })
 
     cards.sort(
