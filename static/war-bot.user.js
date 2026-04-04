@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         War Hub ⚔️
 // @namespace    fries91-war-hub
-// @version      3.3.3
+// @version      3.3.4
 // @description  War Hub by Fries91. Clean split loaders: faction data only from faction routes, enemy data only from enemy routes.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -28,6 +28,7 @@
     var K_SESSION = 'warhub_session_v3';
     var K_OPEN = 'warhub_open_v3';
     var K_TAB = 'warhub_tab_v3';
+    var K_SHIELD_POS = 'warhub_shield_pos_v3';
 
     var TAB_ROW_1 = [
         ['overview', 'Overview'],
@@ -65,14 +66,9 @@
     var loading = false;
 
     GM_addStyle('\
-#warhub-shield{display:none!important;}\
-#warhub-nav-button-wrap,#warhub-nav-button{display:none!important;}\
-#warhub-miniheader{position:fixed!important;left:0!important;right:0!important;top:132px!important;height:34px!important;display:flex!important;align-items:center!important;justify-content:center!important;z-index:2147483647!important;background:linear-gradient(180deg,rgba(20,20,20,.96),rgba(42,42,42,.96))!important;border-top:1px solid rgba(255,255,255,.08)!important;border-bottom:1px solid rgba(255,255,255,.08)!important;box-shadow:0 8px 18px rgba(0,0,0,.28)!important;backdrop-filter:blur(4px)!important;}\
-#warhub-miniheader-inner{width:100%!important;max-width:720px!important;padding:0 10px!important;display:flex!important;align-items:center!important;justify-content:flex-end!important;gap:8px!important;}\
-#warhub-miniheader-label{color:#fff!important;font-size:12px!important;font-weight:800!important;letter-spacing:.2px!important;user-select:none!important;}\
-#warhub-miniheader-button{display:inline-flex!important;align-items:center!important;justify-content:center!important;gap:6px!important;min-width:74px!important;height:28px!important;padding:0 10px!important;border-radius:9px!important;background:radial-gradient(circle at 30% 20%, rgba(232,87,87,.98), rgba(133,13,13,.98) 55%, rgba(56,7,7,.99))!important;color:#fff!important;border:1px solid rgba(255,255,255,.14)!important;box-shadow:0 4px 12px rgba(0,0,0,.32)!important;font-size:12px!important;font-weight:900!important;cursor:pointer!important;text-decoration:none!important;-webkit-tap-highlight-color:transparent!important;}\
-#warhub-miniheader-button .warhub-nav-glyph{font-size:15px!important;line-height:1!important;}\
-#warhub-overlay{position:fixed!important;left:8px!important;right:8px!important;top:174px!important;bottom:8px!important;max-width:580px!important;margin:0 auto!important;background:linear-gradient(180deg,#1a0d0d,#120909 18%,#0c0c0c 68%,#090909)!important;color:#f2f2f2!important;border:1px solid rgba(255,255,255,.08)!important;border-radius:16px!important;box-shadow:0 20px 44px rgba(0,0,0,.62)!important;display:none!important;flex-direction:column!important;z-index:2147483646!important;overflow:hidden!important;}\
+#warhub-shield{position:fixed!important;z-index:2147483647!important;width:32px!important;height:32px!important;border-radius:9px!important;display:flex!important;align-items:center!important;justify-content:center!important;font-size:16px!important;line-height:1!important;cursor:pointer!important;user-select:none!important;-webkit-user-select:none!important;-webkit-touch-callout:none!important;-webkit-tap-highlight-color:transparent!important;touch-action:none!important;box-shadow:0 6px 16px rgba(0,0,0,.38)!important;border:1px solid rgba(255,255,255,.12)!important;background:radial-gradient(circle at 30% 20%, rgba(232,87,87,.98), rgba(133,13,13,.98) 55%, rgba(56,7,7,.99))!important;color:#fff!important;right:12px!important;top:50%!important;transform:translateY(-50%)!important;opacity:1!important;visibility:visible!important;pointer-events:auto!important;}\
+#warhub-miniheader,#warhub-miniheader-inner,#warhub-miniheader-button,#warhub-nav-button-wrap,#warhub-nav-button{display:none!important;}\
+#warhub-overlay{position:fixed!important;left:8px!important;right:8px!important;top:8px!important;bottom:8px!important;max-width:580px!important;margin:0 auto!important;background:linear-gradient(180deg,#1a0d0d,#120909 18%,#0c0c0c 68%,#090909)!important;color:#f2f2f2!important;border:1px solid rgba(255,255,255,.08)!important;border-radius:16px!important;box-shadow:0 20px 44px rgba(0,0,0,.62)!important;display:none!important;flex-direction:column!important;z-index:2147483646!important;overflow:hidden!important;}\
 #warhub-overlay.open{display:flex!important;}\
 #warhub-overlay *{box-sizing:border-box!important;font-family:inherit!important;}\
 .warhub-head{padding:14px 12px 12px!important;border-bottom:1px solid rgba(255,255,255,.08)!important;background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(255,255,255,.02))!important;}\
@@ -124,7 +120,7 @@
 .warhub-small{font-size:11px!important;opacity:.78!important;}\
 .warhub-meter{margin-top:12px!important;height:12px!important;border-radius:999px!important;background:rgba(255,255,255,.08)!important;overflow:hidden!important;border:1px solid rgba(255,255,255,.06)!important;}\
 .warhub-meter-fill{height:100%!important;background:linear-gradient(90deg,rgba(221,59,59,.98),rgba(255,170,90,.98))!important;}\
-@media(max-width:520px){#warhub-miniheader{top:126px!important;height:32px!important;}#warhub-miniheader-inner{padding:0 8px!important;}#warhub-overlay{top:166px!important;}.warhub-grid2,.warhub-grid3{grid-template-columns:1fr!important;}}\
+@media(max-width:520px){#warhub-shield{width:30px!important;height:30px!important;font-size:15px!important;border-radius:8px!important;}.warhub-grid2,.warhub-grid3{grid-template-columns:1fr!important;}}\
 ');
 
     function esc(v) {
@@ -152,6 +148,133 @@
     function access(){ return (state && state.access) || {}; }
     function canManageFaction(){ return !!(access().can_manage_faction || access().is_faction_leader || access().is_admin); }
     function canSeeAdmin(){ return !!(access().is_admin || getOwnerToken()); }
+
+
+    function getViewport() {
+        var de = document.documentElement || {};
+        return {
+            w: Math.max(de.clientWidth || 0, window.innerWidth || 0, 320),
+            h: Math.max(de.clientHeight || 0, window.innerHeight || 0, 320)
+        };
+    }
+
+    function clamp(n, min, max) {
+        n = Number(n || 0);
+        if (!isFinite(n)) n = 0;
+        return Math.max(min, Math.min(max, n));
+    }
+
+    function loadShieldPos() {
+        var raw = GM_getValue(K_SHIELD_POS, null);
+        var vp = getViewport();
+        var fallback = { left: vp.w - 44, top: Math.round((vp.h / 2) - 16) };
+        if (!raw || typeof raw !== 'object') return fallback;
+        return {
+            left: Number.isFinite(Number(raw.left)) ? Number(raw.left) : fallback.left,
+            top: Number.isFinite(Number(raw.top)) ? Number(raw.top) : fallback.top
+        };
+    }
+
+    function saveShieldPos(pos) {
+        GM_setValue(K_SHIELD_POS, { left: Math.round(Number(pos.left || 0)), top: Math.round(Number(pos.top || 0)) });
+    }
+
+    function applyShieldPos() {
+        if (!shield) return;
+        var vp = getViewport();
+        var pos = loadShieldPos();
+        var size = 32;
+        var left = clamp(pos.left, 4, vp.w - size - 4);
+        var top = clamp(pos.top, 4, vp.h - size - 4);
+        shield.style.left = left + 'px';
+        shield.style.top = top + 'px';
+        shield.style.right = 'auto';
+        shield.style.bottom = 'auto';
+        shield.style.transform = 'none';
+    }
+
+    function makeHoldDraggable(handle) {
+        if (!handle) return;
+        var dragging = false;
+        var moved = false;
+        var pressTimer = null;
+        var pressActive = false;
+        var startX = 0, startY = 0, startLeft = 0, startTop = 0;
+        var HOLD_MS = 260;
+        var DRAG_THRESHOLD = 8;
+
+        function clearPressTimer() {
+            if (pressTimer) {
+                clearTimeout(pressTimer);
+                pressTimer = null;
+            }
+        }
+
+        function getPoint(ev) {
+            if (ev.touches && ev.touches[0]) return ev.touches[0];
+            if (ev.changedTouches && ev.changedTouches[0]) return ev.changedTouches[0];
+            return ev;
+        }
+
+        function onDown(ev) {
+            var p = getPoint(ev);
+            var rect = handle.getBoundingClientRect();
+            moved = false;
+            dragging = false;
+            pressActive = true;
+            startX = p.clientX;
+            startY = p.clientY;
+            startLeft = rect.left;
+            startTop = rect.top;
+            clearPressTimer();
+            pressTimer = setTimeout(function () {
+                if (!pressActive) return;
+                dragging = true;
+            }, HOLD_MS);
+        }
+
+        function onMove(ev) {
+            if (!pressActive) return;
+            var p = getPoint(ev);
+            var dx = p.clientX - startX;
+            var dy = p.clientY - startY;
+
+            if (Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD) moved = true;
+            if (!dragging) return;
+
+            if (ev.cancelable) ev.preventDefault();
+            var vp = getViewport();
+            var size = 32;
+            var left = clamp(startLeft + dx, 4, vp.w - size - 4);
+            var top = clamp(startTop + dy, 4, vp.h - size - 4);
+            handle.style.left = left + 'px';
+            handle.style.top = top + 'px';
+            handle.style.right = 'auto';
+            handle.style.bottom = 'auto';
+            handle.style.transform = 'none';
+        }
+
+        function onUp(ev) {
+            clearPressTimer();
+            if (dragging) {
+                var rect = handle.getBoundingClientRect();
+                saveShieldPos({ left: rect.left, top: rect.top });
+                if (ev.cancelable) ev.preventDefault();
+            } else if (!moved) {
+                setOverlayOpen(!isOpen);
+            }
+            pressActive = false;
+            dragging = false;
+        }
+
+        handle.addEventListener('mousedown', onDown);
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+        handle.addEventListener('touchstart', onDown, { passive: true });
+        document.addEventListener('touchmove', onMove, { passive: false });
+        document.addEventListener('touchend', onUp, { passive: false });
+        document.addEventListener('touchcancel', onUp, { passive: false });
+    }
 
     function req(method, path, body, extraHeaders) {
         return new Promise(function(resolve){
@@ -202,29 +325,6 @@
         overlay.querySelector('#warhub-tabs-2').innerHTML = rowHtml(TAB_ROW_2);
     }
 
-    
-    function getOrCreateMiniHeader() {
-        var bar = document.getElementById('warhub-miniheader');
-        if (!bar) {
-            bar = document.createElement('div');
-            bar.id = 'warhub-miniheader';
-            bar.innerHTML = '<div id="warhub-miniheader-inner"><div id="warhub-miniheader-label">War Hub</div><a href="#" id="warhub-miniheader-button" aria-label="Open War Hub" title="War Hub"><span class="warhub-nav-glyph">⚔️</span><span>WarBot</span></a></div>';
-            document.body.appendChild(bar);
-        }
-        return bar;
-    }
-
-    function mountMiniHeader() {
-        if (!document.body) return false;
-        var bar = getOrCreateMiniHeader();
-        var btn = bar.querySelector('#warhub-miniheader-button');
-        if (btn && !btn.__warhubBound) {
-            btn.__warhubBound = true;
-            btn.addEventListener('click', function(ev){ ev.preventDefault(); ev.stopPropagation(); setOverlayOpen(!isOpen); });
-        }
-        return true;
-    }
-
     function mount() {
         shield = document.createElement('div');
         shield.id = 'warhub-shield';
@@ -248,20 +348,14 @@
         document.body.appendChild(shield);
         document.body.appendChild(overlay);
         statusBox = overlay.querySelector('#warhub-status');
-        mountMiniHeader();
+        applyShieldPos();
+        makeHoldDraggable(shield);
         overlay.querySelector('#warhub-close').addEventListener('click', function(){ setOverlayOpen(false); });
         overlay.addEventListener('click', handleClick);
+        window.addEventListener('resize', applyShieldPos);
         setOverlayOpen(isOpen);
         renderTabs();
         renderBody();
-    }
-
-    var miniHeaderObserver = null;
-    function startMiniHeaderWatcher() {
-        if (miniHeaderObserver) return;
-        miniHeaderObserver = new MutationObserver(function(){ mountMiniHeader(); });
-        miniHeaderObserver.observe(document.documentElement || document.body, { childList: true, subtree: true });
-        setInterval(mountMiniHeader, 1500);
     }
 
     async function loadState() {
@@ -739,7 +833,6 @@
 
     async function boot() {
         mount();
-        startMiniHeaderWatcher();
         if (isLoggedIn()) {
             await loadState();
             await loadCurrentTab(true);
