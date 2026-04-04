@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         War Hub ⚔️
 // @namespace    fries91-war-hub
-// @version      3.4.3
+// @version      3.4.4
 // @description  War Hub by Fries91. Clean split loaders: faction data only from faction routes, enemy data only from enemy routes.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -28,7 +28,6 @@
     var K_SESSION = 'warhub_session_v3';
     var K_OPEN = 'warhub_open_v3';
     var K_TAB = 'warhub_tab_v3';
-    var K_SHIELD_POS = 'warhub_shield_pos_v3';
 
     var TAB_ROW_1 = [
         ['overview', 'Overview'],
@@ -66,7 +65,7 @@
     var loading = false;
 
     GM_addStyle('\
-#warhub-shield{position:fixed!important;z-index:2147483647!important;width:32px!important;height:32px!important;border-radius:9px!important;display:flex!important;align-items:center!important;justify-content:center!important;font-size:16px!important;line-height:1!important;cursor:pointer!important;user-select:none!important;-webkit-user-select:none!important;-webkit-touch-callout:none!important;-webkit-tap-highlight-color:transparent!important;touch-action:none!important;box-shadow:0 6px 16px rgba(0,0,0,.38)!important;border:1px solid rgba(255,255,255,.12)!important;background:radial-gradient(circle at 30% 20%, rgba(232,87,87,.98), rgba(133,13,13,.98) 55%, rgba(56,7,7,.99))!important;color:#fff!important;right:12px!important;top:50%!important;transform:translateY(-50%)!important;opacity:1!important;visibility:visible!important;pointer-events:auto!important;}\
+#warhub-shield{position:fixed!important;z-index:2147483647!important;width:30px!important;height:30px!important;border-radius:8px!important;display:flex!important;align-items:center!important;justify-content:center!important;font-size:15px!important;line-height:1!important;cursor:pointer!important;user-select:none!important;-webkit-user-select:none!important;-webkit-touch-callout:none!important;-webkit-tap-highlight-color:transparent!important;touch-action:manipulation!important;box-shadow:0 6px 16px rgba(0,0,0,.38)!important;border:1px solid rgba(255,255,255,.12)!important;background:radial-gradient(circle at 30% 20%, rgba(232,87,87,.98), rgba(133,13,13,.98) 55%, rgba(56,7,7,.99))!important;color:#fff!important;left:auto!important;right:6px!important;top:405px!important;bottom:auto!important;transform:none!important;opacity:1!important;visibility:visible!important;pointer-events:auto!important;}\
 #warhub-miniheader,#warhub-miniheader-inner,#warhub-miniheader-button,#warhub-nav-button-wrap,#warhub-nav-button{display:none!important;}\
 #warhub-overlay{position:fixed!important;left:8px!important;right:8px!important;top:8px!important;bottom:8px!important;max-width:580px!important;margin:0 auto!important;background:linear-gradient(180deg,#1a0d0d,#120909 18%,#0c0c0c 68%,#090909)!important;color:#f2f2f2!important;border:1px solid rgba(255,255,255,.08)!important;border-radius:16px!important;box-shadow:0 20px 44px rgba(0,0,0,.62)!important;display:none!important;flex-direction:column!important;z-index:2147483646!important;overflow:hidden!important;}\
 #warhub-overlay.open{display:flex!important;}\
@@ -120,7 +119,7 @@
 .warhub-small{font-size:11px!important;opacity:.78!important;}\
 .warhub-meter{margin-top:12px!important;height:12px!important;border-radius:999px!important;background:rgba(255,255,255,.08)!important;overflow:hidden!important;border:1px solid rgba(255,255,255,.06)!important;}\
 .warhub-meter-fill{height:100%!important;background:linear-gradient(90deg,rgba(221,59,59,.98),rgba(255,170,90,.98))!important;}\
-@media(max-width:520px){#warhub-shield{width:30px!important;height:30px!important;font-size:15px!important;border-radius:8px!important;}.warhub-grid2,.warhub-grid3{grid-template-columns:1fr!important;}}\
+@media(max-width:520px){#warhub-shield{width:30px!important;height:30px!important;font-size:15px!important;border-radius:8px!important;right:6px!important;top:405px!important;left:auto!important;transform:none!important;}.warhub-grid2,.warhub-grid3{grid-template-columns:1fr!important;}}\
 ');
 
     function esc(v) {
@@ -164,31 +163,11 @@
         return Math.max(min, Math.min(max, n));
     }
 
-    function loadShieldPos() {
-        var raw = GM_getValue(K_SHIELD_POS, null);
-        var vp = getViewport();
-        var fallback = { left: vp.w - 44, top: Math.round((vp.h / 2) - 16) };
-        if (!raw || typeof raw !== 'object') return fallback;
-        return {
-            left: Number.isFinite(Number(raw.left)) ? Number(raw.left) : fallback.left,
-            top: Number.isFinite(Number(raw.top)) ? Number(raw.top) : fallback.top
-        };
-    }
-
-    function saveShieldPos(pos) {
-        GM_setValue(K_SHIELD_POS, { left: Math.round(Number(pos.left || 0)), top: Math.round(Number(pos.top || 0)) });
-    }
-
     function applyShieldPos() {
         if (!shield) return;
-        var vp = getViewport();
-        var pos = loadShieldPos();
-        var size = 32;
-        var left = clamp(pos.left, 4, vp.w - size - 4);
-        var top = clamp(pos.top, 4, vp.h - size - 4);
-        shield.style.left = left + 'px';
-        shield.style.top = top + 'px';
-        shield.style.right = 'auto';
+        shield.style.left = 'auto';
+        shield.style.right = '6px';
+        shield.style.top = '405px';
         shield.style.bottom = 'auto';
         shield.style.transform = 'none';
     }
@@ -196,103 +175,15 @@
 
     
     
-    function makeHoldDraggable(handle) {
-        if (!handle) return;
+    function bindShieldTouchOpen(handle) {
+        if (!handle || handle.__warhubShieldBound) return;
+        handle.__warhubShieldBound = true;
 
-        var dragging = false;
-        var moved = false;
-        var touchActive = false;
-        var pressTimer = null;
-        var startX = 0;
-        var startY = 0;
-        var startLeft = 0;
-        var startTop = 0;
-        var HOLD_MS = 220;
-        var DRAG_THRESHOLD = 6;
-
-        function clearPressTimer() {
-            if (pressTimer) {
-                clearTimeout(pressTimer);
-                pressTimer = null;
-            }
-        }
-
-        function iconSize() {
-            return Math.max(handle.offsetWidth || 32, handle.offsetHeight || 32, 32);
-        }
-
-        function getPoint(ev) {
-            if (ev.touches && ev.touches[0]) return ev.touches[0];
-            if (ev.changedTouches && ev.changedTouches[0]) return ev.changedTouches[0];
-            return ev;
-        }
-
-        function beginPress(ev) {
-            var p = getPoint(ev);
-            var rect = handle.getBoundingClientRect();
-            dragging = false;
-            moved = false;
-            startX = p.clientX;
-            startY = p.clientY;
-            startLeft = rect.left;
-            startTop = rect.top;
-            clearPressTimer();
-            pressTimer = setTimeout(function () {
-                dragging = true;
-            }, HOLD_MS);
-        }
-
-        function movePress(ev) {
-            if (!touchActive) return;
-            var p = getPoint(ev);
-            var dx = p.clientX - startX;
-            var dy = p.clientY - startY;
-
-            if (Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD) {
-                moved = true;
-            }
-            if (!dragging) return;
-
+        handle.addEventListener('touchend', function (ev) {
             if (ev.cancelable) ev.preventDefault();
-
-            var vp = getViewport();
-            var size = iconSize();
-            var left = clamp(startLeft + dx, 4, vp.w - size - 4);
-            var top = clamp(startTop + dy, 4, vp.h - size - 4);
-
-            handle.style.left = left + 'px';
-            handle.style.top = top + 'px';
-            handle.style.right = 'auto';
-            handle.style.bottom = 'auto';
-            handle.style.transform = 'none';
-        }
-
-        function endPress(ev) {
-            if (!touchActive) return;
-            clearPressTimer();
-
-            if (dragging) {
-                var rect = handle.getBoundingClientRect();
-                saveShieldPos({ left: rect.left, top: rect.top });
-                if (ev && ev.cancelable) ev.preventDefault();
-            } else if (!moved) {
-                setOverlayOpen(!isOpen);
-                if (ev && ev.cancelable) ev.preventDefault();
-            }
-
-            dragging = false;
-            moved = false;
-            touchActive = false;
-        }
-
-        handle.addEventListener('touchstart', function (ev) {
-            touchActive = true;
-            beginPress(ev);
-        }, { passive: true });
-
-        document.addEventListener('touchmove', movePress, { passive: false });
-        document.addEventListener('touchend', endPress, { passive: false });
-        document.addEventListener('touchcancel', endPress, { passive: false });
+            ev.stopPropagation();
+            setOverlayOpen(!isOpen);
+        }, { passive: false });
 
         handle.addEventListener('contextmenu', function (ev) {
             ev.preventDefault();
@@ -411,7 +302,7 @@
         document.body.appendChild(overlay);
         statusBox = overlay.querySelector('#warhub-status');
         applyShieldPos();
-        makeHoldDraggable(shield);
+        bindShieldTouchOpen(shield);
         bindPress(overlay.querySelector('#warhub-close'), function(){ setOverlayOpen(false); });
         delegatePress(overlay, '[data-tab]', async function(_ev, target){
             currentTab = target.getAttribute('data-tab');
