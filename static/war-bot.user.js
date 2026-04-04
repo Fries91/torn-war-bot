@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         War Hub ⚔️
 // @namespace    fries91-war-hub
-// @version      3.2.7
+// @version      3.2.8
 // @description  War Hub by Fries91. Faction-license aware overlay with draggable icon, PDA friendly, shared war tools, faction member management, and payment lock handling.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -20,8 +20,8 @@
     'use strict';
 
 
-    if (window.__WAR_HUB_V290__ && document.getElementById('warhub-shield')) return;
-    window.__WAR_HUB_V290__ = true;
+    if (window.__WAR_HUB_V291__ && document.getElementById('warhub-shield')) return;
+    window.__WAR_HUB_V291__ = true;
 
     // ============================================================
     // 01. CORE CONFIG / STORAGE KEYS
@@ -2536,6 +2536,16 @@ function parseEnemyBattleStatsMillions(member) {
     return 0;
 }
 
+
+function predictionMeta(member) {
+    return {
+        source: String((member && (member.prediction_source || (member.battle_prediction && member.battle_prediction.source))) || '').trim() || 'estimate',
+        confidence: String((member && (member.prediction_confidence || (member.battle_prediction && member.battle_prediction.confidence))) || '').trim() || 'Estimate',
+        summary: String((member && (member.prediction_summary || (member.battle_prediction && member.battle_prediction.summary))) || '').trim(),
+        updated_at: String((member && (member.prediction_updated_at || member.updated_at || member.last_updated_at)) || '').trim()
+    };
+}
+
 function enemyPredictionData(member) {
     var myStatsM = getMyBattleStatsMillions();
     var enemyStatsM = parseEnemyBattleStatsMillions(member);
@@ -2576,6 +2586,9 @@ function enemyPredictionData(member) {
         }
     }
 
+    var meta = predictionMeta(member);
+    if (meta.summary) summary = meta.summary;
+
     return {
         my_stats_m: myStatsM,
         enemy_stats_m: enemyStatsM,
@@ -2583,26 +2596,40 @@ function enemyPredictionData(member) {
         pct: pct,
         color: color,
         tier: tier,
-        summary: summary
+        summary: summary,
+        source: meta.source,
+        confidence: meta.confidence,
+        updated_at: meta.updated_at
     };
 }
 
 function renderEnemyPredictionBox(member) {
     var pred = enemyPredictionData(member);
+    var sourceText = pred.source ? String(pred.source).replace(/_/g, ' ') : 'estimate';
+    var confidenceText = pred.confidence || 'Estimate';
+    var updatedText = pred.updated_at ? fmtTs(pred.updated_at) : '—';
     return [
-        '<div class="warhub-predict-box">',
-            '<div class="warhub-predict-head">',
-                '<div class="warhub-predict-title">Predicted battle stats</div>',
-                '<span class="warhub-pill ' + esc(pred.color) + '">' + esc(pred.tier) + '</span>',
+        '<details class="warhub-dropbox">',
+            '<summary class="warhub-dropbox-head">Predicted battle stats</summary>',
+            '<div class="warhub-dropbox-body">',
+                '<div class="warhub-predict-box">',
+                    '<div class="warhub-predict-head">',
+                        '<div class="warhub-predict-title">Predicted battle stats</div>',
+                        '<span class="warhub-pill ' + esc(pred.color) + '">' + esc(pred.tier) + '</span>',
+                    '</div>',
+                    '<div class="warhub-predict-grid">',
+                        '<div class="warhub-predict-item"><div class="warhub-predict-label">Enemy</div><div class="warhub-predict-value">' + esc(formatBattleMillions(pred.enemy_stats_m)) + '</div></div>',
+                        '<div class="warhub-predict-item"><div class="warhub-predict-label">You</div><div class="warhub-predict-value">' + esc(formatBattleMillions(pred.my_stats_m)) + '</div></div>',
+                        '<div class="warhub-predict-item"><div class="warhub-predict-label">Percent</div><div class="warhub-predict-value">' + esc(pred.pct ? (String(pred.pct) + '%') : '—') + '</div></div>',
+                        '<div class="warhub-predict-item"><div class="warhub-predict-label">Gap</div><div class="warhub-predict-value">' + esc((Number.isFinite(pred.diff_m) && pred.enemy_stats_m > 0 && pred.my_stats_m > 0) ? formatBattleMillions(pred.diff_m) : '—') + '</div></div>',
+                        '<div class="warhub-predict-item"><div class="warhub-predict-label">Source</div><div class="warhub-predict-value">' + esc(sourceText) + '</div></div>',
+                        '<div class="warhub-predict-item"><div class="warhub-predict-label">Confidence</div><div class="warhub-predict-value">' + esc(confidenceText) + '</div></div>',
+                    '</div>',
+                    '<div class="warhub-predict-summary">' + esc(pred.summary) + '</div>',
+                    '<div class="warhub-sub" style="margin-top:6px;">Last stored update: ' + esc(updatedText) + '</div>',
+                '</div>',
             '</div>',
-            '<div class="warhub-predict-grid">',
-                '<div class="warhub-predict-item"><div class="warhub-predict-label">Enemy</div><div class="warhub-predict-value">' + esc(formatBattleMillions(pred.enemy_stats_m)) + '</div></div>',
-                '<div class="warhub-predict-item"><div class="warhub-predict-label">You</div><div class="warhub-predict-value">' + esc(formatBattleMillions(pred.my_stats_m)) + '</div></div>',
-                '<div class="warhub-predict-item"><div class="warhub-predict-label">Percent</div><div class="warhub-predict-value">' + esc(pred.pct ? (String(pred.pct) + '%') : '—') + '</div></div>',
-                '<div class="warhub-predict-item"><div class="warhub-predict-label">Gap</div><div class="warhub-predict-value">' + esc((Number.isFinite(pred.diff_m) && pred.enemy_stats_m > 0 && pred.my_stats_m > 0) ? formatBattleMillions(pred.diff_m) : '—') + '</div></div>',
-            '</div>',
-            '<div class="warhub-predict-summary">' + esc(pred.summary) + '</div>',
-        '</div>'
+        '</details>'
     ].join('');
 }
 
@@ -2662,6 +2689,7 @@ function renderEnemyRow(member, opts) {
                 '</div>',
             '</div>',
             (st === 'travel' && travelDetail) ? '<div class="warhub-spy-box">' + esc(travelDetail) + (travelArrival ? '<div class="warhub-sub" style="margin-top:6px;">' + esc(travelArrival) + '</div>' : '') + '</div>' : '',
+            renderEnemyPredictionBox(member),
             spy ? '<div class="warhub-spy-box">' + esc(spy) + '</div>' : '',
         '</div>'
     ].join('');
