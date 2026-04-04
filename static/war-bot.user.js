@@ -66,8 +66,12 @@
 
     GM_addStyle('\
 #warhub-shield{display:none!important;}\
-#warhub-nav-button{display:inline-flex!important;align-items:center!important;justify-content:center!important;width:42px!important;height:42px!important;border-radius:10px!important;margin:0 6px!important;background:radial-gradient(circle at 30% 20%, rgba(232,87,87,.98), rgba(133,13,13,.98) 55%, rgba(56,7,7,.99))!important;color:#fff!important;border:1px solid rgba(255,255,255,.14)!important;box-shadow:0 6px 16px rgba(0,0,0,.35)!important;font-size:21px!important;cursor:pointer!important;flex:0 0 auto!important;-webkit-tap-highlight-color:transparent!important;}\
-#warhub-nav-button.warhub-nav-button--small{width:38px!important;height:38px!important;font-size:19px!important;margin:0 4px!important;}\
+#warhub-nav-button-wrap{list-style:none!important;display:inline-flex!important;align-items:center!important;justify-content:center!important;vertical-align:middle!important;}\
+#warhub-nav-button{display:inline-flex!important;align-items:center!important;justify-content:center!important;gap:4px!important;min-width:42px!important;height:34px!important;padding:0 8px!important;border-radius:8px!important;margin:0 4px!important;background:radial-gradient(circle at 30% 20%, rgba(232,87,87,.98), rgba(133,13,13,.98) 55%, rgba(56,7,7,.99))!important;color:#fff!important;border:1px solid rgba(255,255,255,.14)!important;box-shadow:0 6px 16px rgba(0,0,0,.35)!important;font-size:16px!important;cursor:pointer!important;flex:0 0 auto!important;text-decoration:none!important;-webkit-tap-highlight-color:transparent!important;}\
+#warhub-nav-button .warhub-nav-glyph{font-size:16px!important;line-height:1!important;}\
+#warhub-nav-button .warhub-nav-text{font-size:11px!important;font-weight:800!important;line-height:1!important;letter-spacing:.2px!important;}\
+#warhub-nav-button.warhub-nav-button--small{min-width:34px!important;height:32px!important;padding:0 6px!important;margin:0 3px!important;}\
+#warhub-nav-button.warhub-nav-button--small .warhub-nav-text{display:none!important;}\
 #warhub-overlay{position:fixed!important;left:8px!important;right:8px!important;top:8px!important;bottom:8px!important;max-width:580px!important;margin:0 auto!important;background:linear-gradient(180deg,#1a0d0d,#120909 18%,#0c0c0c 68%,#090909)!important;color:#f2f2f2!important;border:1px solid rgba(255,255,255,.08)!important;border-radius:16px!important;box-shadow:0 20px 44px rgba(0,0,0,.62)!important;display:none!important;flex-direction:column!important;z-index:2147483646!important;overflow:hidden!important;}\
 #warhub-overlay.open{display:flex!important;}\
 #warhub-overlay *{box-sizing:border-box!important;font-family:inherit!important;}\
@@ -200,31 +204,41 @@
 
     function getNavHost() {
         var selectors = [
-            '.content-title > ul',
-            '.content-title ul',
             'ul.info-cont-wrap',
-            '.info-cont-wrap',
-            '.icons-wrap ul',
-            '.icons-wrap',
-            '.header-wrapper-bottom ul',
-            '.header-wrapper-bottom .content-title'
+            '.info-cont-wrap ul',
+            '.user-information ul.info-cont-wrap',
+            '.user-information .info-cont-wrap',
+            '.content-wrapper ul.info-cont-wrap'
         ];
         for (var i = 0; i < selectors.length; i++) {
             var node = document.querySelector(selectors[i]);
-            if (node) return node;
+            if (node && String(node.tagName || '').toLowerCase() === 'ul' && node.children && node.children.length >= 4) {
+                return node;
+            }
         }
         return null;
     }
 
     function createNavButton() {
-        var btn = document.createElement('button');
-        btn.type = 'button';
+        var btn = document.createElement('a');
+        btn.href = '#';
         btn.id = 'warhub-nav-button';
         btn.setAttribute('aria-label', 'Open War Hub');
         btn.setAttribute('title', 'War Hub');
-        btn.innerHTML = '⚔️';
+        btn.innerHTML = '<span class="warhub-nav-glyph">⚔️</span><span class="warhub-nav-text">WarBot</span>';
         btn.addEventListener('click', function(ev){ ev.preventDefault(); ev.stopPropagation(); setOverlayOpen(!isOpen); });
         return btn;
+    }
+
+    function ensureNavWrap(btn) {
+        var wrap = document.getElementById('warhub-nav-button-wrap');
+        if (!wrap) {
+            wrap = document.createElement('li');
+            wrap.id = 'warhub-nav-button-wrap';
+            wrap.className = 'warhub-topnav-slot';
+        }
+        if (btn.parentNode !== wrap) wrap.appendChild(btn);
+        return wrap;
     }
 
     function mountNavButton() {
@@ -232,24 +246,25 @@
         if (!host) return false;
         var btn = document.getElementById('warhub-nav-button');
         if (!btn) btn = createNavButton();
-        var tag = String(host.tagName || '').toLowerCase();
-        if (tag === 'ul') {
-            var wrap = btn.parentNode;
-            if (!wrap || String(wrap.tagName || '').toLowerCase() !== 'li') {
-                wrap = document.createElement('li');
-                wrap.id = 'warhub-nav-button-wrap';
-                wrap.style.listStyle = 'none';
-                wrap.style.display = 'inline-flex';
-                wrap.style.alignItems = 'center';
-                wrap.style.justifyContent = 'center';
-                wrap.appendChild(btn);
+        var wrap = ensureNavWrap(btn);
+
+        var kids = Array.prototype.slice.call(host.children || []);
+        var inserted = false;
+        for (var i = 0; i < kids.length; i++) {
+            var li = kids[i];
+            if (!li || li.id === 'warhub-nav-button-wrap') continue;
+            var txt = String(li.textContent || '').toLowerCase();
+            var html = String(li.innerHTML || '').toLowerCase();
+            if (txt.indexOf('donator') >= 0 || html.indexOf('donator') >= 0 || txt.indexOf('gender') >= 0 || html.indexOf('gender') >= 0) {
+                if (li.nextSibling !== wrap) {
+                    host.insertBefore(wrap, li.nextSibling);
+                }
+                inserted = true;
             }
-            if (wrap.parentNode !== host) host.appendChild(wrap);
-        } else {
-            if (btn.parentNode !== host) host.appendChild(btn);
         }
-        if (host.children && host.children.length > 9) btn.classList.add('warhub-nav-button--small');
-        else btn.classList.remove('warhub-nav-button--small');
+        if (!inserted && wrap.parentNode !== host) host.appendChild(wrap);
+
+        btn.classList.toggle('warhub-nav-button--small', (host.children && host.children.length > 8));
         return true;
     }
 
