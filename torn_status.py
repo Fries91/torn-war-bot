@@ -52,7 +52,7 @@ def extract_hospital_until_ts(member: Dict[str, Any], fallback_seconds: int = 0)
 
     now = int(time.time())
     for value in candidates:
-        if isinstance(value, (int, float)) and int(value) > 0:
+        if isinstance(value, (int, float)):
             ts = int(value)
             if ts > now - 3600:
                 return ts
@@ -77,7 +77,7 @@ def member_state_from_last_action(last_action_text: str) -> str:
         return "jail"
     if any(x in s for x in ["abroad", "traveling", "travelling", "travel", "flying"]):
         return "travel"
-    if any(x in s for x in ["online", "active", "abroad online"]):
+    if any(x in s for x in ["online", "active"]):
         return "online"
     if any(x in s for x in ["idle", "inactive"]):
         return "idle"
@@ -136,8 +136,17 @@ def normalize_member(uid: Any, member: Dict[str, Any]) -> Dict[str, Any]:
 
     status_raw = member.get("status")
     if isinstance(status_raw, dict):
-        status_text = str(status_raw.get("state") or status_raw.get("description") or status_raw.get("color") or "")
-        status_detail = str(status_raw.get("details") or status_raw.get("description") or "")
+        status_text = str(
+            status_raw.get("state")
+            or status_raw.get("description")
+            or status_raw.get("color")
+            or ""
+        )
+        status_detail = str(
+            status_raw.get("details")
+            or status_raw.get("description")
+            or ""
+        )
     else:
         status_text = str(status_raw or "")
         status_detail = ""
@@ -153,17 +162,18 @@ def normalize_member(uid: Any, member: Dict[str, Any]) -> Dict[str, Any]:
         hospital_seconds = max(0, hospital_until_ts - now_ts)
 
     online_state = "hospital" if in_hospital else member_state_from_last_action(last_action)
+
     if not in_hospital:
         if any(x in combined for x in ["jail", "jailed"]):
             online_state = "jail"
         elif any(x in combined for x in ["abroad", "traveling", "travelling", "travel", "flying"]):
             online_state = "travel"
-        elif "online" in combined:
+        elif "online" in combined or "active" in combined:
             online_state = "online"
         elif "idle" in combined:
             online_state = "idle"
 
-    user_id = str(uid or member.get("user_id") or member.get("player_id") or member.get("id") or "")
+    user_id = str(uid or member.get("user_id") or member.get("player_id") or member.get("id") or "").strip()
 
     return {
         "user_id": user_id,
