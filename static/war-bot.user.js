@@ -59,7 +59,7 @@
     var overlay = null;
     var shield = null;
     var statusBox = null;
-    var currentTab = String(GM_getValue(K_TAB, 'overview') || 'overview');
+    var currentTab = String(GM_getValue(K_TAB, 'instructions') || 'instructions');
     var isOpen = !!GM_getValue(K_OPEN, false);
     var pollTimer = null;
     var loading = false;
@@ -193,7 +193,7 @@
         overlay.innerHTML = [
             '<div class="warhub-head">',
                 '<div class="warhub-top">',
-                    '<div><div class="warhub-title">War Hub ⚔️</div><div class="warhub-sub">Clean split loaders</div></div>',
+                    '<div><div class="warhub-title">War Hub ⚔️</div><div class="warhub-sub">War control, chain flow, med deals, targets, faction tools, and admin in one place</div></div>',
                     '<button type="button" class="warhub-close" id="warhub-close">Close</button>',
                 '</div>',
             '</div>',
@@ -399,7 +399,7 @@
     function renderChain() {
         var chain = (state && state.chain) || {};
         return [
-            '<div class="warhub-card"><div class="warhub-title">Chain</div><div class="warhub-sub">Chain data only from /api/state and /api/chain routes</div></div>',
+            '<div class="warhub-card"><div class="warhub-title">Chain</div><div class="warhub-sub">Mark yourself available, flip sitter mode, and watch live chain status without mixing enemy data</div></div>',
             '<div class="warhub-grid2">',
                 '<div class="warhub-stat"><div class="warhub-stat-label">Current Chain</div><div class="warhub-stat-value">' + esc(fmtNum(chain.current || 0)) + '</div></div>',
                 '<div class="warhub-stat"><div class="warhub-stat-label">Cooldown</div><div class="warhub-stat-value">' + esc(fmtNum(chain.cooldown || 0)) + '</div></div>',
@@ -414,7 +414,7 @@
         var targets = (tabData.targets && tabData.targets.items) || [];
         var enemies = (tabData.enemies && tabData.enemies.items) || [];
         return [
-            '<div class="warhub-card"><div class="warhub-title">Targets</div><div class="warhub-sub">Saved targets from /api/targets. Enemy picker from /api/enemies.</div></div>',
+            '<div class="warhub-card"><div class="warhub-title">Targets</div><div class="warhub-sub">Save personal enemy picks from the current war and jump straight into attacks</div></div>',
             '<div class="warhub-card">',
                 '<div class="warhub-row"><select id="warhub-target-select" class="warhub-select"><option value="">Select enemy member</option>' + enemies.map(function(m){ return '<option value="' + esc(memberId(m)) + '">' + esc(memberName(m)) + '</option>'; }).join('') + '</select></div>',
                 '<div class="warhub-row" style="margin-top:8px;"><textarea id="warhub-target-note" class="warhub-textarea" placeholder="Optional note"></textarea></div>',
@@ -428,7 +428,7 @@
         var deals = (state && state.med_deals && state.med_deals.items) || [];
         var enemies = (tabData.enemies && tabData.enemies.items) || [];
         return [
-            '<div class="warhub-card"><div class="warhub-title">Med Deals</div><div class="warhub-sub">Shared faction med deals. Enemy picker only from /api/enemies.</div></div>',
+            '<div class="warhub-card"><div class="warhub-title">Med Deals</div><div class="warhub-sub">Post and manage shared med deals using only the current enemy war list</div></div>',
             '<div class="warhub-card">',
                 '<div class="warhub-row"><select id="warhub-med-enemy" class="warhub-select"><option value="">Select enemy player</option>' + enemies.map(function(m){ return '<option value="' + esc(memberId(m)) + '">' + esc(memberName(m)) + '</option>'; }).join('') + '</select></div>',
                 '<div class="warhub-row" style="margin-top:10px;"><button type="button" class="warhub-btn primary" data-action="med-save">Save</button><button type="button" class="warhub-btn gray" data-action="med-clear">Delete</button></div>',
@@ -504,8 +504,12 @@
 
     function renderInstructions() {
         return [
-            '<div class="warhub-card"><div class="warhub-title">Instructions</div><div class="warhub-sub">How this cleaned split works</div></div>',
-            '<div class="warhub-card"><div>1. Login with your Torn API key.</div><div>2. Members/faction data loads only from <b>/api/faction/members</b>.</div><div>3. Enemy data loads only from <b>/api/enemies</b>.</div><div>4. Hospital data loads only from <b>/api/hospital</b>.</div><div>5. Overview uses only <b>/api/overview/live</b>.</div><div>6. No client-side member/enemy crossover locks or fallback mixing.</div></div>'
+            '<div class="warhub-card"><div class="warhub-title">War Hub ⚔️</div><div class="warhub-sub">Lead cleaner wars, chain faster, track targets, post med deals, and keep your faction organized from one overlay.</div></div>',
+            '<div class="warhub-card"><div class="warhub-title">Why members use War Hub</div><div class="warhub-kv"><div>Faster decisions</div><div>Enemy, hospital, chain, targets, and faction info in one place</div></div><div class="warhub-kv"><div>Cleaner coordination</div><div>Shared med deals, terms, and war reminders without bouncing between chats and pages</div></div><div class="warhub-kv"><div>Leader control</div><div>Faction access, member activation, admin tools, and live war visibility built into the same hub</div></div></div>',
+            '<div class="warhub-card"><div class="warhub-title">How to start</div><div>1. Open Settings or stay here in Help and log in with your Torn API key.</div><div>2. Once logged in, War Hub loads your viewer, faction, access, and war state.</div><div>3. Use Enemies for enemy-only war targets, Hospital for hospital-only enemy tracking, and Faction for your faction member control.</div><div>4. Use Targets to save personal picks, Med Deals to share assignments, and Chain to mark yourself available or as a sitter.</div><div>5. Leaders use Faction and Summary. Owner/admin uses the Admin tab.</div></div>',
+            '<div class="warhub-card"><div class="warhub-title">Terms of service</div><div>War Hub is a faction coordination overlay and should be used in line with Torn rules and your faction leadership rules.</div><div>Only use your own API key and only enter it into tools you trust.</div><div>Do not use War Hub to impersonate others, interfere with Torn services, or bypass Torn restrictions.</div><div>Leader and admin tabs are for real faction management only and should stay with the people meant to control access, payment, and settings.</div></div>',
+            '<div class="warhub-card"><div class="warhub-title">API key storage and Torn-safe use</div><div>Your API key is stored locally in your userscript storage on your own device/browser so the script can log you in again faster.</div><div>When you log in, the key is sent to your War Hub backend to authenticate you and pull your allowed faction and war data.</div><div>After login, the script mainly works through the saved session token and route-based API calls.</div><div>Keep your key private, rotate it if you think it was exposed, and only enable the access level your tab functions really need under Torn's API rules.</div><div>Logging out clears the session token from the script side, but your local stored key stays until you change or remove it.</div></div>',
+            '<div class="warhub-card"><div class="warhub-title">Route split now in place</div><div>Faction member data loads only from faction member routes.</div><div>Enemy war data loads only from enemy routes.</div><div>Hospital loads only from the hospital route.</div><div>Overview stays on overview/war data.</div><div>This keeps tabs cleaner and stops faction and enemy data from crossing over.</div></div>'
         ].join('');
     }
 
@@ -513,7 +517,7 @@
         var ad = tabData.admin || {};
         var licenses = arr(ad.faction_licenses || ad.licenses);
         return [
-            '<div class="warhub-card"><div class="warhub-title">Admin</div><div class="warhub-sub">Owner/admin dashboard</div></div>',
+            '<div class="warhub-card"><div class="warhub-title">Admin</div><div class="warhub-sub">Manage exemptions, review licenses, and keep faction access under control</div></div>',
             '<div class="warhub-grid2"><div class="warhub-stat"><div class="warhub-stat-label">Factions</div><div class="warhub-stat-value">' + esc(fmtNum(ad.total_factions || 0)) + '</div></div><div class="warhub-stat"><div class="warhub-stat-label">Active Licenses</div><div class="warhub-stat-value">' + esc(fmtNum(ad.active_licenses || 0)) + '</div></div><div class="warhub-stat"><div class="warhub-stat-label">Users Using Script</div><div class="warhub-stat-value">' + esc(fmtNum(ad.users_using_script || 0)) + '</div></div><div class="warhub-stat"><div class="warhub-stat-label">User Exemptions</div><div class="warhub-stat-value">' + esc(fmtNum(ad.user_exemptions || 0)) + '</div></div></div>',
             '<div class="warhub-card"><div class="warhub-title">Faction Exemption</div><div class="warhub-row"><input id="admin-faction-id" class="warhub-input" type="text" placeholder="Faction ID" /></div><div class="warhub-row" style="margin-top:8px;"><input id="admin-faction-name" class="warhub-input" type="text" placeholder="Faction name (optional)" /></div><div class="warhub-row" style="margin-top:8px;"><textarea id="admin-faction-note" class="warhub-textarea" placeholder="Reason"></textarea></div><div class="warhub-row" style="margin-top:10px;"><button type="button" class="warhub-btn green" data-action="admin-faction-save">Save</button><button type="button" class="warhub-btn gray" data-action="admin-faction-delete">Delete</button></div></div>',
             '<div class="warhub-card"><div class="warhub-title">Player Exemption</div><div class="warhub-row"><input id="admin-user-id" class="warhub-input" type="text" placeholder="Player ID" /></div><div class="warhub-row" style="margin-top:8px;"><input id="admin-user-name" class="warhub-input" type="text" placeholder="Player name (optional)" /></div><div class="warhub-row" style="margin-top:8px;"><input id="admin-user-faction-id" class="warhub-input" type="text" placeholder="Faction ID (optional)" /></div><div class="warhub-row" style="margin-top:8px;"><input id="admin-user-faction-name" class="warhub-input" type="text" placeholder="Faction name (optional)" /></div><div class="warhub-row" style="margin-top:8px;"><textarea id="admin-user-note" class="warhub-textarea" placeholder="Reason"></textarea></div><div class="warhub-row" style="margin-top:10px;"><button type="button" class="warhub-btn green" data-action="admin-user-save">Save</button><button type="button" class="warhub-btn gray" data-action="admin-user-delete">Delete</button></div></div>',
