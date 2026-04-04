@@ -1,3 +1,4 @@
+War Hub copy-paste userscript
 // ==UserScript==
 // @name         War Hub ⚔️
 // @namespace    fries91-war-hub
@@ -692,6 +693,8 @@
   .warhub-body { padding: 10px !important; }\n\
 }\n\
 ";
+
+    css += '\n.warhub-head, .warhub-hero-card {\n  background:\n    linear-gradient(180deg, rgba(80,8,8,.88), rgba(20,20,20,.92)) !important;\n}\n.warhub-card, .warhub-member-group, .warhub-dropbox {\n  background:\n    linear-gradient(180deg, rgba(34,34,34,.96), rgba(14,14,14,.96)) !important;\n  border-color: rgba(189,140,60,.18) !important;\n}\n.warhub-tab {\n  border-color: rgba(189,140,60,.22) !important;\n  background: linear-gradient(180deg, rgba(60,60,60,.42), rgba(26,26,26,.65)) !important;\n}\n.warhub-tab.active {\n  background: linear-gradient(180deg, rgba(186,40,40,.98), rgba(109,16,16,.98)) !important;\n  box-shadow: inset 0 0 0 1px rgba(255,210,120,.10), 0 0 14px rgba(170,30,30,.16) !important;\n}\n.warhub-war-vs, .warhub-title {\n  text-shadow: 0 1px 0 rgba(0,0,0,.55), 0 0 16px rgba(200,70,70,.12) !important;\n}\n.warhub-role-badge {\n  display: inline-flex !important;\n  align-items: center !important;\n  justify-content: center !important;\n  min-height: 20px !important;\n  padding: 2px 7px !important;\n  border-radius: 999px !important;\n  font-size: 10px !important;\n  font-weight: 900 !important;\n  line-height: 1 !important;\n  letter-spacing: .2px !important;\n  border: 1px solid rgba(255,255,255,.14) !important;\n  margin-left: 6px !important;\n}\n.warhub-role-badge.admin { background: rgba(36,108,214,.34) !important; color: #dfeeff !important; }\n.warhub-role-badge.leader { background: rgba(180,38,38,.34) !important; color: #ffe1e1 !important; }\n.warhub-role-badge.coleader { background: rgba(205,124,22,.34) !important; color: #fff0da !important; }\n.warhub-name-wrap { display:inline-flex !important; align-items:center !important; flex-wrap:wrap !important; gap:0 !important; }\n.warhub-member-name-text { display:inline-block !important; }\n.chain-person-row {\n  display:flex !important;\n  align-items:center !important;\n  justify-content:space-between !important;\n  gap:10px !important;\n  padding:10px !important;\n  border-top:1px solid rgba(255,255,255,.06) !important;\n  background: linear-gradient(90deg, rgba(45,45,45,.18), rgba(18,18,18,.05)) !important;\n}\n.chain-person-meta { font-size: 11px !important; opacity: .82 !important; }\n';
 
     GM_addStyle(css);
 
@@ -1895,17 +1898,19 @@ function _refreshEnemiesLive() {
             || tab === 'members'
             || tab === 'enemies'
             || tab === 'hospital'
-            || tab === 'summary';
+            || tab === 'chain'
+            || tab === 'settings';
     }
 
     function getTabPollMs(tab) {
-        if (tab === 'hospital') return 6000;
-        if (tab === 'enemies') return 7000;
-        if (tab === 'members') return 10000;
-        if (tab === 'overview') return 12000;
-        if (tab === 'summary') return 12000;
-        if (tab === 'faction') return 30000;
-        if (tab === 'admin') return 30000;
+        if (tab === 'hospital') return 5000;
+        if (tab === 'enemies') return 5000;
+        if (tab === 'chain') return 7000;
+        if (tab === 'settings') return 15000;
+        if (tab === 'members') return 8000;
+        if (tab === 'overview') return 8000;
+        if (tab === 'faction') return 20000;
+        if (tab === 'admin') return 20000;
         return 0;
     }
 
@@ -1942,6 +1947,12 @@ function _refreshEnemiesLive() {
                     renderLiveTabOnly();
                     return;
                 }
+
+                if (currentTab === 'chain' || currentTab === 'settings') {
+                    yield loadState();
+                    renderLiveTabOnly();
+                    return;
+                }
             } catch (err) {
                 console.error('War Hub tab tick error:', err);
             } finally {
@@ -1961,6 +1972,9 @@ function _handleTabClick() {
         currentTab = String(tab || 'overview');
         GM_setValue(K_TAB, currentTab);
 
+        renderBody();
+        restartPollingForCurrentTab();
+
         if (loadInFlight) return;
 
         loadInFlight = true;
@@ -1979,8 +1993,6 @@ function _handleTabClick() {
                 yield loadEnemies(true);
                 state = state || {};
                 if (!Array.isArray(state.targets)) state.targets = [];
-            } else if (currentTab === 'summary') {
-                yield loadLiveSummary(true);
             } else if (currentTab === 'faction') {
                 if (canManageFaction()) {
                     yield loadFactionMembers(true);
@@ -1993,6 +2005,10 @@ function _handleTabClick() {
                 }
             } else if (currentTab === 'overview') {
                 yield refreshOverviewLive();
+            } else if (currentTab === 'chain') {
+                yield loadState();
+            } else if (currentTab === 'settings') {
+                yield loadState();
             }
         } catch (err) {
             console.error('War Hub tab load error:', err);
@@ -2000,7 +2016,7 @@ function _handleTabClick() {
             loadInFlight = false;
         }
 
-        renderBody();
+        renderLiveTabOnly();
         restartPollingForCurrentTab();
     });
 
@@ -2249,6 +2265,37 @@ function _handleTabClick() {
         );
     }
 
+
+    function normalizeRoleText(value) {
+        return String(value || '').trim().toLowerCase();
+    }
+
+    function isAdminIdentity(member) {
+        var uid = String((member && (member.user_id || member.id || member.player_id)) || '').trim();
+        var name = String((member && (member.name || member.player_name || member.username)) || '').trim().toLowerCase();
+        return (uid && uid === String(OWNER_USER_ID)) || (name && name === String(OWNER_NAME).toLowerCase());
+    }
+
+    function getRoleKind(member) {
+        var pos = normalizeRoleText(member && (member.position || member.role || (member.member_access && member.member_access.position)));
+        if (/(^|\b)(co[- ]?leader|coleader)(\b|$)/.test(pos)) return 'coleader';
+        if (/(^|\b)leader(\b|$)/.test(pos)) return 'leader';
+        return '';
+    }
+
+    function renderRoleBadges(member) {
+        var out = [];
+        if (isAdminIdentity(member)) out.push('<span class="warhub-role-badge admin">Admin</span>');
+        var role = getRoleKind(member);
+        if (role === 'leader') out.push('<span class="warhub-role-badge leader">Leader</span>');
+        if (role === 'coleader') out.push('<span class="warhub-role-badge coleader">Co-Leader</span>');
+        return out.join('');
+    }
+
+    function renderDisplayName(member) {
+        return '<span class="warhub-name-wrap"><span class="warhub-member-name-text">' + esc(getMemberName(member)) + '</span>' + renderRoleBadges(member) + '</span>';
+    }
+
     function humanStateLabel(st) {
         st = String(st || '').toLowerCase();
         if (st === 'online') return 'Online';
@@ -2402,7 +2449,7 @@ function _handleTabClick() {
                         '<span class="warhub-pill ' + esc(String(title).toLowerCase()) + '">' + esc(title) + '</span>',
                         '<span class="warhub-pill neutral">' + esc(String(arr(items).length)) + '</span>',
                     '</div>',
-                    '<div class="warhub-pill neutral">' + (open ? 'Hide' : 'Show') + '</div>',
+                    '<div class="warhub-pill neutral">' + (open ? 'Click to hide' : 'Click to show') + '</div>',
                 '</div>',
                 open
                     ? '<div class="warhub-member-list">' + arr(items).map(rowRenderer).join('') + '</div>'
@@ -2441,7 +2488,7 @@ function _handleTabClick() {
                 'data-state-name="' + esc(st) + '">',
                 '<div class="warhub-member-main">',
                     '<div class="warhub-row">',
-                        '<a class="warhub-member-name" href="' + esc(profileUrl(member)) + '" target="_blank" rel="noopener noreferrer">' + esc(name) + '</a>',
+                        '<a class="warhub-member-name" href="' + esc(profileUrl(member)) + '" target="_blank" rel="noopener noreferrer">' + renderDisplayName(member) + '</a>',
                         '<span class="warhub-pill ' + esc(st) + '" data-statuscd>' + esc(
                             st === 'hospital' ? (stateCd > 0 ? 'Hospital (' + shortCd(stateCd, 'Hospital') + ')' : 'Hospital') :
                             st === 'jail' ? (stateCd > 0 ? 'Jail (' + shortCd(stateCd, 'Jail') + ')' : 'Jail') :
@@ -2635,7 +2682,7 @@ function renderEnemyRow(member, opts) {
             'data-state-name="' + esc(st) + '">',
             '<div class="warhub-member-main">',
                 '<div class="warhub-row">',
-                    '<a class="warhub-member-name" href="' + esc(profileUrl(member)) + '" target="_blank" rel="noopener noreferrer">' + esc(name) + '</a>',
+                    '<a class="warhub-member-name" href="' + esc(profileUrl(member)) + '" target="_blank" rel="noopener noreferrer">' + renderDisplayName(member) + '</a>',
                     '<span class="warhub-pill ' + esc(pred.color || 'neutral') + '">' + esc(predText) + '</span>',
                     '<span class="warhub-pill ' + esc(st) + '" data-statuscd>' + esc(
                         st === 'hospital' ? (stateCd > 0 ? 'Hospital (' + shortCd(stateCd, 'Hospital') + ')' : 'Hospital') :
@@ -2908,8 +2955,8 @@ function renderEnemiesTab() {
                 '<div class="chain-person-row">',
                     '<div class="warhub-col">',
                         profile
-                            ? '<a class="warhub-member-name" href="' + esc(profile) + '" target="_blank" rel="noopener noreferrer">' + esc(name) + '</a>'
-                            : '<div class="warhub-member-name">' + esc(name) + '</div>',
+                            ? '<a class="warhub-member-name" href="' + esc(profile) + '" target="_blank" rel="noopener noreferrer">' + renderDisplayName(item) + '</a>'
+                            : '<div class="warhub-member-name">' + renderDisplayName(item) + '</div>',
                         '<div class="warhub-summary-meta">' + esc(statusText) + '</div>',
                     '</div>',
                     '<div class="warhub-flag-row">',
@@ -3451,7 +3498,7 @@ function renderTermsTab() {
             '<div class="warhub-grid">',
                 '<div class="warhub-hero-card">',
                     '<div class="warhub-title">Faction</div>',
-                    '<div class="warhub-sub">Leader activation and billing</div>',
+                    '<div class="warhub-sub">Leader / Co-Leader activation and billing</div>',
                 '</div>',
 
                 '<div class="warhub-card">',
@@ -3488,7 +3535,7 @@ function renderTermsTab() {
                                 '<div class="warhub-member-row">',
                                     '<div class="warhub-member-main">',
                                         '<div class="warhub-row">',
-                                            '<span class="warhub-member-name">', esc(name), '</span>',
+                                            '<span class="warhub-member-name">', renderDisplayName(m), '</span>',
                                             id ? '<span class="warhub-pill neutral">#' + esc(id) + '</span>' : '',
                                             '<span class="warhub-pill ' + (enabled ? 'good' : 'bad') + '">' + (enabled ? 'Activated' : 'Inactive') + '</span>',
                                         '</div>',
@@ -3587,7 +3634,7 @@ function renderTermsTab() {
                 '<div>2. Once logged in, War Hub loads your faction access and current war data from the backend.</div>',
                 '<div>3. Leaders can go to the Faction tab to activate members for access.</div>',
                 '<div>4. Members with access can then use tabs like Overview, Enemies, Hospital, Chain, Targets, Terms, and Med Deals.</div>',
-                '<div>5. Use the refresh buttons in each tab if you want a fresh pull right away.</div>',
+                '<div>5. Click the buttons in each tab if you want a fresh pull right away.</div>',
             '</div>',
 
             '<div class="warhub-card warhub-col">',
@@ -4338,7 +4385,7 @@ function _handleActionClick() {
 
         renderStatus();
 
-        if (currentTab === 'enemies' || currentTab === 'hospital') {
+        if (currentTab === 'enemies' || currentTab === 'hospital' || currentTab === 'chain') {
             startMembersCountdownLoop();
         } else {
             stopMembersCountdownLoop();
@@ -4370,7 +4417,7 @@ function _handleActionClick() {
 
         renderStatus();
 
-        if (currentTab === 'enemies' || currentTab === 'hospital') {
+        if (currentTab === 'enemies' || currentTab === 'hospital' || currentTab === 'chain') {
             startMembersCountdownLoop();
         } else {
             stopMembersCountdownLoop();
