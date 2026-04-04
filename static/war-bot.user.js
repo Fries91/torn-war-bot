@@ -98,6 +98,7 @@
     var overlay = null;
     var shield = null;
     var badge = null;
+    var headerSlot = null;
 
     var mounted = false;
     var dragMoved = false;
@@ -173,6 +174,59 @@
   pointer-events: none !important;\n\
 }\n\
 \n\
+
+#warhub-shield.warhub-header-mounted {
+  position: relative !important;
+  width: 34px !important;
+  height: 34px !important;
+  min-width: 34px !important;
+  min-height: 34px !important;
+  border-radius: 10px !important;
+  font-size: 18px !important;
+  line-height: 1 !important;
+  left: auto !important;
+  right: auto !important;
+  top: auto !important;
+  bottom: auto !important;
+  transform: none !important;
+  box-shadow: 0 6px 16px rgba(0,0,0,.35) !important;
+  margin: 0 !important;
+  flex: 0 0 auto !important;
+}
+
+.warhub-header-slot {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  padding: 4px 8px !important;
+  border-radius: 12px !important;
+  border: 1px solid rgba(255,255,255,.10) !important;
+  background: linear-gradient(180deg, rgba(65,10,10,.92), rgba(22,22,22,.96)) !important;
+  box-shadow: 0 6px 18px rgba(0,0,0,.28) !important;
+  margin: 0 6px !important;
+  position: relative !important;
+  flex: 0 0 auto !important;
+}
+
+.warhub-header-slot-label {
+  font-size: 9px !important;
+  font-weight: 900 !important;
+  letter-spacing: .7px !important;
+  color: #ffd7a1 !important;
+  text-transform: uppercase !important;
+  white-space: nowrap !important;
+  line-height: 1 !important;
+}
+
+#warhub-badge.warhub-header-badge {
+  position: absolute !important;
+  z-index: 3 !important;
+  min-width: 14px !important;
+  height: 14px !important;
+  line-height: 14px !important;
+  font-size: 9px !important;
+}
+
 #warhub-overlay {\n\
   position: fixed !important;\n\
   z-index: 2147483646 !important;\n\
@@ -1250,16 +1304,29 @@ function getHeaderMountHost() {
     return null;
 }
 
+function ensureHeaderSlot() {
+    if (headerSlot && headerSlot.isConnected) return headerSlot;
+    headerSlot = document.createElement('div');
+    headerSlot.className = 'warhub-header-slot';
+    headerSlot.innerHTML = '<span class="warhub-header-slot-label">War Hub</span>';
+    return headerSlot;
+}
+
 function mountShieldIntoHeader() {
     if (!shield) return false;
     var target = getHeaderMountHost();
     if (!target || !target.host) return false;
 
+    var slot = ensureHeaderSlot();
+    if (!slot.contains(shield)) slot.appendChild(shield);
+    if (!slot.contains(badge)) slot.appendChild(badge);
+
     shield.classList.add('warhub-header-mounted');
+
     try {
-        target.host.insertBefore(shield, target.after ? target.after.nextSibling : null);
+        target.host.insertBefore(slot, target.after ? target.after.nextSibling : null);
     } catch (_unusedHeaderMount) {
-        target.host.appendChild(shield);
+        target.host.appendChild(slot);
     }
     return true;
 }
@@ -1276,7 +1343,9 @@ function applyShieldPos() {
         shield.style.transform = 'none';
     } else {
         shield.classList.remove('warhub-header-mounted');
+        if (headerSlot && headerSlot.parentNode) headerSlot.parentNode.removeChild(headerSlot);
         if (document.body && shield.parentNode !== document.body) document.body.appendChild(shield);
+        if (document.body && badge.parentNode !== document.body) document.body.appendChild(badge);
         shield.style.left = 'auto';
         shield.style.right = '12px';
         shield.style.top = '50%';
@@ -1308,7 +1377,7 @@ function applyShieldPos() {
         var rect = shield.getBoundingClientRect();
         if (shield.classList.contains('warhub-header-mounted')) {
             badge.classList.add('warhub-header-badge');
-            shield.appendChild(badge);
+            if (headerSlot && badge.parentNode !== headerSlot) headerSlot.appendChild(badge);
             badge.style.left = 'auto';
             badge.style.right = '-4px';
             badge.style.top = '-4px';
