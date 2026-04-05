@@ -3771,18 +3771,6 @@ function renderTermsTab() {
     var viewer = (state && state.viewer) || {};
     var access = normalizeAccessCache((state && state.access) || accessState);
     var maskedKey = getApiKey() ? '********' : '';
-    var bs = (viewer && viewer.battle_stats) || viewer.stats || {};
-    var strength = Number((bs && (bs.strength || bs.str || viewer.strength)) || 0);
-    var speed = Number((bs && (bs.speed || bs.spd || viewer.speed)) || 0);
-    var defense = Number((bs && (bs.defense || bs.defence || bs.def || viewer.defense || viewer.defence)) || 0);
-    var dexterity = Number((bs && (bs.dexterity || bs.dex || viewer.dexterity)) || 0);
-    var totalRaw = Number((viewer && (viewer.battle_stats_total || viewer.total_battle_stats || viewer.total || (strength + speed + defense + dexterity))) || 0);
-    var totalM = Number((viewer && (viewer.battle_stats_total_m || viewer.total_battle_stats_m)) || 0);
-    if ((!Number.isFinite(totalM) || totalM <= 0) && Number.isFinite(totalRaw) && totalRaw > 0) {
-        totalM = totalRaw >= 100000 ? (totalRaw / 1000000) : totalRaw;
-    }
-    var totalText = Number.isFinite(totalRaw) && totalRaw > 0 ? fmtNum(totalRaw) : '0';
-    var totalMillionsText = Number.isFinite(totalM) && totalM > 0 ? formatBattleMillions(totalM) : '0.0m';
     return [
         '<div class="warhub-grid">',
             '<div class="warhub-hero-card">',
@@ -3808,17 +3796,6 @@ function renderTermsTab() {
                 '<div class="warhub-kv"><div>Leader activated</div><div>' + (access.member_enabled ? 'Yes' : 'No') + '</div></div>',
             '</div>',
 
-            '<div class="warhub-card warhub-col">',
-                '<h3>Total battle stats</h3>',
-                '<div class="warhub-kv"><div>Total</div><div>' + esc(totalText) + '</div></div>',
-                '<div class="warhub-kv"><div>Total (M)</div><div>' + esc(totalMillionsText) + '</div></div>',
-                '<div class="warhub-kv"><div>Strength</div><div>' + esc(fmtNum(strength)) + '</div></div>',
-                '<div class="warhub-kv"><div>Speed</div><div>' + esc(fmtNum(speed)) + '</div></div>',
-                '<div class="warhub-kv"><div>Defense</div><div>' + esc(fmtNum(defense)) + '</div></div>',
-                '<div class="warhub-kv"><div>Dexterity</div><div>' + esc(fmtNum(dexterity)) + '</div></div>',
-                '<div class="warhub-sub">Shows your current battle stats from the live account payload when the backend provides them.</div>',
-            '</div>',
-
             '<div class="warhub-card">',
                 '<div class="warhub-kv"><div>Payment player</div><div>' + esc(PAYMENT_PLAYER) + '</div></div>',
                 '<div class="warhub-kv"><div>Price per member</div><div>' + esc(String(PRICE_PER_MEMBER)) + ' Xanax</div></div>',
@@ -3833,43 +3810,44 @@ function renderTermsTab() {
     return [
         '<div class="warhub-grid">',
             '<div class="warhub-hero-card">',
-                '<div class="warhub-title">Instructions</div>',
-                '<div class="warhub-sub">How to start and how War Hub works</div>',
+                '<div class="warhub-title">Help</div>',
+                '<div class="warhub-sub">Start fast, stay organized, and keep your faction war-ready.</div>',
+            '</div>',
+
+            '<div class="warhub-card warhub-col">',
+                '<h3>Why War Hub</h3>',
+                '<div>War Hub keeps your faction war information in one fast overlay so members and leaders spend less time digging through pages and more time acting on the right target.</div>',
+                '<div><b>Members</b> get cleaner enemy info, hospital tracking, targets, med deals, chain tools, and shared war notes.</div>',
+                '<div><b>Leaders</b> get member activation controls, faction management tools, and a faster way to keep everyone on the same page.</div>',
+                '<div><b>Result:</b> quicker coordination, less confusion, and a smoother war workflow from one place.</div>',
             '</div>',
 
             '<div class="warhub-card warhub-col">',
                 '<h3>How to start</h3>',
-                '<div>1. Open the Settings tab and log in with your Torn API key.</div>',
-                '<div>2. Once logged in, War Hub loads your faction access and current war data from the backend.</div>',
-                '<div>3. Leaders can go to the Faction tab to activate members for access.</div>',
-                '<div>4. Members with access can then use tabs like Overview, Enemies, Hospital, Chain, Targets, Terms, and Med Deals.</div>',
-                '<div>5. Use the refresh buttons in each tab if you want a fresh pull right away.</div>',
+                '<div>1. Open the Settings tab and enter your Torn API key.</div>',
+                '<div>2. Add your FF Scouter limited key if you want fair-fight scores and estimated enemy stats.</div>',
+                '<div>3. Press Re-login so War Hub can create or refresh your session and pull your faction-linked data.</div>',
+                '<div>4. If you are a leader or co-leader, open the Faction tab and activate members who should have access.</div>',
+                '<div>5. Once active, members can use tabs like Overview, Enemies, Hospital, Chain, Targets, Terms, and Med Deals.</div>',
+                '<div>6. Use the refresh buttons in tabs when you want a fresh pull right away.</div>',
             '</div>',
 
             '<div class="warhub-card warhub-col">',
                 '<h3>Terms of use</h3>',
-                '<div>War Hub is for faction organization and war support only.</div>',
-                '<div>Use your own Torn API key and do not share it with people you do not trust.</div>',
-                '<div>Access to tabs depends on your faction status, your member activation status, and leader or admin permissions.</div>',
-                '<div>Leader and admin tools should only be used by the people meant to manage faction access, payments, settings, and war coordination.</div>',
-                '<div>By using the script, you accept that live war and faction information shown in the overlay depends on Torn API data and backend updates.</div>',
+                '<div>War Hub is a faction organization and war-support overlay. It is meant to help coordinate information, not replace your own judgment.</div>',
+                '<div>Use only your own Torn API key and keep it private. Do not share your key, session, or script storage with people you do not trust.</div>',
+                '<div>Access inside War Hub depends on your faction role, activation status, and any leader, co-leader, or admin permissions attached to your account.</div>',
+                '<div>Leader and admin tools should only be used for faction management, access control, payment checks, renewals, and war coordination.</div>',
+                '<div>Data shown in the overlay depends on Torn API responses, FF Scouter responses when enabled, and backend updates, so live information can occasionally lag or change.</div>',
             '</div>',
 
             '<div class="warhub-card warhub-col">',
                 '<h3>How your API key is stored and used</h3>',
-                '<div>Your API key is stored locally in your userscript storage on your device/browser through the script settings.</div>',
-                '<div>When you log in, the script sends your key to the War Hub backend to create or refresh your session and load your faction-linked data.</div>',
-                '<div>After login, the script mainly works from the saved session and backend responses for state, members, enemies, hospital, targets, chain, and other tab data.</div>',
-                '<div>Your saved session, open tab, overlay state, and other local preferences are also kept in userscript storage for convenience.</div>',
-                '<div>If you log out or your session expires, you will need to log in again.</div>',
-            '</div>',
-
-            '<div class="warhub-card warhub-col">',
-                '<h3>What War Hub does</h3>',
-                '<div><b>For members:</b> War Hub gives a cleaner place to view shared war information like faction overview, enemy roster, hospital tracking, targets, terms, med deals, and chain tools.</div>',
-                '<div><b>For leaders:</b> War Hub adds faction management tools like member activation, payment-linked access, war summary tools, and faction control features.</div>',
-                '<div><b>For admins:</b> War Hub includes admin-only controls for faction licenses, exemptions, renewals, expiries, and dashboard management.</div>',
-                '<div>The goal is to keep war coordination, access control, and important shared information in one overlay instead of spreading it across chat and separate pages.</div>',
+                '<div>Your Torn API key is stored locally in your userscript storage on your own device or browser, similar to how Torn lets tools use an API key that you choose to generate and use.</div>',
+                '<div>When you log in, War Hub sends that key to the backend only to authenticate you, refresh your session, and load faction-linked data that the overlay needs to function.</div>',
+                '<div>The script also stores local preferences such as session token, current tab, overlay state, and optional FF Scouter key in userscript storage for convenience.</div>',
+                '<div>Your key is meant to power your own War Hub access and should be treated like any other private Torn API credential.</div>',
+                '<div>If you remove the key, log out, or your session expires, you will need to log in again before the overlay can load your live faction data.</div>',
             '</div>',
         '</div>'
     ].join('');
