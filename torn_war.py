@@ -141,6 +141,46 @@ def _extract_target_score(payload: Dict[str, Any]) -> int:
     return 0
 
 
+def _extract_start_ts(payload: Dict[str, Any]) -> int:
+    war_node = as_dict(payload.get("war"))
+    candidates = [
+        payload.get("start"),
+        payload.get("start_timestamp"),
+        payload.get("start_ts"),
+        payload.get("started"),
+        war_node.get("start"),
+        war_node.get("start_timestamp"),
+        war_node.get("start_ts"),
+        war_node.get("started"),
+    ]
+    for value in candidates:
+        if value not in (None, ""):
+            ts = to_int(value, 0)
+            if ts > 0:
+                return ts
+    return 0
+
+
+def _extract_end_ts(payload: Dict[str, Any]) -> int:
+    war_node = as_dict(payload.get("war"))
+    candidates = [
+        payload.get("end"),
+        payload.get("end_timestamp"),
+        payload.get("end_ts"),
+        payload.get("ended"),
+        war_node.get("end"),
+        war_node.get("end_timestamp"),
+        war_node.get("end_ts"),
+        war_node.get("ended"),
+    ]
+    for value in candidates:
+        if value not in (None, ""):
+            ts = to_int(value, 0)
+            if ts > 0:
+                return ts
+    return 0
+
+
 def _extract_factions(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
     roots = [
         payload.get("factions"),
@@ -181,32 +221,114 @@ def _extract_factions(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
     return []
 
 
-def _extract_ranked_war_payload(payload: Any) -> Optional[Dict[str, Any]]:
+def _payload_matches_my_faction(payload: Dict[str, Any], my_faction_id: str = "", my_faction_name: str = "") -> bool:
+    factions = _extract_factions(payload)
+    if not factions:
+        return False
+
+    my_faction_id = str(my_faction_id or "").strip()
+    my_faction_name = str(my_faction_name or "").strip()
+
+    for side in factions:
+        side_id = str(side.get("faction_id") or "").strip()
+        side_name = str(side.get("name") or "").strip()
+
+        if my_faction_id and side_id == my_faction_id:
+            return True
+        if my_faction_name and side_name and stringify_lower(side_name) == stringify_lower(my_faction_name):
+            return True
+
+    return False
+
+
+def _phase_rank(phase: str) -> int:
+    phase = str(phase or "").strip().lower()
+    if phase in {"active", "ongoing", "attacking", "defending"}:
+        return 5
+    if phase in {"registered", "registering", "confirmed", "prewar", "matchup"}:
+        return 4
+    if phase in {"war", "live"}:
+        return 3
+    if phase and phase != "none":
+        return 2
+    return 1
+
+
+def _score_ranked_war_candidate(payload: Dict[str, Any], my_faction_id: str = "", my_faction_name: str = "") -> tuple:
+    now_ts = int(time.time())
+    phase = _extract_phase(payload)
+    start_ts = _extract_start_ts(payload)
+    end_ts = _extract_end_ts(payload)
+    factions = _extract_factions(payload)
+    matches_me = _payload_matches_my_faction(payload, my_faction_id=my_faction_id, my_faction_name=my_faction_name)
+
+    active = phase in {"active", "ongoing", "attacking", "defending"}
+    if not active and start_ts and start_ts <= now_ts and (not end_ts or end_ts > now_ts):
+        active = True
+
+    registered = phase in {"registered", "registering", "confirmed", "prewar", "matchup"}
+
+    has_enemy = len(factions) >= 2
+    war_id = _extract_war_id(payload)
+    phase_score = _phase_rank(phase)
+
+    return (
+        1 if matches_me else 0,
+        1 if active else 0,
+        1 if registered else 0,
+        1 if has_enemy else 0,
+        phase_score,
+        start_ts,
+        1 if war_id else 0,
+    )
+
+
+def _extract_ranked_war_payload(payload: Any, my_faction_id: str = "", my_faction_name: str = "") -> Optional[Dict[str, Any]]:
     """
-    Strict extractor:
-    - accepts the payload itself if it contains war/faction structure
-    - accepts one nested 'war' dict if that dict contains faction structure
-    - accepts one item from 'rankedwars' if present
-    No recursive deep crawling.
+    Smarter extractor:
+    - accepts payload itself if it already looks like a war object
+    - checks nested payload["war"]
+    - checks all rankedwars entries and chooses the best candidate
+    - prefers wars that match the viewer's faction
+    - prefers active, then registered, then newest
     """
     if not isinstance(payload, dict):
         return None
 
+    candidates: List[Dict[str, Any]] = []
+
     if any(k in payload for k in ("factions", "teams", "war", "phase", "war_id", "rankedwarid")):
-        return payload
+        candidates.append(payload)
+
+    war_node = payload.get("war")
+    if isinstance(war_node, dict) and any(k in war_node for k in ("factions", "teams", "phase", "war_id", "rankedwarid")):
+        candidates.append(war_node)
 
     rankedwars = payload.get("rankedwars")
     if isinstance(rankedwars, dict):
         for _, node in rankedwars.items():
             if isinstance(node, dict):
-                return node
+                candidates.append(node)
 
     if isinstance(rankedwars, list):
         for node in rankedwars:
             if isinstance(node, dict):
-                return node
+                candidates.append(node)
 
-    return None
+    if not candidates:
+        return None
+
+    best = sorted(
+        candidates,
+        key=lambda node: _score_ranked_war_candidate(
+            node,
+            my_faction_id=my_faction_id,
+            my_faction_name=my_faction_name,
+        ),
+        reverse=True,
+    )[0]
+
+    return best
 
 
 def _build_response(
@@ -231,7 +353,7 @@ def _build_response(
         if my_faction_id and side_id == my_faction_id:
             my_side = side
             break
-        if my_faction_name and stringify_lower(side_name) == stringify_lower(my_faction_name):
+        if my_faction_name and side_name and stringify_lower(side_name) == stringify_lower(my_faction_name):
             my_side = side
             break
 
@@ -255,20 +377,8 @@ def _build_response(
     active = phase in {"active", "ongoing", "attacking", "defending"}
     registered = phase in {"registered", "registering", "confirmed", "prewar", "matchup"}
 
-    start_ts = to_int(
-        payload.get("start")
-        or payload.get("start_timestamp")
-        or as_dict(payload.get("war")).get("start")
-        or as_dict(payload.get("war")).get("start_timestamp"),
-        0,
-    )
-    end_ts = to_int(
-        payload.get("end")
-        or payload.get("end_timestamp")
-        or as_dict(payload.get("war")).get("end")
-        or as_dict(payload.get("war")).get("end_timestamp"),
-        0,
-    )
+    start_ts = _extract_start_ts(payload)
+    end_ts = _extract_end_ts(payload)
 
     now_ts = int(time.time())
     if not active and start_ts and start_ts <= now_ts and (not end_ts or end_ts > now_ts):
@@ -382,7 +492,11 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
             continue
 
         payload = res.get("data") or {}
-        war_payload = _extract_ranked_war_payload(payload)
+        war_payload = _extract_ranked_war_payload(
+            payload,
+            my_faction_id=my_faction_id,
+            my_faction_name=my_faction_name,
+        )
         if not war_payload:
             last_error = "Ranked war payload not found."
             continue
@@ -394,7 +508,6 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
             my_faction_name=my_faction_name,
         )
 
-        # Strict validation: if we know our faction, the returned war must include it.
         if my_faction_id and built.get("my_faction_id") and str(built.get("my_faction_id")) != my_faction_id:
             last_error = (
                 f"War mismatch: requested faction {my_faction_id}, got {built.get('my_faction_id')}."
