@@ -126,26 +126,26 @@
 #warhub-shield {\n\
   position: fixed !important;\n\
   z-index: 2147483647 !important;\n\
-  width: 42px !important;\n\
-  height: 42px !important;\n\
-  border-radius: 12px !important;\n\
+  width: 36px !important;\n\
+  height: 36px !important;\n\
+  border-radius: 10px !important;\n\
   display: flex !important;\n\
   align-items: center !important;\n\
   justify-content: center !important;\n\
-  font-size: 21px !important;\n\
+  font-size: 18px !important;\n\
   line-height: 1 !important;\n\
   cursor: pointer !important;\n\
   user-select: none !important;\n\
   -webkit-user-select: none !important;\n\
   -webkit-touch-callout: none !important;\n\
   -webkit-tap-highlight-color: transparent !important;\n\
-  touch-action: manipulation !important;\n\
+  touch-action: none !important;\n\
   box-shadow: 0 8px 24px rgba(0,0,0,.45) !important;\n\
   border: 1px solid rgba(255,255,255,.10) !important;\n\
   background: radial-gradient(circle at 30% 20%, rgba(220,75,75,.98), rgba(110,12,12,.98) 55%, rgba(48,6,6,.98)) !important;\n\
   color: #fff !important;\n\
   left: auto !important;\n\
-  right: 12px !important;\n\
+  right: 14px !important;\n\
   top: 50% !important;\n\
   bottom: auto !important;\n\
   transform: translateY(-50%) !important;\n\
@@ -171,45 +171,6 @@
   display: none !important;\n\
   pointer-events: none !important;\n\
 }\n\
-#warhub-header-slot {\n\
-  position: fixed !important;\n\
-  top: 6px !important;\n\
-  right: 10px !important;\n\
-  z-index: 2147483647 !important;\n\
-  display: flex !important;\n\
-  align-items: center !important;\n\
-  justify-content: center !important;\n\
-  min-width: 52px !important;\n\
-  min-height: 52px !important;\n\
-  padding: 4px !important;\n\
-  border-radius: 14px !important;\n\
-  background: linear-gradient(180deg, rgba(18,18,18,.96), rgba(34,34,34,.96)) !important;\n\
-  border: 1px solid rgba(255,255,255,.10) !important;\n\
-  box-shadow: 0 10px 28px rgba(0,0,0,.40) !important;\n\
-  backdrop-filter: blur(6px) !important;\n\
-}\n\
-#warhub-shield.warhub-header-mounted {\n\
-  position: relative !important;\n\
-  inset: auto !important;\n\
-  left: auto !important;\n\
-  right: auto !important;\n\
-  top: auto !important;\n\
-  bottom: auto !important;\n\
-  transform: none !important;\n\
-  margin: 0 !important;\n\
-  width: 40px !important;\n\
-  height: 40px !important;\n\
-  border-radius: 12px !important;\n\
-  box-shadow: 0 6px 16px rgba(0,0,0,.35) !important;\n\
-}\n\
-#warhub-badge.warhub-header-badge {\n\
-  position: absolute !important;\n\
-  right: -4px !important;\n\
-  top: -4px !important;\n\
-  left: auto !important;\n\
-}\n\
-}\n\
-\n\
 #warhub-overlay {\n\
   position: fixed !important;\n\
   z-index: 2147483646 !important;\n\
@@ -1202,46 +1163,34 @@
 
 
 function getOrCreateOwnHeaderSlot() {
-    var slot = document.getElementById('warhub-header-slot');
-    if (slot) return slot;
-    if (!document.body) return null;
-
-    slot = document.createElement('div');
-    slot.id = 'warhub-header-slot';
-    slot.setAttribute('aria-label', 'War Hub header');
-    document.body.appendChild(slot);
-    return slot;
+    return null;
 }
 
 function mountShieldIntoHeader() {
-    if (!shield) return false;
-    var slot = getOrCreateOwnHeaderSlot();
-    if (!slot) return false;
-
-    shield.classList.add('warhub-header-mounted');
-    if (shield.parentNode !== slot) slot.appendChild(shield);
-    return true;
+    return false;
 }
 
 function applyShieldPos() {
     if (!shield) return;
 
-    var mountedInHeader = mountShieldIntoHeader();
-    if (mountedInHeader) {
-        shield.style.left = 'auto';
-        shield.style.right = 'auto';
-        shield.style.top = 'auto';
-        shield.style.bottom = 'auto';
-        shield.style.transform = 'none';
-    } else {
-        shield.classList.remove('warhub-header-mounted');
-        if (document.body && shield.parentNode !== document.body) document.body.appendChild(shield);
-        shield.style.left = 'auto';
-        shield.style.right = '12px';
-        shield.style.top = '50%';
-        shield.style.bottom = 'auto';
-        shield.style.transform = 'translateY(-50%)';
-    }
+    shield.classList.remove('warhub-header-mounted');
+    if (document.body && shield.parentNode !== document.body) document.body.appendChild(shield);
+
+    var vp = getViewport();
+    var defaultPos = { left: Math.max(8, vp.w - 50), top: Math.max(72, Math.round(vp.h * 0.45)) };
+    var pos = loadPos(K_SHIELD_POS, defaultPos);
+
+    var maxLeft = Math.max(8, vp.w - 44);
+    var maxTop = Math.max(8, vp.h - 44);
+
+    pos.left = Math.min(Math.max(8, Math.round(Number(pos.left || defaultPos.left))), maxLeft);
+    pos.top = Math.min(Math.max(8, Math.round(Number(pos.top || defaultPos.top))), maxTop);
+
+    shield.style.left = pos.left + 'px';
+    shield.style.top = pos.top + 'px';
+    shield.style.right = 'auto';
+    shield.style.bottom = 'auto';
+    shield.style.transform = 'none';
 
     positionBadge();
 }
@@ -1265,43 +1214,99 @@ function applyShieldPos() {
         if (!badge || !shield) return;
 
         var rect = shield.getBoundingClientRect();
-        if (shield.classList.contains('warhub-header-mounted')) {
-            badge.classList.add('warhub-header-badge');
-            shield.appendChild(badge);
-            badge.style.left = 'auto';
-            badge.style.right = '-4px';
-            badge.style.top = '-4px';
-        } else {
-            badge.classList.remove('warhub-header-badge');
-            if (document.body && badge.parentNode !== document.body) document.body.appendChild(badge);
-            badge.style.left = Math.round(rect.right - 6) + 'px';
-            badge.style.top = Math.round(rect.top - 6) + 'px';
-            badge.style.right = 'auto';
-        }
+        badge.classList.remove('warhub-header-badge');
+        if (document.body && badge.parentNode !== document.body) document.body.appendChild(badge);
+        badge.style.left = Math.round(rect.right - 6) + 'px';
+        badge.style.top = Math.round(rect.top - 6) + 'px';
+        badge.style.right = 'auto';
     }
 
 function makeHoldDraggable(handle, target, key) {
-    if (!handle || handle.__warhubShieldBound) {
+    if (!handle || !target) {
         return {
             didMove: function () { return false; },
             isDragging: function () { return false; }
         };
     }
 
-    handle.__warhubShieldBound = true;
-    handle.addEventListener('touchstart', function (ev) {
+    var dragging = false;
+    var moved = false;
+    var startX = 0;
+    var startY = 0;
+    var startLeft = 0;
+    var startTop = 0;
+    var pointerId = null;
+    var DRAG_THRESHOLD = 6;
+
+    function viewportClamp(left, top) {
+        var vp = getViewport();
+        return {
+            left: Math.min(Math.max(8, Math.round(left)), Math.max(8, vp.w - 44)),
+            top: Math.min(Math.max(8, Math.round(top)), Math.max(8, vp.h - 44))
+        };
+    }
+
+    function getPoint(ev) {
+        if (ev.touches && ev.touches.length) return ev.touches[0];
+        if (ev.changedTouches && ev.changedTouches.length) return ev.changedTouches[0];
+        return ev;
+    }
+
+    function onDown(ev) {
+        var pt = getPoint(ev);
+        dragging = true;
+        moved = false;
+        pointerId = pt && pt.identifier != null ? pt.identifier : 'mouse';
+        startX = Number(pt.clientX || 0);
+        startY = Number(pt.clientY || 0);
+        var rect = target.getBoundingClientRect();
+        startLeft = rect.left;
+        startTop = rect.top;
         if (ev.cancelable) ev.preventDefault();
         ev.stopPropagation();
-        setOverlayOpen(!isOpen);
-    }, { passive: false });
+    }
 
-    handle.addEventListener('contextmenu', function (ev) {
-        ev.preventDefault();
-    });
+    function onMove(ev) {
+        if (!dragging) return;
+        var pt = getPoint(ev);
+        var dx = Number(pt.clientX || 0) - startX;
+        var dy = Number(pt.clientY || 0) - startY;
+        if (!moved && (Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD)) moved = true;
+        if (!moved) return;
+        var pos = viewportClamp(startLeft + dx, startTop + dy);
+        target.style.left = pos.left + 'px';
+        target.style.top = pos.top + 'px';
+        target.style.right = 'auto';
+        target.style.bottom = 'auto';
+        target.style.transform = 'none';
+        positionBadge();
+        if (ev.cancelable) ev.preventDefault();
+    }
+
+    function onUp(ev) {
+        if (!dragging) return;
+        dragging = false;
+        var rect = target.getBoundingClientRect();
+        var pos = viewportClamp(rect.left, rect.top);
+        target.style.left = pos.left + 'px';
+        target.style.top = pos.top + 'px';
+        savePos(key, pos);
+        positionBadge();
+        if (!moved) setOverlayOpen(!isOpen);
+        if (ev && ev.cancelable) ev.preventDefault();
+    }
+
+    handle.addEventListener('mousedown', onDown);
+    handle.addEventListener('touchstart', onDown, { passive: false });
+    window.addEventListener('mousemove', onMove, { passive: false });
+    window.addEventListener('touchmove', onMove, { passive: false });
+    window.addEventListener('mouseup', onUp, { passive: false });
+    window.addEventListener('touchend', onUp, { passive: false });
+    handle.addEventListener('contextmenu', function (ev) { ev.preventDefault(); });
 
     return {
-        didMove: function () { return false; },
-        isDragging: function () { return false; }
+        didMove: function () { return moved; },
+        isDragging: function () { return dragging; }
     };
 }
 
@@ -3936,12 +3941,30 @@ function _handleActionClick() {
             }
 
             if (action === 'meddeals-clear') {
-                var clearMedDealsRes = yield authedReq('POST', '/api/meddeals', {
-                    user_id: String((state && state.viewer && state.viewer.user_id) || ''),
-                    user_name: String((state && state.viewer && state.viewer.name) || ''),
-                    enemy_user_id: '',
-                    enemy_name: ''
-                });
+                var viewerIdForClear = String((state && state.viewer && state.viewer.user_id) || '').trim();
+                var myDeal = arr((state && state.med_deals && state.med_deals.items) || []).find(function (row) {
+                    return String((row && row.user_id) || '').trim() === viewerIdForClear;
+                }) || {};
+                var clearEnemyUserId = String((myDeal && myDeal.enemy_user_id) || '').trim();
+
+                if (!clearEnemyUserId) {
+                    state = state || {};
+                    state.med_deals = state.med_deals || {};
+                    state.med_deals.items = arr(state.med_deals.items).filter(function (row) {
+                        return String((row && row.user_id) || '').trim() !== viewerIdForClear;
+                    });
+                    state.med_deals.text = state.med_deals.items.map(function (row) {
+                        return String((row.user_name || row.user_id || '') + ' → ' + (row.enemy_name || row.enemy_user_id || '')).trim();
+                    }).filter(Boolean).join('\n');
+                    renderBody();
+                    setStatus('No med deal to clear.', false);
+                    return;
+                }
+
+                var clearMedDealsRes = yield authedReq('DELETE', '/api/meddeals/' + encodeURIComponent(clearEnemyUserId), null);
+                if (!clearMedDealsRes.ok && clearMedDealsRes.status === 405) {
+                    clearMedDealsRes = yield authedReq('POST', '/api/meddeals/' + encodeURIComponent(clearEnemyUserId), {});
+                }
 
                 if (!clearMedDealsRes.ok) {
                     setStatus((clearMedDealsRes.json && clearMedDealsRes.json.error) || 'Failed to clear med deals.', true);
@@ -3963,7 +3986,7 @@ function _handleActionClick() {
                 var boxEl = overlay && overlay.querySelector('#warhub-terms-summary-text');
                 var boxText = String((boxEl && boxEl.value) || '');
 
-                var saveBoxRes = yield authedReq('POST', '/api/terms-summary', {
+                var saveBoxRes = yield authedReq('POST', '/api/terms', {
                     text: boxText
                 });
 
@@ -3981,7 +4004,7 @@ function _handleActionClick() {
             }
 
             if (action === 'terms-summary-clear') {
-                var clearBoxRes = yield authedReq('POST', '/api/terms-summary', {
+                var clearBoxRes = yield authedReq('POST', '/api/terms', {
                     text: ''
                 });
 
@@ -4196,7 +4219,7 @@ function _handleActionClick() {
 
             if (action === 'chain-toggle-sitter') {
                 var current = !!(state && state.chain && state.chain.sitter_enabled);
-                var chainSitterRes = yield authedReq('POST', '/api/chain/sitter', { enabled: !current });
+                var chainSitterRes = yield authedReq('POST', '/api/chain', { sitter_enabled: !current });
                 if (!chainSitterRes.ok) {
                     setStatus((chainSitterRes.json && chainSitterRes.json.error) || 'Failed to update chain sitter.', true);
                     return;
