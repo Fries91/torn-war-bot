@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         War Hub ⚔️
 // @namespace    fries91-war-hub
-// @version      3.4.7
+// @version      3.4.8
 // @description  War Hub by Fries91. Split loaders: faction-only faction data, enemy-only enemy data, hospital-only hospital data, no crossover fallbacks.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -15,7 +15,6 @@
 // @grant        GM_xmlhttpRequest
 // @grant        GM_info
 // @connect      torn-war-bot.onrender.com
-// @connect      www.lol-manager.com
 // @connect      ffscouter.com
 // ==/UserScript==
 
@@ -47,6 +46,8 @@
     var K_OVERLAY_SCROLL = 'warhub_overlay_scroll_v3';
     var K_BSP_PRIMARY_API_KEY = 'warhub_bsp_primary_api_key_v1';
     var K_BSP_PRED_CACHE = 'warhub_bsp_prediction_cache_v1';
+    var K_FF_SCOUTER_KEY = 'warhub_ff_scouter_key_v1';
+    var K_FF_SCOUTER_CACHE = 'warhub_ff_scouter_cache_v1';
 
     
     // ============================================================
@@ -123,6 +124,7 @@
 
     var accessState = normalizeAccessCache(GM_getValue(K_ACCESS_CACHE, null));
 
+    var FF_SCOUTER_CACHE_MS = 60 * 60 * 1000;
     var BSP_PRED_VALID_MS = 5 * 24 * 60 * 60 * 1000;
     var BSP_FAIL = 0;
     var BSP_SUCCESS = 1;
@@ -1656,11 +1658,9 @@ function makeHoldDraggable(handle, target, key) {
         _doLogin = _asyncToGenerator(function* () {
             var input = overlay && overlay.querySelector('#warhub-api-key');
             var ownerInput = overlay && overlay.querySelector('#warhub-owner-token');
-            var bspInput = overlay && overlay.querySelector('#warhub-bsp-key');
             var ffInput = overlay && overlay.querySelector('#warhub-ff-key');
             var key = cleanInputValue(input && input.value);
             var ownerToken = cleanInputValue(ownerInput && ownerInput.value);
-            var bspKey = cleanInputValue(bspInput && bspInput.value);
             var ffKey = cleanInputValue(ffInput && ffInput.value);
 
             if (!key) {
@@ -1670,7 +1670,6 @@ function makeHoldDraggable(handle, target, key) {
 
             GM_setValue(K_API_KEY, key);
             if (ownerToken) GM_setValue(K_OWNER_TOKEN, ownerToken);
-            if (bspKey || bspInput) GM_setValue(K_BSP_PRIMARY_API_KEY, bspKey);
             if (ffKey || ffInput) GM_setValue(K_FF_SCOUTER_KEY, ffKey);
 
             setStatus('Logging in...', false);
@@ -2401,9 +2400,6 @@ function _handleTabClick() {
             if (t && t.id === 'warhub-ff-key') {
                 GM_setValue(K_FF_SCOUTER_KEY, cleanInputValue(t.value));
             }
-            if (t && t.id === 'warhub-bsp-key') {
-                GM_setValue(K_BSP_PRIMARY_API_KEY, cleanInputValue(t.value));
-            }
             if (t && t.id === 'warhub-ff-key') {
                 GM_setValue(K_FF_SCOUTER_KEY, cleanInputValue(t.value));
             }
@@ -2753,103 +2749,40 @@ function parseBattleNumber(token) {
 }
 
 function parseEnemyBattleStatsMillions(member) {
-    var bsp = getEnemyBspData(member);
-    if (bsp && bsp.tbs > 0) {
-        return Number((bsp.tbs / 1000000).toFixed(2));
-    }
-
     var ff = getFfScouterData(member);
     if (ff && ff.estimate_m > 0) {
         return Number(ff.estimate_m.toFixed(2));
-    }
-
-    var direct = Number(member && (member.total_stats_m || member.battle_stats_m || member.stats_total_m));
-    if (Number.isFinite(direct) && direct > 0) return direct;
-    var txt = spyText(member);
-    if (!txt) return 0;
-
-    var totalMatch = txt.match(/total[^\d]*([\d.,]+\s*[kmbt]?)/i);
-    if (totalMatch) {
-        var totalVal = parseBattleNumber(totalMatch[1]);
-        if (Number.isFinite(totalVal) && totalVal > 0) return totalVal;
-    }
-
-    var nums = [];
-    txt.replace(/([\d.,]+\s*[kmbt]?)/ig, function (_m, val) {
-        var parsed = parseBattleNumber(val);
-        if (Number.isFinite(parsed) && parsed > 0) nums.push(parsed);
-        return _m;
-    });
-
-    if (nums.length >= 4) {
-        return nums.slice(0, 4).reduce(function (sum, n) { return sum + n; }, 0);
-    }
-    if (nums.length) {
-        return Math.max.apply(null, nums);
     }
     return 0;
 }
 
 function predictionMeta(member) {
-    var bsp = getEnemyBspData(member);
     var ff = getFfScouterData(member);
-    var sourceParts = [];
-    var confidence = 'Estimate';
-    var summary = '';
-    var updatedAt = '';
-
-    if (bsp) {
-        sourceParts.push('BSP');
-        updatedAt = bsp.prediction_date || updatedAt;
-        confidence = 'Predicted';
-
-        if (bsp.result === BSP_HOF) {
-            summary = 'BSP marked this target as HOF-level.';
-            confidence = 'High';
-        } else if (bsp.result === BSP_FFATTACKS) {
-            summary = 'BSP prediction is based on fair-fight attack data.';
-            confidence = 'Medium';
-        } else if (bsp.result === BSP_TOO_WEAK) {
-            summary = 'BSP predicts this target is below your tracked range.';
-        } else if (bsp.result === BSP_TOO_STRONG) {
-            summary = 'BSP predicts this target is above your tracked range.';
-        } else if (bsp.result === BSP_MODEL_ERROR || bsp.result === BSP_FAIL) {
-            summary = 'BSP could not return a usable prediction yet.';
-            confidence = 'Unavailable';
-        } else if (bsp.tbs > 0) {
-            summary = 'Direct BSP battle stat prediction.';
-            confidence = 'High';
-        }
-    }
-
-    if (ff) {
-        sourceParts.push('FF Scouter');
-        if (!updatedAt && ff.last_updated) updatedAt = ff.last_updated;
-        if (ff.no_data) {
-            if (!summary) summary = 'FF Scouter has no current fair-fight data for this target.';
-        } else if (ff.fair_fight > 0 && ff.bs_estimate_human) {
-            summary = 'FF Scouter fair-fight ' + ff.fair_fight.toFixed(2) + ' with estimated stats ' + ff.bs_estimate_human + '.';
-            if (confidence !== 'High') confidence = 'Medium';
-        } else if (ff.fair_fight > 0) {
-            summary = 'FF Scouter fair-fight ' + ff.fair_fight.toFixed(2) + '.';
-            if (confidence !== 'High') confidence = 'Medium';
-        }
-    }
-
-    if (!sourceParts.length) {
+    if (!ff) {
         return {
-            source: String((member && (member.prediction_source || (member.battle_prediction && member.battle_prediction.source))) || '').trim() || 'estimate',
-            confidence: String((member && (member.prediction_confidence || (member.battle_prediction && member.battle_prediction.confidence))) || '').trim() || 'Estimate',
-            summary: String((member && (member.prediction_summary || (member.battle_prediction && member.battle_prediction.summary))) || '').trim(),
-            updated_at: String((member && (member.prediction_updated_at || member.updated_at || member.last_updated_at)) || '').trim()
+            source: 'FF Scouter',
+            confidence: 'Waiting',
+            summary: 'Waiting for FF Scouter data for this target.',
+            updated_at: ''
+        };
+    }
+
+    if (ff.no_data) {
+        return {
+            source: 'FF Scouter',
+            confidence: 'No data',
+            summary: 'FF Scouter has no current fair-fight data for this target.',
+            updated_at: ff.last_updated || ''
         };
     }
 
     return {
-        source: sourceParts.join(' + '),
-        confidence: confidence,
-        summary: summary,
-        updated_at: updatedAt
+        source: 'FF Scouter',
+        confidence: ff.bs_estimate_human ? 'Estimate' : 'Fair Fight',
+        summary: ff.bs_estimate_human
+            ? ('FF Scouter fair-fight ' + ff.fair_fight.toFixed(2) + ' with estimated stats ' + ff.bs_estimate_human + '.')
+            : ('FF Scouter fair-fight ' + (ff.fair_fight > 0 ? ff.fair_fight.toFixed(2) : '—') + '.'),
+        updated_at: ff.last_updated || ''
     };
 }
 
@@ -2858,38 +2791,25 @@ function enemyPredictionData(member) {
     var enemyStatsM = parseEnemyBattleStatsMillions(member);
     var diffM = enemyStatsM - myStatsM;
     var pct = myStatsM > 0 && enemyStatsM > 0 ? Math.round((enemyStatsM / myStatsM) * 100) : 0;
+    var ff = getFfScouterData(member);
     var color = 'neutral';
-    var tier = 'Estimate';
-    var summary = 'Your live battle stats were not available from the backend yet.';
+    var tier = 'Waiting';
+    var summary = 'Waiting for FF Scouter data.';
 
-    if (myStatsM > 0 && enemyStatsM > 0) {
-        if (enemyStatsM <= myStatsM * 0.9) {
-            color = 'good';
-            tier = 'Green';
-            summary = 'Enemy looks under your stats.';
-        } else if (enemyStatsM <= myStatsM * 1.1) {
-            color = 'neutral';
-            tier = 'Yellow';
-            summary = 'Enemy looks around your stats.';
-        } else if (enemyStatsM <= myStatsM + 15) {
-            color = 'warn';
-            tier = 'Orange';
-            summary = 'Enemy looks up to about 15m above you.';
-        } else {
-            color = 'bad';
-            tier = 'Red';
-            summary = 'Enemy looks well above your stats.';
-        }
-    } else {
-        var stateName = stateLabel(member);
-        if (stateName === 'hospital' || stateName === 'jail') {
-            color = 'good';
-            tier = 'Green';
-            summary = 'No stat compare yet, but current state gives you a safer window.';
-        } else if (stateName === 'online') {
-            color = 'bad';
-            tier = 'Red';
-            summary = 'No stat compare yet. Active enemy can fight back right away.';
+    if (ff) {
+        if (ff.no_data) {
+            color = 'offline';
+            tier = 'No data';
+            summary = 'FF Scouter has no data for this target.';
+        } else if (ff.fair_fight > 0) {
+            if (ff.fair_fight <= 2) color = 'good';
+            else if (ff.fair_fight <= 3.5) color = 'neutral';
+            else if (ff.fair_fight <= 4.5) color = 'warn';
+            else color = 'bad';
+            tier = ff.fair_fight.toFixed(2);
+            summary = ff.bs_estimate_human
+                ? ('FF ' + ff.fair_fight.toFixed(2) + ' • Est. ' + ff.bs_estimate_human)
+                : ('FF ' + ff.fair_fight.toFixed(2));
         }
     }
 
@@ -2912,41 +2832,7 @@ function enemyPredictionData(member) {
 
 function renderEnemyPredictionBox(member) {
     var pred = enemyPredictionData(member);
-    var ff = getFfScouterData(member);
-    var sourceText = pred.source ? String(pred.source).replace(/_/g, ' ') : 'estimate';
-    var confidenceText = pred.confidence || 'Estimate';
-    var updatedText = pred.updated_at ? fmtTs(pred.updated_at) : '—';
-    var ffFightText = ff ? (ff.no_data ? 'No data' : (ff.fair_fight > 0 ? ff.fair_fight.toFixed(2) : '—')) : '—';
-    var ffDiffText = ff ? (ff.difficulty || '—') : '—';
-    var ffEstimateText = ff ? (ff.bs_estimate_human || (ff.estimate_m > 0 ? formatBattleMillions(ff.estimate_m) : '—')) : '—';
-    var ffUpdatedText = ff && ff.last_updated ? fmtTs(ff.last_updated) : '—';
-    return [
-        '<details class="warhub-dropbox">',
-            '<summary class="warhub-dropbox-head">Predicted battle stats</summary>',
-            '<div class="warhub-dropbox-body">',
-                '<div class="warhub-predict-box">',
-                    '<div class="warhub-predict-head">',
-                        '<div class="warhub-predict-title">Predicted battle stats</div>',
-                        '<span class="warhub-pill ' + esc(pred.color) + '">' + esc(pred.tier) + '</span>',
-                    '</div>',
-                    '<div class="warhub-predict-grid">',
-                        '<div class="warhub-predict-item"><div class="warhub-predict-label">Enemy</div><div class="warhub-predict-value">' + esc(formatBattleMillions(pred.enemy_stats_m)) + '</div></div>',
-                        '<div class="warhub-predict-item"><div class="warhub-predict-label">You</div><div class="warhub-predict-value">' + esc(formatBattleMillions(pred.my_stats_m)) + '</div></div>',
-                        '<div class="warhub-predict-item"><div class="warhub-predict-label">Percent</div><div class="warhub-predict-value">' + esc(pred.pct ? (String(pred.pct) + '%') : '—') + '</div></div>',
-                        '<div class="warhub-predict-item"><div class="warhub-predict-label">Gap</div><div class="warhub-predict-value">' + esc((Number.isFinite(pred.diff_m) && pred.enemy_stats_m > 0 && pred.my_stats_m > 0) ? formatBattleMillions(pred.diff_m) : '—') + '</div></div>',
-                        '<div class="warhub-predict-item"><div class="warhub-predict-label">Source</div><div class="warhub-predict-value">' + esc(sourceText) + '</div></div>',
-                        '<div class="warhub-predict-item"><div class="warhub-predict-label">Confidence</div><div class="warhub-predict-value">' + esc(confidenceText) + '</div></div>',
-                        '<div class="warhub-predict-item"><div class="warhub-predict-label">FF score</div><div class="warhub-predict-value">' + esc(ffFightText) + '</div></div>',
-                        '<div class="warhub-predict-item"><div class="warhub-predict-label">FF difficulty</div><div class="warhub-predict-value">' + esc(ffDiffText) + '</div></div>',
-                        '<div class="warhub-predict-item"><div class="warhub-predict-label">FF est. stats</div><div class="warhub-predict-value">' + esc(ffEstimateText) + '</div></div>',
-                        '<div class="warhub-predict-item"><div class="warhub-predict-label">FF updated</div><div class="warhub-predict-value">' + esc(ffUpdatedText) + '</div></div>',
-                    '</div>',
-                    '<div class="warhub-predict-summary">' + esc(pred.summary) + '</div>',
-                    '<div class="warhub-sub" style="margin-top:6px;">Last stored update: ' + esc(updatedText) + '</div>',
-                '</div>',
-            '</div>',
-        '</details>'
-    ].join('');
+    return '<div class="warhub-sub">' + esc(pred.summary || '') + '</div>';
 }
 
 function renderEnemyRow(member, opts) {
@@ -2959,7 +2845,12 @@ function renderEnemyRow(member, opts) {
     var dibbedBy = String((member && (member.dibbed_by_name || member.dibbedByName)) || '').trim();
     var dibText = dibbedBy ? ('Dibbed by ' + dibbedBy) : '';
     var pred = enemyPredictionData(member);
-    var predText = pred && pred.pct ? (String(pred.pct) + '%') : '—';
+    var ff = getFfScouterData(member);
+    var ffBubbleText = 'FF …';
+    if (ff) {
+        if (ff.no_data) ffBubbleText = 'FF n/a';
+        else if (ff.fair_fight > 0) ffBubbleText = 'FF ' + ff.fair_fight.toFixed(2);
+    }
     var travelDetail = st === 'travel' ? travelDestinationText(member) : '';
     var travelArrival = st === 'travel' ? travelArrivalText(member) : '';
     var actionHtml = '';
@@ -2970,10 +2861,7 @@ function renderEnemyRow(member, opts) {
             var ownId = String((m && (m.user_id || m.id)) || '').trim();
             if (ownId) ownIds[ownId] = true;
         });
-
-        if (id && ownIds[String(id)]) {
-            return '';
-        }
+        if (id && ownIds[String(id)]) return '';
     }
 
     if (opts.mode === 'hospital') {
@@ -2985,27 +2873,25 @@ function renderEnemyRow(member, opts) {
     }
 
     return [
-        '<div class="warhub-member-row" ' +
-            'data-statuscd-base="' + esc(String(stateCd)) + '" ' +
-            'data-state-name="' + esc(st) + '">',
+        '<div class="warhub-member-row" data-statuscd-base="' + esc(String(stateCd)) + '" data-state-name="' + esc(st) + '">',
             '<div class="warhub-member-main">',
-                '<div class="warhub-row">',
-                    '<a class="warhub-member-name" href="' + esc(profileUrl(member)) + '" target="_blank" rel="noopener noreferrer">' + esc(name) + '</a>',
-                    '<span class="warhub-pill ' + esc(pred.color || 'neutral') + '">' + esc(predText) + '</span>',
-                    '<span class="warhub-pill ' + esc(st) + '" data-statuscd>' + esc(
-                        st === 'hospital' ? (stateCd > 0 ? 'Hospital (' + shortCd(stateCd, 'Hospital') + ')' : 'Hospital') :
-                        st === 'jail' ? (stateCd > 0 ? 'Jail (' + shortCd(stateCd, 'Jail') + ')' : 'Jail') :
-                        st === 'travel' ? (stateCd > 0 ? 'Travel (' + shortCd(stateCd, 'Travel') + ')' : 'Travel') :
-                        humanStateLabel(st)
-                    ) + '</span>',
-                '</div>',
-                '<div class="warhub-row">',
+                '<div class="warhub-row" style="justify-content:space-between;gap:8px;flex-wrap:nowrap;align-items:center;">',
+                    '<div class="warhub-row" style="gap:8px;min-width:0;flex:1;flex-wrap:nowrap;align-items:center;">',
+                        '<a class="warhub-member-name" href="' + esc(profileUrl(member)) + '" target="_blank" rel="noopener noreferrer">' + esc(name) + '</a>',
+                        '<span class="warhub-pill ' + esc(pred.color || 'neutral') + '">' + esc(ffBubbleText) + '</span>',
+                        '<span class="warhub-pill ' + esc(st) + '" data-statuscd>' + esc(
+                            st === 'hospital' ? (stateCd > 0 ? 'Hospital (' + shortCd(stateCd, 'Hospital') + ')' : 'Hospital') :
+                            st === 'jail' ? (stateCd > 0 ? 'Jail (' + shortCd(stateCd, 'Jail') + ')' : 'Jail') :
+                            st === 'travel' ? (stateCd > 0 ? 'Travel (' + shortCd(stateCd, 'Travel') + ')' : 'Travel') :
+                            humanStateLabel(st)
+                        ) + '</span>',
+                        (opts.mode === 'hospital' ? '' : (dibText ? '<span class="warhub-pill warn">' + esc(dibText) + '</span>' : '')),
+                    '</div>',
                     actionHtml,
-                    (opts.mode === 'hospital' ? '' : (dibText ? '<span class="warhub-pill warn">' + esc(dibText) + '</span>' : '')),
                 '</div>',
+                '<div class="warhub-sub" style="margin-top:6px;">' + esc(pred.summary || '') + '</div>',
             '</div>',
             (st === 'travel' && travelDetail) ? '<div class="warhub-spy-box">' + esc(travelDetail) + (travelArrival ? '<div class="warhub-sub" style="margin-top:6px;">' + esc(travelArrival) + '</div>' : '') + '</div>' : '',
-            renderEnemyPredictionBox(member),
             spy ? '<div class="warhub-spy-box">' + esc(spy) + '</div>' : '',
         '</div>'
     ].join('');
@@ -3899,11 +3785,9 @@ function renderTermsTab() {
             '<div class="warhub-card warhub-col">',
                 '<label class="warhub-label" for="warhub-api-key">Torn API Key</label>',
                 '<input id="warhub-api-key" class="warhub-input" type="password" value="' + esc(maskedKey) + '" placeholder="Saved API key" />',
-                '<label class="warhub-label" for="warhub-bsp-key">BSP Primary API Key</label>',
-                '<input id="warhub-bsp-key" class="warhub-input" type="password" value="' + esc(getBspPrimaryKey()) + '" placeholder="Optional BSP key for enemy battle stat predictions" />',
                 '<label class="warhub-label" for="warhub-ff-key">FF Scouter Limited Key</label>',
                 '<input id="warhub-ff-key" class="warhub-input" type="password" value="' + esc(getFfScouterKey()) + '" placeholder="Optional FF Scouter key for fair fight + estimated stats" />',
-                '<div class="warhub-sub">Optional. BSP and FF Scouter can run together. BSP gives prediction pulls from lol-manager; FF Scouter adds fair-fight score plus estimated battle stats.</div>',
+                '<div class="warhub-sub">FF Scouter only. Uses fair-fight score plus estimated battle stats for enemy rows.</div>',
                 '<div class="warhub-row">',
                     '<button type="button" class="warhub-btn" data-action="login">Re-login</button>',
                     '<button type="button" class="warhub-btn gray" data-action="logout">Logout</button>',
