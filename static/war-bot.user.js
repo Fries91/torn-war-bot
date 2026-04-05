@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         War Hub ⚔️
 // @namespace    fries91-war-hub
-// @version      3.4.9
+// @version      3.5.0
 // @description  War Hub by Fries91. Split loaders: faction-only faction data, enemy-only enemy data, hospital-only hospital data, no crossover fallbacks.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -327,15 +327,6 @@
         if (!id) return null;
         var direct = warEnemyStatsCache && warEnemyStatsCache[id];
         if (direct && direct.ffscouter) return direct.ffscouter;
-
-        var cached = getFfScouterCached(id);
-        if (cached) {
-            var normalized = normalizeFfScouterItem(cached);
-            warEnemyStatsCache = warEnemyStatsCache || {};
-            if (!warEnemyStatsCache[id]) warEnemyStatsCache[id] = {};
-            warEnemyStatsCache[id].ffscouter = normalized;
-            return normalized;
-        }
         return null;
     }
 
@@ -1924,6 +1915,7 @@ function _loadEnemies() {
             enemy_faction_name: warEnemiesFactionName
         });
 
+        queueEnemyBspPredictions(enemies);
         queueEnemyFfPredictions(enemies);
 
         return enemies.slice();
@@ -2146,7 +2138,8 @@ function _refreshEnemiesLive() {
             || tab === 'members'
             || tab === 'enemies'
             || tab === 'hospital'
-            || tab === 'summary';
+            || tab === 'summary'
+            || tab === 'faction';
     }
 
     function getTabPollMs(tab) {
@@ -2179,6 +2172,15 @@ function _refreshEnemiesLive() {
                 if (currentTab === 'overview') {
                     yield refreshOverviewLive();
                     renderLiveTabOnly();
+                    return;
+                }
+
+                if (currentTab === 'faction') {
+                    if (canManageFaction()) {
+                        yield loadFactionMembers(true);
+                        yield refreshFactionPaymentData();
+                        renderLiveTabOnly();
+                    }
                     return;
                 }
 
@@ -2854,7 +2856,7 @@ function renderEnemyRow(member, opts) {
     var dibText = dibbedBy ? ('Dibbed by ' + dibbedBy) : '';
     var pred = enemyPredictionData(member);
     var ff = getFfScouterData(member);
-    var ffBubbleText = 'FF wait';
+    var ffBubbleText = 'FF …';
     if (ff) {
         if (ff.no_data) ffBubbleText = 'FF n/a';
         else if (ff.fair_fight > 0) ffBubbleText = 'FF ' + ff.fair_fight.toFixed(2);
@@ -2921,6 +2923,8 @@ function renderEnemyRow(member, opts) {
                     '<input id="warhub-api-key" class="warhub-input" type="password" value="' + esc(getApiKey()) + '" placeholder="Enter API key" />',
                     '<label class="warhub-label" for="warhub-owner-token">Owner/Admin Token (optional)</label>',
                     '<input id="warhub-owner-token" class="warhub-input" type="password" value="' + esc(getOwnerToken()) + '" placeholder="Owner/admin token" />',
+                    '<label class="warhub-label" for="warhub-bsp-key">BSP Primary API Key (optional)</label>',
+                    '<input id="warhub-bsp-key" class="warhub-input" type="password" value="' + esc(getBspPrimaryKey()) + '" placeholder="BSP enemy prediction key" />',
                     '<label class="warhub-label" for="warhub-ff-key">FF Scouter Limited Key (optional)</label>',
                     '<input id="warhub-ff-key" class="warhub-input" type="password" value="' + esc(getFfScouterKey()) + '" placeholder="FF Scouter key for fair fight + est. stats" />',
                     '<div class="warhub-row">',
@@ -3083,7 +3087,6 @@ function renderEnemiesTab() {
         var id = String((m && (m.user_id || m.id)) || '').trim();
         return !!id;
     });
-    queueEnemyFfPredictions(enemies);
     var war = (state && state.war) || {};
     var enemyFactionId = String(war.enemy_faction_id || warEnemiesFactionId || '').trim();
     var enemyFactionName = String(war.enemy_faction_name || warEnemiesFactionName || 'Enemy Faction');
@@ -3320,6 +3323,7 @@ function renderEnemiesTab() {
                     '<select id="warhub-meddeals-enemy" class="warhub-select">',
                         '<option value="">Select enemy player</option>',
                         enemies.map(function (m) {
+                            if (typeof m === 'string') return m;
                             var id = getMemberId(m);
                             var name = getMemberName(m);
                             var selected = id && selectedEnemyUserId && String(id) === String(selectedEnemyUserId) ? ' selected' : '';
@@ -3685,9 +3689,13 @@ function renderTermsTab() {
 
     function renderFactionTab() {
         var license = (state && state.license) || {};
-        var members = arr(currentFactionMembers || factionMembersCache || (state && state.members) || []);
+        var members = arr(currentFactionMembers || factionMembersCache || (state && state.members) || [])
+            .map(function (m) { return m && typeof m === 'object' ? m : {}; })
+            .filter(function (m) {
+                return getMemberId(m) || getMemberName(m) || m.user_id || m.id || m.member_id;
+            });
         var factionName = String(
-            (state && state.faction && state.faction.name) ||
+            (state && state.faction && (state.faction.faction_name || state.faction.name)) ||
             license.faction_name ||
             'Your Faction'
         );
@@ -3698,7 +3706,9 @@ function renderTermsTab() {
         );
         var renewalCost = license.renewal_cost != null ? license.renewal_cost : ((license.enabled_member_count || 0) * PRICE_PER_MEMBER);
         var daysLeft = license.days_left != null ? license.days_left : (fmtDaysLeftFromIso(license.paid_until_at) || 0);
-        var enabledCount = Number(license.enabled_member_count || 0);
+        var enabledCount = Number(license.enabled_member_count || members.filter(function (m) {
+            return !!(m && (m.enabled || m.member_enabled || m.active_for_cycle || m.is_active || m.activated || m.is_enabled || m.active));
+        }).length || 0);
 
         return [
             '<div class="warhub-grid">',
@@ -3732,10 +3742,11 @@ function renderTermsTab() {
                     '</div>',
 
                     '<div class="warhub-col">',
-                        members.map(function (m) {
+                        (!members.length ? ['<div class="warhub-empty">No faction members loaded yet.</div>'] : members).map(function (m) {
+                            if (typeof m === 'string') return m;
                             var id = getMemberId(m);
                             var name = getMemberName(m);
-                            var enabled = !!(m && (m.enabled || m.member_enabled || m.active_for_cycle));
+                            var enabled = !!(m && (m.enabled || m.member_enabled || m.active_for_cycle || m.is_active || m.activated || m.is_enabled || m.active));
 
                             return [
                                 '<div class="warhub-member-row">',
