@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         War Hub ⚔️
 // @namespace    fries91-war-hub
-// @version      3.5.0
+// @version      3.5.1
 // @description  War Hub by Fries91. Split loaders: faction-only faction data, enemy-only enemy data, hospital-only hospital data, no crossover fallbacks.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -2175,15 +2175,6 @@ function _refreshEnemiesLive() {
                     return;
                 }
 
-                if (currentTab === 'faction') {
-                    if (canManageFaction()) {
-                        yield loadFactionMembers(true);
-                        yield refreshFactionPaymentData();
-                        renderLiveTabOnly();
-                    }
-                    return;
-                }
-
                 if (currentTab === 'enemies') {
                     yield refreshEnemiesLive();
                     renderLiveTabOnly();
@@ -3249,37 +3240,35 @@ function renderEnemiesTab() {
         '<div class="warhub-grid">',
             '<div class="warhub-hero-card">',
                 '<div class="warhub-title">Targets</div>',
-                '<div class="warhub-sub">Personal target picks from current war enemies</div>',
+                '<div class="warhub-sub">Save one or more war enemies and manage them here</div>',
             '</div>',
 
-            targets.length ? [
-                '<div class="warhub-card warhub-col">',
-                    '<h3>Saved Targets</h3>',
-                    targets.map(function (t) {
-                        var id = String(t.user_id || t.target_user_id || t.id || t.player_id || '');
-                        var name = String(t.name || t.target_name || t.player_name || 'Target');
-                        var note = String(t.note || '');
+            '<div class="warhub-card warhub-col">',
+                '<h3>Saved Enemy</h3>',
+                targets.length ? targets.map(function (t) {
+                    var id = String(t.user_id || t.target_user_id || t.id || t.player_id || '');
+                    var name = String(t.name || t.target_name || t.player_name || 'Enemy');
+                    var note = String(t.note || '');
 
-                        return [
-                            '<div class="warhub-member-row">',
-                                '<div class="warhub-member-main">',
-                                    '<div class="warhub-row">',
-                                        '<a class="warhub-member-name" href="https://www.torn.com/profiles.php?XID=' + esc(id) + '" target="_blank" rel="noopener noreferrer">' + esc(name) + '</a>',
-                                    '</div>',
-                                    '<div class="warhub-row">',
+                    return [
+                        '<div class="warhub-member-row">',
+                            '<div class="warhub-member-main">',
+                                '<div class="warhub-row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">',
+                                    '<a class="warhub-member-name" href="https://www.torn.com/profiles.php?XID=' + esc(id) + '" target="_blank" rel="noopener noreferrer">' + esc(name) + '</a>',
+                                    '<div class="warhub-row" style="gap:8px;flex-wrap:wrap;">',
                                         id ? '<a class="warhub-btn" href="https://www.torn.com/loader.php?sid=attack&user2ID=' + esc(id) + '" target="_blank" rel="noopener noreferrer">Attack</a>' : '',
-                                        id ? '<button type="button" class="warhub-btn gray" data-action="target-delete" data-user-id="' + esc(id) + '">Delete Target</button>' : '',
+                                        id ? '<button type="button" class="warhub-btn gray" data-action="target-delete" data-user-id="' + esc(id) + '">Delete</button>' : '',
                                     '</div>',
                                 '</div>',
                                 note ? '<div class="warhub-spy-box">' + esc(note) + '</div>' : '',
-                            '</div>'
-                        ].join('');
-                    }).join(''),
-                '</div>'
-            ].join('') : '<div class="warhub-card">No saved targets yet.</div>',
+                            '</div>',
+                        '</div>'
+                    ].join('');
+                }).join('') : '<div class="warhub-muted">No enemy saved yet.</div>',
+            '</div>',
 
             '<div class="warhub-card warhub-col">',
-                '<label class="warhub-label" for="warhub-target-name">Target name</label>',
+                '<label class="warhub-label" for="warhub-target-name">Enemy</label>',
                 '<select id="warhub-target-name" class="warhub-select">',
                     '<option value="">Select enemy member</option>',
                     enemies.map(function (m) {
@@ -3293,7 +3282,7 @@ function renderEnemiesTab() {
                 '<textarea id="warhub-target-note" class="warhub-textarea" placeholder="Optional note for yourself"></textarea>',
 
                 '<div class="warhub-row">',
-                    '<button type="button" class="warhub-btn green" data-action="target-save">Save Target</button>',
+                    '<button type="button" class="warhub-btn green" data-action="target-save">Save Enemy</button>',
                 '</div>',
             '</div>',
         '</div>'
