@@ -182,15 +182,36 @@ def _extract_enemy_members(payload: Any) -> List[Dict[str, Any]]:
         return []
 
     raw_members = payload.get("members")
-    if not isinstance(raw_members, dict):
-        return []
-
     out: List[Dict[str, Any]] = []
-    for uid, member in raw_members.items():
-        if not isinstance(member, dict):
-            continue
-        out.append(normalize_member(uid, member))
-    return out
+
+    # v2 style: members is a list
+    if isinstance(raw_members, list):
+        for member in raw_members:
+            if not isinstance(member, dict):
+                continue
+
+            uid = str(
+                member.get("user_id")
+                or member.get("player_id")
+                or member.get("id")
+                or ""
+            ).strip()
+
+            if not uid:
+                continue
+
+            out.append(normalize_member(uid, member))
+        return out
+
+    # v1 style: members is a dict keyed by user id
+    if isinstance(raw_members, dict):
+        for uid, member in raw_members.items():
+            if not isinstance(member, dict):
+                continue
+            out.append(normalize_member(uid, member))
+        return out
+
+    return []
 
 
 def _extract_enemy_root(payload: Any) -> Dict[str, Any]:
