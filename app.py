@@ -669,6 +669,8 @@ def _build_enemy_payload(user: Dict[str, Any], war_payload: Optional[Dict[str, A
 
     enemy_payload = enemy_faction_members(api_key, enemy_faction_id)
     if not enemy_payload.get("ok"):
+        empty["source_note"] = str(enemy_payload.get("error") or "")
+        empty["debug_attempts"] = enemy_payload.get("debug_attempts") or []
         return empty
 
     resolved_enemy_faction_id = str(enemy_payload.get("enemy_faction_id") or enemy_faction_id or "").strip()
@@ -691,11 +693,15 @@ def _build_enemy_payload(user: Dict[str, Any], war_payload: Optional[Dict[str, A
         "counts_by_state": counts_by_state,
         "order": _enemy_bucket_order(),
         "count": len(items),
+        "source_note": str(enemy_payload.get("source") or ""),
+        "debug_attempts": enemy_payload.get("debug_attempts") or [],
         "war_ref": {
             "war_id": str(war.get("war_id") or ""),
             "active": bool(war.get("active")),
             "registered": bool(war.get("registered")),
             "phase": str(war.get("phase") or "none"),
+            "enemy_faction_id": resolved_enemy_faction_id,
+            "enemy_faction_name": resolved_enemy_faction_name,
         },
     }
 
@@ -1321,7 +1327,8 @@ def api_overview_live():
             "faction_id": faction_id,
             "faction_name": faction_name,
             "war_id": war.get("war_id") or war.get("ranked_war_id") or 0,
-            "our_faction_name": war.get("our_faction_name") or faction_name,
+            "our_faction_name": war.get("our_faction_name") or war.get("my_faction_name") or faction_name,
+            "enemy_faction_id": war.get("enemy_faction_id") or "",
             "enemy_faction_name": war.get("enemy_faction_name") or "",
             "score_us": war.get("score_us") or war.get("our_score") or 0,
             "score_them": war.get("score_them") or war.get("enemy_score") or 0,
@@ -1430,6 +1437,8 @@ def api_enemies():
         counts_by_state=payload.get("counts_by_state") or {key: 0 for key in _enemy_bucket_order()},
         order=payload.get("order") or _enemy_bucket_order(),
         war=payload.get("war_ref") or {},
+        source_note=str(payload.get("source_note") or ""),
+        debug_attempts=payload.get("debug_attempts") or [],
     )
 
 
@@ -1473,6 +1482,8 @@ def api_hospital():
             "active": bool((war or {}).get("active")),
             "registered": bool((war or {}).get("registered")),
             "phase": str((war or {}).get("phase") or "none"),
+            "enemy_faction_id": hospital_payload.get("enemy_faction_id") or "",
+            "enemy_faction_name": hospital_payload.get("enemy_faction_name") or "",
         },
     )
 
