@@ -116,6 +116,7 @@ function doLogout() { GM_deleteValue(K_SESSION); state = null; currentFactionMem
     var pollTimer = null;
     var remountTimer = null;
     var loadInFlight = false;
+    var factionHydratePending = false;
 
     var membersCountdownTimer = null;
     var membersLiveStamp = 0;
