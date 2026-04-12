@@ -48,8 +48,6 @@ from db import (
     list_med_deals,
     upsert_med_deal,
     delete_med_deal,
-    upsert_enemy_stat_prediction,
-    list_enemy_stat_predictions,
 )
 
 from torn_identity import me_basic
@@ -711,7 +709,7 @@ def _build_enemy_payload(user: Dict[str, Any], war_payload: Optional[Dict[str, A
         for m in (enemy_payload.get("members") or [])
     ]
 
-    items = _store_enemy_predictions(my_faction_id, resolved_enemy_faction_id, items)
+    items = list(items)
     buckets = split_enemy_buckets(items)
     counts_by_state = {key: len(buckets.get(key) or []) for key in _enemy_bucket_order()}
 
