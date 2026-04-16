@@ -19,22 +19,10 @@ from db import (
     list_notifications,
     mark_notifications_seen,
     add_audit_log,
-    ensure_faction_license_row,
-    start_faction_trial_if_needed,
-    compute_faction_license_status,
-    force_expire_faction_license,
-    list_all_faction_licenses,
-    get_faction_admin_dashboard_summary,
-    get_faction_payment_history,
-    get_faction_exemption,
-    get_user_exemption,
-    list_faction_exemptions,
-    list_user_exemptions,
-    upsert_faction_exemption,
-    upsert_user_exemption,
-    delete_faction_exemption,
-    delete_user_exemption,
     get_faction_member_access,
+    upsert_faction_member_access,
+    set_faction_member_enabled,
+    delete_faction_member_access,
     get_faction_terms_summary,
     upsert_faction_terms_summary,
     sync_hospital_dibs_snapshot,
@@ -48,6 +36,8 @@ from db import (
     list_med_deals,
     upsert_med_deal,
     delete_med_deal,
+    list_enemy_stat_predictions,
+    upsert_enemy_stat_prediction,
 )
 
 from torn_identity import me_basic
@@ -57,29 +47,10 @@ from torn_war import ranked_war_summary
 from torn_enemies import hospital_members_from_enemies, enemy_faction_members, split_enemy_buckets
 from torn_shared import profile_url, attack_url, bounty_url
 
-from payment_service import (
-    activate_faction_member_for_billing,
-    confirm_faction_payment_and_renew,
-    create_manual_renewal_request,
-    get_due_factions,
-    get_faction_billing_overview,
-    get_faction_payment_status,
-    get_payment_dashboard,
-    list_faction_payment_history_service,
-    remove_member_from_billing,
-    run_payment_auto_match,
-    run_payment_due_scan,
-    run_payment_warning_scan,
-    set_member_billing_enabled,
-)
-
 load_dotenv()
 
 APP_NAME = "War Hub"
-PAYMENT_PLAYER = str(os.getenv("PAYMENT_PLAYER", "Fries91")).strip() or "Fries91"
-FACTION_MEMBER_PRICE = int(os.getenv("PAYMENT_XANAX_PER_MEMBER", os.getenv("PAYMENT_PER_MEMBER", "2")))
 DEFAULT_REFRESH_SECONDS = int(os.getenv("DEFAULT_REFRESH_SECONDS", "30"))
-LICENSE_ADMIN_TOKEN = str(os.getenv("LICENSE_ADMIN_TOKEN", "")).strip()
 ALLOWED_SCRIPT_ORIGINS = {"https://www.torn.com", "https://torn.com", ""}
 
 app = Flask(__name__, static_folder="static")
@@ -180,7 +151,7 @@ def _check_request_origin() -> bool:
 
 def with_cors(resp):
     resp.headers["Access-Control-Allow-Origin"] = request.headers.get("Origin", "*") or "*"
-    resp.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-License-Admin, X-Session-Token"
+    resp.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-Session-Token"
     resp.headers["Access-Control-Allow-Methods"] = "GET, POST, DELETE, OPTIONS"
     return resp
 
@@ -267,39 +238,6 @@ def _session_is_owner(user: Optional[Dict[str, Any]]) -> bool:
     return (uid and uid in _owner_ids()) or (name and name in _owner_names())
 
 
-def _build_license_status_payload(faction_id: str, viewer_user_id: str = "") -> Dict[str, Any]:
-    status = compute_faction_license_status(faction_id, viewer_user_id=viewer_user_id) or {}
-    status["faction_id"] = str(status.get("faction_id") or faction_id or "")
-    status["payment_player"] = PAYMENT_PLAYER
-    status["faction_member_price"] = FACTION_MEMBER_PRICE
-    return status
-
-
-def _get_exemption_payload(user_id: str = "", faction_id: str = "") -> Dict[str, Any]:
-    faction_row = get_faction_exemption(faction_id) if faction_id else None
-    user_row = get_user_exemption(user_id) if user_id else None
-    return {
-        "is_faction_exempt": bool(faction_row),
-        "is_user_exempt": bool(user_row),
-        "faction_exemption": faction_row or {},
-        "user_exemption": user_row or {},
-    }
-
-
-def _exemption_admin_payload() -> Dict[str, Any]:
-    faction_items = list_faction_exemptions() or []
-    user_items = list_user_exemptions() or []
-    return {
-        "faction_exemptions": faction_items,
-        "user_exemptions": user_items,
-        "counts": {
-            "faction_exemptions": len(faction_items),
-            "user_exemptions": len(user_items),
-            "total": len(faction_items) + len(user_items),
-        },
-    }
-
-
 def _is_faction_management_role(api_key: str, user_id: str, faction_id: str) -> bool:
     if not api_key or not user_id or not faction_id:
         return False
@@ -322,10 +260,6 @@ def _can_manage_faction(user: Dict[str, Any], faction_id: str) -> bool:
     faction_id = str(faction_id or "").strip()
     if not user_id or not faction_id:
         return False
-    license_status = _build_license_status_payload(faction_id, viewer_user_id=user_id)
-    leader_user_id = str(license_status.get("leader_user_id") or "").strip()
-    if leader_user_id == user_id:
-        return True
     return _is_faction_management_role(str((user or {}).get("api_key") or ""), user_id, faction_id)
 
 
@@ -334,34 +268,12 @@ def _feature_access_for_user(user: Dict[str, Any]) -> Dict[str, Any]:
     user_id = str(user.get("user_id") or "").strip()
     faction_id = str(user.get("faction_id") or "").strip()
     is_owner = _session_is_owner(user)
-
-    license_status = _build_license_status_payload(faction_id, viewer_user_id=user_id) if faction_id else {}
-    leader_user_id = str(license_status.get("leader_user_id") or "").strip()
-    exemption = _get_exemption_payload(user_id=user_id, faction_id=faction_id)
-
     is_management_role = _is_faction_management_role(str(user.get("api_key") or ""), user_id, faction_id)
-    is_leader = is_owner or (leader_user_id == user_id) or is_management_role
-    is_co_leader = bool(is_management_role and not is_owner and leader_user_id != user_id)
+    is_leader = is_owner or is_management_role
+    is_co_leader = bool(is_management_role and not is_owner)
 
     member_row = get_faction_member_access(faction_id, user_id) if faction_id and user_id else {}
-    member_enabled = True if is_leader else _safe_bool((member_row or {}).get("enabled"))
-
-    payment_required = bool(license_status.get("payment_required")) and not bool(exemption.get("is_faction_exempt"))
-    expired = str(license_status.get("status") or "").lower() == "expired" and not bool(exemption.get("is_faction_exempt"))
-
-    can_use_features = (
-        is_owner
-        or is_leader
-        or bool(exemption.get("is_faction_exempt"))
-        or bool(exemption.get("is_user_exempt"))
-        or (member_enabled and not payment_required and not expired)
-    )
-
-    message = str(license_status.get("message") or "")
-    if exemption.get("is_faction_exempt"):
-        message = "Faction is exempt from payment and renewal."
-    elif exemption.get("is_user_exempt"):
-        message = "Player exemption active. Full script access is unlocked except Admin and leader-only tabs."
+    member_enabled = True if (is_owner or is_leader) else bool((member_row or {}).get("enabled", True))
 
     return {
         "is_owner": is_owner,
@@ -372,28 +284,19 @@ def _feature_access_for_user(user: Dict[str, Any]) -> Dict[str, Any]:
         "show_admin": is_owner,
         "show_all_tabs": is_owner,
         "member_enabled": member_enabled,
-        "payment_required": payment_required,
-        "expired": expired,
-        "trial_active": bool(license_status.get("trial_active")),
-        "status": "exempt_user" if exemption.get("is_user_exempt") and not exemption.get("is_faction_exempt") else str(license_status.get("status") or ""),
-        "can_use_features": can_use_features,
-        "is_user_exempt": bool(exemption.get("is_user_exempt")),
-        "is_faction_exempt": bool(exemption.get("is_faction_exempt")),
-        "message": message,
-        "license": {**license_status, **exemption},
+        "payment_required": False,
+        "expired": False,
+        "trial_active": False,
+        "status": "active",
+        "can_use_features": True,
+        "is_user_exempt": False,
+        "is_faction_exempt": False,
+        "message": "",
+        "license": {},
     }
 
 
 def _require_feature_access():
-    access = _feature_access_for_user(request.user or {})
-    if not access.get("can_use_features"):
-        return err(
-            "Read-only access. Your leader must enable you, or faction payment is required.",
-            403,
-            code="read_only_access",
-            access=access,
-            license=access.get("license") or {},
-        )
     return None
 
 
@@ -510,7 +413,7 @@ def _build_live_faction_members(user: Dict[str, Any]) -> List[Dict[str, Any]]:
             "source": "viewer_faction_members",
             "faction_id": faction_id,
             "faction_name": faction_name,
-            "enabled": bool(access_row.get("enabled")),
+            "enabled": bool(access_row.get("enabled", True)),
             "member_access": _normalize_member_access_row(access_row),
             "has_stored_api_key": bool(member_api_key),
             "life": (live_bar_payload.get("bars") or {}).get("life") or {},
@@ -709,7 +612,7 @@ def _build_enemy_payload(user: Dict[str, Any], war_payload: Optional[Dict[str, A
         for m in (enemy_payload.get("members") or [])
     ]
 
-    items = list(items)
+    items = _store_enemy_predictions(my_faction_id, resolved_enemy_faction_id, list(items))
     buckets = split_enemy_buckets(items)
     counts_by_state = {key: len(buckets.get(key) or []) for key in _enemy_bucket_order()}
 
@@ -980,9 +883,6 @@ def _build_state_payload(user: Dict[str, Any]) -> Dict[str, Any]:
     faction_id = str(user.get("faction_id") or "").strip()
     faction_name = str(user.get("faction_name") or "").strip()
 
-    if faction_id:
-        ensure_faction_license_row(faction_id=faction_id, faction_name=faction_name)
-
     access = _feature_access_for_user(user)
     war = _build_war_payload(user) if faction_id else {}
     notifications = list_notifications(str(user.get("user_id") or ""), limit=25)
@@ -1006,7 +906,7 @@ def _build_state_payload(user: Dict[str, Any]) -> Dict[str, Any]:
         "war": war,
         "notifications": notifications,
         "access": access,
-        "license": access.get("license") or {},
+        "license": {},
         "admin": {
             "is_owner": bool(access.get("is_owner")),
             "show_admin": bool(access.get("show_admin")),
@@ -1019,11 +919,7 @@ def _build_state_payload(user: Dict[str, Any]) -> Dict[str, Any]:
         },
         "med_deals": med_deals_payload,
         "chain": chain_payload,
-        "payment": {
-            "payment_player": PAYMENT_PLAYER,
-            "payment_per_member": FACTION_MEMBER_PRICE,
-            "default_refresh_seconds": DEFAULT_REFRESH_SECONDS,
-        },
+        "payment": {},
         "refresh_seconds": DEFAULT_REFRESH_SECONDS,
     }
 
@@ -1235,8 +1131,6 @@ def api_ping():
 def api_config():
     return ok(
         app_name=APP_NAME,
-        payment_player=PAYMENT_PLAYER,
-        faction_member_price=FACTION_MEMBER_PRICE,
         default_refresh_seconds=DEFAULT_REFRESH_SECONDS,
         base_url=BASE_URL(),
     )
@@ -1268,26 +1162,6 @@ def api_auth():
         faction_id=faction_id,
         faction_name=faction_name,
     )
-
-    if faction_id:
-        try:
-            if _can_manage_faction({"api_key": api_key, "user_id": user_id, "name": name}, faction_id):
-                start_faction_trial_if_needed(
-                    faction_id=faction_id,
-                    faction_name=faction_name,
-                    leader_user_id=user_id,
-                    leader_name=name,
-                    leader_api_key=api_key,
-                )
-            else:
-                ensure_faction_license_row(faction_id=faction_id, faction_name=faction_name)
-        except Exception as e:
-            add_audit_log(
-                actor_user_id=user_id,
-                actor_name=name,
-                action="auth_license_setup_warning",
-                meta_json=str(e),
-            )
 
     delete_sessions_for_user(user_id)
     sess = create_session(user_id)
@@ -1325,7 +1199,7 @@ def api_auth():
             "war": {},
             "notifications": [],
             "access": access,
-            "license": access.get("license") or {},
+            "license": {},
             "admin": {
                 "is_owner": bool(access.get("is_owner")),
                 "show_admin": bool(access.get("show_admin")),
@@ -1338,10 +1212,7 @@ def api_auth():
             },
             "med_deals": {"items": [], "count": 0, "text": ""},
             "chain": {"items": [], "available": [], "sitters": []},
-            "payment": {
-                "payment_player": PAYMENT_PLAYER,
-                "payment_per_member": FACTION_MEMBER_PRICE,
-            },
+            "payment": {},
             "auth_state_warning": str(e),
         }
 
@@ -1358,7 +1229,7 @@ def api_auth():
         viewer=viewer_payload,
         user=viewer_payload,
         access=access,
-        license=access.get("license") or {},
+        license={},
         state=state_payload,
     )
 
@@ -1399,10 +1270,6 @@ def api_overview_live():
                 "updated_at": utc_now(),
             }
         )
-
-    access_error = _require_feature_access()
-    if access_error:
-        return access_error
 
     war = _build_war_payload(user)
     return ok(
@@ -1455,10 +1322,6 @@ def api_live_summary():
             },
         )
 
-    access_error = _require_feature_access()
-    if access_error:
-        return access_error
-
     return ok(**_live_summary_payload(user))
 
 
@@ -1477,10 +1340,6 @@ def api_war():
 
     if not faction_id:
         return ok(war={}, count=0)
-
-    access_error = _require_feature_access()
-    if access_error:
-        return access_error
 
     war = _build_war_payload(user)
     return ok(war=war, count=0)
@@ -1503,10 +1362,6 @@ def api_enemies():
             order=_enemy_bucket_order(),
             war={},
         )
-
-    access_error = _require_feature_access()
-    if access_error:
-        return access_error
 
     war = _build_war_payload(user)
     payload = _build_enemy_payload(user, war)
@@ -1543,10 +1398,6 @@ def api_hospital():
             enemy_faction_name="",
         )
 
-    access_error = _require_feature_access()
-    if access_error:
-        return access_error
-
     war = _build_war_payload(user)
     enemy_payload = _build_enemy_payload(user, war)
     hospital_payload = _build_hospital_payload(user, war, enemy_payload)
@@ -1580,10 +1431,6 @@ def api_hospital_dibs_claim(enemy_user_id: str):
     if not faction_id:
         return err("No faction found.", 400)
 
-    access_error = _require_feature_access()
-    if access_error:
-        return access_error
-
     war = _build_war_payload(user)
     enemy_payload = _build_enemy_payload(user, war)
     _build_hospital_payload(user, war, enemy_payload)
@@ -1613,9 +1460,6 @@ def api_hospital_dibs_claim(enemy_user_id: str):
 @app.route("/api/targets", methods=["GET"])
 @require_session
 def api_targets():
-    access_error = _require_feature_access()
-    if access_error:
-        return access_error
     payload = _build_targets_payload(request.user or {})
     return ok(items=payload.get("items") or [], count=payload.get("count") or 0)
 
@@ -1627,10 +1471,6 @@ def api_targets_save():
     owner_user_id = str(user.get("user_id") or "").strip()
     if not owner_user_id:
         return err("Unauthorized.", 401)
-
-    access_error = _require_feature_access()
-    if access_error:
-        return access_error
 
     data = _require_json()
     target_user_id = str(data.get("user_id") or data.get("target_user_id") or "").strip()
@@ -1662,10 +1502,6 @@ def api_targets_delete(target_user_id: str):
     if not owner_user_id:
         return err("Unauthorized.", 401)
 
-    access_error = _require_feature_access()
-    if access_error:
-        return access_error
-
     delete_user_target(
         owner_user_id=owner_user_id,
         faction_id=str(user.get("faction_id") or ""),
@@ -1683,9 +1519,6 @@ def api_targets_delete(target_user_id: str):
 @app.route("/api/meddeals", methods=["GET"])
 @require_session
 def api_meddeals_get():
-    access_error = _require_feature_access()
-    if access_error:
-        return access_error
     return ok(**_build_med_deals_payload(request.user or {}))
 
 
@@ -1696,10 +1529,6 @@ def api_meddeals_save():
     faction_id = str(user.get("faction_id") or "").strip()
     if not faction_id:
         return err("No faction found.", 400)
-
-    access_error = _require_feature_access()
-    if access_error:
-        return access_error
 
     data = _require_json()
     deal_user_id = str(data.get("user_id") or user.get("user_id") or "").strip()
@@ -1730,10 +1559,6 @@ def api_meddeals_delete(enemy_user_id: str):
     if not faction_id:
         return err("No faction found.", 400)
 
-    access_error = _require_feature_access()
-    if access_error:
-        return access_error
-
     delete_med_deal(faction_id=faction_id, enemy_user_id=str(enemy_user_id or "").strip())
     return ok(message="Med deal deleted.", enemy_user_id=str(enemy_user_id or "").strip(), **_build_med_deals_payload(user))
 
@@ -1741,9 +1566,6 @@ def api_meddeals_delete(enemy_user_id: str):
 @app.route("/api/chain", methods=["GET"])
 @require_session
 def api_chain_get():
-    access_error = _require_feature_access()
-    if access_error:
-        return access_error
     user = request.user or {}
     war = _build_war_payload(user)
     return ok(**_build_chain_payload(user, war))
@@ -1757,10 +1579,6 @@ def api_chain_save():
     user_id = str(user.get("user_id") or "").strip()
     if not faction_id or not user_id:
         return err("No faction or user found.", 400)
-
-    access_error = _require_feature_access()
-    if access_error:
-        return access_error
 
     data = _require_json()
     item = upsert_chain_status(
@@ -1824,20 +1642,37 @@ def api_faction_members():
 def api_faction_member_billing(member_user_id: str):
     user = request.user or {}
     faction_id = str(user.get("faction_id") or "").strip()
+    faction_name = str(user.get("faction_name") or "").strip()
     data = _require_json()
 
+    member_name = str(data.get("member_name") or "").strip()
+    member_api_key = str(data.get("member_api_key") or "").strip()
+    position = str(data.get("position") or "").strip()
     enabled = _safe_bool(data.get("enabled"))
-    result = set_member_billing_enabled(
-        faction_id=faction_id,
-        member_user_id=str(member_user_id),
-        enabled=enabled,
-        actor_user_id=str(user.get("user_id") or ""),
-        actor_name=str(user.get("name") or ""),
-    )
-    if not result.get("ok"):
-        return err(str(result.get("error") or "Could not update member billing."), 400)
 
-    return ok(message="Member billing updated.", **result)
+    row = get_faction_member_access(faction_id, str(member_user_id))
+    if row:
+        item = set_faction_member_enabled(
+            faction_id=faction_id,
+            member_user_id=str(member_user_id),
+            enabled=1 if enabled else 0,
+            changed_by_user_id=str(user.get("user_id") or ""),
+            changed_by_name=str(user.get("name") or ""),
+        )
+    else:
+        item = upsert_faction_member_access(
+            faction_id=faction_id,
+            faction_name=faction_name,
+            leader_user_id=str(user.get("user_id") or ""),
+            leader_name=str(user.get("name") or ""),
+            member_user_id=str(member_user_id),
+            member_name=member_name,
+            member_api_key=member_api_key,
+            enabled=1 if enabled else 0,
+            position=position,
+        )
+
+    return ok(message="Member access updated.", item=item)
 
 
 @app.route("/api/faction/members/<member_user_id>/activate", methods=["POST"])
@@ -1845,17 +1680,22 @@ def api_faction_member_billing(member_user_id: str):
 def api_faction_member_activate(member_user_id: str):
     user = request.user or {}
     faction_id = str(user.get("faction_id") or "").strip()
+    faction_name = str(user.get("faction_name") or "").strip()
+    data = _require_json()
 
-    result = activate_faction_member_for_billing(
+    item = upsert_faction_member_access(
         faction_id=faction_id,
+        faction_name=faction_name,
+        leader_user_id=str(user.get("user_id") or ""),
+        leader_name=str(user.get("name") or ""),
         member_user_id=str(member_user_id),
-        actor_user_id=str(user.get("user_id") or ""),
-        actor_name=str(user.get("name") or ""),
+        member_name=str(data.get("member_name") or "").strip(),
+        member_api_key=str(data.get("member_api_key") or "").strip(),
+        enabled=1,
+        position=str(data.get("position") or "").strip(),
     )
-    if not result.get("ok"):
-        return err(str(result.get("error") or "Could not activate member."), 400)
 
-    return ok(message="Member activated.", **result)
+    return ok(message="Member activated.", item=item)
 
 
 @app.route("/api/faction/members/<member_user_id>", methods=["DELETE"])
@@ -1864,279 +1704,17 @@ def api_faction_member_delete(member_user_id: str):
     user = request.user or {}
     faction_id = str(user.get("faction_id") or "").strip()
 
-    result = remove_member_from_billing(
-        faction_id=faction_id,
-        member_user_id=str(member_user_id),
-        actor_user_id=str(user.get("user_id") or ""),
-        actor_name=str(user.get("name") or ""),
-    )
-    if not result.get("ok"):
-        return err(str(result.get("error") or "Could not remove member."), 400)
+    row = get_faction_member_access(faction_id, str(member_user_id))
+    if row:
+        delete_faction_member_access(faction_id=faction_id, member_user_id=str(member_user_id))
 
-    return ok(message="Member removed.", **result)
+    return ok(message="Member removed.", member_user_id=str(member_user_id))
 
 
 @app.route("/api/faction/members/<member_user_id>/remove", methods=["POST"])
 @require_leader_session
 def api_faction_member_remove_alias(member_user_id: str):
     return api_faction_member_delete(member_user_id)
-
-
-@app.route("/api/faction/payment/status", methods=["GET"])
-@require_session
-def api_faction_payment_status():
-    faction_id = str((request.user or {}).get("faction_id") or "").strip()
-    if not faction_id:
-        return err("No faction found.", 400)
-
-    result = get_faction_payment_status(
-        faction_id,
-        viewer_user_id=str((request.user or {}).get("user_id") or ""),
-    )
-    if not result.get("ok"):
-        return err(str(result.get("error") or "Could not load faction payment status."), 400)
-
-    return ok(**result)
-
-
-@app.route("/api/faction/payment/current-cycle", methods=["GET"])
-@require_session
-def api_faction_payment_current_cycle():
-    faction_id = str((request.user or {}).get("faction_id") or "").strip()
-    if not faction_id:
-        return err("No faction found.", 400)
-
-    result = get_faction_billing_overview(faction_id)
-    if not result.get("ok"):
-        return err(str(result.get("error") or "Could not load current billing cycle."), 400)
-
-    return ok(billing=result)
-
-
-@app.route("/api/faction/payment/history", methods=["GET"])
-@require_session
-def api_faction_payment_history():
-    faction_id = str((request.user or {}).get("faction_id") or "").strip()
-    if not faction_id:
-        return err("No faction found.", 400)
-
-    result = list_faction_payment_history_service(faction_id)
-    if not result.get("ok"):
-        return err(str(result.get("error") or "Could not load faction payment history."), 400)
-
-    return ok(**result)
-
-
-@app.route("/api/faction/payment/request-renewal", methods=["POST"])
-@require_session
-def api_faction_payment_request_renewal():
-    user = request.user or {}
-    faction_id = str(user.get("faction_id") or "").strip()
-    data = _require_json()
-
-    if not faction_id:
-        return err("No faction found.", 400)
-
-    result = create_manual_renewal_request(
-        faction_id=faction_id,
-        requested_by_user_id=str(user.get("user_id") or ""),
-        requested_by_name=str(user.get("name") or ""),
-        note=str(data.get("note") or "").strip(),
-    )
-    if not result.get("ok"):
-        return err(str(result.get("error") or "Could not create renewal request."), 400)
-
-    return ok(**result)
-
-
-def _require_license_admin():
-    header_token = str(request.headers.get("X-License-Admin", "")).strip()
-    bearer = str(request.headers.get("Authorization", "")).strip()
-    auth_token = header_token or (bearer[7:].strip() if bearer.lower().startswith("bearer ") else "")
-    if not LICENSE_ADMIN_TOKEN:
-        return False, err("LICENSE_ADMIN_TOKEN is not configured on the server.", 503)
-    if auth_token != LICENSE_ADMIN_TOKEN:
-        return False, err("Unauthorized admin request.", 401)
-    return True, None
-
-
-@app.route("/api/admin/dashboard", methods=["GET"])
-@require_owner
-def api_admin_dashboard():
-    summary = get_faction_admin_dashboard_summary() or {}
-    licenses = list_all_faction_licenses() or []
-    user_items = list_user_exemptions() or []
-    faction_items = list_faction_exemptions() or []
-
-    payload = {
-        **summary,
-        "summary": summary,
-        "payment": get_payment_dashboard(),
-        "faction_licenses": licenses,
-        "licenses": licenses,
-        "user_exemption_items": user_items,
-        "faction_exemption_items": faction_items,
-        "user_exemptions": int(summary.get("user_exemptions_total") or 0),
-        "faction_exemptions": int(summary.get("faction_exemptions_total") or 0),
-        "total_factions": int(summary.get("faction_licenses_total") or 0),
-        "active_licenses": int(summary.get("paid_total") or 0),
-        "users_using_script": int(summary.get("members_using_bot") or 0),
-    }
-    return ok(**payload)
-
-
-@app.route("/api/admin/factions", methods=["GET"])
-@require_owner
-def api_admin_faction_licenses():
-    return ok(items=list_all_faction_licenses())
-
-
-@app.route("/api/admin/factions/due", methods=["GET"])
-@require_owner
-def api_admin_due_factions():
-    return ok(**get_due_factions())
-
-
-@app.route("/api/admin/factions/<faction_id>/history", methods=["GET"])
-@require_owner
-def api_admin_faction_license_history(faction_id: str):
-    return ok(
-        faction_id=str(faction_id),
-        items=get_faction_payment_history(str(faction_id), limit=100),
-    )
-
-
-@app.route("/api/admin/factions/<faction_id>/renew", methods=["POST"])
-@require_owner
-def api_admin_faction_license_renew(faction_id: str):
-    data = _require_json()
-    result = confirm_faction_payment_and_renew(
-        faction_id=str(faction_id),
-        amount=_to_int(data.get("amount"), 0),
-        renewed_by=str(data.get("renewed_by") or (request.user or {}).get("name") or "").strip(),
-        note=str(data.get("note") or "").strip(),
-        payment_player=PAYMENT_PLAYER,
-    )
-    if not result.get("ok"):
-        return err(str(result.get("error") or "Could not renew faction."), 400)
-    return ok(message="Faction renewed.", item=result.get("item") or {}, license=result.get("license") or {})
-
-
-@app.route("/api/admin/factions/<faction_id>/expire", methods=["POST"])
-@require_owner
-def api_admin_faction_license_expire(faction_id: str):
-    force_expire_faction_license(str(faction_id))
-    return ok(message="Faction expired.", faction_id=str(faction_id))
-
-
-@app.route("/api/admin/exemptions", methods=["GET"])
-@require_owner
-def api_admin_exemptions():
-    return ok(**_exemption_admin_payload())
-
-
-@app.route("/api/admin/exemptions/factions", methods=["GET"])
-@require_owner
-def api_admin_list_faction_exemptions():
-    return ok(items=list_faction_exemptions())
-
-
-@app.route("/api/admin/exemptions/factions", methods=["POST"])
-@require_owner
-def api_admin_add_faction_exemption():
-    data = _require_json()
-    item = upsert_faction_exemption(
-        faction_id=str(data.get("faction_id") or "").strip(),
-        faction_name=str(data.get("faction_name") or "").strip(),
-        note=str(data.get("note") or "").strip(),
-        added_by_user_id=str((request.user or {}).get("user_id") or ""),
-        added_by_name=str((request.user or {}).get("name") or ""),
-    )
-    return ok(item=item)
-
-
-@app.route("/api/admin/exemptions/factions/<faction_id>", methods=["DELETE"])
-@require_owner
-def api_admin_delete_faction_exemption(faction_id: str):
-    delete_faction_exemption(str(faction_id))
-    return ok(message="Faction exemption deleted.", faction_id=str(faction_id))
-
-
-@app.route("/api/admin/exemptions/users", methods=["GET"])
-@require_owner
-def api_admin_list_user_exemptions():
-    return ok(items=list_user_exemptions())
-
-
-@app.route("/api/admin/exemptions/users", methods=["POST"])
-@require_owner
-def api_admin_add_user_exemption():
-    data = _require_json()
-    item = upsert_user_exemption(
-        user_id=str(data.get("user_id") or "").strip(),
-        user_name=str(data.get("user_name") or "").strip(),
-        faction_id=str(data.get("faction_id") or "").strip(),
-        faction_name=str(data.get("faction_name") or "").strip(),
-        note=str(data.get("note") or "").strip(),
-        added_by_user_id=str((request.user or {}).get("user_id") or ""),
-        added_by_name=str((request.user or {}).get("name") or ""),
-    )
-    return ok(item=item)
-
-
-@app.route("/api/admin/exemptions/users/<user_id>", methods=["DELETE"])
-@require_owner
-def api_admin_delete_user_exemption(user_id: str):
-    delete_user_exemption(str(user_id))
-    return ok(message="User exemption deleted.", user_id=str(user_id))
-
-
-@app.route("/api/admin/payment/warnings/scan", methods=["POST"])
-@require_owner
-def api_admin_payment_warning_scan():
-    return ok(**run_payment_warning_scan())
-
-
-@app.route("/api/admin/payment/due/scan", methods=["POST"])
-@require_owner
-def api_admin_payment_due_scan():
-    return ok(**run_payment_due_scan())
-
-
-@app.route("/api/admin/payment/auto-match", methods=["POST"])
-@require_owner
-def api_admin_payment_auto_match():
-    return ok(**run_payment_auto_match())
-
-
-@app.route("/api/license-admin/factions/<faction_id>/renew", methods=["POST"])
-def api_license_admin_renew(faction_id: str):
-    allowed, response = _require_license_admin()
-    if not allowed:
-        return response
-
-    data = _require_json()
-    result = confirm_faction_payment_and_renew(
-        faction_id=str(faction_id),
-        amount=_to_int(data.get("amount"), 0),
-        renewed_by=str(data.get("renewed_by") or "LicenseAdmin").strip(),
-        note=str(data.get("note") or "").strip(),
-        payment_player=PAYMENT_PLAYER,
-    )
-    if not result.get("ok"):
-        return err(str(result.get("error") or "Could not renew faction."), 400)
-
-    return ok(message="Faction renewed.", item=result.get("item") or {}, license=result.get("license") or {})
-
-
-@app.route("/api/license-admin/factions/<faction_id>/expire", methods=["POST"])
-def api_license_admin_expire(faction_id: str):
-    allowed, response = _require_license_admin()
-    if not allowed:
-        return response
-
-    force_expire_faction_license(str(faction_id))
-    return ok(message="Faction expired.", faction_id=str(faction_id))
 
 
 @app.errorhandler(404)
