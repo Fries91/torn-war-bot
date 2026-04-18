@@ -1454,6 +1454,12 @@ function makeHoldDraggable(handle, target, key) {
             var key = cleanInputValue(input && input.value);
             var ownerToken = cleanInputValue(ownerInput && ownerInput.value);
             var ffKey = cleanInputValue(ffInput && ffInput.value);
+            var storedKey = cleanInputValue(getApiKey());
+            var maskedOnly = /^\*+$/.test(String(key || ''));
+
+            if ((!key || maskedOnly) && storedKey) {
+                key = storedKey;
+            }
 
             if (!key) {
                 setStatus('Enter your Torn API key.', true);
@@ -3626,10 +3632,10 @@ function renderTermsTab() {
             '</div>',
             '<div class="warhub-card warhub-col">',
                 '<label class="warhub-label" for="warhub-api-key">Torn API Key</label>',
-                '<input id="warhub-api-key" class="warhub-input" type="password" value="' + esc(maskedKey) + '" placeholder="Saved API key" />',
+                '<input id="warhub-api-key" class="warhub-input" type="password" value="" placeholder="' + esc(maskedKey ? 'Saved API key' : 'Enter API key') + '" />',
                 '<label class="warhub-label" for="warhub-ff-key">FF Scouter Limited Key</label>',
                 '<input id="warhub-ff-key" class="warhub-input" type="password" value="' + esc(getFfScouterKey()) + '" placeholder="Optional FF Scouter key for fair fight + estimated stats" />',
-                '<div class="warhub-sub">FF Scouter only. Uses fair-fight score plus estimated battle stats for enemy rows.</div>',
+                '<div class="warhub-sub">FF Scouter key powers the fair-fight values in enemy rows.</div>',
                 '<div class="warhub-row">',
                     '<button type="button" class="warhub-btn" data-action="login">Re-login</button>',
                     '<button type="button" class="warhub-btn gray" data-action="logout">Logout</button>',
