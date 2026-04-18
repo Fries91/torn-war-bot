@@ -284,15 +284,9 @@ def _feature_access_for_user(user: Dict[str, Any]) -> Dict[str, Any]:
         "show_admin": is_owner,
         "show_all_tabs": is_owner,
         "member_enabled": member_enabled,
-        "payment_required": False,
-        "expired": False,
-        "trial_active": False,
         "status": "active",
         "can_use_features": True,
-        "is_user_exempt": False,
-        "is_faction_exempt": False,
         "message": "",
-        "license": {},
     }
 
 
@@ -906,7 +900,6 @@ def _build_state_payload(user: Dict[str, Any]) -> Dict[str, Any]:
         "war": war,
         "notifications": notifications,
         "access": access,
-        "license": {},
         "admin": {
             "is_owner": bool(access.get("is_owner")),
             "show_admin": bool(access.get("show_admin")),
@@ -919,7 +912,6 @@ def _build_state_payload(user: Dict[str, Any]) -> Dict[str, Any]:
         },
         "med_deals": med_deals_payload,
         "chain": chain_payload,
-        "payment": {},
         "refresh_seconds": DEFAULT_REFRESH_SECONDS,
     }
 
@@ -1199,7 +1191,6 @@ def api_auth():
             "war": {},
             "notifications": [],
             "access": access,
-            "license": {},
             "admin": {
                 "is_owner": bool(access.get("is_owner")),
                 "show_admin": bool(access.get("show_admin")),
@@ -1212,7 +1203,6 @@ def api_auth():
             },
             "med_deals": {"items": [], "count": 0, "text": ""},
             "chain": {"items": [], "available": [], "sitters": []},
-            "payment": {},
             "auth_state_warning": str(e),
         }
 
@@ -1229,7 +1219,6 @@ def api_auth():
         viewer=viewer_payload,
         user=viewer_payload,
         access=access,
-        license={},
         state=state_payload,
     )
 
@@ -1637,9 +1626,10 @@ def api_faction_members():
     return ok(faction_id=faction_id, items=items, count=len(items))
 
 
+@app.route("/api/faction/members/<member_user_id>/access", methods=["POST"])
 @app.route("/api/faction/members/<member_user_id>/billing", methods=["POST"])
 @require_leader_session
-def api_faction_member_billing(member_user_id: str):
+def api_faction_member_access(member_user_id: str):
     user = request.user or {}
     faction_id = str(user.get("faction_id") or "").strip()
     faction_name = str(user.get("faction_name") or "").strip()
