@@ -44,9 +44,11 @@ def member_live_bars(api_key: str, user_id: str = "") -> Dict[str, Any]:
     """
     Strict user live-bars loader.
 
-    Rules:
-    - Only uses user endpoints.
-    - Only returns data for the requested user_id (or self if user_id is blank).
+    Single-path rules:
+    - Only uses one user endpoint shape.
+    - requested user_id -> /user/{id}
+    - self -> /user/
+    - No fallback attempts.
     - No faction fallback.
     - No enemy fallback.
     - No mixed-source recovery.
@@ -70,109 +72,86 @@ def member_live_bars(api_key: str, user_id: str = "") -> Dict[str, Any]:
         }
 
     selections = "bars,profile,personalstats,cooldowns"
-    attempts = []
-
     if requested_user_id:
-        attempts.append((
-            f"{API_BASE}/user/{requested_user_id}",
-            {"selections": selections, "key": api_key},
-            f"user_live_direct_{requested_user_id}",
-        ))
-        attempts.append((
-            f"{API_BASE}/user/",
-            {"selections": selections, "ID": requested_user_id, "key": api_key},
-            f"user_live_fallback_{requested_user_id}",
-        ))
+        url = f"{API_BASE}/user/{requested_user_id}"
+        params = {"selections": selections, "key": api_key}
+        source = f"user_live_direct_{requested_user_id}"
     else:
-        attempts.append((
-            f"{API_BASE}/user/",
-            {"selections": selections, "key": api_key},
-            "user_live_self",
-        ))
+        url = f"{API_BASE}/user/"
+        params = {"selections": selections, "key": api_key}
+        source = "user_live_self"
 
-    last_error = "Could not load user live bars."
-
-    for url, params, prefix in attempts:
-        res = safe_get(
-            url,
-            params,
-            cache_seconds=0,
-            cache_prefix=prefix,
-        )
-
-        if not res.get("ok"):
-            last_error = str(res.get("error") or last_error)
-            continue
-
-        data = res.get("data") or {}
-        if not isinstance(data, dict):
-            last_error = "Invalid user payload."
-            continue
-
-        resolved_user_id = str(
-            data.get("player_id")
-            or data.get("playerID")
-            or data.get("user_id")
-            or data.get("id")
-            or ""
-        ).strip()
-
-        if requested_user_id and resolved_user_id and resolved_user_id != requested_user_id:
-            last_error = f"API key/user mismatch. Requested {requested_user_id}, got {resolved_user_id}."
-            continue
-
-        bars = data.get("bars") if isinstance(data.get("bars"), dict) else {}
-        status = data.get("status") if isinstance(data.get("status"), dict) else {}
-        last_action = data.get("last_action") if isinstance(data.get("last_action"), dict) else {}
-        cooldowns = data.get("cooldowns") if isinstance(data.get("cooldowns"), dict) else {}
-
-        life = bars.get("life") if isinstance(bars.get("life"), dict) else {}
-        energy = bars.get("energy") if isinstance(bars.get("energy"), dict) else {}
-        nerve = bars.get("nerve") if isinstance(bars.get("nerve"), dict) else {}
-        happy = bars.get("happy") if isinstance(bars.get("happy"), dict) else {}
-
-        medical_cooldown = extract_medical_cooldown_seconds(data)
-        booster_cooldown = _extract_booster_cooldown_seconds(data)
-
+    res = safe_get(url, params, cache_seconds=0, cache_prefix=source)
+    if not res.get("ok"):
         return {
-            "ok": True,
-            "error": "",
-            "user_id": requested_user_id or resolved_user_id,
-            "name": str(data.get("name") or ""),
-            "medical_cooldown": to_int(medical_cooldown, 0),
-            "booster_cooldown": to_int(booster_cooldown, 0),
-            "cooldowns": cooldowns,
-            "bars": {
-                "life": {
-                    "current": to_int(life.get("current"), 0),
-                    "maximum": to_int(life.get("maximum"), 0),
-                },
-                "energy": {
-                    "current": to_int(energy.get("current"), 0),
-                    "maximum": to_int(energy.get("maximum"), 0),
-                },
-                "nerve": {
-                    "current": to_int(nerve.get("current"), 0),
-                    "maximum": to_int(nerve.get("maximum"), 0),
-                },
-                "happy": {
-                    "current": to_int(happy.get("current"), 0),
-                    "maximum": to_int(happy.get("maximum"), 0),
-                },
-            },
-            "status": status,
-            "last_action": last_action,
+            "ok": False,
+            "error": str(res.get("error") or "Could not load user live bars."),
+            "user_id": requested_user_id,
+            "bars": {},
+            "status": {},
+            "last_action": {},
+            "cooldowns": {},
+            "medical_cooldown": 0,
+            "booster_cooldown": 0,
+            "name": "",
         }
 
+    data = res.get("data") or {}
+    if not isinstance(data, dict):
+        return {
+            "ok": False,
+            "error": "Invalid user payload.",
+            "user_id": requested_user_id,
+            "bars": {},
+            "status": {},
+            "last_action": {},
+            "cooldowns": {},
+            "medical_cooldown": 0,
+            "booster_cooldown": 0,
+            "name": "",
+        }
+
+    resolved_user_id = str(data.get("player_id") or data.get("playerID") or data.get("user_id") or data.get("id") or "").strip()
+    if requested_user_id and resolved_user_id and resolved_user_id != requested_user_id:
+        return {
+            "ok": False,
+            "error": f"API key/user mismatch. Requested {requested_user_id}, got {resolved_user_id}.",
+            "user_id": requested_user_id,
+            "bars": {},
+            "status": {},
+            "last_action": {},
+            "cooldowns": {},
+            "medical_cooldown": 0,
+            "booster_cooldown": 0,
+            "name": "",
+        }
+
+    bars = data.get("bars") if isinstance(data.get("bars"), dict) else {}
+    status = data.get("status") if isinstance(data.get("status"), dict) else {}
+    last_action = data.get("last_action") if isinstance(data.get("last_action"), dict) else {}
+    cooldowns = data.get("cooldowns") if isinstance(data.get("cooldowns"), dict) else {}
+    life = bars.get("life") if isinstance(bars.get("life"), dict) else {}
+    energy = bars.get("energy") if isinstance(bars.get("energy"), dict) else {}
+    nerve = bars.get("nerve") if isinstance(bars.get("nerve"), dict) else {}
+    happy = bars.get("happy") if isinstance(bars.get("happy"), dict) else {}
+    medical_cooldown = extract_medical_cooldown_seconds(data)
+    booster_cooldown = _extract_booster_cooldown_seconds(data)
+
     return {
-        "ok": False,
-        "error": last_error,
-        "user_id": requested_user_id,
-        "bars": {},
-        "status": {},
-        "last_action": {},
-        "cooldowns": {},
-        "medical_cooldown": 0,
-        "booster_cooldown": 0,
-        "name": "",
+        "ok": True,
+        "error": "",
+        "user_id": requested_user_id or resolved_user_id,
+        "name": str(data.get("name") or ""),
+        "medical_cooldown": to_int(medical_cooldown, 0),
+        "booster_cooldown": to_int(booster_cooldown, 0),
+        "cooldowns": cooldowns,
+        "bars": {
+            "life": {"current": to_int(life.get("current"), 0), "maximum": to_int(life.get("maximum"), 0)},
+            "energy": {"current": to_int(energy.get("current"), 0), "maximum": to_int(energy.get("maximum"), 0)},
+            "nerve": {"current": to_int(nerve.get("current"), 0), "maximum": to_int(nerve.get("maximum"), 0)},
+            "happy": {"current": to_int(happy.get("current"), 0), "maximum": to_int(happy.get("maximum"), 0)},
+        },
+        "status": status,
+        "last_action": last_action,
+        "source": source,
     }
