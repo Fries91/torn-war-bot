@@ -2267,6 +2267,53 @@ function _handleTabClick() {
         );
     }
 
+    function pickBarCurrent(bar) {
+        if (!bar || typeof bar !== 'object') return null;
+        var keys = ['current', 'amount', 'value', 'now', 'used', 'remaining_current'];
+        for (var i = 0; i < keys.length; i += 1) {
+            var n = Number(bar[keys[i]]);
+            if (Number.isFinite(n)) return n;
+        }
+        return null;
+    }
+
+    function pickBarMaximum(bar) {
+        if (!bar || typeof bar !== 'object') return null;
+        var keys = ['maximum', 'max', 'total', 'full', 'capacity'];
+        for (var i = 0; i < keys.length; i += 1) {
+            var n = Number(bar[keys[i]]);
+            if (Number.isFinite(n)) return n;
+        }
+        return null;
+    }
+
+    function energyValue(member) {
+        member = member || {};
+        var direct = Number(member.energy_current || member.energy || member.current_energy);
+        if (Number.isFinite(direct)) return direct;
+        return pickBarCurrent(member.energy);
+    }
+
+    function lifeValue(member) {
+        member = member || {};
+        var lifeBar = member.life || {};
+        var cur = Number(member.life_current);
+        if (!Number.isFinite(cur)) cur = pickBarCurrent(lifeBar);
+        var max = Number(member.life_max || member.max_life);
+        if (!Number.isFinite(max)) max = pickBarMaximum(lifeBar);
+        if (Number.isFinite(cur) && Number.isFinite(max) && max > 0) return String(cur) + '/' + String(max);
+        if (Number.isFinite(cur)) return String(cur);
+        return '—';
+    }
+
+    function medCooldownValue(member) {
+        member = member || {};
+        var raw = Number(member.med_cd || member.med_cooldown || member.medical_cooldown || 0);
+        if (Number.isFinite(raw) && raw > 0) return shortCd(raw, 'Ready');
+        var txt = String(member.medical_cooldown_text || member.med_cooldown_text || '').trim();
+        return txt || 'Ready';
+    }
+
     function humanStateLabel(st) {
         st = String(st || '').toLowerCase();
         if (st === 'online') return 'Online';
@@ -3437,7 +3484,119 @@ function renderTermsTab() {
     // 20. TAB RENDERS: FACTION
     // ============================================================
 
-    function renderFactionTab() { var members = arr(currentFactionMembers || factionMembersCache || (state && state.members) || []); var factionName = String( (state && state.faction && state.faction.name) || (state && state.faction && state.faction.faction_name) || 'Your Faction' ); var factionId = String( (state && state.faction && state.faction.faction_id) || '' ); var enabledCount = Number(members.filter(function (m) { return !!(m && (m.enabled || m.member_enabled || m.active_for_cycle || m.is_active || m.activated || m.is_enabled || m.active)); }).length || 0); members = members.slice().sort(function (a, b) { var aEnabled = !!(a && (a.enabled || a.member_enabled || a.active_for_cycle || a.is_active || a.activated || a.is_enabled || a.active)); var bEnabled = !!(b && (b.enabled || b.member_enabled || b.active_for_cycle || b.is_active || b.activated || b.is_enabled || b.active)); if (aEnabled !== bEnabled) return aEnabled ? -1 : 1; return getMemberName(a).localeCompare(getMemberName(b)); }); return [ '<div class="warhub-grid">', '<div class="warhub-hero-card">', '<div class="warhub-title">Faction</div>', '<div class="warhub-sub">Leader-managed member access</div>', '</div>', '<div class="warhub-card">', '<div class="warhub-row" style="justify-content:space-between;align-items:flex-start;gap:8px;">', '<div>', '<div class="warhub-member-name">', esc(factionName), '</div>', '<div class="warhub-sub">Faction #', esc(factionId || '—'), '</div>', '</div>', '<div class="warhub-row" style="flex-wrap:wrap;justify-content:flex-end;">', '<span class="warhub-pill good">Enabled: ', esc(String(enabledCount)), '</span>', '<span class="warhub-pill neutral">Members: ', esc(String(members.length)), '</span>', '</div>', '</div>', '<div class="warhub-sub" style="margin-top:10px;">Leaders and co-leaders can turn member access on or off here. No paid-access features are used in this build.</div>', '</div>', '<div class="warhub-card warhub-col">', '<div class="warhub-row" style="justify-content:space-between;align-items:center;">', '<h3>Faction Members</h3>', '<span class="warhub-pill neutral">', esc(fmtNum(members.length)), ' shown</span>', '</div>', members.length ? '<div class="warhub-col">' + members.map(function (m) { var id = getMemberId(m); var name = getMemberName(m); var enabled = !!(m && (m.enabled || m.member_enabled || m.active_for_cycle || m.is_active || m.activated || m.is_enabled || m.active)); var role = String((m && (m.position || m.role)) || '').trim(); return [ '<div class="warhub-member-row">', '<div class="warhub-member-main">', '<div class="warhub-row" style="gap:8px;min-width:0;flex:1;">', '<a class="warhub-member-name" href="' + esc(profileUrl(m)) + '" target="_blank" rel="noopener noreferrer">' + esc(name) + '</a>', role ? '<span class="warhub-pill neutral">' + esc(role) + '</span>' : '', '<span class="warhub-pill ' + (enabled ? 'good' : 'bad') + '">' + (enabled ? 'Enabled' : 'Disabled') + '</span>', '</div>', '<div class="warhub-row">', enabled ? '<button type="button" class="warhub-btn gray" data-action="remove-member" data-user-id="' + esc(id) + '">Disable</button>' : '<button type="button" class="warhub-btn green" data-action="activate-member" data-user-id="' + esc(id) + '">Enable</button>', '</div>', '</div>', '</div>' ].join(''); }).join('') + '</div>' : '<div class="warhub-empty">No faction members found.</div>', '</div>', '</div>' ].join(''); } function renderSettingsTab() {
+    function renderFactionTab() {
+    var faction = (state && state.faction) || {};
+    var members = arr(currentFactionMembers || factionMembersCache || (state && state.members) || []);
+    var factionName = String((faction && (faction.name || faction.faction_name)) || 'Your Faction');
+    var factionId = String((faction && faction.faction_id) || '');
+    var search = String(GM_getValue('warhub_faction_search', '') || '').trim().toLowerCase();
+
+    members = members.filter(function (m) {
+        return !!String(getMemberId(m) || '').trim();
+    }).slice().sort(function (a, b) {
+        var aEnabled = !!(a && (a.enabled || a.member_enabled || a.active_for_cycle || a.is_active || a.activated || a.is_enabled || a.active));
+        var bEnabled = !!(b && (b.enabled || b.member_enabled || b.active_for_cycle || b.is_active || b.activated || b.is_enabled || b.active));
+        if (aEnabled !== bEnabled) return aEnabled ? -1 : 1;
+        return getMemberName(a).localeCompare(getMemberName(b));
+    });
+
+    var filtered = members.filter(function (m) {
+        if (!search) return true;
+        return memberSearchText(m).indexOf(search) >= 0;
+    });
+
+    var enabledCount = Number(members.filter(function (m) {
+        return !!(m && (m.enabled || m.member_enabled || m.active_for_cycle || m.is_active || m.activated || m.is_enabled || m.active));
+    }).length || 0);
+
+    var visibleCanManage = canManageFaction();
+
+    function renderFactionMemberRow(m) {
+        var id = getMemberId(m);
+        var name = getMemberName(m);
+        var enabled = !!(m && (m.enabled || m.member_enabled || m.active_for_cycle || m.is_active || m.activated || m.is_enabled || m.active));
+        var role = String((m && (m.position || m.role || (m.member_access && m.member_access.position))) || '').trim() || 'Member';
+        var st = stateLabel(m);
+        var stateCd = stateCountdown(m);
+        var energy = energyValue(m);
+        var life = lifeValue(m);
+        var medBase = Number(m && (m.med_cd || m.med_cooldown || m.medical_cooldown || 0)) || 0;
+        var medText = medCooldownValue(m);
+
+        return [
+            '<div class="warhub-member-row" ' +
+                'data-medcd-base="' + esc(String(medBase)) + '" ' +
+                'data-statuscd-base="' + esc(String(stateCd)) + '" ' +
+                'data-state-name="' + esc(st) + '">',
+                '<div class="warhub-member-main">',
+                    '<div class="warhub-row" style="gap:8px;min-width:0;flex:1;">',
+                        '<a class="warhub-member-name" href="' + esc(profileUrl(m)) + '" target="_blank" rel="noopener noreferrer">' + esc(name) + '</a>',
+                        '<span class="warhub-pill neutral">' + esc(role) + '</span>',
+                        '<span class="warhub-pill ' + esc(st) + '" data-statuscd>' + esc(
+                            st === 'hospital' ? (stateCd > 0 ? 'Hospital (' + shortCd(stateCd, 'Hospital') + ')' : 'Hospital') :
+                            st === 'jail' ? (stateCd > 0 ? 'Jail (' + shortCd(stateCd, 'Jail') + ')' : 'Jail') :
+                            st === 'travel' ? (stateCd > 0 ? 'Travel (' + shortCd(stateCd, 'Travel') + ')' : 'Travel') :
+                            humanStateLabel(st)
+                        ) + '</span>',
+                        '<span class="warhub-pill ' + (enabled ? 'good' : 'bad') + '">' + (enabled ? 'Enabled' : 'Disabled') + '</span>',
+                    '</div>',
+                    visibleCanManage ? '<div class="warhub-row">' + (
+                        enabled
+                            ? '<button type="button" class="warhub-btn gray" data-action="remove-member" data-user-id="' + esc(id) + '">Disable</button>'
+                            : '<button type="button" class="warhub-btn green" data-action="activate-member" data-user-id="' + esc(id) + '">Enable</button>'
+                    ) + '</div>' : '',
+                '</div>',
+                '<div class="warhub-statline">',
+                    '<span>⚡ ' + esc(energy == null ? '—' : String(energy)) + '</span>',
+                    '<span>✚ ' + esc(life) + '</span>',
+                    '<span>💊 <span data-medcd>' + esc(medText) + '</span></span>',
+                    '<span>#' + esc(id || '—') + '</span>',
+                '</div>',
+            '</div>'
+        ].join('');
+    }
+
+    return [
+        '<div class="warhub-grid">',
+            '<div class="warhub-hero-card">',
+                '<div class="warhub-title">Faction</div>',
+                '<div class="warhub-sub">All faction members with live energy, life, and medical cooldown for admin, leaders, and co-leaders</div>',
+            '</div>',
+
+            '<div class="warhub-card">',
+                '<div class="warhub-row" style="justify-content:space-between;align-items:flex-start;gap:8px;">',
+                    '<div>',
+                        '<div class="warhub-member-name">' + esc(factionName) + '</div>',
+                        '<div class="warhub-sub">Faction #' + esc(factionId || '—') + '</div>',
+                    '</div>',
+                    '<div class="warhub-row" style="flex-wrap:wrap;justify-content:flex-end;">',
+                        '<span class="warhub-pill good">Enabled ' + esc(String(enabledCount)) + '</span>',
+                        '<span class="warhub-pill neutral">Members ' + esc(String(members.length)) + '</span>',
+                        '<span class="warhub-pill neutral">Shown ' + esc(String(filtered.length)) + '</span>',
+                    '</div>',
+                '</div>',
+                '<div class="warhub-sub" style="margin-top:10px;">Live bars only show when the backend has usable Torn data for that member. No fake fallback values are shown.</div>',
+            '</div>',
+
+            '<div class="warhub-card">',
+                '<div class="warhub-row">',
+                    '<input id="warhub-faction-search" class="warhub-input" type="text" value="' + esc(search) + '" placeholder="Search member name, ID, status or position" />',
+                    '<button type="button" class="warhub-btn ghost" data-action="faction-refresh">Refresh</button>',
+                '</div>',
+            '</div>',
+
+            '<div class="warhub-card warhub-col">',
+                '<div class="warhub-row" style="justify-content:space-between;align-items:center;">',
+                    '<h3>Faction Members</h3>',
+                    '<span class="warhub-pill neutral">' + esc(fmtNum(filtered.length)) + ' shown</span>',
+                '</div>',
+                filtered.length
+                    ? '<div class="warhub-col">' + filtered.map(renderFactionMemberRow).join('') + '</div>'
+                    : '<div class="warhub-empty">No faction members found.</div>',
+            '</div>',
+        '</div>'
+    ].join('');
+} function renderSettingsTab() {
     var viewer = (state && state.viewer) || {};
     var access = normalizeAccessCache((state && state.access) || accessState);
     var maskedKey = getApiKey() ? '********' : '';
@@ -3647,6 +3806,15 @@ function _handleActionClick() {
                 membersLiveStamp = Date.now();
                 renderBody();
                 setStatus('Members refreshed.', false);
+                return;
+            }
+
+            if (action === 'faction-refresh') {
+                setStatus('Refreshing faction...', false);
+                yield loadFactionMembers(true);
+                membersLiveStamp = Date.now();
+                renderBody();
+                setStatus('Faction refreshed.', false);
                 return;
             }
 
@@ -4058,6 +4226,15 @@ function _handleActionClick() {
             enemiesSearch.addEventListener('input', function () {
                 GM_setValue('warhub_enemies_search', String(enemiesSearch.value || ''));
                 if (currentTab === 'enemies') renderBody();
+            });
+        }
+
+        var factionSearch = overlay.querySelector('#warhub-faction-search');
+        if (factionSearch && !factionSearch.__warhubBound) {
+            factionSearch.__warhubBound = true;
+            factionSearch.addEventListener('input', function () {
+                GM_setValue('warhub_faction_search', String(factionSearch.value || ''));
+                if (currentTab === 'faction') renderBody();
             });
         }
     }
