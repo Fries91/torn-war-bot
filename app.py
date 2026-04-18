@@ -36,8 +36,6 @@ from db import (
     list_med_deals,
     upsert_med_deal,
     delete_med_deal,
-    list_enemy_stat_predictions,
-    upsert_enemy_stat_prediction,
 )
 
 from torn_identity import me_basic
