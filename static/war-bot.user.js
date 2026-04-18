@@ -1303,11 +1303,23 @@ function applyShieldPos() {
     shield.classList.remove('warhub-header-mounted');
     if (document.body && shield.parentNode !== document.body) document.body.appendChild(shield);
 
-    shield.style.left = '10px';
-    shield.style.bottom = '44px';
+    var leftPx = 10;
+    var bottomPx = 44;
+    var sinner = document.getElementById('si-pda-launcher');
+    if (sinner && typeof sinner.getBoundingClientRect === 'function') {
+        var rect = sinner.getBoundingClientRect();
+        if (rect && isFinite(rect.top) && rect.top > 0) {
+            leftPx = Math.max(10, Math.round(rect.left || 10));
+            bottomPx = Math.max(44, Math.round(window.innerHeight - rect.top + 6));
+        }
+    }
+
+    shield.style.left = leftPx + 'px';
+    shield.style.bottom = bottomPx + 'px';
     shield.style.top = 'auto';
     shield.style.right = 'auto';
     shield.style.transform = 'none';
+    shield.style.zIndex = '2147483647';
 
     positionBadge();
 }
@@ -2066,7 +2078,7 @@ function _handleTabClick() {
 
         shield = document.createElement('div');
         shield.id = 'warhub-shield';
-        shield.innerHTML = '<button type="button">⚔️ War and Chain</button>'; 
+        shield.innerHTML = '<button type="button">⚔ War and Chain</button>'; 
         shield.setAttribute('aria-label', 'Open War and Chain');
         shield.setAttribute('title', 'War and Chain');
 
@@ -3492,7 +3504,7 @@ function renderTermsTab() {
         '<div class="warhub-grid">',
             '<div class="warhub-hero-card">',
                 '<div class="warhub-title">Instructions</div>',
-                '<div class="warhub-sub">How to start and how War Hub works</div>',
+                '<div class="warhub-sub">How to start and how War and Chain works</div>',
             '</div>',
 
             '<div class="warhub-card warhub-col">',
