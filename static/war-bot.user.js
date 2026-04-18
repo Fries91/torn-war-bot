@@ -1978,6 +1978,11 @@ function _handleTabClick() {
         currentTab = String(tab || 'overview');
         GM_setValue(K_TAB, currentTab);
 
+        state = state || {};
+        if (currentTab === 'targets' && !Array.isArray(state.targets)) state.targets = [];
+        renderBody();
+        restartPollingForCurrentTab();
+
         if (loadInFlight) return;
 
         loadInFlight = true;
@@ -1996,8 +2001,6 @@ function _handleTabClick() {
                 yield loadEnemies(true);
                 state = state || {};
                 if (!Array.isArray(state.targets)) state.targets = [];
-            } else if (currentTab === 'summary') {
-                yield loadLiveSummary(true);
             } else if (currentTab === 'admin') {
                 if (canSeeAdmin()) {
                     yield loadAdminDashboard(true);
@@ -2662,7 +2665,7 @@ function renderEnemyRow(member, opts) {
     var dibText = dibbedBy ? ('Dibbed by ' + dibbedBy) : '';
     var pred = enemyPredictionData(member);
     var ff = getFfScouterData(member);
-    var ffBubbleText = 'FF …';
+    var ffBubbleText = getFfScouterKey() ? 'FF …' : 'FF key';
     if (ff) {
         if (ff.no_data) ffBubbleText = 'FF n/a';
         else if (ff.fair_fight > 0) ffBubbleText = 'FF ' + ff.fair_fight.toFixed(2);
@@ -2888,6 +2891,7 @@ function renderEnemiesTab() {
         var id = String((m && (m.user_id || m.id)) || '').trim();
         return !!id;
     });
+    if (enemies.length) queueEnemyFfPredictions(enemies);
     var war = (state && state.war) || {};
     var enemyFactionId = String(war.enemy_faction_id || warEnemiesFactionId || '').trim();
     var enemyFactionName = String(war.enemy_faction_name || warEnemiesFactionName || 'Enemy Faction');
