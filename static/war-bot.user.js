@@ -954,7 +954,7 @@
 
     function tickMembersCountdowns() {
         if (!overlay) return;
-        if (currentTab !== 'members' && currentTab !== 'hospital' && currentTab !== 'enemies' && currentTab !== 'faction') return;
+        if (currentTab !== 'members' && currentTab !== 'hospital' && currentTab !== 'enemies') return;
         if (!membersLiveStamp) return;
 
         var elapsed = Math.floor((Date.now() - membersLiveStamp) / 1000);
@@ -999,7 +999,7 @@
 
     function startMembersCountdownLoop() {
         stopMembersCountdownLoop();
-        if (currentTab !== 'members' && currentTab !== 'hospital' && currentTab !== 'enemies' && currentTab !== 'faction') return;
+        if (currentTab !== 'members' && currentTab !== 'hospital' && currentTab !== 'enemies') return;
 
         membersCountdownTimer = setInterval(function () {
             tickMembersCountdowns();
@@ -1571,10 +1571,7 @@ function _loadState() {
         warEnemiesFactionId = String(state.war.enemy_faction_id || '');
         warEnemiesFactionName = String(state.war.enemy_faction_name || '');
 
-        var stateMembers = arr((state.faction && (state.faction.members || state.faction.items || state.faction.member_list)) || state.members || []);
-        currentFactionMembers = stateMembers.slice();
-        factionMembersCache = stateMembers.slice();
-        state.members = stateMembers.slice();
+        currentFactionMembers = arr(factionMembersCache).slice();
 
         return state;
     });
@@ -1591,31 +1588,34 @@ function _loadFactionMembers() {
     _loadFactionMembers = _asyncToGenerator(function* (force) {
         if (!isLoggedIn()) return [];
 
-        var existingMembers = arr(currentFactionMembers || factionMembersCache || (state && state.members) || (state && state.faction && (state.faction.members || state.faction.items || state.faction.member_list)) || []);
-        if (!force && existingMembers.length) return existingMembers;
+        if (!force && Array.isArray(factionMembersCache) && factionMembersCache.length) {
+            return factionMembersCache.slice();
+        }
 
         var res = yield authedReq('GET', '/api/faction/members');
-        var payload = (res.ok && res.json && typeof res.json === 'object') ? res.json : {};
+        if (!res.ok || !res.json || typeof res.json !== 'object') {
+            factionMembersCache = [];
+            currentFactionMembers = [];
+            membersLiveStamp = 0;
+            return [];
+        }
 
-        var members = arr(payload.items || payload.members || (payload.data && (payload.data.items || payload.data.members)) || []);
-        if (!members.length) members = existingMembers.slice();
+        var payload = res.json || {};
+        var members = arr(payload.items || payload.members || []);
 
         state = state || {};
         state.faction = Object.assign({}, state.faction || {}, {
-            faction_id: payload.faction_id || (payload.data && payload.data.faction_id) || (state.faction && state.faction.faction_id) || '',
-            faction_name: payload.faction_name || (payload.data && payload.data.faction_name) || (state.faction && (state.faction.faction_name || state.faction.name)) || '',
-            name: payload.faction_name || (payload.data && payload.data.faction_name) || (state.faction && (state.faction.faction_name || state.faction.name)) || ''
+            faction_id: payload.faction_id || '',
+            faction_name: payload.faction_name || '',
+            name: payload.faction_name || ''
         });
 
-        if (members.length) {
-            currentFactionMembers = members.slice();
-            factionMembersCache = members.slice();
-            membersLiveStamp = Date.now();
-            state.members = members.slice();
-            state.faction.members = members.slice();
-        }
+        factionMembersCache = members.slice();
+        currentFactionMembers = members.slice();
+        membersLiveStamp = Date.now();
+        state.faction.members = members.slice();
 
-        return arr(factionMembersCache || currentFactionMembers || state.members || []);
+        return factionMembersCache.slice();
     });
 
     return _loadFactionMembers.apply(this, arguments);
@@ -1954,7 +1954,9 @@ function _refreshEnemiesLive() {
                 }
 
                 if (currentTab === 'faction') {
-                    yield refreshMembersLive();
+                    if (canManageFaction()) {
+                        yield refreshMembersLive();
+                    }
                     renderLiveTabOnly();
                     return;
                 }
@@ -2000,7 +2002,7 @@ function _handleTabClick() {
             } else if (currentTab === 'faction') {
                 if (canManageFaction()) {
                     yield loadFactionMembers(true);
-                                    }
+                }
             } else if (currentTab === 'admin') {
                 if (canSeeAdmin()) {
                     yield loadAdminDashboard(true);
@@ -3492,7 +3494,7 @@ function renderTermsTab() {
 
     function renderFactionTab() {
     var faction = (state && state.faction) || {};
-    var members = arr(currentFactionMembers || factionMembersCache || (state && state.members) || []);
+    var members = arr(factionMembersCache);
     var factionName = String((faction && (faction.name || faction.faction_name)) || 'Your Faction');
     var factionId = String((faction && faction.faction_id) || '');
     var search = String(GM_getValue('warhub_faction_search', '') || '').trim().toLowerCase();
@@ -4043,7 +4045,7 @@ function _handleActionClick() {
                 }
 
                 yield loadFactionMembers(true);
-                                renderBody();
+                renderBody();
                 setStatus('Member activated.', false);
                 return;
             }
@@ -4059,7 +4061,7 @@ function _handleActionClick() {
                 }
 
                 yield loadFactionMembers(true);
-                                renderBody();
+                renderBody();
                 setStatus('Member removed.', false);
                 return;
             }
