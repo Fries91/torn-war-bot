@@ -1489,9 +1489,21 @@ function makeHoldDraggable(handle, target, key) {
                 pushLocalNotification('info', 'Logged in.');
             }
 
-            yield loadState();
-            renderBody();
-            restartPolling();
+            try {
+                yield loadState();
+                yield loadWarData(true);
+                yield loadEnemies(true);
+            } catch (e) {
+                console.warn('War and Chain post-login load warning:', e);
+            }
+
+            try {
+                renderBody();
+                restartPolling();
+            } catch (e2) {
+                console.warn('War and Chain post-login render warning:', e2);
+            }
+
             setStatus('Logged in successfully.', false);
         });
 
@@ -3634,7 +3646,7 @@ function renderTermsTab() {
                 '<label class="warhub-label" for="warhub-api-key">Torn API Key</label>',
                 '<input id="warhub-api-key" class="warhub-input" type="password" value="" placeholder="' + esc(maskedKey ? 'Saved API key' : 'Enter API key') + '" />',
                 '<label class="warhub-label" for="warhub-ff-key">FF Scouter Limited Key</label>',
-                '<input id="warhub-ff-key" class="warhub-input" type="password" value="' + esc(getFfScouterKey()) + '" placeholder="Optional FF Scouter key for fair fight + estimated stats" />',
+                '<input id="warhub-ff-key" class="warhub-input" type="password" value="' + esc(getFfScouterKey()) + '" placeholder="Optional FF Scouter key for fair fight values" />',
                 '<div class="warhub-sub">FF Scouter key powers the fair-fight values in enemy rows.</div>',
                 '<div class="warhub-row">',
                     '<button type="button" class="warhub-btn" data-action="login">Re-login</button>',
@@ -4127,6 +4139,10 @@ function _handleActionClick() {
             }
         } catch (err) {
             console.error('War and Chain action error:', action, err);
+            if (action === 'login' && getSessionToken() && state && state.viewer && state.viewer.user_id) {
+                setStatus('Logged in successfully.', false);
+                return;
+            }
             setStatus('Action failed: ' + action, true);
         }
     });
