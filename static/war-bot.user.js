@@ -954,7 +954,7 @@
 
     function tickMembersCountdowns() {
         if (!overlay) return;
-        if (currentTab !== 'members' && currentTab !== 'hospital' && currentTab !== 'enemies') return;
+        if (currentTab !== 'members' && currentTab !== 'hospital' && currentTab !== 'enemies' && currentTab !== 'faction') return;
         if (!membersLiveStamp) return;
 
         var elapsed = Math.floor((Date.now() - membersLiveStamp) / 1000);
@@ -999,7 +999,7 @@
 
     function startMembersCountdownLoop() {
         stopMembersCountdownLoop();
-        if (currentTab !== 'members' && currentTab !== 'hospital' && currentTab !== 'enemies') return;
+        if (currentTab !== 'members' && currentTab !== 'hospital' && currentTab !== 'enemies' && currentTab !== 'faction') return;
 
         membersCountdownTimer = setInterval(function () {
             tickMembersCountdowns();
@@ -1949,6 +1949,12 @@ function _refreshEnemiesLive() {
 
                 if (currentTab === 'hospital') {
                     yield refreshHospitalLive();
+                    renderLiveTabOnly();
+                    return;
+                }
+
+                if (currentTab === 'faction') {
+                    yield refreshMembersLive();
                     renderLiveTabOnly();
                     return;
                 }
@@ -4168,7 +4174,7 @@ function _handleActionClick() {
 
         renderStatus();
 
-        if (currentTab === 'enemies' || currentTab === 'hospital') {
+        if (currentTab === 'enemies' || currentTab === 'hospital' || currentTab === 'faction') {
             startMembersCountdownLoop();
         } else {
             stopMembersCountdownLoop();
@@ -4200,7 +4206,7 @@ function _handleActionClick() {
 
         renderStatus();
 
-        if (currentTab === 'enemies' || currentTab === 'hospital') {
+        if (currentTab === 'enemies' || currentTab === 'hospital' || currentTab === 'faction') {
             startMembersCountdownLoop();
         } else {
             stopMembersCountdownLoop();
