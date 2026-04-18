@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         War Hub ⚔️
+// @name         War and Chain ⚔️
 // @namespace    fries91-war-hub
 // @version      3.6.0
-// @description  War Hub by Fries91. Free-access rebuild with admin and leader/co-leader restrictions kept.
+// @description  War and Chain by Fries91. Free-access rebuild with admin and leader/co-leader restrictions kept.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
 // @downloadURL  https://torn-war-bot.onrender.com/static/war-bot.user.js
@@ -848,6 +848,11 @@
 ";
 
     GM_addStyle(css);
+    GM_addStyle([
+        '#warhub-shield { left: 10px !important; bottom: 44px !important; top: auto !important; right: auto !important; width: 118px !important; height: 28px !important; background: transparent !important; border: 0 !important; box-shadow: none !important; transform: none !important; }',
+        '#warhub-shield button { width: 118px !important; height: 28px !important; border-radius: 9px !important; border: 1px solid rgba(205,164,74,.5) !important; background: linear-gradient(180deg, rgba(90,12,18,.95), rgba(35,8,10,.98)) !important; color: #f5df9d !important; font-size: 10px !important; font-weight: 800 !important; letter-spacing: .1px !important; box-shadow: 0 8px 20px rgba(0,0,0,.35) !important; padding: 0 !important; margin: 0 !important; cursor: pointer !important; }',
+        '@media (max-width: 520px) { #warhub-shield { left: 10px !important; bottom: 44px !important; width: 118px !important; height: 28px !important; } #warhub-shield button { width: 118px !important; height: 28px !important; font-size: 10px !important; border-radius: 9px !important; } }'
+    ].join('\n'));
 
     // ============================================================
     // 06. BASIC UTILITIES
@@ -1298,20 +1303,10 @@ function applyShieldPos() {
     shield.classList.remove('warhub-header-mounted');
     if (document.body && shield.parentNode !== document.body) document.body.appendChild(shield);
 
-    var vp = getViewport();
-    var defaultPos = { left: Math.max(8, vp.w - 50), top: Math.max(72, Math.round(vp.h * 0.45)) };
-    var pos = loadPos(K_SHIELD_POS, defaultPos);
-
-    var maxLeft = Math.max(8, vp.w - 44);
-    var maxTop = Math.max(8, vp.h - 44);
-
-    pos.left = Math.min(Math.max(8, Math.round(Number(pos.left || defaultPos.left))), maxLeft);
-    pos.top = Math.min(Math.max(8, Math.round(Number(pos.top || defaultPos.top))), maxTop);
-
-    shield.style.left = pos.left + 'px';
-    shield.style.top = pos.top + 'px';
+    shield.style.left = '10px';
+    shield.style.bottom = '44px';
+    shield.style.top = 'auto';
     shield.style.right = 'auto';
-    shield.style.bottom = 'auto';
     shield.style.transform = 'none';
 
     positionBadge();
@@ -1946,7 +1941,7 @@ function _refreshEnemiesLive() {
                     return;
                 }
             } catch (err) {
-                console.error('War Hub tab tick error:', err);
+                console.error('War and Chain tab tick error:', err);
             } finally {
                 loadInFlight = false;
             }
@@ -1997,7 +1992,7 @@ function _handleTabClick() {
                 yield refreshOverviewLive();
             }
         } catch (err) {
-            console.error('War Hub tab load error:', err);
+            console.error('War and Chain tab load error:', err);
         } finally {
             loadInFlight = false;
         }
@@ -2071,9 +2066,9 @@ function _handleTabClick() {
 
         shield = document.createElement('div');
         shield.id = 'warhub-shield';
-        shield.textContent = '⚔️';
-        shield.setAttribute('aria-label', 'Open War Hub');
-        shield.setAttribute('title', 'War Hub');
+        shield.innerHTML = '<button type="button">⚔️ War and Chain</button>'; 
+        shield.setAttribute('aria-label', 'Open War and Chain');
+        shield.setAttribute('title', 'War and Chain');
 
         badge = document.createElement('div');
         badge.id = 'warhub-badge';
@@ -2084,8 +2079,8 @@ function _handleTabClick() {
             '<div class="warhub-head" id="warhub-head">',
                 '<div class="warhub-toprow">',
                     '<div>',
-                        '<div class="warhub-title">War Hub ⚔️</div>',
-                        '<div class="warhub-sub">Faction tools, access, and war data</div>',
+                        '<div class="warhub-title">War and Chain ⚔️</div>',
+                        '<div class="warhub-sub">Faction tools, access, and war support</div>',
                     '</div>',
                     '<button class="warhub-close" id="warhub-close" type="button">Close</button>',
                 '</div>',
@@ -2665,7 +2660,7 @@ function renderEnemyRow(member, opts) {
             '<div class="warhub-grid">',
                 '<div class="warhub-hero-card">',
                     '<div class="warhub-title">Login</div>',
-                    '<div class="warhub-sub">Use your Torn API key to connect to War Hub.</div>',
+                    '<div class="warhub-sub">Use your Torn API key to connect to War and Chain.</div>',
                 '</div>',
                 '<div class="warhub-card warhub-col">',
                     '<label class="warhub-label" for="warhub-api-key">Torn API Key</label>',
@@ -3503,7 +3498,7 @@ function renderTermsTab() {
             '<div class="warhub-card warhub-col">',
                 '<h3>How to start</h3>',
                 '<div>1. Open the Settings tab and log in with your Torn API key.</div>',
-                '<div>2. Once logged in, War Hub loads your faction access and current war data from the backend.</div>',
+                '<div>2. Once logged in, War and Chain loads your faction access and current war data from the backend.</div>',
                 '<div>3. Leaders can go to the Faction tab to activate members for access.</div>',
                 '<div>4. Members with access can then use tabs like Overview, Enemies, Hospital, Chain, Targets, Terms, and Med Deals.</div>',
                 '<div>5. Use the refresh buttons in each tab if you want a fresh pull right away.</div>',
@@ -3511,7 +3506,7 @@ function renderTermsTab() {
 
             '<div class="warhub-card warhub-col">',
                 '<h3>Terms of use</h3>',
-                '<div>War Hub is for faction organization and war support only.</div>',
+                '<div>War and Chain is for faction organization and war support only.</div>',
                 '<div>Use your own Torn API key and do not share it with people you do not trust.</div>',
                 '<div>Access to tabs depends on your faction status, member activation status, and leader or admin permissions.</div>',
                 '<div>Leader and admin tools should only be used by the people meant to manage faction access, settings, and war coordination.</div>',
@@ -3521,17 +3516,17 @@ function renderTermsTab() {
             '<div class="warhub-card warhub-col">',
                 '<h3>How your API key is stored and used</h3>',
                 '<div>Your API key is stored locally in your userscript storage on your device/browser through the script settings.</div>',
-                '<div>When you log in, the script sends your key to the War Hub backend to create or refresh your session and load your faction-linked data.</div>',
+                '<div>When you log in, the script sends your key to the War and Chain backend to create or refresh your session and load your faction-linked data.</div>',
                 '<div>After login, the script mainly works from the saved session and backend responses for state, members, enemies, hospital, targets, chain, and other tab data.</div>',
                 '<div>Your saved session, open tab, overlay state, and other local preferences are also kept in userscript storage for convenience.</div>',
                 '<div>If you log out or your session expires, you will need to log in again.</div>',
             '</div>',
 
             '<div class="warhub-card warhub-col">',
-                '<h3>What War Hub does</h3>',
-                '<div><b>For members:</b> War Hub gives a cleaner place to view shared war information like faction overview, enemy roster, hospital tracking, targets, terms, med deals, and chain tools.</div>',
-                '<div><b>For leaders:</b> War Hub adds faction management tools like member activation, war coordination, and faction control features.</div>',
-                '<div><b>For admins:</b> War Hub includes admin-only controls for oversight, configuration, and dashboard management.</div>',
+                '<h3>What War and Chain does</h3>',
+                '<div><b>For members:</b> War and Chain gives a cleaner place to view shared war information like faction overview, enemy roster, hospital tracking, targets, terms, med deals, and chain tools.</div>',
+                '<div><b>For leaders:</b> War and Chain adds faction management tools like member activation, war coordination, and faction control features.</div>',
+                '<div><b>For admins:</b> War and Chain includes admin-only controls for oversight, configuration, and dashboard management.</div>',
                 '<div>The goal is to keep war coordination, access control, and important shared information in one overlay instead of spreading it across chat and separate pages.</div>',
             '</div>',
         '</div>'
@@ -3939,7 +3934,7 @@ function _handleActionClick() {
                 return;
             }
         } catch (err) {
-            console.error('War Hub action error:', action, err);
+            console.error('War and Chain action error:', action, err);
             setStatus('Action failed: ' + action, true);
         }
     });
@@ -4102,7 +4097,7 @@ function _handleActionClick() {
                     positionBadge();
                 }
             } catch (err) {
-                console.error('War Hub remount watch error:', err);
+                console.error('War and Chain remount watch error:', err);
             }
         }, 2000);
     }
@@ -4116,7 +4111,7 @@ function _handleActionClick() {
             loadState().then(function () {
                 renderBody();
             }).catch(function (err) {
-                console.error('War Hub initial load error:', err);
+                console.error('War and Chain initial load error:', err);
                 renderBody();
             });
         } else {
