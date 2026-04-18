@@ -467,7 +467,7 @@ def cache_set(cache_key: str, payload_text: str, ttl_seconds: int):
     con.close()
 
 
-# faction member access
+# faction member access / leader-managed enable list
 
 def list_faction_members(faction_id: str) -> List[Dict[str, Any]]:
     faction_id = _clean_text(faction_id)
