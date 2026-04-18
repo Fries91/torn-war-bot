@@ -1622,8 +1622,15 @@ def api_terms_save():
 def api_faction_members():
     user = request.user or {}
     faction_id = str(user.get("faction_id") or "").strip()
+    faction_name = str(user.get("faction_name") or "").strip()
     items = _build_live_faction_members(user)
-    return ok(faction_id=faction_id, items=items, count=len(items))
+    return ok(
+        faction_id=faction_id,
+        faction_name=faction_name,
+        items=items,
+        count=len(items),
+        source="api_faction_members_single_path",
+    )
 
 
 @app.route("/api/faction/members/<member_user_id>/access", methods=["POST"])
