@@ -71,7 +71,6 @@
     var TAB_ROW_2 = [
         ['meddeals', 'Med Deals'],
         ['terms', 'Terms'],
-        ['faction', 'Faction'],
         ['settings', 'Settings'],
         ['instructions', 'Help'],
         ['admin', 'Admin']
@@ -107,7 +106,7 @@
     var currentTab = GM_getValue(K_TAB, 'settings');
     if (currentTab === 'owner') currentTab = 'admin';
     if (currentTab === 'members') currentTab = 'enemies';
-    if (currentTab === 'summary' || currentTab === 'wartop5') currentTab = 'settings';
+    if (currentTab === 'summary' || currentTab === 'wartop5' || currentTab === 'faction') currentTab = 'overview';
 
     var pollTimer = null;
     var remountTimer = null;
@@ -1229,8 +1228,8 @@
 
     function shouldShowTab(key) {
         if (key === 'admin') return canSeeAdmin();
-        if (key === 'faction') return canManageFaction();
-        if (key === 'summary') return canSeeSummary();
+        if (key === 'faction') return false;
+        if (key === 'summary') return false;
         return true;
     }
 
@@ -1954,9 +1953,9 @@ function _refreshEnemiesLive() {
                 }
 
                 if (currentTab === 'faction') {
-                    if (canManageFaction()) {
-                        yield refreshMembersLive();
-                    }
+                    currentTab = 'overview';
+                    GM_setValue(K_TAB, currentTab);
+                    yield refreshOverviewLive();
                     renderLiveTabOnly();
                     return;
                 }
@@ -1999,10 +1998,6 @@ function _handleTabClick() {
                 if (!Array.isArray(state.targets)) state.targets = [];
             } else if (currentTab === 'summary') {
                 yield loadLiveSummary(true);
-            } else if (currentTab === 'faction') {
-                if (canManageFaction()) {
-                    yield loadFactionMembers(true);
-                }
             } else if (currentTab === 'admin') {
                 if (canSeeAdmin()) {
                     yield loadAdminDashboard(true);
@@ -2710,7 +2705,6 @@ function renderEnemyRow(member, opts) {
                     '</div>',
                     actionHtml,
                 '</div>',
-                '<div class="warhub-sub" style="margin-top:6px;">' + esc(pred.summary || '') + '</div>',
             '</div>',
             (st === 'travel' && travelDetail) ? '<div class="warhub-spy-box">' + esc(travelDetail) + (travelArrival ? '<div class="warhub-sub" style="margin-top:6px;">' + esc(travelArrival) + '</div>' : '') + '</div>' : '',
             spy ? '<div class="warhub-spy-box">' + esc(spy) + '</div>' : '',
