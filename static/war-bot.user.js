@@ -1489,21 +1489,9 @@ function makeHoldDraggable(handle, target, key) {
                 pushLocalNotification('info', 'Logged in.');
             }
 
-            try {
-                yield loadState();
-                yield loadWarData(true);
-                yield loadEnemies(true);
-            } catch (e) {
-                console.warn('War and Chain post-login load warning:', e);
-            }
-
-            try {
-                renderBody();
-                restartPolling();
-            } catch (e2) {
-                console.warn('War and Chain post-login render warning:', e2);
-            }
-
+            yield loadState();
+            renderBody();
+            restartPolling();
             setStatus('Logged in successfully.', false);
         });
 
@@ -2599,7 +2587,7 @@ function predictionMeta(member) {
         return {
             source: 'FF Scouter',
             confidence: 'Waiting',
-            summary: 'Waiting for FF Scouter data for this target.',
+            summary: 'Waiting for FF Scouter fair-fight data for this target.',
             updated_at: ''
         };
     }
@@ -2617,7 +2605,7 @@ function predictionMeta(member) {
         source: 'FF Scouter',
         confidence: ff.bs_estimate_human ? 'Estimate' : 'Fair Fight',
         summary: ff.bs_estimate_human
-            ? ('FF Scouter fair-fight ' + ff.fair_fight.toFixed(2) + ' with estimated stats ' + ff.bs_estimate_human + '.')
+            ? ('FF Scouter fair-fight ' + ff.fair_fight.toFixed(2) + '.')
             : ('FF Scouter fair-fight ' + (ff.fair_fight > 0 ? ff.fair_fight.toFixed(2) : '—') + '.'),
         updated_at: ff.last_updated || ''
     };
@@ -2645,7 +2633,7 @@ function enemyPredictionData(member) {
             else color = 'bad';
             tier = ff.fair_fight.toFixed(2);
             summary = ff.bs_estimate_human
-                ? ('FF ' + ff.fair_fight.toFixed(2) + ' • Est. ' + ff.bs_estimate_human)
+                ? ('FF ' + ff.fair_fight.toFixed(2))
                 : ('FF ' + ff.fair_fight.toFixed(2));
         }
     }
@@ -2749,8 +2737,8 @@ function renderEnemyRow(member, opts) {
                     '<input id="warhub-api-key" class="warhub-input" type="password" value="' + esc(getApiKey()) + '" placeholder="Enter API key" />',
                     '<label class="warhub-label" for="warhub-owner-token">Owner/Admin Token (optional)</label>',
                     '<input id="warhub-owner-token" class="warhub-input" type="password" value="' + esc(getOwnerToken()) + '" placeholder="Owner/admin token" />',
-                    '<label class="warhub-label" for="warhub-ff-key">FF Scouter Limited Key (optional)</label>',
-                    '<input id="warhub-ff-key" class="warhub-input" type="password" value="' + esc(getFfScouterKey()) + '" placeholder="FF Scouter key for fair fight + est. stats" />',
+                    '<label class="warhub-label" for="warhub-ff-key">FF Scouter Key (optional)</label>',
+                    '<input id="warhub-ff-key" class="warhub-input" type="password" value="' + esc(getFfScouterKey()) + '" placeholder="FF Scouter key for fair-fight values" />',
                     '<div class="warhub-row">',
                         '<button type="button" class="warhub-btn" data-action="login">Login</button>',
                     '</div>',
@@ -3645,9 +3633,9 @@ function renderTermsTab() {
             '<div class="warhub-card warhub-col">',
                 '<label class="warhub-label" for="warhub-api-key">Torn API Key</label>',
                 '<input id="warhub-api-key" class="warhub-input" type="password" value="" placeholder="' + esc(maskedKey ? 'Saved API key' : 'Enter API key') + '" />',
-                '<label class="warhub-label" for="warhub-ff-key">FF Scouter Limited Key</label>',
-                '<input id="warhub-ff-key" class="warhub-input" type="password" value="' + esc(getFfScouterKey()) + '" placeholder="Optional FF Scouter key for fair fight values" />',
-                '<div class="warhub-sub">FF Scouter key powers the fair-fight values in enemy rows.</div>',
+                '<label class="warhub-label" for="warhub-ff-key">FF Scouter Key</label>',
+                '<input id="warhub-ff-key" class="warhub-input" type="password" value="' + esc(getFfScouterKey()) + '" placeholder="Optional FF Scouter key for fair-fight values" />',
+                '<div class="warhub-sub">FF Scouter key powers the fair-fight values in enemy rows only.</div>',
                 '<div class="warhub-row">',
                     '<button type="button" class="warhub-btn" data-action="login">Re-login</button>',
                     '<button type="button" class="warhub-btn gray" data-action="logout">Logout</button>',
@@ -4139,10 +4127,6 @@ function _handleActionClick() {
             }
         } catch (err) {
             console.error('War and Chain action error:', action, err);
-            if (action === 'login' && getSessionToken() && state && state.viewer && state.viewer.user_id) {
-                setStatus('Logged in successfully.', false);
-                return;
-            }
             setStatus('Action failed: ' + action, true);
         }
     });
