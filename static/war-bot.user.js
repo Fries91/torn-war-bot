@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         War and Chain ⚔️
 // @namespace    fries91-war-hub
-// @version      3.6.0
+// @version      3.6.3
 // @description  War and Chain by Fries91. Free-access rebuild with admin and leader/co-leader restrictions kept.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -2868,12 +2868,12 @@ function renderOverviewTab() {
 
     var overviewDibs = arr(state && state.hospital && state.hospital.overview_items);
     var dibsText = overviewDibs.length ? overviewDibs.map(function (item) {
-        var dibEnemyName = String((item && item.enemy_name) || 'Enemy').trim();
         var dibbedBy = String((item && item.dibbed_by_name) || 'Unknown').trim();
+        var dibEnemyName = String((item && item.enemy_name) || 'Enemy').trim();
         var statusBits = [];
         if (item && item.in_hospital) statusBits.push('In hospital');
         if (item && item.left_hospital_at) statusBits.push('Out');
-        return dibEnemyName + ' — ' + dibbedBy + (statusBits.length ? ' (' + statusBits.join(', ') + ')' : '');
+        return dibbedBy + ' → ' + dibEnemyName + (statusBits.length ? ' (' + statusBits.join(', ') + ')' : '');
     }).join('\n') : '';
 
     return [
@@ -4270,7 +4270,21 @@ function _handleActionClick() {
                     return;
                 }
 
-                yield loadState();
+                state = state || {};
+                state.hospital = Object.assign({}, state.hospital || {});
+
+                if (dibRes.json && Array.isArray(dibRes.json.hospital_items)) {
+                    state.hospital.items = dibRes.json.hospital_items.slice();
+                    state.hospital.count = Number(dibRes.json.hospital_count || state.hospital.items.length || 0);
+                } else {
+                    yield loadHospital(true);
+                }
+
+                if (dibRes.json && Array.isArray(dibRes.json.overview_items)) {
+                    state.hospital.overview_items = dibRes.json.overview_items.slice();
+                    state.hospital.overview_count = Number(dibRes.json.overview_count || state.hospital.overview_items.length || 0);
+                }
+
                 renderBody();
                 setStatus('Dibs claimed.', false);
                 return;
