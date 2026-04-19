@@ -4266,7 +4266,30 @@ function _handleActionClick() {
                     return;
                 }
 
-                yield loadState();
+                state = state || {};
+                state.hospital = Object.assign({}, state.hospital || {});
+
+                if (dibRes.json && Array.isArray(dibRes.json.hospital_items)) {
+                    state.hospital.items = dibRes.json.hospital_items.slice();
+                } else {
+                    yield loadHospital(true);
+                }
+
+                if (dibRes.json && Array.isArray(dibRes.json.overview_items)) {
+                    state.hospital.overview_items = dibRes.json.overview_items.slice();
+                    state.hospital.overview_count = Number(dibRes.json.overview_count || state.hospital.overview_items.length || 0);
+                }
+
+                try {
+                    var refreshed = yield authedReq('GET', '/api/state');
+                    if (refreshed.ok && refreshed.json && typeof refreshed.json === 'object') {
+                        state = Object.assign({}, state || {}, refreshed.json);
+                        if (!state.hospital || typeof state.hospital !== 'object') state.hospital = {};
+                        if (!Array.isArray(state.hospital.items)) state.hospital.items = [];
+                        if (!Array.isArray(state.hospital.overview_items)) state.hospital.overview_items = [];
+                    }
+                } catch (_dibRefreshErr) {}
+
                 renderBody();
                 setStatus('Dibs claimed.', false);
                 return;
