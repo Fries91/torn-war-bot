@@ -1488,10 +1488,17 @@ function makeHoldDraggable(handle, target, key) {
                 pushLocalNotification('info', 'Logged in.');
             }
 
-            yield loadState();
-            renderBody();
-            restartPolling();
-            setStatus('Logged in successfully.', false);
+            try {
+                yield loadState();
+                renderBody();
+                restartPolling();
+                setStatus('Logged in successfully.', false);
+            } catch (refreshErr) {
+                console.error('War and Chain post-login refresh error:', refreshErr);
+                try { renderBody(); } catch (_e) {}
+                try { restartPolling(); } catch (_e2) {}
+                setStatus('Logged in, but refresh failed. Reopen the overlay.', false);
+            }
         });
 
         return _doLogin.apply(this, arguments);
@@ -4082,7 +4089,8 @@ function _handleActionClick() {
                     return;
                 }
 
-                yield loadState();
+                state = state || {};
+                state.chain = Object.assign({}, state.chain || {}, chainAvailableRes.json || {}, { available: true });
                 renderBody();
                 setStatus('Chain marked available.', false);
                 return;
@@ -4095,7 +4103,8 @@ function _handleActionClick() {
                     return;
                 }
 
-                yield loadState();
+                state = state || {};
+                state.chain = Object.assign({}, state.chain || {}, chainUnavailableRes.json || {}, { available: false });
                 renderBody();
                 setStatus('Chain marked unavailable.', false);
                 return;
@@ -4109,7 +4118,8 @@ function _handleActionClick() {
                     return;
                 }
 
-                yield loadState();
+                state = state || {};
+                state.chain = Object.assign({}, state.chain || {}, chainSitterRes.json || {}, { sitter_enabled: !current });
                 renderBody();
                 setStatus('Chain sitter updated.', false);
                 return;
