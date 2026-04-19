@@ -40,14 +40,34 @@ def _extract_booster_cooldown_seconds(data: Dict[str, Any]) -> int:
     return 0
 
 
+def _extract_bar_value(bar: Dict[str, Any], current_keys: tuple[str, ...], max_keys: tuple[str, ...]) -> Dict[str, int]:
+    bar = bar if isinstance(bar, dict) else {}
+    current = 0
+    maximum = 0
+
+    for key in current_keys:
+        val = bar.get(key)
+        if val not in (None, ""):
+            current = to_int(val, 0)
+            break
+
+    for key in max_keys:
+        val = bar.get(key)
+        if val not in (None, ""):
+            maximum = to_int(val, 0)
+            break
+
+    return {"current": current, "maximum": maximum}
+
+
 def member_live_bars(api_key: str, user_id: str = "") -> Dict[str, Any]:
     """
-    Strict user live-bars loader.
+    Strict self-key live-bars loader.
 
     Single-path rules:
-    - Only uses one user endpoint shape.
-    - requested user_id -> /user/{id}
-    - self -> /user/
+    - Always loads the owner of the supplied API key.
+    - Uses only /user/ with one selection shape.
+    - No requested-user endpoint path.
     - No fallback attempts.
     - No faction fallback.
     - No enemy fallback.
@@ -72,14 +92,9 @@ def member_live_bars(api_key: str, user_id: str = "") -> Dict[str, Any]:
         }
 
     selections = "bars,profile,personalstats,cooldowns"
-    if requested_user_id:
-        url = f"{API_BASE}/user/{requested_user_id}"
-        params = {"selections": selections, "key": api_key}
-        source = f"user_live_direct_{requested_user_id}"
-    else:
-        url = f"{API_BASE}/user/"
-        params = {"selections": selections, "key": api_key}
-        source = "user_live_self"
+    url = f"{API_BASE}/user/"
+    params = {"selections": selections, "key": api_key}
+    source = "user_live_self_only"
 
     res = safe_get(url, params, cache_seconds=0, cache_prefix=source)
     if not res.get("ok"):
@@ -111,45 +126,40 @@ def member_live_bars(api_key: str, user_id: str = "") -> Dict[str, Any]:
             "name": "",
         }
 
-    resolved_user_id = str(data.get("player_id") or data.get("playerID") or data.get("user_id") or data.get("id") or "").strip()
-    if requested_user_id and resolved_user_id and resolved_user_id != requested_user_id:
-        return {
-            "ok": False,
-            "error": f"API key/user mismatch. Requested {requested_user_id}, got {resolved_user_id}.",
-            "user_id": requested_user_id,
-            "bars": {},
-            "status": {},
-            "last_action": {},
-            "cooldowns": {},
-            "medical_cooldown": 0,
-            "booster_cooldown": 0,
-            "name": "",
-        }
+    resolved_user_id = str(
+        data.get("player_id")
+        or data.get("playerID")
+        or data.get("user_id")
+        or data.get("id")
+        or ""
+    ).strip()
 
     bars = data.get("bars") if isinstance(data.get("bars"), dict) else {}
     status = data.get("status") if isinstance(data.get("status"), dict) else {}
     last_action = data.get("last_action") if isinstance(data.get("last_action"), dict) else {}
     cooldowns = data.get("cooldowns") if isinstance(data.get("cooldowns"), dict) else {}
+
     life = bars.get("life") if isinstance(bars.get("life"), dict) else {}
     energy = bars.get("energy") if isinstance(bars.get("energy"), dict) else {}
     nerve = bars.get("nerve") if isinstance(bars.get("nerve"), dict) else {}
     happy = bars.get("happy") if isinstance(bars.get("happy"), dict) else {}
+
     medical_cooldown = extract_medical_cooldown_seconds(data)
     booster_cooldown = _extract_booster_cooldown_seconds(data)
 
     return {
         "ok": True,
         "error": "",
-        "user_id": requested_user_id or resolved_user_id,
+        "user_id": resolved_user_id or requested_user_id,
         "name": str(data.get("name") or ""),
         "medical_cooldown": to_int(medical_cooldown, 0),
         "booster_cooldown": to_int(booster_cooldown, 0),
         "cooldowns": cooldowns,
         "bars": {
-            "life": {"current": to_int(life.get("current"), 0), "maximum": to_int(life.get("maximum"), 0)},
-            "energy": {"current": to_int(energy.get("current"), 0), "maximum": to_int(energy.get("maximum"), 0)},
-            "nerve": {"current": to_int(nerve.get("current"), 0), "maximum": to_int(nerve.get("maximum"), 0)},
-            "happy": {"current": to_int(happy.get("current"), 0), "maximum": to_int(happy.get("maximum"), 0)},
+            "life": _extract_bar_value(life, ("current", "amount", "full"), ("maximum", "max", "total", "full")),
+            "energy": _extract_bar_value(energy, ("current", "amount", "full"), ("maximum", "max", "total", "full")),
+            "nerve": _extract_bar_value(nerve, ("current", "amount", "full"), ("maximum", "max", "total", "full")),
+            "happy": _extract_bar_value(happy, ("current", "amount", "full"), ("maximum", "max", "total", "full")),
         },
         "status": status,
         "last_action": last_action,
