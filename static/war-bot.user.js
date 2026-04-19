@@ -2844,13 +2844,13 @@ function renderEnemyRow(member, opts) {
 
 function renderOverviewTab() {
     var war = (state && state.war) || {};
-        var ownFaction = (state && state.faction) || {};
+    var ownFaction = (state && state.faction) || {};
 
     var ownName = String(
         ownFaction.name ||
         war.our_faction_name ||
         war.faction_name ||
-                'Your Faction'
+        'Your Faction'
     );
 
     var enemyName = String(
@@ -2865,22 +2865,32 @@ function renderOverviewTab() {
 
     var termsText = String((state && state.terms_summary && state.terms_summary.text) || '');
     var medDealsText = String((state && state.med_deals && state.med_deals.text) || '');
-    var dibsText = String((state && state.dibs && state.dibs.text) || '');
+
+    var overviewDibs = arr(state && state.hospital && state.hospital.overview_items);
+    var dibsText = overviewDibs.length ? overviewDibs.map(function (item) {
+        var dibEnemyName = String((item && item.enemy_name) || 'Enemy').trim();
+        var dibbedBy = String((item && item.dibbed_by_name) || 'Unknown').trim();
+        var statusBits = [];
+        if (item && item.in_hospital) statusBits.push('In hospital');
+        if (item && item.left_hospital_at) statusBits.push('Out');
+        return dibEnemyName + ' — ' + dibbedBy + (statusBits.length ? ' (' + statusBits.join(', ') + ')' : '');
+    }).join('\n') : '';
 
     return [
         '<div class="warhub-grid">',
-            '<div class="warhub-overview-hero warhub-hero-card">',
-                '<div class="warhub-title">Overview</div>',
-                '<div class="warhub-sub">Current war and faction summary</div>',
+
+            '<div class="warhub-hero-card warhub-overview-hero">',
+                '<div class="warhub-title">War Overview</div>',
+                '<div class="warhub-sub">Faction vs enemy war view with chain, score, med deals, terms, and dibs.</div>',
 
                 '<div class="warhub-war-head">',
                     '<div class="warhub-war-side">',
-                        '<div class="warhub-war-side-label">Our Faction</div>',
+                        '<div class="warhub-war-side-label">Your faction</div>',
                         '<div class="warhub-war-side-name">' + esc(ownName) + '</div>',
                     '</div>',
                     '<div class="warhub-war-vs">VS</div>',
                     '<div class="warhub-war-side right">',
-                        '<div class="warhub-war-side-label">Enemy Faction</div>',
+                        '<div class="warhub-war-side-label">Enemy faction</div>',
                         '<div class="warhub-war-side-name">' + esc(enemyName) + '</div>',
                     '</div>',
                 '</div>',
@@ -2889,48 +2899,42 @@ function renderOverviewTab() {
             '<div class="warhub-overview-stats">',
                 '<div class="warhub-stat-card good">',
                     '<div class="warhub-stat-label">Our Score</div>',
-                    '<div class="warhub-stat-value">' + esc(String(scoreUs)) + '</div>',
+                    '<div class="warhub-stat-value">' + esc(fmtNum(scoreUs)) + '</div>',
                 '</div>',
                 '<div class="warhub-stat-card bad">',
                     '<div class="warhub-stat-label">Enemy Score</div>',
-                    '<div class="warhub-stat-value">' + esc(String(scoreThem)) + '</div>',
+                    '<div class="warhub-stat-value">' + esc(fmtNum(scoreThem)) + '</div>',
                 '</div>',
-                '<div class="warhub-stat-card">',
+                '<div class="warhub-stat-card good">',
                     '<div class="warhub-stat-label">Our Chain</div>',
-                    '<div class="warhub-stat-value">' + esc(String(chainUs)) + '</div>',
+                    '<div class="warhub-stat-value">' + esc(fmtNum(chainUs)) + '</div>',
                 '</div>',
-                '<div class="warhub-stat-card">',
+                '<div class="warhub-stat-card bad">',
                     '<div class="warhub-stat-label">Enemy Chain</div>',
-                    '<div class="warhub-stat-value">' + esc(String(chainThem)) + '</div>',
+                    '<div class="warhub-stat-value">' + esc(fmtNum(chainThem)) + '</div>',
                 '</div>',
             '</div>',
 
-            '<div class="warhub-mini-grid">',
+            '<div class="warhub-alert-grid">',
                 '<div class="warhub-card warhub-overview-link-card terms">',
-                    '<div class="warhub-row" style="justify-content:space-between;">',
-                        '<h3>📜 Terms / Summary</h3>',
-                    '</div>',
-                    '<div class="warhub-spy-box">' + esc(termsText || 'No terms / summary added yet.') + '</div>',
+                    '<h4>Terms</h4>',
+                    '<div class="warhub-spy-box">' + esc(termsText || 'No terms saved yet.') + '</div>',
                 '</div>',
-
                 '<div class="warhub-card warhub-overview-link-card meddeals">',
-                    '<div class="warhub-row" style="justify-content:space-between;">',
-                        '<h3>🤝 Med Deals</h3>',
-                    '</div>',
-                    '<div class="warhub-spy-box">' + esc(medDealsText || 'No med deals posted yet.') + '</div>',
+                    '<h4>Med Deals</h4>',
+                    '<div class="warhub-spy-box">' + esc(medDealsText || 'No med deals saved yet.') + '</div>',
                 '</div>',
-
                 '<div class="warhub-card warhub-overview-link-card dibs">',
-                    '<div class="warhub-row" style="justify-content:space-between;">',
-                        '<h3>🎯 Dibs</h3>',
-                    '</div>',
-                    '<div class="warhub-spy-box">' + esc(dibsText || 'No dibs posted yet.') + '</div>',
+                    '<h4>Dibs</h4>',
+                    '<div class="warhub-spy-box">' + esc(dibsText || 'No dibs claimed yet.') + '</div>',
                 '</div>',
             '</div>',
+
         '</div>'
     ].join('');
 }
-    function renderMembersTab() {
+
+function renderMembersTab() {
     var members = arr(currentFactionMembers || factionMembersCache || []);
 
     var search = String(GM_getValue('warhub_members_search', '') || '').trim().toLowerCase();
@@ -4266,30 +4270,7 @@ function _handleActionClick() {
                     return;
                 }
 
-                state = state || {};
-                state.hospital = Object.assign({}, state.hospital || {});
-
-                if (dibRes.json && Array.isArray(dibRes.json.hospital_items)) {
-                    state.hospital.items = dibRes.json.hospital_items.slice();
-                } else {
-                    yield loadHospital(true);
-                }
-
-                if (dibRes.json && Array.isArray(dibRes.json.overview_items)) {
-                    state.hospital.overview_items = dibRes.json.overview_items.slice();
-                    state.hospital.overview_count = Number(dibRes.json.overview_count || state.hospital.overview_items.length || 0);
-                }
-
-                try {
-                    var refreshed = yield authedReq('GET', '/api/state');
-                    if (refreshed.ok && refreshed.json && typeof refreshed.json === 'object') {
-                        state = Object.assign({}, state || {}, refreshed.json);
-                        if (!state.hospital || typeof state.hospital !== 'object') state.hospital = {};
-                        if (!Array.isArray(state.hospital.items)) state.hospital.items = [];
-                        if (!Array.isArray(state.hospital.overview_items)) state.hospital.overview_items = [];
-                    }
-                } catch (_dibRefreshErr) {}
-
+                yield loadState();
                 renderBody();
                 setStatus('Dibs claimed.', false);
                 return;
