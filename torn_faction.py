@@ -8,16 +8,21 @@ from torn_shared import (
 from torn_status import normalize_member
 
 
+def _api_v2_base() -> str:
+    base = str(API_BASE or "").rstrip("/")
+    if base.endswith("/v2"):
+        return base
+    return base + "/v2"
+
+
 def faction_basic(api_key: str, faction_id: str = "") -> Dict[str, Any]:
     """
-    Strict faction-only loader.
+    Faction loader for own faction members.
 
-    Rules:
-    - For the logged-in user's own faction, use /faction/ with the user's key.
-    - Validate returned faction_id against requested faction_id when provided.
-    - No enemy fallback.
-    - No war fallback.
-    - No mixed-source recovery.
+    Uses Torn API v2 because `basic,members` is not available on v1.
+    Single-path:
+    - /v2/faction?selections=basic,members
+    - validates returned faction_id against requested faction_id when provided
     """
 
     api_key = str(api_key or "").strip()
@@ -33,9 +38,9 @@ def faction_basic(api_key: str, faction_id: str = "") -> Dict[str, Any]:
             "debug_attempts": [],
         }
 
-    url = f"{API_BASE}/faction/"
+    url = f"{_api_v2_base()}/faction"
     params = {"selections": "basic,members", "key": api_key, "striptags": "true"}
-    source = "faction_self_members_direct"
+    source = "faction_v2_self_members_direct"
 
     def _extract_root(payload: Any) -> Dict[str, Any]:
         if not isinstance(payload, dict):
