@@ -1482,6 +1482,22 @@ function makeHoldDraggable(handle, target, key) {
 
             GM_setValue(K_SESSION, String(res.json.token));
 
+            if (res.json.state && typeof res.json.state === 'object') {
+                state = res.json.state;
+                if (!state.viewer && res.json.viewer) state.viewer = res.json.viewer;
+                if (!state.user && res.json.user) state.user = res.json.user;
+                if (!state.access && res.json.access) state.access = res.json.access;
+                try { setAccessCache(state.access || {}); } catch (_e0) {}
+            } else if (res.json.viewer || res.json.user || res.json.access) {
+                state = state || {};
+                if (res.json.viewer) state.viewer = res.json.viewer;
+                if (res.json.user) state.user = res.json.user;
+                if (res.json.access) {
+                    state.access = res.json.access;
+                    try { setAccessCache(res.json.access || {}); } catch (_e00) {}
+                }
+            }
+
             if (res.json.viewer && res.json.viewer.name) {
                 pushLocalNotification('info', 'Logged in as ' + res.json.viewer.name);
             } else {
@@ -2288,7 +2304,13 @@ function _handleTabClick() {
 
     function getMemberName(member) {
         return String(
-            (member && (member.name || member.player_name || member.username)) ||
+            (member && (
+                member.name ||
+                member.user_name ||
+                member.player_name ||
+                member.username ||
+                member.member_name
+            )) ||
             'Unknown'
         );
     }
