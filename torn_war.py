@@ -284,14 +284,6 @@ def _score_ranked_war_candidate(payload: Dict[str, Any], my_faction_id: str = ""
 
 
 def _extract_ranked_war_payload(payload: Any, my_faction_id: str = "", my_faction_name: str = "") -> Optional[Dict[str, Any]]:
-    """
-    Smarter extractor:
-    - accepts payload itself if it already looks like a war object
-    - checks nested payload["war"]
-    - checks all rankedwars entries and chooses the best candidate
-    - prefers wars that match the viewer's faction
-    - prefers active, then registered, then newest
-    """
     if not isinstance(payload, dict):
         return None
 
@@ -457,71 +449,54 @@ def ranked_war_summary(api_key: str, my_faction_id: str = "", my_faction_name: s
         base["source_note"] = "Missing API key."
         return base
 
-    attempts = []
+    if not my_faction_id:
+        base["source_note"] = "Missing faction ID for ranked war lookup."
+        return base
 
-    if my_faction_id:
-        attempts.append((
-            f"{API_BASE}/v2/faction/{my_faction_id}/rankedwars",
-            {"key": api_key, "striptags": "true"},
-            "v2_faction_rankedwars_direct",
-        ))
-        attempts.append((
-            f"{API_BASE}/faction/{my_faction_id}",
-            {"selections": "rankedwars", "key": api_key, "striptags": "true"},
-            "v1_faction_rankedwars_direct_fallback",
-        ))
+    url = f"{API_BASE}/v2/faction/{my_faction_id}/rankedwars"
+    params = {"key": api_key, "striptags": "true"}
 
-    attempts.append((
-        f"{API_BASE}/faction/",
-        {"selections": "rankedwars", "key": api_key, "striptags": "true"},
-        "v1_faction_rankedwars_self",
-    ))
+    res = safe_get(
+        url,
+        params,
+        cache_seconds=CACHE_TTL_WAR_SUMMARY,
+        cache_prefix="v2_faction_rankedwars_direct_only",
+    )
 
-    last_error = "Could not load ranked wars."
+    if not res.get("ok"):
+        base["source_note"] = str(res.get("error") or "Could not load ranked wars.")
+        return base
 
-    for url, params, prefix in attempts:
-        res = safe_get(
-            url,
-            params,
-            cache_seconds=CACHE_TTL_WAR_SUMMARY,
-            cache_prefix=prefix,
-        )
+    payload = res.get("data") or {}
+    war_payload = _extract_ranked_war_payload(
+        payload,
+        my_faction_id=my_faction_id,
+        my_faction_name=my_faction_name,
+    )
+    if not war_payload:
+        base["source_note"] = "Ranked war payload not found."
+        base["debug_raw"] = payload if isinstance(payload, dict) else {}
+        base["debug_raw_keys"] = sorted(list(payload.keys())) if isinstance(payload, dict) else []
+        return base
 
-        if not res.get("ok"):
-            last_error = str(res.get("error") or last_error)
-            continue
+    built = _build_response(
+        war_payload,
+        source_note="Loaded from v2_faction_rankedwars_direct_only.",
+        my_faction_id=my_faction_id,
+        my_faction_name=my_faction_name,
+    )
 
-        payload = res.get("data") or {}
-        war_payload = _extract_ranked_war_payload(
-            payload,
-            my_faction_id=my_faction_id,
-            my_faction_name=my_faction_name,
-        )
-        if not war_payload:
-            last_error = "Ranked war payload not found."
-            continue
+    if my_faction_id and built.get("my_faction_id") and str(built.get("my_faction_id")) != my_faction_id:
+        base["source_note"] = f"War mismatch: requested faction {my_faction_id}, got {built.get('my_faction_id')}."
+        base["debug_raw"] = war_payload
+        base["debug_raw_keys"] = sorted(list(war_payload.keys()))
+        return base
 
-        built = _build_response(
-            war_payload,
-            source_note=f"Loaded from {prefix}.",
-            my_faction_id=my_faction_id,
-            my_faction_name=my_faction_name,
-        )
+    if my_faction_name and built.get("my_faction_name"):
+        if stringify_lower(built.get("my_faction_name")) != stringify_lower(my_faction_name):
+            base["source_note"] = f"War mismatch: requested faction name {my_faction_name}, got {built.get('my_faction_name')}."
+            base["debug_raw"] = war_payload
+            base["debug_raw_keys"] = sorted(list(war_payload.keys()))
+            return base
 
-        if my_faction_id and built.get("my_faction_id") and str(built.get("my_faction_id")) != my_faction_id:
-            last_error = (
-                f"War mismatch: requested faction {my_faction_id}, got {built.get('my_faction_id')}."
-            )
-            continue
-
-        if my_faction_name and built.get("my_faction_name"):
-            if stringify_lower(built.get("my_faction_name")) != stringify_lower(my_faction_name):
-                last_error = (
-                    f"War mismatch: requested faction name {my_faction_name}, got {built.get('my_faction_name')}."
-                )
-                continue
-
-        return built
-
-    base["source_note"] = last_error or base["source_note"]
-    return base
+    return built
