@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         War and Chain ⚔️
 // @namespace    fries91-war-hub
-// @version      3.6.3
+// @version      3.6.5
 // @description  War and Chain by Fries91. Free-access rebuild with admin and leader/co-leader restrictions kept.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -907,6 +907,25 @@
         } catch (_unused2) {
             return null;
         }
+    }
+
+
+    function shouldKeepOverviewDib(item) {
+        if (!item || typeof item !== 'object') return false;
+        if (item.in_hospital) return true;
+
+        var now = Date.now();
+        var leftAt = item.left_hospital_at ? new Date(item.left_hospital_at).getTime() : 0;
+        if (Number.isFinite(leftAt) && leftAt > 0) {
+            return (now - leftAt) <= 30000;
+        }
+
+        var removeAt = Number(item.overview_remove_after_ts || 0);
+        if (Number.isFinite(removeAt) && removeAt > 0) {
+            return (removeAt * 1000) > now;
+        }
+
+        return false;
     }
 
     function arr(v) {
@@ -2866,23 +2885,29 @@ function renderOverviewTab() {
     var termsText = String((state && state.terms_summary && state.terms_summary.text) || '');
     var medDealsText = String((state && state.med_deals && state.med_deals.text) || '');
 
-    var overviewDibs = arr(state && state.hospital && state.hospital.overview_items);
+    var overviewDibs = arr(state && state.hospital && state.hospital.overview_items).filter(function (item) {
+        return shouldKeepOverviewDib(item);
+    });
+
     var dibsText = overviewDibs.length ? overviewDibs.map(function (item) {
         var dibbedBy = String((item && item.dibbed_by_name) || 'Unknown').trim();
         var dibEnemyName = String((item && item.enemy_name) || 'Enemy').trim();
-        var statusBits = [];
-        if (item && item.in_hospital) statusBits.push('In hospital');
-        if (item && item.left_hospital_at) statusBits.push('Out');
-        return dibbedBy + ' → ' + dibEnemyName + (statusBits.length ? ' (' + statusBits.join(', ') + ')' : '');
+        var suffix = '';
+        if (item && item.in_hospital) {
+            suffix = ' (In hospital)';
+        } else if (item && item.left_hospital_at) {
+            var leftAt = new Date(item.left_hospital_at).getTime();
+            var secsLeft = Number.isFinite(leftAt) && leftAt > 0 ? Math.max(0, 30 - Math.floor((Date.now() - leftAt) / 1000)) : 0;
+            suffix = secsLeft > 0 ? ' (Out ' + secsLeft + 's)' : '';
+        }
+        return dibbedBy + ' → ' + dibEnemyName + suffix;
     }).join('\n') : '';
 
     return [
         '<div class="warhub-grid">',
-
             '<div class="warhub-hero-card warhub-overview-hero">',
                 '<div class="warhub-title">War Overview</div>',
                 '<div class="warhub-sub">Faction vs enemy war view with chain, score, med deals, terms, and dibs.</div>',
-
                 '<div class="warhub-war-head">',
                     '<div class="warhub-war-side">',
                         '<div class="warhub-war-side-label">Your faction</div>',
@@ -2895,41 +2920,17 @@ function renderOverviewTab() {
                     '</div>',
                 '</div>',
             '</div>',
-
             '<div class="warhub-overview-stats">',
-                '<div class="warhub-stat-card good">',
-                    '<div class="warhub-stat-label">Our Score</div>',
-                    '<div class="warhub-stat-value">' + esc(fmtNum(scoreUs)) + '</div>',
-                '</div>',
-                '<div class="warhub-stat-card bad">',
-                    '<div class="warhub-stat-label">Enemy Score</div>',
-                    '<div class="warhub-stat-value">' + esc(fmtNum(scoreThem)) + '</div>',
-                '</div>',
-                '<div class="warhub-stat-card good">',
-                    '<div class="warhub-stat-label">Our Chain</div>',
-                    '<div class="warhub-stat-value">' + esc(fmtNum(chainUs)) + '</div>',
-                '</div>',
-                '<div class="warhub-stat-card bad">',
-                    '<div class="warhub-stat-label">Enemy Chain</div>',
-                    '<div class="warhub-stat-value">' + esc(fmtNum(chainThem)) + '</div>',
-                '</div>',
+                '<div class="warhub-stat-card good"><div class="warhub-stat-label">Our Score</div><div class="warhub-stat-value">' + esc(fmtNum(scoreUs)) + '</div></div>',
+                '<div class="warhub-stat-card bad"><div class="warhub-stat-label">Enemy Score</div><div class="warhub-stat-value">' + esc(fmtNum(scoreThem)) + '</div></div>',
+                '<div class="warhub-stat-card good"><div class="warhub-stat-label">Our Chain</div><div class="warhub-stat-value">' + esc(fmtNum(chainUs)) + '</div></div>',
+                '<div class="warhub-stat-card bad"><div class="warhub-stat-label">Enemy Chain</div><div class="warhub-stat-value">' + esc(fmtNum(chainThem)) + '</div></div>',
             '</div>',
-
             '<div class="warhub-alert-grid">',
-                '<div class="warhub-card warhub-overview-link-card terms">',
-                    '<h4>Terms</h4>',
-                    '<div class="warhub-spy-box">' + esc(termsText || 'No terms saved yet.') + '</div>',
-                '</div>',
-                '<div class="warhub-card warhub-overview-link-card meddeals">',
-                    '<h4>Med Deals</h4>',
-                    '<div class="warhub-spy-box">' + esc(medDealsText || 'No med deals saved yet.') + '</div>',
-                '</div>',
-                '<div class="warhub-card warhub-overview-link-card dibs">',
-                    '<h4>Dibs</h4>',
-                    '<div class="warhub-spy-box">' + esc(dibsText || 'No dibs claimed yet.') + '</div>',
-                '</div>',
+                '<div class="warhub-card warhub-overview-link-card terms"><h4>Terms</h4><div class="warhub-spy-box">' + esc(termsText || 'No terms saved yet.') + '</div></div>',
+                '<div class="warhub-card warhub-overview-link-card meddeals"><h4>Med Deals</h4><div class="warhub-spy-box">' + esc(medDealsText || 'No med deals saved yet.') + '</div></div>',
+                '<div class="warhub-card warhub-overview-link-card dibs"><h4>Dibs</h4><div class="warhub-spy-box">' + esc(dibsText || 'No dibs claimed yet.') + '</div></div>',
             '</div>',
-
         '</div>'
     ].join('');
 }
@@ -4264,14 +4265,43 @@ function _handleActionClick() {
                 var dibEnemyId = String(el.getAttribute('data-user-id') || '').trim();
                 if (!dibEnemyId) return;
 
+                state = state || {};
+                state.hospital = Object.assign({}, state.hospital || {});
+                var viewerDibName = String(
+                    (state.viewer && state.viewer.name) ||
+                    (state.me && state.me.name) ||
+                    ''
+                ).trim();
+
+                if (Array.isArray(state.hospital.items)) {
+                    state.hospital.items = state.hospital.items.map(function (item) {
+                        var row = item && typeof item === 'object' ? Object.assign({}, item) : {};
+                        var rowId = String((row.enemy_user_id || row.user_id || row.id || '')).trim();
+                        if (rowId === dibEnemyId) {
+                            row.dibbed_by_name = viewerDibName || String(row.dibbed_by_name || '');
+                            row.dibbed_by_user_id = String(
+                                (state.viewer && state.viewer.user_id) ||
+                                (state.me && state.me.user_id) ||
+                                row.dibbed_by_user_id ||
+                                ''
+                            ).trim();
+                            row.dibs_available = false;
+                            row.dibs_locked = false;
+                        }
+                        return row;
+                    });
+                }
+
+                renderBody();
+                setStatus('Claiming dibs...', false);
+
                 var dibRes = yield authedReq('POST', '/api/hospital/dibs/' + encodeURIComponent(dibEnemyId), {});
                 if (!dibRes.ok) {
+                    yield loadHospital(true);
+                    renderBody();
                     setStatus((dibRes.json && dibRes.json.error) || 'Failed to claim dibs.', true);
                     return;
                 }
-
-                state = state || {};
-                state.hospital = Object.assign({}, state.hospital || {});
 
                 if (dibRes.json && Array.isArray(dibRes.json.hospital_items)) {
                     state.hospital.items = dibRes.json.hospital_items.slice();
