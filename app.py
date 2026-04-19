@@ -347,30 +347,12 @@ def _normalize_member_access_row(row: Dict[str, Any]) -> Dict[str, Any]:
 def _build_member_bar_payload(member: Dict[str, Any], api_key: str = "") -> Dict[str, Any]:
     bars = {}
     med_cd = 0
-    booster_cd = 0
-    debug = {"step": "no_api_key" if not api_key else "not_loaded"}
-
     if api_key:
         live = member_live_bars(api_key, user_id=str(member.get("user_id") or ""))
-        debug = live.get("debug") or {"step": "no_debug_returned"}
-        debug = {
-            **debug,
-            "ok": bool(live.get("ok")),
-            "error": str(live.get("error") or ""),
-            "resolved_user_id": str(live.get("user_id") or ""),
-            "resolved_name": str(live.get("name") or ""),
-        }
         if live.get("ok"):
             bars = live.get("bars") or {}
             med_cd = _to_int(live.get("medical_cooldown"), 0)
-            booster_cd = _to_int(live.get("booster_cooldown"), 0)
-
-    return {
-        "bars": bars,
-        "medical_cooldown": med_cd,
-        "booster_cooldown": booster_cd,
-        "debug": debug,
-    }
+    return {"bars": bars, "medical_cooldown": med_cd}
 
 
 def _build_live_faction_members(user: Dict[str, Any], return_debug: bool = False):
@@ -471,8 +453,6 @@ def _build_live_faction_members(user: Dict[str, Any], return_debug: bool = False
             "happy": live_bars.get("happy") or base_member.get("happy") or {},
             "medical_cooldown": _to_int(live_bar_payload.get("medical_cooldown"), 0) or _to_int(base_member.get("medical_cooldown"), 0),
             "medical_cooldown_text": _seconds_to_text(_to_int(live_bar_payload.get("medical_cooldown"), 0) or _to_int(base_member.get("medical_cooldown"), 0)),
-            "booster_cooldown": _to_int(live_bar_payload.get("booster_cooldown"), 0),
-            "live_bar_debug": live_bar_payload.get("debug") or {},
         }
 
     for member in live_members:
@@ -1582,6 +1562,7 @@ def api_faction_members():
         count=len(items),
         source="api_faction_members_single_path",
         viewer_user_id=viewer_user_id,
+        viewer_source=(viewer_row.get("source") if isinstance(viewer_row, dict) else "") or "",
         viewer_live_bar_debug=(viewer_row.get("live_bar_debug") if isinstance(viewer_row, dict) else {}) or {},
         debug=debug,
     )
