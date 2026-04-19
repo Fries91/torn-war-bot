@@ -65,11 +65,11 @@
         ['members', 'Members'],
         ['enemies', 'Enemies'],
         ['hospital', 'Hospital'],
-        ['chain', 'Chain']
+        ['chain', 'Chain'],
+        ['targets', 'Targets']
     ];
 
     var TAB_ROW_2 = [
-        ['targets', 'Targets'],
         ['meddeals', 'Med Deals'],
         ['terms', 'Terms'],
         ['settings', 'Settings'],
