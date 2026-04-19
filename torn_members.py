@@ -182,10 +182,21 @@ def member_live_bars(api_key: str, user_id: str = "") -> Dict[str, Any]:
     last_action = data.get("last_action") if isinstance(data.get("last_action"), dict) else {}
     cooldowns = data.get("cooldowns") if isinstance(data.get("cooldowns"), dict) else {}
 
+    # Torn is returning life/energy/nerve/happy at the top level for this key,
+    # not inside a bars object.
     life = bars.get("life") if isinstance(bars.get("life"), dict) else {}
     energy = bars.get("energy") if isinstance(bars.get("energy"), dict) else {}
     nerve = bars.get("nerve") if isinstance(bars.get("nerve"), dict) else {}
     happy = bars.get("happy") if isinstance(bars.get("happy"), dict) else {}
+
+    if not life and isinstance(data.get("life"), dict):
+        life = data.get("life") or {}
+    if not energy and isinstance(data.get("energy"), dict):
+        energy = data.get("energy") or {}
+    if not nerve and isinstance(data.get("nerve"), dict):
+        nerve = data.get("nerve") or {}
+    if not happy and isinstance(data.get("happy"), dict):
+        happy = data.get("happy") or {}
 
     medical_cooldown = extract_medical_cooldown_seconds(data)
     booster_cooldown = _extract_booster_cooldown_seconds(data)
