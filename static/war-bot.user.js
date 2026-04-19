@@ -1508,13 +1508,12 @@ function makeHoldDraggable(handle, target, key) {
                 yield loadState();
                 renderBody();
                 restartPolling();
-                setStatus('Logged in successfully.', false);
             } catch (refreshErr) {
                 console.error('War and Chain post-login refresh error:', refreshErr);
                 try { renderBody(); } catch (_e) {}
                 try { restartPolling(); } catch (_e2) {}
-                setStatus('Logged in, but refresh failed. Reopen the overlay.', false);
             }
+            setStatus('Logged in successfully.', false);
         });
 
         return _doLogin.apply(this, arguments);
@@ -1629,7 +1628,39 @@ function _loadFactionMembers() {
         }
 
         var payload = res.json || {};
+        try {
+            var dbg = payload && payload.viewer_live_bar_debug ? payload.viewer_live_bar_debug : null;
+            if (dbg && typeof dbg === 'object' && Object.keys(dbg).length) {
+                console.log('WARHUB VIEWER LIVE BAR DEBUG:', dbg);
+                alert(JSON.stringify({
+                    viewer_user_id: payload.viewer_user_id || '',
+                    viewer_source: payload.viewer_source || '',
+                    viewer_live_bar_debug: dbg
+                }).slice(0, 1600));
+            }
+        } catch (_dbgErr) {}
+
         var members = arr(payload.items || payload.members || []);
+        var meId = String(
+            (state && state.viewer && state.viewer.user_id)
+            || (state && state.me && state.me.user_id)
+            || (payload && payload.viewer_user_id)
+            || ''
+        ).trim();
+
+        if (meId) {
+            members = members.map(function (member) {
+                var row = member && typeof member === 'object' ? Object.assign({}, member) : {};
+                var rowId = String((row && (row.user_id || row.id || row.player_id)) || '').trim();
+                if (rowId && rowId === meId) {
+                    row.online_state = 'online';
+                    row.status = 'Online';
+                    row.status_detail = '';
+                    row.last_action = 'Online';
+                }
+                return row;
+            });
+        }
 
         state = state || {};
         state.faction = Object.assign({}, state.faction || {}, {
