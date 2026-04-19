@@ -372,7 +372,7 @@ def _build_live_faction_members(user: Dict[str, Any], return_debug: bool = False
         }
         viewer_user_id = str(user.get("user_id") or "").strip()
         if viewer_user_id:
-            viewer_bars = _build_member_bar_payload({}, api_key=str(user.get("api_key") or ""))
+            viewer_bars = _build_member_bar_payload({"user_id": viewer_user_id}, api_key=str(user.get("api_key") or ""))
             fallback = [{
                 "user_id": viewer_user_id,
                 "name": str(user.get("name") or "You"),
@@ -480,7 +480,7 @@ def _build_live_faction_members(user: Dict[str, Any], return_debug: bool = False
     if not out:
         viewer_user_id = str(user.get("user_id") or "").strip()
         if viewer_user_id:
-            viewer_bars = _build_member_bar_payload({}, api_key=str(user.get("api_key") or ""))
+            viewer_bars = _build_member_bar_payload({"user_id": viewer_user_id}, api_key=str(user.get("api_key") or ""))
             out.append({
                 "user_id": viewer_user_id,
                 "name": str(user.get("name") or "You"),
