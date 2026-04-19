@@ -69,7 +69,6 @@
     ];
 
     var TAB_ROW_2 = [
-        ['targets', 'Targets'],
         ['meddeals', 'Med Deals'],
         ['terms', 'Terms'],
         ['settings', 'Settings'],
@@ -1004,44 +1003,6 @@
             tickMembersCountdowns();
         }, 1000);
     }
-
-
-    function getLocalTargets() {
-        try {
-            var raw = GM_getValue(K_TARGETS_LOCAL, '[]');
-            var parsed = JSON.parse(raw);
-            return Array.isArray(parsed) ? parsed : [];
-        } catch (_e) {
-            return [];
-        }
-    }
-
-    function setLocalTargets(items) {
-        try {
-            GM_setValue(K_TARGETS_LOCAL, JSON.stringify(Array.isArray(items) ? items : []));
-        } catch (_e) {}
-    }
-
-    function targetItemId(item) {
-        if (!item || typeof item !== 'object') return '';
-        return String(item.user_id || item.id || item.player_id || '').trim();
-    }
-
-    function mergeTargets(primary, secondary) {
-        var out = [];
-        var seen = {};
-        arr(primary).concat(arr(secondary)).forEach(function (item) {
-            var id = targetItemId(item);
-            if (!id || seen[id]) return;
-            seen[id] = true;
-            out.push({
-                user_id: id,
-                name: String(item.name || item.player_name || ('Enemy ' + id)).trim()
-            });
-        });
-        return out;
-    }
-
 
     // ============================================================
     // 07. LOCAL NOTIFICATIONS / STATUS
