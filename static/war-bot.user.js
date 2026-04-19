@@ -516,7 +516,7 @@
 .warhub-btn.ghost { background: rgba(255,255,255,.08) !important; }\n\
 .warhub-btn.gray { background: rgba(255,255,255,.10) !important; }\n\
 .warhub-btn.green { background: linear-gradient(180deg, rgba(42,168,95,.98), rgba(21,120,64,.98)) !important; }\n\
-.warhub-btn.warn { background: linear-gradient(180deg, rgba(226,154,27,.98), rgba(163,102,8,.98)) !important; }\n\
+.warhub-btn.warn { background: linear-gradient(180deg, rgba(226,154,27,.98), rgba(163,102,8,.98)) !important; }\n\.warhub-btn.bounty { background: linear-gradient(180deg, rgba(220,50,50,.98), rgba(145,18,18,.98)) !important; border-color: rgba(255,255,255,.14) !important; }\n\
 .warhub-pill {\n\
   display: inline-flex !important;\n\
   align-items: center !important;\n\
@@ -2610,7 +2610,7 @@ function _handleTabClick() {
                         ) + '</span>',
                     '</div>',
                     '<div class="warhub-row">',
-                        '<a class="warhub-btn ghost" href="' + esc(bountyUrl(member)) + '" target="_blank" rel="noopener noreferrer">Bounty</a>',
+                        '<a class="warhub-btn bounty" href="' + esc(bountyUrl(member)) + '" target="_blank" rel="noopener noreferrer">Bounty</a>',
                     '</div>',
                 '</div>',
                 '<div class="warhub-statline">',
