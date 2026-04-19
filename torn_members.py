@@ -40,6 +40,51 @@ def _extract_booster_cooldown_seconds(data: Dict[str, Any]) -> int:
     return 0
 
 
+def _first_int(source: Dict[str, Any], *keys: str) -> int:
+    if not isinstance(source, dict):
+        return 0
+    for key in keys:
+        value = source.get(key)
+        if value in (None, ""):
+            continue
+        try:
+            return int(value)
+        except Exception:
+            pass
+    return 0
+
+
+def _extract_bar_any(bar: Dict[str, Any]) -> Dict[str, int]:
+    bar = bar if isinstance(bar, dict) else {}
+
+    current = _first_int(
+        bar,
+        "current",
+        "amount",
+        "value",
+        "used",
+        "filled",
+        "full",
+    )
+    maximum = _first_int(
+        bar,
+        "maximum",
+        "max",
+        "total",
+        "cap",
+        "full",
+        "available",
+    )
+
+    if maximum <= 0 and current > 0:
+        maximum = current
+
+    return {
+        "current": current,
+        "maximum": maximum,
+    }
+
+
 def member_live_bars(api_key: str, user_id: str = "") -> Dict[str, Any]:
     api_key = str(api_key or "").strip()
     requested_user_id = str(user_id or "").strip()
@@ -109,7 +154,9 @@ def member_live_bars(api_key: str, user_id: str = "") -> Dict[str, Any]:
             },
         }
 
-    resolved_user_id = str(data.get("player_id") or data.get("playerID") or data.get("user_id") or data.get("id") or "").strip()
+    resolved_user_id = str(
+        data.get("player_id") or data.get("playerID") or data.get("user_id") or data.get("id") or ""
+    ).strip()
     if requested_user_id and resolved_user_id and resolved_user_id != requested_user_id:
         return {
             "ok": False,
@@ -134,12 +181,19 @@ def member_live_bars(api_key: str, user_id: str = "") -> Dict[str, Any]:
     status = data.get("status") if isinstance(data.get("status"), dict) else {}
     last_action = data.get("last_action") if isinstance(data.get("last_action"), dict) else {}
     cooldowns = data.get("cooldowns") if isinstance(data.get("cooldowns"), dict) else {}
+
     life = bars.get("life") if isinstance(bars.get("life"), dict) else {}
     energy = bars.get("energy") if isinstance(bars.get("energy"), dict) else {}
     nerve = bars.get("nerve") if isinstance(bars.get("nerve"), dict) else {}
     happy = bars.get("happy") if isinstance(bars.get("happy"), dict) else {}
+
     medical_cooldown = extract_medical_cooldown_seconds(data)
     booster_cooldown = _extract_booster_cooldown_seconds(data)
+
+    life_out = _extract_bar_any(life)
+    energy_out = _extract_bar_any(energy)
+    nerve_out = _extract_bar_any(nerve)
+    happy_out = _extract_bar_any(happy)
 
     return {
         "ok": True,
@@ -150,10 +204,10 @@ def member_live_bars(api_key: str, user_id: str = "") -> Dict[str, Any]:
         "booster_cooldown": to_int(booster_cooldown, 0),
         "cooldowns": cooldowns,
         "bars": {
-            "life": {"current": to_int(life.get("current"), 0), "maximum": to_int(life.get("maximum"), 0)},
-            "energy": {"current": to_int(energy.get("current"), 0), "maximum": to_int(energy.get("maximum"), 0)},
-            "nerve": {"current": to_int(nerve.get("current"), 0), "maximum": to_int(nerve.get("maximum"), 0)},
-            "happy": {"current": to_int(happy.get("current"), 0), "maximum": to_int(happy.get("maximum"), 0)},
+            "life": life_out,
+            "energy": energy_out,
+            "nerve": nerve_out,
+            "happy": happy_out,
         },
         "status": status,
         "last_action": last_action,
@@ -169,6 +223,10 @@ def member_live_bars(api_key: str, user_id: str = "") -> Dict[str, Any]:
             "energy_raw": energy,
             "nerve_raw": nerve,
             "happy_raw": happy,
+            "life_out": life_out,
+            "energy_out": energy_out,
+            "nerve_out": nerve_out,
+            "happy_out": happy_out,
             "cooldowns_keys": sorted(list(cooldowns.keys())) if isinstance(cooldowns, dict) else [],
             "medical_cooldown_raw": medical_cooldown,
             "booster_cooldown_raw": booster_cooldown,
