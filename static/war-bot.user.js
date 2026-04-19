@@ -588,40 +588,6 @@
   color: #fff !important;\n\
   text-decoration: none !important;\n\
 }\n\
-.warhub-role-bubble {\n\
-  display: inline-flex !important;\n\
-  align-items: center !important;\n\
-  min-height: 20px !important;\n\
-  padding: 2px 7px !important;\n\
-  border-radius: 999px !important;\n\
-  font-size: 10px !important;\n\
-  font-weight: 900 !important;\n\
-  line-height: 1 !important;\n\
-  border: 1px solid rgba(255,255,255,.12) !important;\n\
-  color: #fff !important;\n\
-}\n\
-.warhub-role-admin { background: rgba(46,118,217,.40) !important; }\n\
-.warhub-role-leader { background: rgba(188,46,46,.40) !important; }\n\
-.warhub-role-coleader { background: rgba(214,132,26,.40) !important; }\n\
-.warhub-role-member { background: rgba(255,255,255,.10) !important; }\n\
-.warhub-members-toolbar {\n\
-  display:flex !important;\n\
-  gap:8px !important;\n\
-  flex-wrap:wrap !important;\n\
-}\n\
-.warhub-members-toolbar .warhub-input {\n\
-  flex:1 1 220px !important;\n\
-}\n\
-.warhub-member-actions {\n\
-  display:flex !important;\n\
-  gap:6px !important;\n\
-  flex-wrap:wrap !important;\n\
-}\n\
-.warhub-btn.small {\n\
-  min-height: 32px !important;\n\
-  padding: 7px 10px !important;\n\
-  font-size: 12px !important;\n\
-}\n\
 .warhub-statline {\n\
   display: flex !important;\n\
   align-items: center !important;\n\
@@ -1653,19 +1619,13 @@ function _loadFactionMembers() {
             return factionMembersCache.slice();
         }
 
-        state = state || {};
-        state.faction = state.faction || {};
-
-        var fallbackMembers = arr((state.faction && state.faction.members) || []);
         var res = yield authedReq('GET', '/api/faction/members');
+        try {
+            console.log('FACTION MEMBERS RESPONSE:', res);
+            alert(JSON.stringify(res && res.json ? res.json : res).slice(0, 800));
+        } catch (_debugErr) {}
 
         if (!res.ok || !res.json || typeof res.json !== 'object') {
-            if (fallbackMembers.length) {
-                factionMembersCache = fallbackMembers.slice();
-                currentFactionMembers = fallbackMembers.slice();
-                membersLiveStamp = Date.now();
-                return factionMembersCache.slice();
-            }
             factionMembersCache = [];
             currentFactionMembers = [];
             membersLiveStamp = 0;
@@ -1675,19 +1635,16 @@ function _loadFactionMembers() {
         var payload = res.json || {};
         var members = arr(payload.items || payload.members || []);
 
+        state = state || {};
         state.faction = Object.assign({}, state.faction || {}, {
-            faction_id: payload.faction_id || state.faction.faction_id || '',
-            faction_name: payload.faction_name || state.faction.faction_name || '',
-            name: payload.faction_name || state.faction.name || ''
+            faction_id: payload.faction_id || '',
+            faction_name: payload.faction_name || '',
+            name: payload.faction_name || ''
         });
-
-        if (!members.length && fallbackMembers.length) {
-            members = fallbackMembers.slice();
-        }
 
         factionMembersCache = members.slice();
         currentFactionMembers = members.slice();
-        membersLiveStamp = members.length ? Date.now() : 0;
+        membersLiveStamp = Date.now();
         state.faction.members = members.slice();
 
         return factionMembersCache.slice();
@@ -2630,32 +2587,6 @@ function _handleTabClick() {
     // 17. ROW RENDERERS
     // ============================================================
 
-
-    function roleBubbleInfo(member) {
-        var raw = String((member && (member.position || member.faction_position || member.role || '')) || '').trim();
-        var low = raw.toLowerCase();
-        if (low.indexOf('admin') >= 0 || low === 'owner') return { cls: 'warhub-role-admin', text: raw || 'Admin' };
-        if (low === 'leader') return { cls: 'warhub-role-leader', text: 'Leader' };
-        if (low.indexOf('co') >= 0 && low.indexOf('leader') >= 0) return { cls: 'warhub-role-coleader', text: raw || 'Co-Leader' };
-        if (!raw) return null;
-        return { cls: 'warhub-role-member', text: raw };
-    }
-
-    function statusDetailText(member, st, stateCd) {
-        var parts = [];
-        var status = String((member && (member.status_text || member.description || member.reason || member.travel_destination || member.destination)) || '').trim();
-        if (st === 'travel') {
-            var eta = stateCd > 0 ? shortCd(stateCd, 'ETA') : '';
-            if (status) parts.push(status);
-            if (eta) parts.push('ETA ' + eta);
-        } else if (st === 'hospital' || st === 'jail') {
-            if (stateCd > 0) parts.push(shortCd(stateCd, st === 'hospital' ? 'Out' : 'Free'));
-        } else if (status) {
-            parts.push(status);
-        }
-        return parts.join(' · ');
-    }
-
     function renderMemberRow(member) {
         var id = getMemberId(member);
         var name = getMemberName(member);
@@ -2664,8 +2595,7 @@ function _handleTabClick() {
         var energy = energyValue(member);
         var life = lifeValue(member);
         var med = medCooldownValue(member);
-        var roleInfo = roleBubbleInfo(member);
-        var detailText = statusDetailText(member, st, stateCd);
+        var position = String((member && (member.position || member.faction_position || member.role || '')) || '').trim();
 
         return [
             '<div class="warhub-member-row" ' +
@@ -2675,7 +2605,7 @@ function _handleTabClick() {
                 '<div class="warhub-member-main">',
                     '<div class="warhub-row" style="gap:8px;min-width:0;flex:1;align-items:center;">',
                         '<a class="warhub-member-name" href="' + esc(profileUrl(member)) + '" target="_blank" rel="noopener noreferrer">' + esc(name) + '</a>',
-                        (roleInfo ? '<span class="warhub-role-bubble ' + esc(roleInfo.cls) + '">' + esc(roleInfo.text) + '</span>' : ''),
+                        (position ? '<span class="warhub-pill neutral">' + esc(position) + '</span>' : ''),
                         '<span class="warhub-pill ' + esc(st) + '" data-statuscd>' + esc(
                             st === 'hospital' ? (stateCd > 0 ? 'Hospital (' + shortCd(stateCd, 'Hospital') + ')' : 'Hospital') :
                             st === 'jail' ? (stateCd > 0 ? 'Jail (' + shortCd(stateCd, 'Jail') + ')' : 'Jail') :
@@ -2683,11 +2613,10 @@ function _handleTabClick() {
                             humanStateLabel(st)
                         ) + '</span>',
                     '</div>',
-                    '<div class="warhub-member-actions">',
-                        '<a class="warhub-btn ghost small" href="' + esc(bountyUrl(member)) + '" target="_blank" rel="noopener noreferrer">Bounty</a>',
+                    '<div class="warhub-row">',
+                        '<a class="warhub-btn ghost" href="' + esc(bountyUrl(member)) + '" target="_blank" rel="noopener noreferrer">Bounty</a>',
                     '</div>',
                 '</div>',
-                detailText ? '<div class="warhub-sub">' + esc(detailText) + '</div>' : '',
                 '<div class="warhub-statline">',
                     '<span title="Energy">⚡ ' + esc(energy == null ? '—' : String(energy)) + '</span>',
                     '<span title="Life">❤️ ' + esc(life) + '</span>',
@@ -2987,28 +2916,27 @@ function renderOverviewTab() {
     ].join('');
 }
     function renderMembersTab() {
-    var members = arr(currentFactionMembers || factionMembersCache || (state && state.faction && state.faction.members) || []);
+    var members = arr(currentFactionMembers || factionMembersCache || []);
+
     var search = String(GM_getValue('warhub_members_search', '') || '').trim().toLowerCase();
+
     var filtered = members.filter(function (m) {
         if (!search) return true;
         return memberSearchText(m).indexOf(search) >= 0;
     });
+
     var grouped = groupMembers(filtered);
     var total = filtered.length;
-    var hasCached = arr(currentFactionMembers || factionMembersCache || []).length > 0;
-    var helperText = total
-        ? 'Faction members only. Live energy, life, and med cooldown stay here only.'
-        : 'Tap Refresh to load live faction members. This tab only shows your faction.';
 
     return [
         '<div class="warhub-grid">',
             '<div class="warhub-hero-card">',
                 '<div class="warhub-title">Members</div>',
-                '<div class="warhub-sub">' + esc(helperText) + '</div>',
+                '<div class="warhub-sub">Faction members only. Live energy, life, and med cooldown stay here only.</div>',
             '</div>',
 
             '<div class="warhub-card">',
-                '<div class="warhub-members-toolbar">',
+                '<div class="warhub-row">',
                     '<input id="warhub-members-search" class="warhub-input" type="text" value="' + esc(search) + '" placeholder="Search member name, ID, status or position" />',
                     '<button type="button" class="warhub-btn ghost" data-action="members-refresh">Refresh</button>',
                 '</div>',
@@ -3020,17 +2948,17 @@ function renderOverviewTab() {
                     '<span class="warhub-pill online">Online ' + esc(String(grouped.online.length)) + '</span>',
                     '<span class="warhub-pill idle">Idle ' + esc(String(grouped.idle.length)) + '</span>',
                     '<span class="warhub-pill travel">Travel ' + esc(String(grouped.travel.length)) + '</span>',
-                    '<span class="warhub-pill hospital">Hospital ' + esc(String(grouped.hospital.length)) + '</span>',
                     '<span class="warhub-pill jail">Jail ' + esc(String(grouped.jail.length)) + '</span>',
+                    '<span class="warhub-pill hospital">Hospital ' + esc(String(grouped.hospital.length)) + '</span>',
                     '<span class="warhub-pill offline">Offline ' + esc(String(grouped.offline.length)) + '</span>',
                 '</div>',
             '</div>',
 
-            total ? renderGroupBlock('members_online', grouped.online, renderMemberRow, true) : '<div class="warhub-card">' + esc(hasCached ? 'No matching faction members found for that search.' : 'No faction members loaded yet.') + '</div>',
+            total ? renderGroupBlock('members_online', grouped.online, renderMemberRow, true) : '<div class="warhub-card">No faction members loaded yet.</div>',
             total ? renderGroupBlock('members_idle', grouped.idle, renderMemberRow, true) : '',
             total ? renderGroupBlock('members_travel', grouped.travel, renderMemberRow, false) : '',
-            total ? renderGroupBlock('members_hospital', grouped.hospital, renderMemberRow, true) : '',
             total ? renderGroupBlock('members_jail', grouped.jail, renderMemberRow, false) : '',
+            total ? renderGroupBlock('members_hospital', grouped.hospital, renderMemberRow, true) : '',
             total ? renderGroupBlock('members_offline', grouped.offline, renderMemberRow, false) : '',
         '</div>'
     ].join('');
@@ -4422,7 +4350,6 @@ function _handleActionClick() {
             membersSearch.__warhubBound = true;
             membersSearch.addEventListener('input', function () {
                 GM_setValue('warhub_members_search', String(membersSearch.value || ''));
-                if (currentTab === 'members') renderBody();
             });
         }
 
