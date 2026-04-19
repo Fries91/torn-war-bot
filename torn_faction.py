@@ -50,12 +50,18 @@ def faction_basic(api_key: str, faction_id: str = "") -> Dict[str, Any]:
             return payload["faction"]
         return payload
 
-    def _extract_members(payload: Any) -> List[Dict[str, Any]]:
+    def _extract_raw_members(payload: Any) -> Dict[str, Any]:
         if not isinstance(payload, dict):
-            return []
-        raw_members = payload.get("members")
-        if not isinstance(raw_members, dict):
-            return []
+            return {}
+        if isinstance(payload.get("members"), dict):
+            return payload.get("members") or {}
+        faction_root = payload.get("faction")
+        if isinstance(faction_root, dict) and isinstance(faction_root.get("members"), dict):
+            return faction_root.get("members") or {}
+        return {}
+
+    def _extract_members(payload: Any) -> List[Dict[str, Any]]:
+        raw_members = _extract_raw_members(payload)
         out: List[Dict[str, Any]] = []
         for uid, member in raw_members.items():
             if not isinstance(member, dict):
@@ -98,22 +104,12 @@ def faction_basic(api_key: str, faction_id: str = "") -> Dict[str, Any]:
             "debug_attempts": debug_attempts,
         }
 
-    if not members:
-        return {
-            "ok": False,
-            "faction_id": resolved_faction_id or requested_faction_id,
-            "faction_name": resolved_faction_name,
-            "members": [],
-            "error": "Faction returned no members.",
-            "debug_attempts": debug_attempts,
-        }
-
     return {
         "ok": True,
         "faction_id": resolved_faction_id or requested_faction_id,
         "faction_name": resolved_faction_name,
         "members": members,
-        "error": "",
+        "error": "" if members else "Faction returned no members.",
         "source": source,
         "params": {k: v for k, v in params.items() if k != "key"},
         "debug_attempts": debug_attempts,
