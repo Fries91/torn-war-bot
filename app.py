@@ -841,6 +841,25 @@ def _build_state_payload(user: Dict[str, Any]) -> Dict[str, Any]:
 
     access = _feature_access_for_user(user)
     war = _build_war_payload(user) if faction_id else {}
+    enemy_payload = _build_enemy_payload(user, war) if faction_id else {
+        "items": [],
+        "count": 0,
+        "enemy_faction_id": "",
+        "enemy_faction_name": "",
+        "buckets": _empty_enemy_buckets(),
+        "counts_by_state": {key: 0 for key in _enemy_bucket_order()},
+        "order": _enemy_bucket_order(),
+        "war_ref": {},
+    }
+    hospital_payload = _build_hospital_payload(user, war, enemy_payload) if faction_id else {
+        "items": [],
+        "count": 0,
+        "overview_items": [],
+        "overview_count": 0,
+        "enemy_faction_id": "",
+        "enemy_faction_name": "",
+    }
+
     notifications = list_notifications(str(user.get("user_id") or ""), limit=25)
     terms_summary_row = get_faction_terms_summary(faction_id) if faction_id else {}
     med_deals_payload = _build_med_deals_payload(user)
@@ -856,6 +875,15 @@ def _build_state_payload(user: Dict[str, Any]) -> Dict[str, Any]:
         },
         "faction": {"faction_id": faction_id, "faction_name": faction_name, "name": faction_name},
         "war": war,
+        "enemies": enemy_payload.get("items") or [],
+        "hospital": {
+            "items": hospital_payload.get("items") or [],
+            "count": hospital_payload.get("count") or 0,
+            "overview_items": hospital_payload.get("overview_items") or [],
+            "overview_count": hospital_payload.get("overview_count") or 0,
+            "enemy_faction_id": hospital_payload.get("enemy_faction_id") or "",
+            "enemy_faction_name": hospital_payload.get("enemy_faction_name") or "",
+        },
         "notifications": notifications,
         "access": access,
         "admin": {
