@@ -12,10 +12,9 @@ def faction_basic(api_key: str, faction_id: str = "") -> Dict[str, Any]:
     """
     Strict faction-only loader.
 
-    Single-path rules:
-    - Only uses one faction endpoint shape.
-    - Requested faction_id -> /faction/{id}?selections=basic,members
-    - No v2 fallback.
+    Rules:
+    - For the logged-in user's own faction, use /faction/ with the user's key.
+    - Validate returned faction_id against requested faction_id when provided.
     - No enemy fallback.
     - No war fallback.
     - No mixed-source recovery.
@@ -34,14 +33,9 @@ def faction_basic(api_key: str, faction_id: str = "") -> Dict[str, Any]:
             "debug_attempts": [],
         }
 
-    if requested_faction_id:
-        url = f"{API_BASE}/faction/{requested_faction_id}"
-        params = {"selections": "basic,members", "key": api_key, "striptags": "true"}
-        source = "faction_basic_members_direct"
-    else:
-        url = f"{API_BASE}/faction/"
-        params = {"selections": "basic,members", "key": api_key, "striptags": "true"}
-        source = "faction_self"
+    url = f"{API_BASE}/faction/"
+    params = {"selections": "basic,members", "key": api_key, "striptags": "true"}
+    source = "faction_self_members_direct"
 
     def _extract_root(payload: Any) -> Dict[str, Any]:
         if not isinstance(payload, dict):
@@ -86,12 +80,15 @@ def faction_basic(api_key: str, faction_id: str = "") -> Dict[str, Any]:
     members = _extract_members(payload)
     resolved_faction_id = str(root.get("ID") or root.get("id") or root.get("faction_id") or "").strip()
     resolved_faction_name = str(root.get("name") or root.get("faction_name") or "").strip()
+
     debug_attempts = [{
         "source": source,
         "ok": True,
-        "faction_id": resolved_faction_id,
+        "requested_faction_id": requested_faction_id,
+        "resolved_faction_id": resolved_faction_id,
         "faction_name": resolved_faction_name,
         "member_count": len(members),
+        "payload_keys": sorted(list(payload.keys())) if isinstance(payload, dict) else [],
     }]
 
     if requested_faction_id and resolved_faction_id and resolved_faction_id != requested_faction_id:
