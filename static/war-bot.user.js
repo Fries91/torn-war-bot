@@ -62,10 +62,10 @@
 
     var TAB_ROW_1 = [
         ['overview', 'Overview'],
+        ['members', 'Members'],
         ['enemies', 'Enemies'],
         ['hospital', 'Hospital'],
-        ['chain', 'Chain'],
-        ['targets', 'Targets']
+        ['chain', 'Chain']
     ];
 
     var TAB_ROW_2 = [
@@ -105,7 +105,6 @@
     var isOpen = !!GM_getValue(K_OPEN, false);
     var currentTab = GM_getValue(K_TAB, 'settings');
     if (currentTab === 'owner') currentTab = 'admin';
-    if (currentTab === 'members') currentTab = 'enemies';
     if (currentTab === 'summary' || currentTab === 'wartop5' || currentTab === 'faction') currentTab = 'overview';
 
     var pollTimer = null;
@@ -859,11 +858,11 @@
 
     function esc(v) {
         return String(v == null ? '' : v)
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-                        .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#39;');
+            .replace(/&/g, '&')
+            .replace(/</g, '<')
+            .replace(/>/g, '>')
+                        .replace(/"/g, '"')
+            .replace(/'/g, ''');
     }
 
     function fmtNum(v) {
@@ -1909,7 +1908,6 @@ function _refreshEnemiesLive() {
             || tab === 'members'
             || tab === 'enemies'
             || tab === 'hospital'
-            || tab === 'summary'
             || tab === 'faction';
     }
 
@@ -1942,6 +1940,12 @@ function _refreshEnemiesLive() {
             try {
                 if (currentTab === 'overview') {
                     yield refreshOverviewLive();
+                    renderLiveTabOnly();
+                    return;
+                }
+
+                if (currentTab === 'members') {
+                    yield refreshMembersLive();
                     renderLiveTabOnly();
                     return;
                 }
@@ -1993,7 +1997,10 @@ function _handleTabClick() {
 
         loadInFlight = true;
         try {
-            if (currentTab === 'enemies') {
+            if (currentTab === 'members') {
+                yield loadFactionMembers(true);
+                membersLiveStamp = Date.now();
+            } else if (currentTab === 'enemies') {
                 yield loadWarData(true);
                 yield loadEnemies(true);
             } else if (currentTab === 'hospital') {
@@ -2510,6 +2517,7 @@ function _handleTabClick() {
         var energy = energyValue(member);
         var life = lifeValue(member);
         var med = medCooldownValue(member);
+        var position = String((member && (member.position || member.faction_position || member.role || '')) || '').trim();
 
         return [
             '<div class="warhub-member-row" ' +
@@ -2517,8 +2525,9 @@ function _handleTabClick() {
                 'data-statuscd-base="' + esc(String(stateCd)) + '" ' +
                 'data-state-name="' + esc(st) + '">',
                 '<div class="warhub-member-main">',
-                    '<div class="warhub-row">',
+                    '<div class="warhub-row" style="gap:8px;min-width:0;flex:1;align-items:center;">',
                         '<a class="warhub-member-name" href="' + esc(profileUrl(member)) + '" target="_blank" rel="noopener noreferrer">' + esc(name) + '</a>',
+                        (position ? '<span class="warhub-pill neutral">' + esc(position) + '</span>' : ''),
                         '<span class="warhub-pill ' + esc(st) + '" data-statuscd>' + esc(
                             st === 'hospital' ? (stateCd > 0 ? 'Hospital (' + shortCd(stateCd, 'Hospital') + ')' : 'Hospital') :
                             st === 'jail' ? (stateCd > 0 ? 'Jail (' + shortCd(stateCd, 'Jail') + ')' : 'Jail') :
@@ -2531,9 +2540,9 @@ function _handleTabClick() {
                     '</div>',
                 '</div>',
                 '<div class="warhub-statline">',
-                    '<span>⚡ ' + esc(energy == null ? '—' : String(energy)) + '</span>',
-                    '<span>✚ ' + esc(life) + '</span>',
-                    '<span>💊 <span data-medcd>' + esc(med) + '</span></span>',
+                    '<span title="Energy">⚡ ' + esc(energy == null ? '—' : String(energy)) + '</span>',
+                    '<span title="Life">❤️ ' + esc(life) + '</span>',
+                    '<span title="Medical Cooldown">💊 <span data-medcd>' + esc(med) + '</span></span>',
                 '</div>',
             '</div>'
         ].join('');
@@ -2829,12 +2838,7 @@ function renderOverviewTab() {
     ].join('');
 }
     function renderMembersTab() {
-    var members = arr(
-        currentFactionMembers ||
-        factionMembersCache ||
-        (state && state.members) ||
-        []
-    );
+    var members = arr(currentFactionMembers || factionMembersCache || []);
 
     var search = String(GM_getValue('warhub_members_search', '') || '').trim().toLowerCase();
 
@@ -2844,12 +2848,13 @@ function renderOverviewTab() {
     });
 
     var grouped = groupMembers(filtered);
+    var total = filtered.length;
 
     return [
         '<div class="warhub-grid">',
             '<div class="warhub-hero-card">',
                 '<div class="warhub-title">Members</div>',
-                '<div class="warhub-sub">Your faction only</div>',
+                '<div class="warhub-sub">Faction members only. Live energy, life, and med cooldown stay here only.</div>',
             '</div>',
 
             '<div class="warhub-card">',
@@ -2861,6 +2866,7 @@ function renderOverviewTab() {
 
             '<div class="warhub-card">',
                 '<div class="warhub-row">',
+                    '<span class="warhub-pill neutral">Total ' + esc(String(total)) + '</span>',
                     '<span class="warhub-pill online">Online ' + esc(String(grouped.online.length)) + '</span>',
                     '<span class="warhub-pill idle">Idle ' + esc(String(grouped.idle.length)) + '</span>',
                     '<span class="warhub-pill travel">Travel ' + esc(String(grouped.travel.length)) + '</span>',
@@ -2870,12 +2876,12 @@ function renderOverviewTab() {
                 '</div>',
             '</div>',
 
-            renderGroupBlock('members_online', grouped.online, renderMemberRow, true),
-            renderGroupBlock('members_idle', grouped.idle, renderMemberRow, true),
-            renderGroupBlock('members_travel', grouped.travel, renderMemberRow, false),
-            renderGroupBlock('members_jail', grouped.jail, renderMemberRow, false),
-            renderGroupBlock('members_hospital', grouped.hospital, renderMemberRow, true),
-            renderGroupBlock('members_offline', grouped.offline, renderMemberRow, false),
+            total ? renderGroupBlock('members_online', grouped.online, renderMemberRow, true) : '<div class="warhub-card">No faction members loaded yet.</div>',
+            total ? renderGroupBlock('members_idle', grouped.idle, renderMemberRow, true) : '',
+            total ? renderGroupBlock('members_travel', grouped.travel, renderMemberRow, false) : '',
+            total ? renderGroupBlock('members_jail', grouped.jail, renderMemberRow, false) : '',
+            total ? renderGroupBlock('members_hospital', grouped.hospital, renderMemberRow, true) : '',
+            total ? renderGroupBlock('members_offline', grouped.offline, renderMemberRow, false) : '',
         '</div>'
     ].join('');
 }
@@ -4136,6 +4142,7 @@ function _handleActionClick() {
         if (!isLoggedIn()) return renderLoginView();
 
         if (currentTab === 'overview') return renderOverviewTab();
+        if (currentTab === 'members') return renderMembersTab();
         if (currentTab === 'enemies') return renderEnemiesTab();
         if (currentTab === 'hospital') return renderHospitalTab();
         if (currentTab === 'chain') return renderChainTab();
@@ -4163,7 +4170,7 @@ function _handleActionClick() {
 
         renderStatus();
 
-        if (currentTab === 'enemies' || currentTab === 'hospital' || currentTab === 'faction') {
+        if (currentTab === 'members' || currentTab === 'enemies' || currentTab === 'hospital' || currentTab === 'faction') {
             startMembersCountdownLoop();
         } else {
             stopMembersCountdownLoop();
@@ -4195,7 +4202,7 @@ function _handleActionClick() {
 
         renderStatus();
 
-        if (currentTab === 'enemies' || currentTab === 'hospital' || currentTab === 'faction') {
+        if (currentTab === 'members' || currentTab === 'enemies' || currentTab === 'hospital' || currentTab === 'faction') {
             startMembersCountdownLoop();
         } else {
             stopMembersCountdownLoop();
@@ -4220,7 +4227,7 @@ function _handleActionClick() {
             enemiesSearch.__warhubBound = true;
             enemiesSearch.addEventListener('input', function () {
                 GM_setValue('warhub_enemies_search', String(enemiesSearch.value || ''));
-                if (currentTab === 'enemies') renderBody();
+                if (currentTab === 'members' || currentTab === 'enemies') renderBody();
             });
         }
 
