@@ -122,7 +122,35 @@ def extract_medical_cooldown_seconds(payload: Dict[str, Any]) -> int:
     return 0
 
 
+def _extract_bar(payload: Dict[str, Any], keys: list[str]) -> Dict[str, Any]:
+    for key in keys:
+        value = payload.get(key)
+        if isinstance(value, dict):
+            current = to_int(value.get("current", value.get("amount", value.get("full", 0))), 0)
+            maximum = to_int(value.get("maximum", value.get("max", value.get("total", value.get("full", 0)))), 0)
+            return {
+                "current": current,
+                "maximum": maximum,
+            }
+
+    bars = payload.get("bars")
+    if isinstance(bars, dict):
+        for key in keys:
+            value = bars.get(key)
+            if isinstance(value, dict):
+                current = to_int(value.get("current", value.get("amount", value.get("full", 0))), 0)
+                maximum = to_int(value.get("maximum", value.get("max", value.get("total", value.get("full", 0)))), 0)
+                return {
+                    "current": current,
+                    "maximum": maximum,
+                }
+
+    return {}
+
+
 def normalize_member(uid: Any, member: Dict[str, Any]) -> Dict[str, Any]:
+    member = member if isinstance(member, dict) else {}
+
     last_action_raw = member.get("last_action")
     if isinstance(last_action_raw, dict):
         last_action = str(
@@ -175,7 +203,14 @@ def normalize_member(uid: Any, member: Dict[str, Any]) -> Dict[str, Any]:
 
     user_id = str(uid or member.get("user_id") or member.get("player_id") or member.get("id") or "").strip()
 
+    energy = _extract_bar(member, ["energy"])
+    life = _extract_bar(member, ["life", "hp"])
+    nerve = _extract_bar(member, ["nerve"])
+    happy = _extract_bar(member, ["happy"])
+    medical_cooldown = extract_medical_cooldown_seconds(member)
+
     return {
+        **member,
         "user_id": user_id,
         "name": str(member.get("name") or member.get("player_name") or member.get("member_name") or "Unknown"),
         "level": member.get("level", ""),
@@ -187,6 +222,11 @@ def normalize_member(uid: Any, member: Dict[str, Any]) -> Dict[str, Any]:
         "in_hospital": in_hospital,
         "hospital_seconds": hospital_seconds,
         "hospital_until_ts": hospital_until_ts,
+        "energy": energy or member.get("energy") or {},
+        "life": life or member.get("life") or {},
+        "nerve": nerve or member.get("nerve") or {},
+        "happy": happy or member.get("happy") or {},
+        "medical_cooldown": medical_cooldown,
         "profile_url": profile_url(user_id),
         "attack_url": attack_url(user_id),
         "bounty_url": bounty_url(user_id),
