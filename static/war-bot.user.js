@@ -1024,7 +1024,7 @@
 
     function targetItemId(item) {
         if (!item || typeof item !== 'object') return '';
-        return String(item.user_id || item.target_user_id || item.id || item.player_id || '').trim();
+        return String(item.user_id || item.id || item.player_id || '').trim();
     }
 
     function mergeTargets(primary, secondary) {
@@ -1036,7 +1036,7 @@
             seen[id] = true;
             out.push({
                 user_id: id,
-                name: String(item.name || item.target_name || item.player_name || ('Enemy ' + id)).trim()
+                name: String(item.name || item.player_name || ('Enemy ' + id)).trim()
             });
         });
         return out;
@@ -4328,56 +4328,6 @@ function _handleActionClick() {
                 yield loadState();
                 renderBody();
                 setStatus('Dibs claimed.', false);
-                return;
-            }
-
-            if (action === 'target-save-local') {
-                var targetSelectEl = overlay && overlay.querySelector('#warhub-target-name');
-                var selectedUserId = cleanInputValue(targetSelectEl && targetSelectEl.value);
-                if (!selectedUserId) {
-                    setStatus('Select an enemy target first.', true);
-                    return;
-                }
-
-                var enemyPool = [];
-                enemyPool = enemyPool.concat(arr(warEnemiesCache || []));
-                enemyPool = enemyPool.concat(arr((state && state.enemies) || []));
-                enemyPool = enemyPool.concat(arr((((state || {}).hospital || {}).items) || []));
-
-                var picked = enemyPool.find(function (m) {
-                    return getMemberId(m) === selectedUserId;
-                });
-
-                if (!picked) {
-                    setStatus('Selected enemy was not found.', true);
-                    return;
-                }
-
-                state = state || {};
-                state.targets = mergeTargets([{
-                    user_id: selectedUserId,
-                    name: getMemberName(picked)
-                }], mergeTargets((state && state.targets) || [], getLocalTargets()));
-                setLocalTargets(state.targets);
-                renderBody();
-                setStatus('Target saved.', false);
-                return;
-            }
-
-            if (action === 'target-delete-local') {
-                var deleteTargetUserId = cleanInputValue(el && el.getAttribute('data-user-id'));
-                if (!deleteTargetUserId) {
-                    setStatus('Missing target ID.', true);
-                    return;
-                }
-
-                state = state || {};
-                state.targets = mergeTargets((state && state.targets) || [], getLocalTargets()).filter(function (t) {
-                    return targetItemId(t) !== deleteTargetUserId;
-                });
-                setLocalTargets(state.targets);
-                renderBody();
-                setStatus('Target deleted.', false);
                 return;
             }
 
