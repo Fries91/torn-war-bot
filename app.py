@@ -344,57 +344,33 @@ def _normalize_member_access_row(row: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _extract_member_bars_from_member(member: Dict[str, Any]) -> Dict[str, Any]:
-    member = member or {}
-    life = member.get("life") if isinstance(member.get("life"), dict) else {}
-    energy = member.get("energy") if isinstance(member.get("energy"), dict) else {}
-    nerve = member.get("nerve") if isinstance(member.get("nerve"), dict) else {}
-    happy = member.get("happy") if isinstance(member.get("happy"), dict) else {}
-
-    bars = {
-        "life": life or {},
-        "energy": energy or {},
-        "nerve": nerve or {},
-        "happy": happy or {},
-    }
-
-    med_cd = _to_int(
-        member.get("medical_cooldown")
-        or member.get("medicalcooldown")
-        or member.get("med_cd")
-        or 0,
-        0,
-    )
-
-    return {"bars": bars, "medical_cooldown": med_cd}
-
-
 def _build_member_bar_payload(member: Dict[str, Any], api_key: str = "") -> Dict[str, Any]:
-    embedded = _extract_member_bars_from_member(member)
-    bars = embedded.get("bars") or {}
-    med_cd = _to_int(embedded.get("medical_cooldown"), 0)
-
-    has_embedded = any(bool((bars.get(k) or {})) for k in ("life", "energy", "nerve", "happy")) or med_cd > 0
-    if has_embedded:
-        return {"bars": bars, "medical_cooldown": med_cd}
-
+    bars = {}
+    med_cd = 0
     if api_key:
         live = member_live_bars(api_key, user_id=str(member.get("user_id") or ""))
         if live.get("ok"):
             bars = live.get("bars") or {}
             med_cd = _to_int(live.get("medical_cooldown"), 0)
-
     return {"bars": bars, "medical_cooldown": med_cd}
 
 
-def _build_live_faction_members(user: Dict[str, Any]) -> List[Dict[str, Any]]:
+def _build_live_faction_members(user: Dict[str, Any], return_debug: bool = False):
     faction_id = str(user.get("faction_id") or "").strip()
     if not faction_id:
-        return []
+        return ([], {"step": "missing_faction_id"}) if return_debug else []
 
     faction = faction_basic(str(user.get("api_key") or ""), faction_id=faction_id) or {}
     if not faction.get("ok"):
-        return []
+        dbg = {
+            "step": "faction_basic_not_ok",
+            "faction_error": str(faction.get("error") or ""),
+            "faction_source": str(faction.get("source") or ""),
+            "debug_attempts": faction.get("debug_attempts") or [],
+            "resolved_faction_id": str(faction.get("faction_id") or ""),
+            "resolved_faction_name": str(faction.get("faction_name") or ""),
+        }
+        return ([], dbg) if return_debug else []
 
     faction_name = str(faction.get("faction_name") or user.get("faction_name") or "").strip()
 
@@ -467,7 +443,18 @@ def _build_live_faction_members(user: Dict[str, Any]) -> List[Dict[str, Any]]:
         })
 
     out.sort(key=lambda x: (str(x.get("name") or "").lower(), str(x.get("user_id") or "")))
-    return out
+    debug = {
+        "step": "built_members",
+        "requested_faction_id": faction_id,
+        "resolved_faction_id": str(faction.get("faction_id") or ""),
+        "resolved_faction_name": faction_name,
+        "raw_member_count": len(raw_members) if isinstance(raw_members, list) else (len(raw_members) if isinstance(raw_members, dict) else 0),
+        "normalized_live_member_count": len(live_members),
+        "final_member_count": len(out),
+        "faction_source": str(faction.get("source") or ""),
+        "debug_attempts": faction.get("debug_attempts") or [],
+    }
+    return (out, debug) if return_debug else out
 
 
 def _enemy_bucket_order() -> List[str]:
@@ -1503,7 +1490,7 @@ def api_faction_members():
     user = request.user or {}
     faction_id = str(user.get("faction_id") or "").strip()
     faction_name = str(user.get("faction_name") or "").strip()
-    items = _build_live_faction_members(user)
+    items, debug = _build_live_faction_members(user, return_debug=True)
     return ok(
         faction_id=faction_id,
         faction_name=faction_name,
@@ -1511,6 +1498,7 @@ def api_faction_members():
         count=len(items),
         source="api_faction_members_single_path",
         viewer_user_id=str(user.get("user_id") or ""),
+        debug=debug,
     )
 
 
