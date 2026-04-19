@@ -149,7 +149,7 @@ def _check_request_origin() -> bool:
 
 def with_cors(resp):
     resp.headers["Access-Control-Allow-Origin"] = request.headers.get("Origin", "*") or "*"
-    resp.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-Session-Token"
+    resp.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-Session-Token, X-License-Admin"
     resp.headers["Access-Control-Allow-Methods"] = "GET, POST, DELETE, OPTIONS"
     return resp
 
@@ -290,6 +290,24 @@ def _feature_access_for_user(user: Dict[str, Any]) -> Dict[str, Any]:
 
 def _require_feature_access():
     return None
+
+
+def _admin_request_allowed(user: Optional[Dict[str, Any]] = None) -> bool:
+    admin_header = str(request.headers.get("X-License-Admin", "")).strip()
+    owner_token = str(os.getenv("OWNER_TOKEN", "")).strip()
+    if admin_header and owner_token and admin_header == owner_token:
+        return True
+    return _session_is_owner(user)
+
+
+def require_admin(fn):
+    @wraps(fn)
+    @require_session
+    def wrapper(*args, **kwargs):
+        if not _admin_request_allowed(request.user):
+            return err("Owner access only.", 403)
+        return fn(*args, **kwargs)
+    return wrapper
 
 
 def require_owner(fn):
@@ -1448,7 +1466,7 @@ def api_terms_save():
 
 
 @app.route("/api/faction/members", methods=["GET"])
-@require_leader_session
+@require_session
 def api_faction_members():
     user = request.user or {}
     faction_id = str(user.get("faction_id") or "").strip()
@@ -1542,6 +1560,41 @@ def api_faction_member_delete(member_user_id: str):
 @require_leader_session
 def api_faction_member_remove_alias(member_user_id: str):
     return api_faction_member_delete(member_user_id)
+
+
+@app.route("/api/admin/dashboard", methods=["GET"])
+@require_admin
+def api_admin_dashboard():
+    faction_id = str((request.user or {}).get("faction_id") or "").strip()
+    members = _build_live_faction_members(request.user or {}) if faction_id else []
+    enabled_count = sum(1 for m in members if bool(m.get("enabled", True)))
+    return ok(
+        summary={
+            "leaders_using_bot": 1,
+            "members_using_bot": len(members),
+            "enabled_members": enabled_count,
+            "factions_using_bot": 1 if faction_id else 0,
+        },
+        faction_licenses=[],
+        items=[],
+        generated_at=utc_now(),
+    )
+
+
+@app.route("/api/admin/top-five", methods=["GET"])
+@require_admin
+def api_admin_top_five():
+    live = _live_summary_payload(request.user or {})
+    top_five = live.get("top_five") or {}
+    return ok(
+        top_hitters=top_five.get("top_hitters") or [],
+        top_respect_gain=top_five.get("top_respect_gain") or [],
+        top_respect_lost=top_five.get("top_respect_lost") or [],
+        top_hits_taken=top_five.get("top_hits_taken") or [],
+        top_net_impact=top_five.get("top_net_impact") or [],
+        no_shows=top_five.get("no_shows") or [],
+        generated_at=utc_now(),
+    )
 
 
 @app.errorhandler(404)
