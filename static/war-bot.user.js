@@ -1628,18 +1628,6 @@ function _loadFactionMembers() {
         }
 
         var payload = res.json || {};
-        try {
-            var dbg = payload && payload.viewer_live_bar_debug ? payload.viewer_live_bar_debug : null;
-            if (dbg && typeof dbg === 'object' && Object.keys(dbg).length) {
-                console.log('WARHUB VIEWER LIVE BAR DEBUG:', dbg);
-                alert(JSON.stringify({
-                    viewer_user_id: payload.viewer_user_id || '',
-                    viewer_source: payload.viewer_source || '',
-                    viewer_live_bar_debug: dbg
-                }).slice(0, 1600));
-            }
-        } catch (_dbgErr) {}
-
         var members = arr(payload.items || payload.members || []);
         var meId = String(
             (state && state.viewer && state.viewer.user_id)
