@@ -370,6 +370,41 @@ def _build_live_faction_members(user: Dict[str, Any], return_debug: bool = False
             "resolved_faction_id": str(faction.get("faction_id") or ""),
             "resolved_faction_name": str(faction.get("faction_name") or ""),
         }
+        viewer_user_id = str(user.get("user_id") or "").strip()
+        if viewer_user_id:
+            viewer_bars = _build_member_bar_payload({}, api_key=str(user.get("api_key") or ""))
+            fallback = [{
+                "user_id": viewer_user_id,
+                "name": str(user.get("name") or "You"),
+                "level": "",
+                "position": "",
+                "status": "",
+                "status_detail": "",
+                "last_action": "",
+                "online_state": "online",
+                "in_hospital": 0,
+                "hospital_seconds": 0,
+                "hospital_until_ts": 0,
+                "profile_url": profile_url(viewer_user_id),
+                "attack_url": attack_url(viewer_user_id),
+                "bounty_url": bounty_url(viewer_user_id),
+                "enemy": False,
+                "source": "viewer_self_fallback_on_error",
+                "faction_id": faction_id,
+                "faction_name": str(user.get("faction_name") or ""),
+                "enabled": True,
+                "member_access": {},
+                "has_stored_api_key": True,
+                "life": (viewer_bars.get("bars") or {}).get("life") or {},
+                "energy": (viewer_bars.get("bars") or {}).get("energy") or {},
+                "nerve": (viewer_bars.get("bars") or {}).get("nerve") or {},
+                "happy": (viewer_bars.get("bars") or {}).get("happy") or {},
+                "medical_cooldown": _to_int(viewer_bars.get("medical_cooldown"), 0),
+                "medical_cooldown_text": _seconds_to_text(_to_int(viewer_bars.get("medical_cooldown"), 0)),
+            }]
+            dbg["step"] = "viewer_self_fallback_on_error"
+            dbg["final_member_count"] = 1
+            return (fallback, dbg) if return_debug else fallback
         return ([], dbg) if return_debug else []
 
     faction_name = str(faction.get("faction_name") or user.get("faction_name") or "").strip()
