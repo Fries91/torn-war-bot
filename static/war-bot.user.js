@@ -1620,10 +1620,6 @@ function _loadFactionMembers() {
         }
 
         var res = yield authedReq('GET', '/api/faction/members');
-        try {
-            console.log('FACTION MEMBERS RESPONSE:', res);
-            alert(JSON.stringify(res && res.json ? res.json : res).slice(0, 800));
-        } catch (_debugErr) {}
 
         if (!res.ok || !res.json || typeof res.json !== 'object') {
             factionMembersCache = [];
