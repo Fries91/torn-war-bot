@@ -344,14 +344,46 @@ def _normalize_member_access_row(row: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _extract_member_bars_from_member(member: Dict[str, Any]) -> Dict[str, Any]:
+    member = member or {}
+    life = member.get("life") if isinstance(member.get("life"), dict) else {}
+    energy = member.get("energy") if isinstance(member.get("energy"), dict) else {}
+    nerve = member.get("nerve") if isinstance(member.get("nerve"), dict) else {}
+    happy = member.get("happy") if isinstance(member.get("happy"), dict) else {}
+
+    bars = {
+        "life": life or {},
+        "energy": energy or {},
+        "nerve": nerve or {},
+        "happy": happy or {},
+    }
+
+    med_cd = _to_int(
+        member.get("medical_cooldown")
+        or member.get("medicalcooldown")
+        or member.get("med_cd")
+        or 0,
+        0,
+    )
+
+    return {"bars": bars, "medical_cooldown": med_cd}
+
+
 def _build_member_bar_payload(member: Dict[str, Any], api_key: str = "") -> Dict[str, Any]:
-    bars = {}
-    med_cd = 0
+    embedded = _extract_member_bars_from_member(member)
+    bars = embedded.get("bars") or {}
+    med_cd = _to_int(embedded.get("medical_cooldown"), 0)
+
+    has_embedded = any(bool((bars.get(k) or {})) for k in ("life", "energy", "nerve", "happy")) or med_cd > 0
+    if has_embedded:
+        return {"bars": bars, "medical_cooldown": med_cd}
+
     if api_key:
         live = member_live_bars(api_key, user_id=str(member.get("user_id") or ""))
         if live.get("ok"):
             bars = live.get("bars") or {}
             med_cd = _to_int(live.get("medical_cooldown"), 0)
+
     return {"bars": bars, "medical_cooldown": med_cd}
 
 
@@ -1478,6 +1510,7 @@ def api_faction_members():
         items=items,
         count=len(items),
         source="api_faction_members_single_path",
+        viewer_user_id=str(user.get("user_id") or ""),
     )
 
 
