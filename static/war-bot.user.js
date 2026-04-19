@@ -3029,11 +3029,33 @@ function renderEnemiesTab() {
         });
         var current = Number(chain.current || 0);
         var cooldown = Number(chain.cooldown || 0);
-        var meterPct = Math.max(4, Math.min(100, current > 0 ? Math.round((current % 100) || 100) : 4));
         var isAvailable = !!chain.available;
         var isSitter = !!chain.sitter_enabled;
         var viewerIsUnavailable = !isAvailable;
         var yourStatus = isAvailable ? (isSitter ? 'Available · Chain Sitter On' : 'Available') : (isSitter ? 'Unavailable · Chain Sitter On' : 'Unavailable');
+        var bonusTiers = [10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 25000, 50000, 100000];
+        var nextBonus = 0;
+        var previousBonus = 0;
+        var i;
+        for (i = 0; i < bonusTiers.length; i += 1) {
+            if (current < bonusTiers[i]) {
+                nextBonus = bonusTiers[i];
+                previousBonus = i > 0 ? bonusTiers[i - 1] : 0;
+                break;
+            }
+            previousBonus = bonusTiers[i];
+        }
+        if (!nextBonus) {
+            previousBonus = bonusTiers[bonusTiers.length - 1];
+            nextBonus = previousBonus + 50000;
+        }
+        var hitsToBonus = Math.max(0, nextBonus - current);
+        var progressBase = Math.max(1, nextBonus - previousBonus);
+        var progressValue = Math.max(0, current - previousBonus);
+        var meterPct = Math.max(6, Math.min(100, Math.round((progressValue / progressBase) * 100)));
+        var bonusCountdown = hitsToBonus <= 0 ? 'Bonus hit ready now' : (hitsToBonus === 1 ? '1 hit to next bonus' : (fmtNum(hitsToBonus) + ' hits to next bonus'));
+        var tierLabel = previousBonus > 0 ? (fmtNum(previousBonus) + ' → ' + fmtNum(nextBonus)) : ('0 → ' + fmtNum(nextBonus));
+        var chainColorClass = current >= nextBonus ? 'good' : (hitsToBonus <= 3 ? 'warn' : 'neutral');
 
         function chainBtnClass(activeClass, isActive) {
             return 'warhub-btn ' + (isActive ? activeClass : 'gray');
@@ -3076,32 +3098,41 @@ function renderEnemiesTab() {
 
         return [
             '<div class="warhub-grid">',
-                '<div class="warhub-hero-card chain-hero">',
+                '<div class="warhub-hero-card chain-hero" style="background:linear-gradient(180deg, rgba(165,24,24,.35), rgba(140,96,22,.18) 55%, rgba(255,255,255,.04)); border-color: rgba(255,208,82,.22);">',
                     '<div class="warhub-title">Chain Rack</div>',
                     '<div class="warhub-sub">' + esc(ownFactionName) + ' live chain control</div>',
                     '<div class="warhub-space"></div>',
                     '<div class="chain-stat-grid">',
-                        '<div class="chain-stat-box">',
-                            '<div class="label">Current Chain</div>',
-                            '<div class="value">' + esc(fmtNum(current)) + '</div>',
+                        '<div class="chain-stat-box" style="background:linear-gradient(180deg, rgba(188,34,34,.22), rgba(255,255,255,.04)); border:1px solid rgba(255,98,98,.18); border-radius:12px; padding:10px;">',
+                            '<div class="label">Chain Score</div>',
+                            '<div class="value" style="font-size:28px; color:#ffdf7d;">' + esc(fmtNum(current)) + '</div>',
                         '</div>',
-                        '<div class="chain-stat-box">',
-                            '<div class="label">Cooldown</div>',
-                            '<div class="value">' + esc(shortCd(cooldown, 'Ready')) + '</div>',
+                        '<div class="chain-stat-box" style="background:linear-gradient(180deg, rgba(214,151,28,.22), rgba(255,255,255,.04)); border:1px solid rgba(255,208,82,.20); border-radius:12px; padding:10px;">',
+                            '<div class="label">Next Bonus Hit</div>',
+                            '<div class="value" style="font-size:24px; color:#ffe48e;">' + esc(fmtNum(nextBonus)) + '</div>',
+                            '<div class="warhub-summary-meta">Tier ' + esc(tierLabel) + '</div>',
                         '</div>',
-                        '<div class="chain-stat-box">',
+                        '<div class="chain-stat-box" style="background:linear-gradient(180deg, rgba(48,138,88,.22), rgba(255,255,255,.04)); border:1px solid rgba(90,200,120,.18); border-radius:12px; padding:10px;">',
+                            '<div class="label">Bonus Countdown</div>',
+                            '<div class="value" style="font-size:18px; color:#b8ffd1;">' + esc(bonusCountdown) + '</div>',
+                            '<div class="warhub-summary-meta">Cooldown ' + esc(shortCd(cooldown, 'Ready')) + '</div>',
+                        '</div>',
+                        '<div class="chain-stat-box" style="background:linear-gradient(180deg, rgba(73,86,190,.18), rgba(255,255,255,.04)); border:1px solid rgba(112,132,255,.16); border-radius:12px; padding:10px;">',
                             '<div class="label">Your Status</div>',
-                            '<div class="value">' + esc(yourStatus) + '</div>',
+                            '<div class="value" style="font-size:18px; color:#dfe5ff;">' + esc(yourStatus) + '</div>',
                         '</div>',
                     '</div>',
                     '<div class="warhub-space"></div>',
-                    '<div class="chain-meter"><div class="chain-meter-fill" style="width:' + esc(String(meterPct)) + '%"></div></div>',
+                    '<div class="chain-meter" style="background:rgba(255,255,255,.08); border-radius:999px; overflow:hidden; border:1px solid rgba(255,255,255,.08);">',
+                        '<div class="chain-meter-fill" style="width:' + esc(String(meterPct)) + '%; height:14px; background:linear-gradient(90deg, rgba(255,208,82,.95), rgba(255,104,104,.92));"></div>',
+                    '</div>',
                     '<div class="warhub-space"></div>',
                     '<div class="warhub-row">',
                         '<span class="warhub-pill ' + (isAvailable ? 'good' : 'bad') + '">' + esc(isAvailable ? 'Available' : 'Unavailable') + '</span>',
                         '<span class="warhub-pill ' + (isSitter ? 'warn' : 'neutral') + '">' + esc(isSitter ? 'Chain Sitter On' : 'Chain Sitter Off') + '</span>',
                         '<span class="warhub-pill online">Available ' + esc(String(availableItems.length)) + '</span>',
                         '<span class="warhub-pill idle">Sitters ' + esc(String(sitterItems.length)) + '</span>',
+                        '<span class="warhub-pill ' + esc(chainColorClass) + '">Next ' + esc(fmtNum(nextBonus)) + '</span>',
                     '</div>',
                 '</div>',
                 '<div class="warhub-card">',
