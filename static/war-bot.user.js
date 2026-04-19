@@ -3191,12 +3191,10 @@ function renderEnemiesTab() {
 
     function renderTargetsTab() {
     var targets = mergeTargets((state && state.targets) || [], getLocalTargets());
-
     var enemyPool = [];
     enemyPool = enemyPool.concat(arr(warEnemiesCache || []));
     enemyPool = enemyPool.concat(arr((state && state.enemies) || []));
     enemyPool = enemyPool.concat(arr((((state || {}).hospital || {}).items) || []));
-
     var seenEnemyIds = {};
     var enemies = sortMembers(enemyPool.filter(function (m) {
         var id = getMemberId(m);
@@ -3209,16 +3207,34 @@ function renderEnemiesTab() {
         '<div class="warhub-grid">',
             '<div class="warhub-hero-card">',
                 '<div class="warhub-title">Targets</div>',
-                '<div class="warhub-sub">Pick an enemy from the dropdown and save them below for quick tracking</div>',
-                '<div class="warhub-row" style="margin-top:8px;gap:6px;">',
-                    '<span class="warhub-pill bad">Enemy List</span>',
-                    '<span class="warhub-pill online">Quick Save</span>',
-                    '<span class="warhub-pill travel">Delete Anytime</span>',
-                '</div>',
+                '<div class="warhub-sub">Save one or more war enemies and manage them here</div>',
             '</div>',
 
             '<div class="warhub-card warhub-col">',
-                '<h3>Add target</h3>',
+                '<h3>Saved Enemy</h3>',
+                targets.length ? targets.map(function (t) {
+                    var id = String(t.user_id || t.target_user_id || t.id || t.player_id || '');
+                    var name = String(t.name || t.target_name || t.player_name || 'Enemy');
+                    var note = String(t.note || '');
+
+                    return [
+                        '<div class="warhub-member-row">',
+                            '<div class="warhub-member-main">',
+                                '<div class="warhub-row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">',
+                                    '<a class="warhub-member-name" href="https://www.torn.com/profiles.php?XID=' + esc(id) + '" target="_blank" rel="noopener noreferrer">' + esc(name) + '</a>',
+                                    '<div class="warhub-row" style="gap:8px;flex-wrap:wrap;">',
+                                        id ? '<a class="warhub-btn" href="https://www.torn.com/loader.php?sid=attack&user2ID=' + esc(id) + '" target="_blank" rel="noopener noreferrer">Attack</a>' : '',
+                                        id ? '<button type="button" class="warhub-btn gray" data-action="target-delete" data-user-id="' + esc(id) + '">Delete</button>' : '',
+                                    '</div>',
+                                '</div>',
+                                note ? '<div class="warhub-spy-box">' + esc(note) + '</div>' : '',
+                            '</div>',
+                        '</div>'
+                    ].join('');
+                }).join('') : '<div class="warhub-muted">No enemy saved yet.</div>',
+            '</div>',
+
+            '<div class="warhub-card warhub-col">',
                 '<label class="warhub-label" for="warhub-target-name">Enemy</label>',
                 '<select id="warhub-target-name" class="warhub-select">',
                     '<option value="">Select enemy member</option>',
@@ -3228,36 +3244,18 @@ function renderEnemiesTab() {
                         return '<option value="' + esc(id) + '">' + esc(name) + '</option>';
                     }).join(''),
                 '</select>',
-                '<div class="warhub-row">',
-                    '<button type="button" class="warhub-btn green" data-action="target-save">Save Target</button>',
-                '</div>',
-            '</div>',
 
-            '<div class="warhub-card warhub-col">',
-                '<h3>Saved targets</h3>',
-                targets.length ? targets.map(function (t) {
-                    var id = String(t.user_id || t.target_user_id || t.id || t.player_id || '');
-                    var name = String(t.name || t.target_name || t.player_name || 'Enemy');
-                    return [
-                        '<div class="warhub-member-row">',
-                            '<div class="warhub-member-main">',
-                                '<div class="warhub-row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;width:100%;">',
-                                    '<div class="warhub-row" style="gap:8px;flex-wrap:wrap;">',
-                                        '<a class="warhub-member-name" href="https://www.torn.com/profiles.php?XID=' + esc(id) + '" target="_blank" rel="noopener noreferrer">' + esc(name) + '</a>',
-                                        '<span class="warhub-pill bad">Target</span>',
-                                    '</div>',
-                                    '<button type="button" class="warhub-btn gray" data-action="target-delete" data-user-id="' + esc(id) + '">Delete</button>',
-                                '</div>',
-                            '</div>',
-                        '</div>'
-                    ].join('');
-                }).join('') : '<div class="warhub-muted">No saved targets yet.</div>',
+                '<label class="warhub-label" for="warhub-target-note">Note (optional)</label>',
+                '<textarea id="warhub-target-note" class="warhub-textarea" placeholder="Optional note for yourself"></textarea>',
+
+                '<div class="warhub-row">',
+                    '<button type="button" class="warhub-btn green" data-action="target-save">Save Enemy</button>',
+                '</div>',
             '</div>',
         '</div>'
     ].join('');
 }
-
-function renderMedDealsTab() {
+    function renderMedDealsTab() {
         var medDeals = (state && state.med_deals) || {};
         var items = arr(medDeals.items || []);
         var enemies = sortMembers(arr((state && state.enemies) || warEnemiesCache || []));
@@ -4146,19 +4144,16 @@ function _handleActionClick() {
 
             if (action === 'target-save') {
                 var targetSelectEl = overlay && overlay.querySelector('#warhub-target-name');
-                var selectedUserId = cleanInputValue(targetSelectEl && targetSelectEl.value);
+                var targetNoteEl = overlay && overlay.querySelector('#warhub-target-note');
 
+                var selectedUserId = cleanInputValue(targetSelectEl && targetSelectEl.value);
                 if (!selectedUserId) {
                     setStatus('Select an enemy target first.', true);
                     return;
                 }
 
-                var enemyPool = [];
-                enemyPool = enemyPool.concat(arr(warEnemiesCache || []));
-                enemyPool = enemyPool.concat(arr((state && state.enemies) || []));
-                enemyPool = enemyPool.concat(arr((((state || {}).hospital || {}).items) || []));
-
-                var picked = enemyPool.find(function (m) {
+                var enemies = arr((state && state.enemies) || []);
+                var picked = enemies.find(function (m) {
                     return getMemberId(m) === selectedUserId;
                 });
 
@@ -4169,7 +4164,8 @@ function _handleActionClick() {
 
                 var targetPayload = {
                     name: getMemberName(picked),
-                    user_id: selectedUserId
+                    user_id: selectedUserId,
+                    note: String((targetNoteEl && targetNoteEl.value) || '').trim()
                 };
 
                 var nextTargets = mergeTargets([targetPayload], mergeTargets((state && state.targets) || [], getLocalTargets()));
@@ -4179,8 +4175,13 @@ function _handleActionClick() {
                 renderBody();
 
                 var targetRes = yield authedReq('POST', '/api/targets', targetPayload);
-                if (targetRes.ok && targetRes.json && Array.isArray(targetRes.json.items)) {
-                    state.targets = mergeTargets(targetRes.json.items, []);
+                if (!targetRes.ok) {
+                    setStatus((targetRes.json && targetRes.json.error) || 'Failed to save target.', true);
+                    return;
+                }
+
+                if (targetRes.json && Array.isArray(targetRes.json.items)) {
+                    state.targets = mergeTargets(targetRes.json.items, state.targets || []);
                     setLocalTargets(state.targets);
                 }
 
@@ -4195,27 +4196,6 @@ function _handleActionClick() {
                     setStatus('Missing target ID.', true);
                     return;
                 }
-
-                state = state || {};
-                state.targets = mergeTargets(state.targets || [], getLocalTargets()).filter(function (t) {
-                    return targetItemId(t) !== deleteTargetUserId;
-                });
-                setLocalTargets(state.targets);
-                renderBody();
-
-                var deleteTargetRes = yield authedReq('DELETE', '/api/targets/' + encodeURIComponent(deleteTargetUserId), null);
-                if (!deleteTargetRes.ok && deleteTargetRes.status === 405) {
-                    deleteTargetRes = yield authedReq('POST', '/api/targets/' + encodeURIComponent(deleteTargetUserId), {});
-                }
-                if (deleteTargetRes.ok && deleteTargetRes.json && Array.isArray(deleteTargetRes.json.items)) {
-                    state.targets = mergeTargets(deleteTargetRes.json.items, []);
-                    setLocalTargets(state.targets);
-                }
-
-                renderBody();
-                setStatus('Target deleted.', false);
-                return;
-            }
 
                 state = state || {};
                 state.targets = mergeTargets(state.targets || [], getLocalTargets()).filter(function (t) {
