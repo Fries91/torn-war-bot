@@ -170,97 +170,97 @@ def enemy_faction_members(api_key: str, enemy_faction_id: str) -> Dict[str, Any]
             "debug_attempts": [],
         }
 
-    attempts = [
-        (
-            f"{API_BASE}/v2/faction/{enemy_faction_id}/members",
-            {"key": api_key, "striptags": "true"},
-            "v2_enemy_faction_members_direct",
-        ),
-        (
-            f"{API_BASE}/faction/{enemy_faction_id}",
-            {"selections": "basic,members", "key": api_key, "striptags": "true"},
-            "v1_enemy_faction_members_direct_fallback",
-        ),
-    ]
-
+    source = "v2_enemy_faction_members_direct"
     debug_attempts: List[Dict[str, Any]] = []
-    last_error = "Could not load enemy faction."
 
-    for url, params, prefix in attempts:
-        res = safe_get(
-            url,
-            params,
-            cache_seconds=CACHE_TTL_FACTION_BASIC,
-            cache_prefix=prefix,
-        )
+    res = safe_get(
+        f"{API_BASE}/v2/faction/{enemy_faction_id}/members",
+        {"key": api_key, "striptags": "true"},
+        cache_seconds=CACHE_TTL_FACTION_BASIC,
+        cache_prefix=source,
+    )
 
-        if not res.get("ok"):
-            last_error = str(res.get("error") or last_error)
-            debug_attempts.append({
-                "source": prefix,
-                "ok": False,
-                "error": last_error,
-            })
-            continue
-
-        payload = res.get("data") or {}
-        root = _extract_enemy_root(payload)
-        members = _extract_enemy_members(payload)
-
-        resolved_enemy_faction_id = str(
-            root.get("ID")
-            or root.get("id")
-            or root.get("faction_id")
-            or enemy_faction_id
-            or ""
-        ).strip()
-
-        resolved_enemy_faction_name = str(
-            root.get("name")
-            or root.get("faction_name")
-            or ""
-        ).strip()
-
+    if not res.get("ok"):
+        last_error = str(res.get("error") or "Could not load enemy faction.")
         debug_attempts.append({
-            "source": prefix,
-            "ok": True,
-            "enemy_faction_id": resolved_enemy_faction_id,
-            "enemy_faction_name": resolved_enemy_faction_name,
-            "member_count": len(members),
+            "source": source,
+            "ok": False,
+            "error": last_error,
         })
-
-        if resolved_enemy_faction_id and resolved_enemy_faction_id != enemy_faction_id:
-            last_error = (
-                f"Enemy faction mismatch: requested {enemy_faction_id}, got {resolved_enemy_faction_id}."
-            )
-            continue
-
-        if not members:
-            last_error = "Enemy faction returned no members."
-            continue
-
-        cards = build_enemy_cards(members)
-        hospital = hospital_members_from_enemies(cards)
-
         return {
-            "ok": True,
-            "enemy_faction_id": resolved_enemy_faction_id or enemy_faction_id,
-            "enemy_faction_name": resolved_enemy_faction_name,
-            "members": cards,
-            "hospital_members": hospital,
-            "error": "",
-            "source": prefix,
+            "ok": False,
+            "enemy_faction_id": enemy_faction_id,
+            "enemy_faction_name": "",
+            "members": [],
+            "hospital_members": [],
+            "error": last_error,
+            "source": source,
             "debug_attempts": debug_attempts,
         }
 
+    payload = res.get("data") or {}
+    root = _extract_enemy_root(payload)
+    members = _extract_enemy_members(payload)
+
+    resolved_enemy_faction_id = str(
+        root.get("ID")
+        or root.get("id")
+        or root.get("faction_id")
+        or enemy_faction_id
+        or ""
+    ).strip()
+
+    resolved_enemy_faction_name = str(
+        root.get("name")
+        or root.get("faction_name")
+        or ""
+    ).strip()
+
+    debug_attempts.append({
+        "source": source,
+        "ok": True,
+        "enemy_faction_id": resolved_enemy_faction_id,
+        "enemy_faction_name": resolved_enemy_faction_name,
+        "member_count": len(members),
+    })
+
+    if resolved_enemy_faction_id and resolved_enemy_faction_id != enemy_faction_id:
+        last_error = f"Enemy faction mismatch: requested {enemy_faction_id}, got {resolved_enemy_faction_id}."
+        return {
+            "ok": False,
+            "enemy_faction_id": enemy_faction_id,
+            "enemy_faction_name": resolved_enemy_faction_name,
+            "members": [],
+            "hospital_members": [],
+            "error": last_error,
+            "source": source,
+            "debug_attempts": debug_attempts,
+        }
+
+    if not members:
+        last_error = "Enemy faction returned no members."
+        return {
+            "ok": False,
+            "enemy_faction_id": resolved_enemy_faction_id or enemy_faction_id,
+            "enemy_faction_name": resolved_enemy_faction_name,
+            "members": [],
+            "hospital_members": [],
+            "error": last_error,
+            "source": source,
+            "debug_attempts": debug_attempts,
+        }
+
+    cards = build_enemy_cards(members)
+    hospital = hospital_members_from_enemies(cards)
+
     return {
-        "ok": False,
-        "enemy_faction_id": enemy_faction_id,
-        "enemy_faction_name": "",
-        "members": [],
-        "hospital_members": [],
-        "error": last_error,
-        "source": "",
+        "ok": True,
+        "enemy_faction_id": resolved_enemy_faction_id or enemy_faction_id,
+        "enemy_faction_name": resolved_enemy_faction_name,
+        "members": cards,
+        "hospital_members": hospital,
+        "error": "",
+        "source": source,
         "debug_attempts": debug_attempts,
     }
 
