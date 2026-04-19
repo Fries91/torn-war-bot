@@ -69,7 +69,6 @@
     ];
 
     var TAB_ROW_2 = [
-        ['targets', 'Targets'],
         ['meddeals', 'Med Deals'],
         ['terms', 'Terms'],
         ['settings', 'Settings'],
@@ -3192,12 +3191,10 @@ function renderEnemiesTab() {
 
     function renderTargetsTab() {
     var targets = mergeTargets((state && state.targets) || [], getLocalTargets());
-
     var enemyPool = [];
     enemyPool = enemyPool.concat(arr(warEnemiesCache || []));
     enemyPool = enemyPool.concat(arr((state && state.enemies) || []));
     enemyPool = enemyPool.concat(arr((((state || {}).hospital || {}).items) || []));
-
     var seenEnemyIds = {};
     var enemies = sortMembers(enemyPool.filter(function (m) {
         var id = getMemberId(m);
@@ -3210,16 +3207,34 @@ function renderEnemiesTab() {
         '<div class="warhub-grid">',
             '<div class="warhub-hero-card">',
                 '<div class="warhub-title">Targets</div>',
-                '<div class="warhub-sub">Pick an enemy from the dropdown and save them below for quick tracking</div>',
-                '<div class="warhub-row" style="margin-top:8px;gap:6px;">',
-                    '<span class="warhub-pill bad">Enemy List</span>',
-                    '<span class="warhub-pill online">Quick Save</span>',
-                    '<span class="warhub-pill travel">Delete Anytime</span>',
-                '</div>',
+                '<div class="warhub-sub">Save one or more war enemies and manage them here</div>',
             '</div>',
 
             '<div class="warhub-card warhub-col">',
-                '<h3>Add target</h3>',
+                '<h3>Saved Enemy</h3>',
+                targets.length ? targets.map(function (t) {
+                    var id = String(t.user_id || t.target_user_id || t.id || t.player_id || '');
+                    var name = String(t.name || t.target_name || t.player_name || 'Enemy');
+                    var note = String(t.note || '');
+
+                    return [
+                        '<div class="warhub-member-row">',
+                            '<div class="warhub-member-main">',
+                                '<div class="warhub-row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">',
+                                    '<a class="warhub-member-name" href="https://www.torn.com/profiles.php?XID=' + esc(id) + '" target="_blank" rel="noopener noreferrer">' + esc(name) + '</a>',
+                                    '<div class="warhub-row" style="gap:8px;flex-wrap:wrap;">',
+                                        id ? '<a class="warhub-btn" href="https://www.torn.com/loader.php?sid=attack&user2ID=' + esc(id) + '" target="_blank" rel="noopener noreferrer">Attack</a>' : '',
+                                        id ? '<button type="button" class="warhub-btn gray" data-action="target-delete" data-user-id="' + esc(id) + '">Delete</button>' : '',
+                                    '</div>',
+                                '</div>',
+                                note ? '<div class="warhub-spy-box">' + esc(note) + '</div>' : '',
+                            '</div>',
+                        '</div>'
+                    ].join('');
+                }).join('') : '<div class="warhub-muted">No enemy saved yet.</div>',
+            '</div>',
+
+            '<div class="warhub-card warhub-col">',
                 '<label class="warhub-label" for="warhub-target-name">Enemy</label>',
                 '<select id="warhub-target-name" class="warhub-select">',
                     '<option value="">Select enemy member</option>',
@@ -3229,36 +3244,565 @@ function renderEnemiesTab() {
                         return '<option value="' + esc(id) + '">' + esc(name) + '</option>';
                     }).join(''),
                 '</select>',
-                '<div class="warhub-row">',
-                    '<button type="button" class="warhub-btn green" data-action="target-save">Save Target</button>',
-                '</div>',
-            '</div>',
 
-            '<div class="warhub-card warhub-col">',
-                '<h3>Saved targets</h3>',
-                targets.length ? targets.map(function (t) {
-                    var id = String(t.user_id || t.target_user_id || t.id || t.player_id || '');
-                    var name = String(t.name || t.target_name || t.player_name || 'Enemy');
-                    return [
-                        '<div class="warhub-member-row">',
-                            '<div class="warhub-member-main">',
-                                '<div class="warhub-row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;width:100%;">',
-                                    '<div class="warhub-row" style="gap:8px;flex-wrap:wrap;">',
-                                        '<a class="warhub-member-name" href="https://www.torn.com/profiles.php?XID=' + esc(id) + '" target="_blank" rel="noopener noreferrer">' + esc(name) + '</a>',
-                                        '<span class="warhub-pill bad">Target</span>',
-                                    '</div>',
-                                    '<button type="button" class="warhub-btn gray" data-action="target-delete" data-user-id="' + esc(id) + '">Delete</button>',
-                                '</div>',
-                            '</div>',
-                        '</div>'
-                    ].join('');
-                }).join('') : '<div class="warhub-muted">No saved targets yet.</div>',
+                '<label class="warhub-label" for="warhub-target-note">Note (optional)</label>',
+                '<textarea id="warhub-target-note" class="warhub-textarea" placeholder="Optional note for yourself"></textarea>',
+
+                '<div class="warhub-row">',
+                    '<button type="button" class="warhub-btn green" data-action="target-save">Save Enemy</button>',
+                '</div>',
             '</div>',
         '</div>'
     ].join('');
 }
+    function renderMedDealsTab() {
+        var medDeals = (state && state.med_deals) || {};
+        var items = arr(medDeals.items || []);
+        var enemies = sortMembers(arr((state && state.enemies) || warEnemiesCache || []));
+        var viewer = (state && state.viewer) || {};
+        var viewerUserId = String(viewer.user_id || '').trim();
+        var viewerName = String(viewer.name || 'You');
+        var mine = items.find(function (row) {
+            return String((row && row.user_id) || '').trim() === viewerUserId;
+        }) || {};
+        var selectedEnemyUserId = String(mine.enemy_user_id || '');
 
-function renderInstructionsTab() {
+        return [
+            '<div class="warhub-grid">',
+                '<div class="warhub-hero-card">',
+                    '<div class="warhub-title">Med Deals</div>',
+                    '<div class="warhub-sub">Pick your enemy from current war. Shared on Overview for the faction.</div>',
+                '</div>',
+                '<div class="warhub-card warhub-col">',
+                    '<div class="warhub-kv"><div>Your member</div><div>' + esc(viewerName) + '</div></div>',
+                    '<label class="warhub-label" for="warhub-meddeals-enemy">Enemy player</label>',
+                    '<select id="warhub-meddeals-enemy" class="warhub-select">',
+                        '<option value="">Select enemy player</option>',
+                        enemies.map(function (m) {
+                            if (typeof m === 'string') return m;
+                            var id = getMemberId(m);
+                            var name = getMemberName(m);
+                            var selected = id && selectedEnemyUserId && String(id) === String(selectedEnemyUserId) ? ' selected' : '';
+                            return '<option value="' + esc(id) + '"' + selected + '>' + esc(name) + '</option>';
+                        }).join(''),
+                    '</select>',
+                    '<div class="warhub-row">',
+                        '<button type="button" class="warhub-btn" data-action="meddeals-save">Save</button>',
+                        '<button type="button" class="warhub-btn gray" data-action="meddeals-clear">Delete</button>',
+                    '</div>',
+                '</div>',
+                items.length ? [
+                    '<div class="warhub-card warhub-col">',
+                        '<h3>Current Med Deals</h3>',
+                        items.map(function (row) {
+                            var userName = String(row.user_name || row.user_id || 'Member');
+                            var enemyName = String(row.enemy_name || row.enemy_user_id || 'Enemy');
+                            return '<div class="warhub-spy-box">' + esc(userName + ' → ' + enemyName) + '</div>';
+                        }).join(''),
+                    '</div>'
+                ].join('') : '<div class="warhub-card">No med deals posted yet.</div>',
+            '</div>'
+        ].join('');
+    }
+
+function renderTermsTab() {
+    var box = (state && state.terms_summary) || {};
+    var text = String(box.text || '');
+
+    return [
+        '<div class="warhub-grid">',
+            '<div class="warhub-hero-card">',
+                '<div class="warhub-title">Terms</div>',
+                '<div class="warhub-sub">Leader shared Terms / Summary box for the whole faction</div>',
+            '</div>',
+
+            '<div class="warhub-card warhub-col">',
+                '<label class="warhub-label" for="warhub-terms-summary-text">Terms / Summary</label>',
+                '<textarea id="warhub-terms-summary-text" class="warhub-textarea" placeholder="Write terms, summary, instructions, or improvements here...">' + esc(text) + '</textarea>',
+                '<div class="warhub-row">',
+                    '<button type="button" class="warhub-btn" data-action="terms-summary-save">Save</button>',
+                    '<button type="button" class="warhub-btn gray" data-action="terms-summary-clear">Delete</button>',
+                '</div>',
+            '</div>',
+        '</div>'
+    ].join('');
+}
+    function renderSummaryTab() {
+    var summary = liveSummaryCache || {};
+    var cards = arr(summary.cards);
+    var top = summary.top || {};
+    var rows = arr(summary.rows);
+    if (!rows.length) {
+        rows = arr((state && state.members) || []).map(function (m) {
+            var uid = String((m && (m.user_id || m.id)) || '');
+            return {
+                user_id: uid,
+                name: getMemberName(m),
+                role: String((m && (m.position || (m.member_access && m.member_access.position))) || 'Member'),
+                status: String((m && (m.status || m.online_state)) || '—'),
+                profile_url: uid ? profileUrl(uid) : '',
+                enabled: !!(m && (m.enabled || (m.member_access && m.member_access.enabled))),
+                member_access: (m && m.member_access) || {},
+                has_stored_api_key: !!(m && (m.has_stored_api_key || (m.member_access && m.member_access.member_api_key))),
+                online_state: String((m && m.online_state) || '').toLowerCase(),
+                hits: 0,
+                respect_gain: 0,
+                respect_lost: 0,
+                net_impact: 0,
+                hits_taken: 0,
+                efficiency: 0,
+                last_action: String((m && m.last_action) || ''),
+                hospital_eta: '',
+                hospital_eta_seconds: 0,
+                no_show: true,
+                recovering_soon: false,
+                flags: []
+            };
+        });
+    }
+    var topFive = summary.top_five || {};
+    var alerts = summary.alerts || {};
+    var trend = summary.trend || {};
+    var war = summary.war || (state && state.war) || {};
+
+    function num(v, fallback) {
+        var n = Number(v);
+        return Number.isFinite(n) ? n : Number(fallback || 0);
+    }
+
+    function txt(v, fallback) {
+        var s = String(v == null ? '' : v).trim();
+        return s || String(fallback || '—');
+    }
+
+    function pickList() {
+        for (var i = 0; i < arguments.length; i++) {
+            if (Array.isArray(arguments[i])) return arguments[i];
+        }
+        return [];
+    }
+
+    function renderAlertList(title, items, metricLabel) {
+        items = arr(items).slice(0, 5);
+
+        return [
+            '<div class="warhub-alert-card">',
+                '<h4>' + esc(title) + '</h4>',
+                items.length
+                    ? [
+                        '<div class="warhub-summary-list">',
+                            items.map(function (item) {
+                                var name = txt(item.name || item.user_name || item.player_name, 'Player');
+                                var metric = item.metric_label || item.label || metricLabel || '';
+                                var value = item.metric_value != null ? item.metric_value : (
+                                    item.value != null ? item.value : (
+                                        item.net_impact != null ? fmtNum(item.net_impact) : '—'
+                                    )
+                                );
+
+                                return [
+                                    '<div class="warhub-summary-item">',
+                                        '<div>',
+                                            '<div class="warhub-summary-name">' + esc(name) + '</div>',
+                                            metric ? '<div class="warhub-summary-meta">' + esc(metric) + '</div>' : '',
+                                        '</div>',
+                                        '<div class="warhub-pill neutral">' + esc(String(value)) + '</div>',
+                                    '</div>'
+                                ].join('');
+                            }).join(''),
+                        '</div>'
+                    ].join('')
+                    : '<div class="warhub-sub">No data yet.</div>',
+            '</div>'
+        ].join('');
+    }
+
+    function renderTrendCard(title, box) {
+        box = box || {};
+        return [
+            '<div class="warhub-stat-card">',
+                '<div class="warhub-stat-label">' + esc(title) + '</div>',
+                '<div class="warhub-kv"><div>Respect Gained</div><div>' + esc(fmtNum(num(box.respect_gain))) + '</div></div>',
+                '<div class="warhub-kv"><div>Respect Lost</div><div>' + esc(fmtNum(num(box.respect_lost))) + '</div></div>',
+                '<div class="warhub-kv"><div>Net</div><div>' + netPill(num(box.net), '') + '</div></div>',
+                '<div class="warhub-kv"><div>Hits</div><div>' + esc(fmtNum(num(box.hits))) + '</div></div>',
+                '<div class="warhub-kv"><div>Hits Taken</div><div>' + esc(fmtNum(num(box.hits_taken))) + '</div></div>',
+            '</div>'
+        ].join('');
+    }
+
+    function renderFlags(flags) {
+        flags = arr(flags);
+        if (!flags.length) return '—';
+
+        return [
+            '<div class="warhub-flag-row">',
+                flags.map(function (flag) {
+                    return '<span class="warhub-flag">' + esc(String(flag)) + '</span>';
+                }).join(''),
+            '</div>'
+        ].join('');
+    }
+
+    function renderTableRows(items) {
+        items = arr(items);
+
+        if (!items.length) {
+            return '<tr><td colspan="14">No summary rows yet.</td></tr>';
+        }
+
+        return items.map(function (r) {
+            var userId = txt(r.user_id, '');
+            var name = txt(r.name || r.user_name || r.player_name, 'Player');
+            var hits = num(r.hits);
+            var gained = num(r.respect_gain);
+            var lost = num(r.respect_lost);
+            var net = num(r.net_impact, gained - lost);
+            var taken = num(r.hits_taken);
+            var efficiency = num(r.efficiency);
+            var lastAction = txt(r.last_action, '—');
+            var hospitalEta = txt(r.hospital_eta, '—');
+            var role = txt(r.role, 'Member');
+            var status = txt(r.status, '—');
+            var isEnabled = !!r.enabled;
+            var hasLogin = !!r.has_stored_api_key;
+            var onlineState = txt(r.online_state, '').toLowerCase();
+            var profile = txt(r.profile_url, '') || (userId ? 'https://www.torn.com/profiles.php?XID=' + encodeURIComponent(userId) : '');
+
+            return [
+                '<tr>',
+                    '<td>',
+                        profile
+                            ? '<a class="warhub-member-name" href="' + esc(profile) + '" target="_blank" rel="noopener noreferrer">' + esc(name) + '</a>'
+                            : '<span class="warhub-member-name">' + esc(name) + '</span>',
+                    '</td>',
+                    '<td>' + esc(role) + '</td>',
+                    '<td>' + (isEnabled ? '<span class="warhub-pill good">Enabled</span>' : '<span class="warhub-pill bad">Off</span>') + '</td>',
+                    '<td>' + (hasLogin ? '<span class="warhub-pill good">Logged In</span>' : '<span class="warhub-pill neutral">No Login</span>') + '</td>',
+                    '<td>' + (onlineState ? '<span class="warhub-pill ' + esc(onlineState) + '">' + esc(status) + '</span>' : esc(status)) + '</td>',
+                    '<td>' + esc(fmtNum(hits)) + '</td>',
+                    '<td>' + esc(fmtNum(gained)) + '</td>',
+                    '<td>' + esc(fmtNum(lost)) + '</td>',
+                    '<td>' + netPill(net, '') + '</td>',
+                    '<td>' + esc(fmtNum(taken)) + '</td>',
+                    '<td>' + esc(efficiency ? efficiency.toFixed(2) : '0.00') + '</td>',
+                    '<td>' + esc(lastAction) + '</td>',
+                    '<td>' + esc(hospitalEta) + '</td>',
+                    '<td>' + renderFlags(r.flags) + '</td>',
+                '</tr>'
+            ].join('');
+        }).join('');
+    }
+
+    function renderTopFiveBox(title, rowsList, emptyText) {
+        rowsList = arr(rowsList).slice(0, 5);
+
+        return [
+            '<div class="warhub-card warhub-col">',
+                '<h3>' + esc(title) + '</h3>',
+                rowsList.length ? [
+                    '<div class="warhub-col">',
+                        rowsList.map(function (row, idx) {
+                            var userId = txt(row.user_id, '');
+                            var name = txt(row.name || row.user_name || row.player_name, 'Player');
+                            var gained = num(row.respect_gain);
+                            var lost = num(row.respect_lost);
+                            var net = num(row.net_impact, gained - lost);
+                            var hits = num(row.hits);
+                            var taken = num(row.hits_taken);
+                            var efficiency = num(row.efficiency);
+                            var role = txt(row.role, 'Member');
+                            var status = txt(row.status, '—');
+                            var isEnabled = !!row.enabled;
+                            var hasLogin = !!row.has_stored_api_key;
+                            var onlineState = txt(row.online_state, '').toLowerCase();
+                            var profile = txt(row.profile_url, '') || (userId ? 'https://www.torn.com/profiles.php?XID=' + encodeURIComponent(userId) : '');
+
+                            return [
+                                '<details class="warhub-dropbox">',
+                                    '<summary class="warhub-dropbox-head">#' + esc(String(idx + 1)) + ' ' + esc(name) + '</summary>',
+                                    '<div class="warhub-dropbox-body">',
+                                        '<div class="warhub-row" style="margin-bottom:8px;">',
+                                            profile ? '<a class="warhub-btn ghost" href="' + esc(profile) + '" target="_blank" rel="noopener noreferrer">Open Profile</a>' : '',
+                                            '<span class="warhub-pill neutral">' + esc(role) + '</span>',
+                                            (isEnabled ? '<span class="warhub-pill good">Enabled</span>' : '<span class="warhub-pill bad">Off</span>'),
+                                            (hasLogin ? '<span class="warhub-pill good">Logged In</span>' : '<span class="warhub-pill neutral">No Login</span>'),
+                                            (onlineState ? '<span class="warhub-pill ' + esc(onlineState) + '">' + esc(status) + '</span>' : '<span class="warhub-pill neutral">' + esc(status) + '</span>'),
+                                        '</div>',
+                                        '<div class="warhub-kv"><div>Hits</div><div>' + esc(fmtNum(hits)) + '</div></div>',
+                                        '<div class="warhub-kv"><div>Respect Gained</div><div>' + esc(fmtNum(gained)) + '</div></div>',
+                                        '<div class="warhub-kv"><div>Respect Lost</div><div>' + esc(fmtNum(lost)) + '</div></div>',
+                                        '<div class="warhub-kv"><div>Net Impact</div><div>' + esc(fmtNum(net)) + '</div></div>',
+                                        '<div class="warhub-kv"><div>Hits Taken</div><div>' + esc(fmtNum(taken)) + '</div></div>',
+                                        '<div class="warhub-kv"><div>Efficiency</div><div>' + esc(efficiency ? efficiency.toFixed(2) : '0.00') + '</div></div>',
+                                    '</div>',
+                                '</details>'
+                            ].join('');
+                        }).join(''),
+                    '</div>'
+                ].join('') : '<div class="warhub-sub">' + esc(emptyText || 'No data yet.') + '</div>',
+            '</div>'
+        ].join('');
+    }
+
+    return [
+        '<div class="warhub-grid">',
+            '<div class="warhub-hero-card">',
+                '<div class="warhub-title">War Summary</div>',
+                '<div class="warhub-sub">Leader command board for live war performance</div>',
+            '</div>',
+
+            liveSummaryError
+                ? '<div class="warhub-card"><span class="warhub-pill bad">' + esc(liveSummaryError) + '</span></div>'
+                : '',
+
+            cards.length ? [
+                '<div class="warhub-overview-stats">',
+                    cards.map(function (c) {
+                        return [
+                            '<div class="warhub-stat-card ' + esc(String(c.cls || '')) + '">',
+                                '<div class="warhub-stat-label">' + esc(txt(c.label, 'Metric')) + '</div>',
+                                '<div class="warhub-stat-value">' + esc(String(c.value == null ? '—' : c.value)) + '</div>',
+                                c.sub ? '<div class="warhub-sub" style="margin-top:6px;">' + esc(String(c.sub)) + '</div>' : '',
+                            '</div>'
+                        ].join('');
+                    }).join(''),
+                '</div>'
+            ].join('') : '',
+
+            '<div class="warhub-card warhub-col">',
+                '<h3>War Snapshot</h3>',
+                '<div class="warhub-kv"><div>Our Faction</div><div>' + esc(txt(war.our_faction_name || war.faction_name, 'Your Faction')) + '</div></div>',
+                '<div class="warhub-kv"><div>Enemy Faction</div><div>' + esc(txt(war.enemy_faction_name, '—')) + '</div></div>',
+                '<div class="warhub-kv"><div>Top Hitter</div><div>' + esc(txt(top.top_hitter, '—')) + '</div></div>',
+                '<div class="warhub-kv"><div>Most Respect Gained</div><div>' + esc(txt(top.top_respect_gain, '—')) + '</div></div>',
+                '<div class="warhub-kv"><div>Most Respect Lost</div><div>' + esc(txt(top.top_respect_lost || top.top_points_bleeder, '—')) + '</div></div>',
+                '<div class="warhub-kv"><div>Most Hits Taken</div><div>' + esc(txt(top.top_hits_taken, '—')) + '</div></div>',
+                '<div class="warhub-kv"><div>Best Efficiency</div><div>' + esc(txt(top.best_efficiency, '—')) + '</div></div>',
+                '<div class="warhub-kv"><div>Best Finisher</div><div>' + esc(txt(top.best_finisher, '—')) + '</div></div>',
+            '</div>',
+
+            '<div class="warhub-overview-stats">',
+                renderTrendCard('Last 15m', trend.last_15m),
+                renderTrendCard('Last 60m', trend.last_60m),
+                renderTrendCard('Overall', trend.overall),
+            '</div>',
+
+            '<div class="warhub-alert-grid">',
+                renderAlertList('No Shows', alerts.no_shows, '0 hits'),
+                renderAlertList('Bleeding', alerts.bleeding, 'High respect lost'),
+                renderAlertList('Under Fire', alerts.under_fire, 'High hits taken'),
+                renderAlertList('Recovering Soon', alerts.recovering_soon, 'Leaving hospital soon'),
+                renderAlertList('Carrying', alerts.carrying, 'Top positive impact'),
+            '</div>',
+
+            '<div class="warhub-card warhub-col">',
+                '<div class="warhub-row" style="justify-content:space-between;align-items:center;">',
+                    '<h3>Member Performance</h3>',
+                    '<span class="warhub-sub">Shows leader activation, login presence, live status, and war output together</span>',
+                    '<span class="warhub-pill neutral">' + esc(fmtNum(rows.length)) + ' rows</span>',
+                '</div>',
+                '<div class="warhub-table-wrap">',
+                    '<table class="warhub-table">',
+                        '<thead>',
+                            '<tr>',
+                                '<th>Name</th>',
+                                '<th>Role</th>',
+                                '<th>Access</th>',
+                                '<th>Login</th>',
+                                '<th>Status</th>',
+                                '<th>Hits</th>',
+                                '<th>Respect Gained</th>',
+                                '<th>Respect Lost</th>',
+                                '<th>Net Impact</th>',
+                                '<th>Hits Taken</th>',
+                                '<th>Efficiency</th>',
+                                '<th>Last Action</th>',
+                                '<th>Hospital ETA</th>',
+                                '<th>Flags</th>',
+                            '</tr>',
+                        '</thead>',
+                        '<tbody>',
+                            renderTableRows(rows),
+                        '</tbody>',
+                    '</table>',
+                '</div>',
+            '</div>',
+
+            renderTopFiveBox('Top 5 Hitters', pickList(topFive.top_hitters, topFive.top_hitter), 'No hitter data yet.'),
+            renderTopFiveBox('Top 5 Respect Gained', pickList(topFive.top_respect_gain, topFive.top_respect_gained), 'No respect gain data yet.'),
+            renderTopFiveBox('Top 5 Respect Lost', pickList(topFive.top_respect_lost, topFive.top_points_bleeder), 'No respect lost data yet.'),
+            renderTopFiveBox('Top 5 Hits Taken', pickList(topFive.top_hits_taken), 'No hits taken data yet.'),
+            renderTopFiveBox('Top 5 Net Impact', pickList(topFive.top_net_impact), 'No net impact data yet.'),
+            renderTopFiveBox('No Shows', pickList(topFive.no_shows), 'No no-show list right now.'),
+            renderTopFiveBox('Recovering Soon', pickList(topFive.recovering_soon), 'No recovering-soon list right now.'),
+        '</div>'
+    ].join('');
+}
+        // ============================================================
+    // 20. TAB RENDERS: FACTION
+    // ============================================================
+
+    function renderFactionTab() {
+    var faction = (state && state.faction) || {};
+    var members = arr(factionMembersCache);
+    var factionName = String((faction && (faction.name || faction.faction_name)) || 'Your Faction');
+    var factionId = String((faction && faction.faction_id) || '');
+    var search = String(GM_getValue('warhub_faction_search', '') || '').trim().toLowerCase();
+
+    members = members.filter(function (m) {
+        return !!String(getMemberId(m) || '').trim();
+    }).slice().sort(function (a, b) {
+        var aEnabled = !!(a && (a.enabled || a.member_enabled || a.active_for_cycle || a.is_active || a.activated || a.is_enabled || a.active));
+        var bEnabled = !!(b && (b.enabled || b.member_enabled || b.active_for_cycle || b.is_active || b.activated || b.is_enabled || b.active));
+        if (aEnabled !== bEnabled) return aEnabled ? -1 : 1;
+        return getMemberName(a).localeCompare(getMemberName(b));
+    });
+
+    var filtered = members.filter(function (m) {
+        if (!search) return true;
+        return memberSearchText(m).indexOf(search) >= 0;
+    });
+
+    var enabledCount = Number(members.filter(function (m) {
+        return !!(m && (m.enabled || m.member_enabled || m.active_for_cycle || m.is_active || m.activated || m.is_enabled || m.active));
+    }).length || 0);
+
+    var visibleCanManage = canManageFaction();
+
+    function renderFactionMemberRow(m) {
+        var id = getMemberId(m);
+        var name = getMemberName(m);
+        var enabled = !!(m && (m.enabled || m.member_enabled || m.active_for_cycle || m.is_active || m.activated || m.is_enabled || m.active));
+        var role = String((m && (m.position || m.role || (m.member_access && m.member_access.position))) || '').trim() || 'Member';
+        var st = stateLabel(m);
+        var stateCd = stateCountdown(m);
+        var energy = energyValue(m);
+        var life = lifeValue(m);
+        var medBase = Number(m && (m.med_cd || m.med_cooldown || m.medical_cooldown || 0)) || 0;
+        var medText = medCooldownValue(m);
+
+        return [
+            '<div class="warhub-member-row" ' +
+                'data-medcd-base="' + esc(String(medBase)) + '" ' +
+                'data-statuscd-base="' + esc(String(stateCd)) + '" ' +
+                'data-state-name="' + esc(st) + '">',
+                '<div class="warhub-member-main">',
+                    '<div class="warhub-row" style="gap:8px;min-width:0;flex:1;">',
+                        '<a class="warhub-member-name" href="' + esc(profileUrl(m)) + '" target="_blank" rel="noopener noreferrer">' + esc(name) + '</a>',
+                        '<span class="warhub-pill neutral">' + esc(role) + '</span>',
+                        '<span class="warhub-pill ' + esc(st) + '" data-statuscd>' + esc(
+                            st === 'hospital' ? (stateCd > 0 ? 'Hospital (' + shortCd(stateCd, 'Hospital') + ')' : 'Hospital') :
+                            st === 'jail' ? (stateCd > 0 ? 'Jail (' + shortCd(stateCd, 'Jail') + ')' : 'Jail') :
+                            st === 'travel' ? (stateCd > 0 ? 'Travel (' + shortCd(stateCd, 'Travel') + ')' : 'Travel') :
+                            humanStateLabel(st)
+                        ) + '</span>',
+                        '<span class="warhub-pill ' + (enabled ? 'good' : 'bad') + '">' + (enabled ? 'Enabled' : 'Disabled') + '</span>',
+                    '</div>',
+                    visibleCanManage ? '<div class="warhub-row">' + (
+                        enabled
+                            ? '<button type="button" class="warhub-btn gray" data-action="remove-member" data-user-id="' + esc(id) + '">Disable</button>'
+                            : '<button type="button" class="warhub-btn green" data-action="activate-member" data-user-id="' + esc(id) + '">Enable</button>'
+                    ) + '</div>' : '',
+                '</div>',
+                '<div class="warhub-statline">',
+                    '<span>⚡ ' + esc(energy == null ? '—' : String(energy)) + '</span>',
+                    '<span>✚ ' + esc(life) + '</span>',
+                    '<span>💊 <span data-medcd>' + esc(medText) + '</span></span>',
+                    '<span>#' + esc(id || '—') + '</span>',
+                '</div>',
+            '</div>'
+        ].join('');
+    }
+
+    return [
+        '<div class="warhub-grid">',
+            '<div class="warhub-hero-card">',
+                '<div class="warhub-title">Faction</div>',
+                '<div class="warhub-sub">All faction members with live energy, life, and medical cooldown for admin, leaders, and co-leaders</div>',
+            '</div>',
+
+            '<div class="warhub-card">',
+                '<div class="warhub-row" style="justify-content:space-between;align-items:flex-start;gap:8px;">',
+                    '<div>',
+                        '<div class="warhub-member-name">' + esc(factionName) + '</div>',
+                        '<div class="warhub-sub">Faction #' + esc(factionId || '—') + '</div>',
+                    '</div>',
+                    '<div class="warhub-row" style="flex-wrap:wrap;justify-content:flex-end;">',
+                        '<span class="warhub-pill good">Enabled ' + esc(String(enabledCount)) + '</span>',
+                        '<span class="warhub-pill neutral">Members ' + esc(String(members.length)) + '</span>',
+                        '<span class="warhub-pill neutral">Shown ' + esc(String(filtered.length)) + '</span>',
+                    '</div>',
+                '</div>',
+                '<div class="warhub-sub" style="margin-top:10px;">Live bars only show when the backend has usable Torn data for that member. No fake fallback values are shown.</div>',
+            '</div>',
+
+            '<div class="warhub-card">',
+                '<div class="warhub-row">',
+                    '<input id="warhub-faction-search" class="warhub-input" type="text" value="' + esc(search) + '" placeholder="Search member name, ID, status or position" />',
+                    '<button type="button" class="warhub-btn ghost" data-action="faction-refresh">Refresh</button>',
+                '</div>',
+            '</div>',
+
+            '<div class="warhub-card warhub-col">',
+                '<div class="warhub-row" style="justify-content:space-between;align-items:center;">',
+                    '<h3>Faction Members</h3>',
+                    '<span class="warhub-pill neutral">' + esc(fmtNum(filtered.length)) + ' shown</span>',
+                '</div>',
+                filtered.length
+                    ? '<div class="warhub-col">' + filtered.map(renderFactionMemberRow).join('') + '</div>'
+                    : '<div class="warhub-empty">No faction members found.</div>',
+            '</div>',
+        '</div>'
+    ].join('');
+} function renderSettingsTab() {
+    var viewer = (state && state.viewer) || {};
+    var access = normalizeAccessCache((state && state.access) || accessState);
+    var maskedKey = getApiKey() ? '********' : '';
+    var bs = (viewer && viewer.battle_stats) || viewer.stats || {};
+    var strength = Number((bs && (bs.strength || bs.str || viewer.strength)) || 0);
+    var speed = Number((bs && (bs.speed || bs.spd || viewer.speed)) || 0);
+    var defense = Number((bs && (bs.defense || bs.defence || bs.def || viewer.defense || viewer.defence)) || 0);
+    var dexterity = Number((bs && (bs.dexterity || bs.dex || viewer.dexterity)) || 0);
+    var totalRaw = Number((viewer && (viewer.battle_stats_total || viewer.total_battle_stats || viewer.total || (strength + speed + defense + dexterity))) || 0);
+    var totalM = Number((viewer && (viewer.battle_stats_total_m || viewer.total_battle_stats_m)) || 0);
+    if ((!Number.isFinite(totalM) || totalM <= 0) && Number.isFinite(totalRaw) && totalRaw > 0) {
+        totalM = totalRaw >= 100000 ? (totalRaw / 1000000) : totalRaw;
+    }
+    var totalText = Number.isFinite(totalRaw) && totalRaw > 0 ? fmtNum(totalRaw) : '0';
+    var totalMillionsText = Number.isFinite(totalM) && totalM > 0 ? formatBattleMillions(totalM) : '0.0m';
+    return [
+        '<div class="warhub-grid">',
+            '<div class="warhub-hero-card">',
+                '<div class="warhub-title">Settings</div>',
+                '<div class="warhub-sub">Account and local script settings</div>',
+            '</div>',
+            '<div class="warhub-card warhub-col">',
+                '<label class="warhub-label" for="warhub-api-key">Torn API Key</label>',
+                '<input id="warhub-api-key" class="warhub-input" type="password" value="" placeholder="' + esc(maskedKey ? 'Saved API key' : 'Enter API key') + '" />',
+                '<label class="warhub-label" for="warhub-ff-key">FF Scouter Limited Key</label>',
+                '<input id="warhub-ff-key" class="warhub-input" type="password" value="' + esc(getFfScouterKey()) + '" placeholder="Optional FF Scouter key for fair-fight values" />',
+                '<div class="warhub-sub">FF Scouter key powers the fair-fight values in enemy rows and refreshes automatically while Enemies is open.</div>',
+                '<div class="warhub-row">',
+                    '<button type="button" class="warhub-btn" data-action="login">Re-login</button>',
+                    '<button type="button" class="warhub-btn gray" data-action="logout">Logout</button>',
+                '</div>',
+            '</div>',
+
+            '<div class="warhub-card">',
+                '<div class="warhub-kv"><div>User</div><div>' + esc(String(viewer.name || 'Logged out')) + '</div></div>',
+                '<div class="warhub-kv"><div>User ID</div><div>' + esc(String(viewer.user_id || '—')) + '</div></div>',
+                '<div class="warhub-kv"><div>Faction active</div><div>' + (canUseFeatures() ? 'Yes' : 'No') + '</div></div>',
+                '<div class="warhub-kv"><div>Leader activated</div><div>' + (access.member_enabled ? 'Yes' : 'No') + '</div></div>',
+            '</div>',
+
+        '</div>'
+    ].join('');
+}
+
+
+
+    function renderInstructionsTab() {
     return [
         '<div class="warhub-grid">',
 
@@ -3600,19 +4144,16 @@ function _handleActionClick() {
 
             if (action === 'target-save') {
                 var targetSelectEl = overlay && overlay.querySelector('#warhub-target-name');
-                var selectedUserId = cleanInputValue(targetSelectEl && targetSelectEl.value);
+                var targetNoteEl = overlay && overlay.querySelector('#warhub-target-note');
 
+                var selectedUserId = cleanInputValue(targetSelectEl && targetSelectEl.value);
                 if (!selectedUserId) {
                     setStatus('Select an enemy target first.', true);
                     return;
                 }
 
-                var enemyPool = [];
-                enemyPool = enemyPool.concat(arr(warEnemiesCache || []));
-                enemyPool = enemyPool.concat(arr((state && state.enemies) || []));
-                enemyPool = enemyPool.concat(arr((((state || {}).hospital || {}).items) || []));
-
-                var picked = enemyPool.find(function (m) {
+                var enemies = arr((state && state.enemies) || []);
+                var picked = enemies.find(function (m) {
                     return getMemberId(m) === selectedUserId;
                 });
 
@@ -3623,7 +4164,8 @@ function _handleActionClick() {
 
                 var targetPayload = {
                     name: getMemberName(picked),
-                    user_id: selectedUserId
+                    user_id: selectedUserId,
+                    note: String((targetNoteEl && targetNoteEl.value) || '').trim()
                 };
 
                 var nextTargets = mergeTargets([targetPayload], mergeTargets((state && state.targets) || [], getLocalTargets()));
@@ -3633,7 +4175,12 @@ function _handleActionClick() {
                 renderBody();
 
                 var targetRes = yield authedReq('POST', '/api/targets', targetPayload);
-                if (targetRes.ok && targetRes.json && Array.isArray(targetRes.json.items)) {
+                if (!targetRes.ok) {
+                    setStatus((targetRes.json && targetRes.json.error) || 'Failed to save target.', true);
+                    return;
+                }
+
+                if (targetRes.json && Array.isArray(targetRes.json.items)) {
                     state.targets = mergeTargets(targetRes.json.items, state.targets || []);
                     setLocalTargets(state.targets);
                 }
@@ -3649,27 +4196,6 @@ function _handleActionClick() {
                     setStatus('Missing target ID.', true);
                     return;
                 }
-
-                state = state || {};
-                state.targets = mergeTargets(state.targets || [], getLocalTargets()).filter(function (t) {
-                    return targetItemId(t) !== deleteTargetUserId;
-                });
-                setLocalTargets(state.targets);
-                renderBody();
-
-                var deleteRes = yield authedReq('DELETE', '/api/targets/' + encodeURIComponent(deleteTargetUserId), null);
-                if (!deleteRes.ok && deleteRes.status === 405) {
-                    deleteRes = yield authedReq('POST', '/api/targets/' + encodeURIComponent(deleteTargetUserId), {});
-                }
-                if (deleteRes.ok && deleteRes.json && Array.isArray(deleteRes.json.items)) {
-                    state.targets = mergeTargets(deleteRes.json.items, []);
-                    setLocalTargets(state.targets);
-                }
-
-                renderBody();
-                setStatus('Target deleted.', false);
-                return;
-            }
 
                 state = state || {};
                 state.targets = mergeTargets(state.targets || [], getLocalTargets()).filter(function (t) {
