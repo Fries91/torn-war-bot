@@ -1931,6 +1931,7 @@ function _refreshEnemiesLive() {
             || tab === 'members'
             || tab === 'enemies'
             || tab === 'hospital'
+            || tab === 'chain'
             || tab === 'faction';
     }
 
@@ -1938,6 +1939,7 @@ function _refreshEnemiesLive() {
         if (tab === 'hospital') return 6000;
         if (tab === 'enemies') return 7000;
         if (tab === 'members') return 10000;
+        if (tab === 'chain') return 10000;
         if (tab === 'overview') return 12000;
         if (tab === 'summary') return 12000;
         if (tab === 'faction') return 30000;
@@ -1968,6 +1970,12 @@ function _refreshEnemiesLive() {
                 }
 
                 if (currentTab === 'members') {
+                    yield refreshMembersLive();
+                    renderLiveTabOnly();
+                    return;
+                }
+
+                if (currentTab === 'chain') {
                     yield refreshMembersLive();
                     renderLiveTabOnly();
                     return;
@@ -2021,6 +2029,9 @@ function _handleTabClick() {
         loadInFlight = true;
         try {
             if (currentTab === 'members') {
+                yield loadFactionMembers(true);
+                membersLiveStamp = Date.now();
+            } else if (currentTab === 'chain') {
                 yield loadFactionMembers(true);
                 membersLiveStamp = Date.now();
             } else if (currentTab === 'enemies') {
@@ -2360,6 +2371,39 @@ function _handleTabClick() {
         if (Number.isFinite(raw) && raw > 0) return shortCd(raw, 'Ready');
         var txt = String(member.medical_cooldown_text || member.med_cooldown_text || '').trim();
         return txt || 'Ready';
+    }
+
+    function boosterCooldownValue(member) {
+        member = member || {};
+        var raw = Number(member.booster_cd || member.booster_cooldown || member.drug_cooldown || member.boosters_cooldown || 0);
+        if (Number.isFinite(raw) && raw > 0) return shortCd(raw, 'Ready');
+        var txt = String(member.booster_cooldown_text || member.booster_cd_text || member.drug_cooldown_text || '').trim();
+        return txt || 'Ready';
+    }
+
+    function mergeChainMember(item) {
+        item = item || {};
+        var uid = String(item.user_id || item.id || item.player_id || '').trim();
+        if (!uid) return item;
+        var pools = [];
+        if (state && state.faction && Array.isArray(state.faction.members)) pools.push(state.faction.members);
+        if (Array.isArray(factionMembersCache)) pools.push(factionMembersCache);
+        if (Array.isArray(currentFactionMembers)) pools.push(currentFactionMembers);
+        for (var i = 0; i < pools.length; i += 1) {
+            var list = pools[i] || [];
+            for (var j = 0; j < list.length; j += 1) {
+                var row = list[j] || {};
+                var rid = String(row.user_id || row.id || row.player_id || '').trim();
+                if (rid && rid === uid) {
+                    return Object.assign({}, row, item, {
+                        user_id: uid,
+                        user_name: item.user_name || row.user_name || row.name || '',
+                        name: item.name || row.name || row.user_name || item.user_name || ''
+                    });
+                }
+            }
+        }
+        return item;
     }
 
     function humanStateLabel(st) {
@@ -2977,35 +3021,54 @@ function renderEnemiesTab() {
     function renderChainTab() {
         var chain = (state && state.chain) || {};
         var ownFactionName = String(((state && state.faction && (state.faction.faction_name || state.faction.name)) || 'Your Faction'));
-        var availableItems = arr(chain.available_items).slice().sort(function (a, b) {
+        var availableItems = arr(chain.available_items).map(mergeChainMember).slice().sort(function (a, b) {
             return getMemberName(a).localeCompare(getMemberName(b));
         });
-        var sitterItems = arr(chain.sitter_items).slice().sort(function (a, b) {
+        var sitterItems = arr(chain.sitter_items).map(mergeChainMember).slice().sort(function (a, b) {
             return getMemberName(a).localeCompare(getMemberName(b));
         });
         var current = Number(chain.current || 0);
         var cooldown = Number(chain.cooldown || 0);
         var meterPct = Math.max(4, Math.min(100, current > 0 ? Math.round((current % 100) || 100) : 4));
+        var isAvailable = !!chain.available;
+        var isSitter = !!chain.sitter_enabled;
+        var viewerIsUnavailable = !isAvailable;
+        var yourStatus = isAvailable ? (isSitter ? 'Available · Chain Sitter On' : 'Available') : (isSitter ? 'Unavailable · Chain Sitter On' : 'Unavailable');
+
+        function chainBtnClass(activeClass, isActive) {
+            return 'warhub-btn ' + (isActive ? activeClass : 'gray');
+        }
 
         function renderChainPersonRow(item, mode) {
+            item = mergeChainMember(item);
             var uid = String((item && item.user_id) || '');
             var name = getMemberName(item);
             var profile = uid ? profileUrl(uid) : '';
+            var energy = energyValue(item);
+            var booster = boosterCooldownValue(item);
+            var med = medCooldownValue(item);
             var statusText = mode === 'sitter'
-                ? 'Chain sitter ' + ((item && item.sitter_enabled) ? 'enabled' : 'disabled')
+                ? ((item && item.sitter_enabled) ? 'Chain sitter enabled' : 'Chain sitter disabled')
                 : 'Marked available';
             return [
-                '<div class="chain-person-row">',
-                    '<div class="warhub-col">',
-                        profile
-                            ? '<a class="warhub-member-name" href="' + esc(profile) + '" target="_blank" rel="noopener noreferrer">' + esc(name) + '</a>'
-                            : '<div class="warhub-member-name">' + esc(name) + '</div>',
-                        '<div class="warhub-summary-meta">' + esc(statusText) + '</div>',
+                '<div class="chain-person-row warhub-member-row">',
+                    '<div class="warhub-member-main">',
+                        '<div class="warhub-col" style="min-width:0;flex:1;">',
+                            profile
+                                ? '<a class="warhub-member-name" href="' + esc(profile) + '" target="_blank" rel="noopener noreferrer">' + esc(name) + '</a>'
+                                : '<div class="warhub-member-name">' + esc(name) + '</div>',
+                            '<div class="warhub-summary-meta">' + esc(statusText) + '</div>',
+                        '</div>',
+                        '<div class="warhub-flag-row">',
+                            mode === 'sitter'
+                                ? '<span class="warhub-pill warn">Sitter</span>'
+                                : '<span class="warhub-pill good">Available</span>',
+                        '</div>',
                     '</div>',
-                    '<div class="warhub-flag-row">',
-                        mode === 'sitter'
-                            ? '<span class="warhub-pill warn">Sitter</span>'
-                            : '<span class="warhub-pill good">Available</span>',
+                    '<div class="warhub-statline">',
+                        '<span title="Energy">⚡ ' + esc(energy == null ? '—' : String(energy)) + '</span>',
+                        '<span title="Booster Cooldown">🧪 ' + esc(booster) + '</span>',
+                        '<span title="Medical Cooldown">💊 ' + esc(med) + '</span>',
                     '</div>',
                 '</div>'
             ].join('');
@@ -3028,24 +3091,24 @@ function renderEnemiesTab() {
                         '</div>',
                         '<div class="chain-stat-box">',
                             '<div class="label">Your Status</div>',
-                            '<div class="value">' + esc(chain.available ? 'Ready' : 'Out') + '</div>',
+                            '<div class="value">' + esc(yourStatus) + '</div>',
                         '</div>',
                     '</div>',
                     '<div class="warhub-space"></div>',
                     '<div class="chain-meter"><div class="chain-meter-fill" style="width:' + esc(String(meterPct)) + '%"></div></div>',
                     '<div class="warhub-space"></div>',
                     '<div class="warhub-row">',
-                        '<span class="warhub-pill ' + (chain.available ? 'good' : 'neutral') + '">' + esc(chain.available ? 'Available' : 'Unavailable') + '</span>',
-                        '<span class="warhub-pill ' + (chain.sitter_enabled ? 'warn' : 'neutral') + '">' + esc(chain.sitter_enabled ? 'Chain Sitter On' : 'Chain Sitter Off') + '</span>',
+                        '<span class="warhub-pill ' + (isAvailable ? 'good' : 'bad') + '">' + esc(isAvailable ? 'Available' : 'Unavailable') + '</span>',
+                        '<span class="warhub-pill ' + (isSitter ? 'warn' : 'neutral') + '">' + esc(isSitter ? 'Chain Sitter On' : 'Chain Sitter Off') + '</span>',
                         '<span class="warhub-pill online">Available ' + esc(String(availableItems.length)) + '</span>',
                         '<span class="warhub-pill idle">Sitters ' + esc(String(sitterItems.length)) + '</span>',
                     '</div>',
                 '</div>',
                 '<div class="warhub-card">',
                     '<div class="warhub-row">',
-                        '<button type="button" class="warhub-btn green" data-action="chain-available">Available</button>',
-                        '<button type="button" class="warhub-btn gray" data-action="chain-unavailable">Unavailable</button>',
-                        '<button type="button" class="warhub-btn warn" data-action="chain-toggle-sitter">Toggle sitter</button>',
+                        '<button type="button" class="' + esc(chainBtnClass('green', isAvailable)) + '" data-action="chain-available">Available</button>',
+                        '<button type="button" class="' + esc(chainBtnClass('', viewerIsUnavailable)) + '" data-action="chain-unavailable">Unavailable</button>',
+                        '<button type="button" class="' + esc(chainBtnClass('warn', isSitter)) + '" data-action="chain-toggle-sitter">Toggle sitter</button>',
                     '</div>',
                 '</div>',
                 '<div class="warhub-card">',
