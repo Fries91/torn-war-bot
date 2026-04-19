@@ -4145,16 +4145,19 @@ function _handleActionClick() {
 
             if (action === 'target-save') {
                 var targetSelectEl = overlay && overlay.querySelector('#warhub-target-name');
-                var targetNoteEl = overlay && overlay.querySelector('#warhub-target-note');
-
                 var selectedUserId = cleanInputValue(targetSelectEl && targetSelectEl.value);
+
                 if (!selectedUserId) {
                     setStatus('Select an enemy target first.', true);
                     return;
                 }
 
-                var enemies = arr((state && state.enemies) || []);
-                var picked = enemies.find(function (m) {
+                var enemyPool = [];
+                enemyPool = enemyPool.concat(arr(warEnemiesCache || []));
+                enemyPool = enemyPool.concat(arr((state && state.enemies) || []));
+                enemyPool = enemyPool.concat(arr((((state || {}).hospital || {}).items) || []));
+
+                var picked = enemyPool.find(function (m) {
                     return getMemberId(m) === selectedUserId;
                 });
 
@@ -4165,8 +4168,7 @@ function _handleActionClick() {
 
                 var targetPayload = {
                     name: getMemberName(picked),
-                    user_id: selectedUserId,
-                    note: String((targetNoteEl && targetNoteEl.value) || '').trim()
+                    user_id: selectedUserId
                 };
 
                 var nextTargets = mergeTargets([targetPayload], mergeTargets((state && state.targets) || [], getLocalTargets()));
@@ -4176,12 +4178,7 @@ function _handleActionClick() {
                 renderBody();
 
                 var targetRes = yield authedReq('POST', '/api/targets', targetPayload);
-                if (!targetRes.ok) {
-                    setStatus((targetRes.json && targetRes.json.error) || 'Failed to save target.', true);
-                    return;
-                }
-
-                if (targetRes.json && Array.isArray(targetRes.json.items)) {
+                if (targetRes.ok && targetRes.json && Array.isArray(targetRes.json.items)) {
                     state.targets = mergeTargets(targetRes.json.items, state.targets || []);
                     setLocalTargets(state.targets);
                 }
