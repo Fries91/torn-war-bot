@@ -516,7 +516,7 @@
 .warhub-btn.ghost { background: rgba(255,255,255,.08) !important; }\n\
 .warhub-btn.gray { background: rgba(255,255,255,.10) !important; }\n\
 .warhub-btn.green { background: linear-gradient(180deg, rgba(42,168,95,.98), rgba(21,120,64,.98)) !important; }\n\
-.warhub-btn.warn { background: linear-gradient(180deg, rgba(226,154,27,.98), rgba(163,102,8,.98)) !important; }\n.warhub-btn.bounty { background: linear-gradient(180deg, rgba(220,50,50,.98), rgba(145,18,18,.98)) !important; border-color: rgba(255,255,255,.14) !important; }\n\
+.warhub-btn.warn { background: linear-gradient(180deg, rgba(226,154,27,.98), rgba(163,102,8,.98)) !important; }\n\.warhub-btn.bounty { background: linear-gradient(180deg, rgba(220,50,50,.98), rgba(145,18,18,.98)) !important; border-color: rgba(255,255,255,.14) !important; }\n\
 .warhub-pill {\n\
   display: inline-flex !important;\n\
   align-items: center !important;\n\
@@ -1508,12 +1508,13 @@ function makeHoldDraggable(handle, target, key) {
                 yield loadState();
                 renderBody();
                 restartPolling();
+                setStatus('Logged in successfully.', false);
             } catch (refreshErr) {
                 console.error('War and Chain post-login refresh error:', refreshErr);
                 try { renderBody(); } catch (_e) {}
                 try { restartPolling(); } catch (_e2) {}
+                setStatus('Logged in, but refresh failed. Reopen the overlay.', false);
             }
-            setStatus('Logged in successfully.', false);
         });
 
         return _doLogin.apply(this, arguments);
@@ -1629,28 +1630,6 @@ function _loadFactionMembers() {
 
         var payload = res.json || {};
         var members = arr(payload.items || payload.members || []);
-        var meId = String(
-            (state && state.viewer && state.viewer.user_id)
-            || (state && state.me && state.me.user_id)
-            || (payload && payload.viewer_user_id)
-            || ''
-        ).trim();
-
-        if (meId) {
-            members = members.map(function (member) {
-                var row = member && typeof member === 'object' ? Object.assign({}, member) : {};
-                var rowId = String(
-                    (row && (row.user_id || row.id || row.player_id)) || ''
-                ).trim();
-                if (rowId && rowId === meId) {
-                    row.online_state = 'online';
-                    row.status = row.status || 'Online';
-                    row.status_detail = row.status_detail || '';
-                    row.last_action = row.last_action || 'Online';
-                }
-                return row;
-            });
-        }
 
         state = state || {};
         state.faction = Object.assign({}, state.faction || {}, {
