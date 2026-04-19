@@ -1,4 +1,3 @@
-import json
 import os
 import secrets
 import sqlite3
@@ -248,26 +247,6 @@ def init_db():
         """
     )
 
-    cur.execute(
-        """
-        CREATE TABLE IF NOT EXISTS enemy_stat_predictions (
-            faction_id TEXT NOT NULL,
-            enemy_faction_id TEXT DEFAULT '',
-            enemy_user_id TEXT NOT NULL,
-            enemy_name TEXT DEFAULT '',
-            predicted_total_stats INTEGER DEFAULT 0,
-            predicted_total_stats_m REAL DEFAULT 0,
-            confidence TEXT DEFAULT '',
-            source TEXT DEFAULT '',
-            summary TEXT DEFAULT '',
-            raw_json TEXT DEFAULT '',
-            created_at TEXT DEFAULT '',
-            updated_at TEXT DEFAULT '',
-            PRIMARY KEY (faction_id, enemy_user_id)
-        )
-        """
-    )
-
     _ensure_column(cur, "faction_members", "activated_at", "activated_at TEXT DEFAULT ''")
     _ensure_column(cur, "faction_members", "cycle_locked", "cycle_locked INTEGER DEFAULT 0")
     _ensure_column(cur, "hospital_dibs", "faction_name", "faction_name TEXT DEFAULT ''")
@@ -284,7 +263,6 @@ def init_db():
     _ensure_column(cur, "hospital_dibs", "dibs_lock_until_ts", "dibs_lock_until_ts INTEGER DEFAULT 0")
     _ensure_column(cur, "hospital_dibs", "overview_remove_after_ts", "overview_remove_after_ts INTEGER DEFAULT 0")
 
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_enemy_stat_predictions_enemy_faction_id ON enemy_stat_predictions(enemy_faction_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_users_faction_id ON users(faction_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON notifications(user_id)")
@@ -1084,103 +1062,3 @@ def list_overview_dibs(faction_id: str) -> List[Dict[str, Any]]:
     return rows
 
 
-# enemy stat predictions
-
-def get_enemy_stat_prediction(faction_id: str, enemy_user_id: str) -> Optional[Dict[str, Any]]:
-    faction_id = _clean_text(faction_id)
-    enemy_user_id = _clean_text(enemy_user_id)
-    if not faction_id or not enemy_user_id:
-        return None
-    con = _con()
-    cur = con.cursor()
-    cur.execute(
-        """
-        SELECT *
-        FROM enemy_stat_predictions
-        WHERE faction_id = ? AND enemy_user_id = ?
-        LIMIT 1
-        """,
-        (faction_id, enemy_user_id),
-    )
-    row = cur.fetchone()
-    con.close()
-    return _row_to_dict(row)
-
-
-def list_enemy_stat_predictions(faction_id: str) -> List[Dict[str, Any]]:
-    faction_id = _clean_text(faction_id)
-    if not faction_id:
-        return []
-    con = _con()
-    cur = con.cursor()
-    cur.execute(
-        """
-        SELECT *
-        FROM enemy_stat_predictions
-        WHERE faction_id = ?
-        ORDER BY LOWER(COALESCE(NULLIF(enemy_name, ''), enemy_user_id)) ASC
-        """,
-        (faction_id,),
-    )
-    rows = [dict(r) for r in cur.fetchall()]
-    con.close()
-    return rows
-
-
-def upsert_enemy_stat_prediction(
-    faction_id: str,
-    enemy_faction_id: str = "",
-    enemy_user_id: str = "",
-    enemy_name: str = "",
-    predicted_total_stats: int = 0,
-    predicted_total_stats_m: float = 0.0,
-    confidence: str = "",
-    source: str = "",
-    summary: str = "",
-    raw_json: Any = None,
-) -> Dict[str, Any]:
-    faction_id = _clean_text(faction_id)
-    enemy_user_id = _clean_text(enemy_user_id)
-    if not faction_id or not enemy_user_id:
-        return {}
-    now = _utc_now()
-    raw_json_text = json.dumps(raw_json or {}, ensure_ascii=False)
-    con = _con()
-    cur = con.cursor()
-    cur.execute(
-        """
-        INSERT INTO enemy_stat_predictions (
-            faction_id, enemy_faction_id, enemy_user_id, enemy_name,
-            predicted_total_stats, predicted_total_stats_m, confidence, source, summary, raw_json,
-            created_at, updated_at
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(faction_id, enemy_user_id) DO UPDATE SET
-            enemy_faction_id = excluded.enemy_faction_id,
-            enemy_name = excluded.enemy_name,
-            predicted_total_stats = excluded.predicted_total_stats,
-            predicted_total_stats_m = excluded.predicted_total_stats_m,
-            confidence = excluded.confidence,
-            source = excluded.source,
-            summary = excluded.summary,
-            raw_json = excluded.raw_json,
-            updated_at = excluded.updated_at
-        """,
-        (
-            faction_id,
-            _clean_text(enemy_faction_id),
-            enemy_user_id,
-            _clean_text(enemy_name),
-            _to_int(predicted_total_stats, 0),
-            float(predicted_total_stats_m or 0.0),
-            _clean_text(confidence),
-            _clean_text(source),
-            _clean_text(summary),
-            raw_json_text,
-            now,
-            now,
-        ),
-    )
-    con.commit()
-    con.close()
-    return get_enemy_stat_prediction(faction_id, enemy_user_id) or {}
