@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         War and Chain ⚔️
 // @namespace    fries91-war-hub
-// @version      3.6.5
+// @version      3.6.6
 // @description  War and Chain by Fries91. Free-access rebuild with admin and leader/co-leader restrictions kept.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -2648,7 +2648,7 @@ function _handleTabClick() {
                         ) + '</span>',
                     '</div>',
                     '<div class="warhub-row">',
-                        '<a class="warhub-btn bounty" href="' + esc(bountyUrl(member)) + '" target="_blank" rel="noopener noreferrer">Bounty</a>',
+                        '<a class="warhub-btn bounty" href="' + esc(bountyUrl(member)) + '">Bounty</a>',
                     '</div>',
                 '</div>',
                 '<div class="warhub-statline">',
