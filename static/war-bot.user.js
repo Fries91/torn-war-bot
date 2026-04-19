@@ -69,6 +69,7 @@
     ];
 
     var TAB_ROW_2 = [
+        ['targets', 'Targets'],
         ['meddeals', 'Med Deals'],
         ['terms', 'Terms'],
         ['settings', 'Settings'],
@@ -1003,6 +1004,44 @@
             tickMembersCountdowns();
         }, 1000);
     }
+
+
+    function getLocalTargets() {
+        try {
+            var raw = GM_getValue(K_TARGETS_LOCAL, '[]');
+            var parsed = JSON.parse(raw);
+            return Array.isArray(parsed) ? parsed : [];
+        } catch (_e) {
+            return [];
+        }
+    }
+
+    function setLocalTargets(items) {
+        try {
+            GM_setValue(K_TARGETS_LOCAL, JSON.stringify(Array.isArray(items) ? items : []));
+        } catch (_e) {}
+    }
+
+    function targetItemId(item) {
+        if (!item || typeof item !== 'object') return '';
+        return String(item.user_id || item.target_user_id || item.id || item.player_id || '').trim();
+    }
+
+    function mergeTargets(primary, secondary) {
+        var out = [];
+        var seen = {};
+        arr(primary).concat(arr(secondary)).forEach(function (item) {
+            var id = targetItemId(item);
+            if (!id || seen[id]) return;
+            seen[id] = true;
+            out.push({
+                user_id: id,
+                name: String(item.name || item.target_name || item.player_name || ('Enemy ' + id)).trim()
+            });
+        });
+        return out;
+    }
+
 
     // ============================================================
     // 07. LOCAL NOTIFICATIONS / STATUS
@@ -4289,6 +4328,56 @@ function _handleActionClick() {
                 yield loadState();
                 renderBody();
                 setStatus('Dibs claimed.', false);
+                return;
+            }
+
+            if (action === 'target-save-local') {
+                var targetSelectEl = overlay && overlay.querySelector('#warhub-target-name');
+                var selectedUserId = cleanInputValue(targetSelectEl && targetSelectEl.value);
+                if (!selectedUserId) {
+                    setStatus('Select an enemy target first.', true);
+                    return;
+                }
+
+                var enemyPool = [];
+                enemyPool = enemyPool.concat(arr(warEnemiesCache || []));
+                enemyPool = enemyPool.concat(arr((state && state.enemies) || []));
+                enemyPool = enemyPool.concat(arr((((state || {}).hospital || {}).items) || []));
+
+                var picked = enemyPool.find(function (m) {
+                    return getMemberId(m) === selectedUserId;
+                });
+
+                if (!picked) {
+                    setStatus('Selected enemy was not found.', true);
+                    return;
+                }
+
+                state = state || {};
+                state.targets = mergeTargets([{
+                    user_id: selectedUserId,
+                    name: getMemberName(picked)
+                }], mergeTargets((state && state.targets) || [], getLocalTargets()));
+                setLocalTargets(state.targets);
+                renderBody();
+                setStatus('Target saved.', false);
+                return;
+            }
+
+            if (action === 'target-delete-local') {
+                var deleteTargetUserId = cleanInputValue(el && el.getAttribute('data-user-id'));
+                if (!deleteTargetUserId) {
+                    setStatus('Missing target ID.', true);
+                    return;
+                }
+
+                state = state || {};
+                state.targets = mergeTargets((state && state.targets) || [], getLocalTargets()).filter(function (t) {
+                    return targetItemId(t) !== deleteTargetUserId;
+                });
+                setLocalTargets(state.targets);
+                renderBody();
+                setStatus('Target deleted.', false);
                 return;
             }
 
