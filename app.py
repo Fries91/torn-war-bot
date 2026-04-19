@@ -428,19 +428,53 @@ def _build_live_faction_members(user: Dict[str, Any], return_debug: bool = False
             "attack_url": attack_url(member_user_id),
             "bounty_url": bounty_url(member_user_id),
             "enemy": False,
-            "source": "viewer_faction_members",
+            "source": "viewer_faction_members_public_roster",
             "faction_id": faction_id,
             "faction_name": faction_name,
             "enabled": bool(access_row.get("enabled", True)),
             "member_access": _normalize_member_access_row(access_row),
             "has_stored_api_key": bool(member_api_key),
-            "life": (live_bar_payload.get("bars") or {}).get("life") or {},
-            "energy": (live_bar_payload.get("bars") or {}).get("energy") or {},
-            "nerve": (live_bar_payload.get("bars") or {}).get("nerve") or {},
-            "happy": (live_bar_payload.get("bars") or {}).get("happy") or {},
-            "medical_cooldown": _to_int(live_bar_payload.get("medical_cooldown"), 0),
-            "medical_cooldown_text": _seconds_to_text(_to_int(live_bar_payload.get("medical_cooldown"), 0)),
+            "life": (live_bar_payload.get("bars") or {}).get("life") or member.get("life") or {},
+            "energy": (live_bar_payload.get("bars") or {}).get("energy") or member.get("energy") or {},
+            "nerve": (live_bar_payload.get("bars") or {}).get("nerve") or member.get("nerve") or {},
+            "happy": (live_bar_payload.get("bars") or {}).get("happy") or member.get("happy") or {},
+            "medical_cooldown": _to_int(live_bar_payload.get("medical_cooldown"), 0) or _to_int(member.get("medical_cooldown"), 0),
+            "medical_cooldown_text": _seconds_to_text(_to_int(live_bar_payload.get("medical_cooldown"), 0) or _to_int(member.get("medical_cooldown"), 0)),
         })
+
+    if not out:
+        viewer_user_id = str(user.get("user_id") or "").strip()
+        if viewer_user_id:
+            viewer_bars = _build_member_bar_payload({}, api_key=str(user.get("api_key") or ""))
+            out.append({
+                "user_id": viewer_user_id,
+                "name": str(user.get("name") or "You"),
+                "level": "",
+                "position": "",
+                "status": "",
+                "status_detail": "",
+                "last_action": "",
+                "online_state": "online",
+                "in_hospital": 0,
+                "hospital_seconds": 0,
+                "hospital_until_ts": 0,
+                "profile_url": profile_url(viewer_user_id),
+                "attack_url": attack_url(viewer_user_id),
+                "bounty_url": bounty_url(viewer_user_id),
+                "enemy": False,
+                "source": "viewer_self_fallback",
+                "faction_id": faction_id,
+                "faction_name": faction_name,
+                "enabled": True,
+                "member_access": {},
+                "has_stored_api_key": True,
+                "life": (viewer_bars.get("bars") or {}).get("life") or {},
+                "energy": (viewer_bars.get("bars") or {}).get("energy") or {},
+                "nerve": (viewer_bars.get("bars") or {}).get("nerve") or {},
+                "happy": (viewer_bars.get("bars") or {}).get("happy") or {},
+                "medical_cooldown": _to_int(viewer_bars.get("medical_cooldown"), 0),
+                "medical_cooldown_text": _seconds_to_text(_to_int(viewer_bars.get("medical_cooldown"), 0)),
+            })
 
     out.sort(key=lambda x: (str(x.get("name") or "").lower(), str(x.get("user_id") or "")))
     debug = {
