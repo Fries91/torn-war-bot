@@ -361,164 +361,157 @@ def _build_live_faction_members(user: Dict[str, Any], return_debug: bool = False
         return ([], {"step": "missing_faction_id"}) if return_debug else []
 
     faction = faction_basic(str(user.get("api_key") or ""), faction_id=faction_id) or {}
-    if not faction.get("ok"):
-        dbg = {
-            "step": "faction_basic_not_ok",
-            "faction_error": str(faction.get("error") or ""),
-            "faction_source": str(faction.get("source") or ""),
-            "debug_attempts": faction.get("debug_attempts") or [],
-            "resolved_faction_id": str(faction.get("faction_id") or ""),
-            "resolved_faction_name": str(faction.get("faction_name") or ""),
-        }
-        viewer_user_id = str(user.get("user_id") or "").strip()
-        if viewer_user_id:
-            viewer_bars = _build_member_bar_payload({"user_id": viewer_user_id}, api_key=str(user.get("api_key") or ""))
-            fallback = [{
-                "user_id": viewer_user_id,
-                "name": str(user.get("name") or "You"),
-                "level": "",
-                "position": "",
-                "status": "",
-                "status_detail": "",
-                "last_action": "",
-                "online_state": "online",
-                "in_hospital": 0,
-                "hospital_seconds": 0,
-                "hospital_until_ts": 0,
-                "profile_url": profile_url(viewer_user_id),
-                "attack_url": attack_url(viewer_user_id),
-                "bounty_url": bounty_url(viewer_user_id),
-                "enemy": False,
-                "source": "viewer_self_fallback_on_error",
-                "faction_id": faction_id,
-                "faction_name": str(user.get("faction_name") or ""),
-                "enabled": True,
-                "member_access": {},
-                "has_stored_api_key": True,
-                "life": (viewer_bars.get("bars") or {}).get("life") or {},
-                "energy": (viewer_bars.get("bars") or {}).get("energy") or {},
-                "nerve": (viewer_bars.get("bars") or {}).get("nerve") or {},
-                "happy": (viewer_bars.get("bars") or {}).get("happy") or {},
-                "medical_cooldown": _to_int(viewer_bars.get("medical_cooldown"), 0),
-                "medical_cooldown_text": _seconds_to_text(_to_int(viewer_bars.get("medical_cooldown"), 0)),
-            }]
-            dbg["step"] = "viewer_self_fallback_on_error"
-            dbg["final_member_count"] = 1
-            return (fallback, dbg) if return_debug else fallback
-        return ([], dbg) if return_debug else []
-
+    faction_ok = bool(faction.get("ok"))
     faction_name = str(faction.get("faction_name") or user.get("faction_name") or "").strip()
 
     raw_members = faction.get("members") or []
     live_members: List[Dict[str, Any]] = []
 
-    if isinstance(raw_members, dict):
-        for key, value in raw_members.items():
-            member = value if isinstance(value, dict) else {}
-            member_user_id = str(
-                member.get("user_id")
-                or member.get("id")
-                or key
-                or ""
-            ).strip()
-            if not member_user_id:
-                continue
-            live_members.append({
-                **member,
-                "user_id": member_user_id,
-            })
-    elif isinstance(raw_members, list):
-        for member in raw_members:
-            if not isinstance(member, dict):
-                continue
-            member_user_id = str(member.get("user_id") or member.get("id") or "").strip()
-            if not member_user_id:
-                continue
-            live_members.append({
-                **member,
-                "user_id": member_user_id,
-            })
+    if faction_ok:
+        if isinstance(raw_members, dict):
+            for key, value in raw_members.items():
+                member = value if isinstance(value, dict) else {}
+                member_user_id = str(
+                    member.get("user_id")
+                    or member.get("id")
+                    or key
+                    or ""
+                ).strip()
+                if not member_user_id:
+                    continue
+                live_members.append({
+                    **member,
+                    "user_id": member_user_id,
+                })
+        elif isinstance(raw_members, list):
+            for member in raw_members:
+                if not isinstance(member, dict):
+                    continue
+                member_user_id = str(
+                    member.get("user_id")
+                    or member.get("id")
+                    or ""
+                ).strip()
+                if not member_user_id:
+                    continue
+                live_members.append({
+                    **member,
+                    "user_id": member_user_id,
+                })
 
     stored_users = get_user_map_by_faction(faction_id)
-    out: List[Dict[str, Any]] = []
+    access_cache: Dict[str, Dict[str, Any]] = {}
+    out_by_user_id: Dict[str, Dict[str, Any]] = {}
 
-    for member in live_members:
-        member_user_id = str(member.get("user_id") or "").strip()
+    def _access_row_for(member_user_id: str) -> Dict[str, Any]:
+        member_user_id = str(member_user_id or "").strip()
         if not member_user_id:
-            continue
+            return {}
+        if member_user_id not in access_cache:
+            access_cache[member_user_id] = get_faction_member_access(faction_id, member_user_id) or {}
+        return access_cache[member_user_id]
+
+    def _build_output_row(base_member: Dict[str, Any], source_label: str) -> Optional[Dict[str, Any]]:
+        member_user_id = str(base_member.get("user_id") or "").strip()
+        if not member_user_id:
+            return None
 
         stored_user = stored_users.get(member_user_id) or {}
-        access_row = get_faction_member_access(faction_id, member_user_id) or {}
+        access_row = _access_row_for(member_user_id)
 
         member_api_key = str(stored_user.get("api_key") or "")
         if member_user_id == str(user.get("user_id") or ""):
             member_api_key = str(user.get("api_key") or "") or member_api_key
 
-        live_bar_payload = _build_member_bar_payload(member, api_key=member_api_key)
+        live_bar_payload = _build_member_bar_payload({"user_id": member_user_id}, api_key=member_api_key)
+        live_bars = live_bar_payload.get("bars") or {}
 
-        out.append({
-            **member,
+        name = str(
+            base_member.get("name")
+            or stored_user.get("name")
+            or base_member.get("user_name")
+            or "Unknown"
+        ).strip() or "Unknown"
+
+        return {
+            **base_member,
             "user_id": member_user_id,
+            "name": name,
             "profile_url": profile_url(member_user_id),
             "attack_url": attack_url(member_user_id),
             "bounty_url": bounty_url(member_user_id),
             "enemy": False,
-            "source": "viewer_faction_members_public_roster",
+            "source": source_label,
             "faction_id": faction_id,
             "faction_name": faction_name,
             "enabled": bool(access_row.get("enabled", True)),
             "member_access": _normalize_member_access_row(access_row),
             "has_stored_api_key": bool(member_api_key),
-            "life": (live_bar_payload.get("bars") or {}).get("life") or member.get("life") or {},
-            "energy": (live_bar_payload.get("bars") or {}).get("energy") or member.get("energy") or {},
-            "nerve": (live_bar_payload.get("bars") or {}).get("nerve") or member.get("nerve") or {},
-            "happy": (live_bar_payload.get("bars") or {}).get("happy") or member.get("happy") or {},
-            "medical_cooldown": _to_int(live_bar_payload.get("medical_cooldown"), 0) or _to_int(member.get("medical_cooldown"), 0),
-            "medical_cooldown_text": _seconds_to_text(_to_int(live_bar_payload.get("medical_cooldown"), 0) or _to_int(member.get("medical_cooldown"), 0)),
-        })
+            "life": live_bars.get("life") or base_member.get("life") or {},
+            "energy": live_bars.get("energy") or base_member.get("energy") or {},
+            "nerve": live_bars.get("nerve") or base_member.get("nerve") or {},
+            "happy": live_bars.get("happy") or base_member.get("happy") or {},
+            "medical_cooldown": _to_int(live_bar_payload.get("medical_cooldown"), 0) or _to_int(base_member.get("medical_cooldown"), 0),
+            "medical_cooldown_text": _seconds_to_text(_to_int(live_bar_payload.get("medical_cooldown"), 0) or _to_int(base_member.get("medical_cooldown"), 0)),
+        }
 
-    if not out:
+    for member in live_members:
+        built = _build_output_row(member, "viewer_faction_members_public_roster")
+        if built:
+            out_by_user_id[str(built.get("user_id") or "")] = built
+
+    for stored_user_id, stored_user in (stored_users or {}).items():
+        stored_user_id = str(stored_user_id or "").strip()
+        if not stored_user_id or stored_user_id in out_by_user_id:
+            continue
+        built = _build_output_row({
+            "user_id": stored_user_id,
+            "name": str(stored_user.get("name") or "Unknown"),
+            "online_state": "offline",
+            "status": "",
+            "status_detail": "",
+            "last_action": "",
+            "position": "",
+            "level": "",
+            "in_hospital": 0,
+            "hospital_seconds": 0,
+            "hospital_until_ts": 0,
+        }, "stored_faction_member_activation")
+        if built:
+            out_by_user_id[stored_user_id] = built
+
+    if not out_by_user_id:
         viewer_user_id = str(user.get("user_id") or "").strip()
         if viewer_user_id:
-            viewer_bars = _build_member_bar_payload({"user_id": viewer_user_id}, api_key=str(user.get("api_key") or ""))
-            out.append({
+            built = _build_output_row({
                 "user_id": viewer_user_id,
                 "name": str(user.get("name") or "You"),
-                "level": "",
-                "position": "",
+                "online_state": "online",
                 "status": "",
                 "status_detail": "",
                 "last_action": "",
-                "online_state": "online",
+                "position": "",
+                "level": "",
                 "in_hospital": 0,
                 "hospital_seconds": 0,
                 "hospital_until_ts": 0,
-                "profile_url": profile_url(viewer_user_id),
-                "attack_url": attack_url(viewer_user_id),
-                "bounty_url": bounty_url(viewer_user_id),
-                "enemy": False,
-                "source": "viewer_self_fallback",
-                "faction_id": faction_id,
-                "faction_name": faction_name,
-                "enabled": True,
-                "member_access": {},
-                "has_stored_api_key": True,
-                "life": (viewer_bars.get("bars") or {}).get("life") or {},
-                "energy": (viewer_bars.get("bars") or {}).get("energy") or {},
-                "nerve": (viewer_bars.get("bars") or {}).get("nerve") or {},
-                "happy": (viewer_bars.get("bars") or {}).get("happy") or {},
-                "medical_cooldown": _to_int(viewer_bars.get("medical_cooldown"), 0),
-                "medical_cooldown_text": _seconds_to_text(_to_int(viewer_bars.get("medical_cooldown"), 0)),
-            })
+            }, "viewer_self_fallback")
+            if built:
+                out_by_user_id[viewer_user_id] = built
 
+    out = list(out_by_user_id.values())
     out.sort(key=lambda x: (str(x.get("name") or "").lower(), str(x.get("user_id") or "")))
+
     debug = {
         "step": "built_members",
         "requested_faction_id": faction_id,
         "resolved_faction_id": str(faction.get("faction_id") or ""),
         "resolved_faction_name": faction_name,
+        "faction_ok": faction_ok,
+        "faction_error": str(faction.get("error") or ""),
         "raw_member_count": len(raw_members) if isinstance(raw_members, list) else (len(raw_members) if isinstance(raw_members, dict) else 0),
         "normalized_live_member_count": len(live_members),
+        "stored_user_count": len(stored_users or {}),
         "final_member_count": len(out),
         "faction_source": str(faction.get("source") or ""),
         "debug_attempts": faction.get("debug_attempts") or [],
