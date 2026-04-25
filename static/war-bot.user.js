@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name         War and Chain ⚔️
+// @name         War and Chain âš”ï¸
 // @namespace    fries91-war-hub
 // @version      3.6.6
 // @description  War and Chain by Fries91. Free-access rebuild with admin and leader/co-leader restrictions kept.
@@ -867,7 +867,7 @@
 
     function fmtNum(v) {
         var n = Number(v);
-        return Number.isFinite(n) ? n.toLocaleString() : '—';
+        return Number.isFinite(n) ? n.toLocaleString() : 'â€”';
     }
 
     function netPill(value, label) {
@@ -878,17 +878,17 @@
 
     function fmtMoney(v) {
         var n = Number(v);
-        return Number.isFinite(n) ? '$' + n.toLocaleString() : '—';
+        return Number.isFinite(n) ? '$' + n.toLocaleString() : 'â€”';
     }
 
     function fmtHosp(v, txt) {
         if (txt) return txt;
         var n = Number(v);
-        return Number.isFinite(n) && n > 0 ? String(n) + 's' : '—';
+        return Number.isFinite(n) && n > 0 ? String(n) + 's' : 'â€”';
     }
 
     function fmtTs(v) {
-        if (!v) return '—';
+        if (!v) return 'â€”';
         try {
             var d = new Date(v);
             if (Number.isNaN(d.getTime())) return String(v);
@@ -1480,7 +1480,7 @@ function makeHoldDraggable(handle, target, key) {
             }
 
             if (!key) {
-                setStatus('Enter your Torn API key.', true);
+                setStatus('Enter your Torn limited API key.', true);
                 return;
             }
 
@@ -2163,6 +2163,12 @@ function _handleTabClick() {
             e.stopPropagation();
             handler(e);
         }, { passive: false });
+
+        el.addEventListener('click', function (e) {
+            if (e.cancelable) e.preventDefault();
+            e.stopPropagation();
+            handler(e);
+        }, false);
     }
 
     function mount() {
@@ -2170,7 +2176,7 @@ function _handleTabClick() {
 
         shield = document.createElement('div');
         shield.id = 'warhub-shield';
-        shield.innerHTML = '<button type="button">⚔ War and Chain</button>'; 
+        shield.innerHTML = '<button type="button">âš” War and Chain</button>'; 
         shield.setAttribute('aria-label', 'Open War and Chain');
         shield.setAttribute('title', 'War and Chain');
 
@@ -2183,7 +2189,7 @@ function _handleTabClick() {
             '<div class="warhub-head" id="warhub-head">',
                 '<div class="warhub-toprow">',
                     '<div>',
-                        '<div class="warhub-title">War and Chain ⚔️</div>',
+                        '<div class="warhub-title">War and Chain âš”ï¸</div>',
                         '<div class="warhub-sub">Faction tools, access, and war support</div>',
                     '</div>',
                     '<button class="warhub-close" id="warhub-close" type="button">Close</button>',
@@ -2245,6 +2251,33 @@ function _handleTabClick() {
                 return;
             }
         }, { passive: false });
+
+        overlay.addEventListener('click', function (e) {
+            var tabBtn = e.target.closest('[data-tab]');
+            if (tabBtn) {
+                if (e.cancelable) e.preventDefault();
+                e.stopPropagation();
+                handleTabClick(tabBtn.getAttribute('data-tab'));
+                return;
+            }
+
+            var act = e.target.closest('[data-action]');
+            if (act) {
+                if (e.cancelable) e.preventDefault();
+                e.stopPropagation();
+                handleActionClick(act);
+                return;
+            }
+
+            var groupHead = e.target.closest('[data-group-toggle]');
+            if (groupHead) {
+                if (e.cancelable) e.preventDefault();
+                e.stopPropagation();
+                var key = groupHead.getAttribute('data-group-toggle');
+                toggleGroup(key);
+                return;
+            }
+        }, false);
 
         overlay.addEventListener('change', function (e) {
             var t = e.target;
@@ -2401,7 +2434,7 @@ function _handleTabClick() {
         if (!Number.isFinite(max)) max = pickBarMaximum(lifeBar);
         if (Number.isFinite(cur) && Number.isFinite(max) && max > 0) return String(cur) + '/' + String(max);
         if (Number.isFinite(cur)) return String(cur);
-        return '—';
+        return 'â€”';
     }
 
     function medCooldownValue(member) {
@@ -2549,7 +2582,16 @@ function _handleTabClick() {
 
     function bountyUrl(member) {
         var id = getMemberId(member);
-        return id ? ('https://www.torn.com/bounties.php?p=add&userID=' + encodeURIComponent(id)) : '#';
+        return id ? ('https://www.torn.com/bounties.php?p=add&XID=' + encodeURIComponent(id)) : '#';
+    }
+
+    function openTornPage(url) {
+        if (!url || url === '#') return;
+        try {
+            window.open(url, '_blank', 'noopener,noreferrer');
+        } catch (_e) {
+            window.location.href = url;
+        }
     }
 
     function memberSearchText(member) {
@@ -2611,7 +2653,7 @@ function _handleTabClick() {
         return [
             '<div class="warhub-stat-card">',
                 '<div class="warhub-stat-label">' + esc(label) + '</div>',
-                '<div class="warhub-stat-value">' + esc(String(value == null ? '—' : value)) + '</div>',
+                '<div class="warhub-stat-value">' + esc(String(value == null ? 'â€”' : value)) + '</div>',
                 sub ? '<div class="warhub-sub" style="margin-top:6px;">' + esc(sub) + '</div>' : '',
             '</div>'
         ].join('');
@@ -2648,13 +2690,13 @@ function _handleTabClick() {
                         ) + '</span>',
                     '</div>',
                     '<div class="warhub-row">',
-                        '<a class="warhub-btn bounty" href="' + esc(bountyUrl(member)) + '">Bounty</a>',
+                        '<button type="button" class="warhub-btn bounty" data-action="bounty-user" data-url="' + esc(bountyUrl(member)) + '">Bounty</button>',
                     '</div>',
                 '</div>',
                 '<div class="warhub-statline">',
-                    '<span title="Energy">⚡ ' + esc(energy == null ? '—' : String(energy)) + '</span>',
-                    '<span title="Life">❤️ ' + esc(life) + '</span>',
-                    '<span title="Medical Cooldown">💊 <span data-medcd>' + esc(med) + '</span></span>',
+                    '<span title="Energy">âš¡ ' + esc(energy == null ? 'â€”' : String(energy)) + '</span>',
+                    '<span title="Life">â¤ï¸ ' + esc(life) + '</span>',
+                    '<span title="Medical Cooldown">ðŸ’Š <span data-medcd>' + esc(med) + '</span></span>',
                 '</div>',
             '</div>'
         ].join('');
@@ -2674,7 +2716,7 @@ function getMyBattleStatsMillions() {
 
 function formatBattleMillions(n) {
     var v = Number(n);
-    if (!Number.isFinite(v) || v <= 0) return '—';
+    if (!Number.isFinite(v) || v <= 0) return 'â€”';
     var abs = Math.abs(v);
     var rounded = Math.round(abs * 10) / 10;
     return (v < 0 ? '-' : '') + rounded.toFixed(abs >= 100 ? 0 : 1) + 'm';
@@ -2725,7 +2767,7 @@ function predictionMeta(member) {
     return {
         source: 'FF Scouter',
         confidence: 'Fair Fight',
-        summary: ff.fair_fight > 0 ? ('FF Scouter fair-fight ' + ff.fair_fight.toFixed(2) + '.') : 'FF Scouter fair-fight —.',
+        summary: ff.fair_fight > 0 ? ('FF Scouter fair-fight ' + ff.fair_fight.toFixed(2) + '.') : 'FF Scouter fair-fight â€”.',
         updated_at: ff.last_updated || ''
     };
 }
@@ -2780,7 +2822,7 @@ function renderEnemyRow(member, opts) {
     var dibText = dibbedBy ? ('Dibbed by ' + dibbedBy) : '';
     var pred = enemyPredictionData(member);
     var ff = getFfScouterData(member);
-    var ffBubbleText = getFfScouterKey() ? 'FF …' : 'FF key';
+    var ffBubbleText = getFfScouterKey() ? 'FF â€¦' : 'FF key';
     if (ff) {
         if (ff.no_data) ffBubbleText = 'FF n/a';
         else if (ff.fair_fight > 0) ffBubbleText = 'FF ' + ff.fair_fight.toFixed(2);
@@ -2839,11 +2881,11 @@ function renderEnemyRow(member, opts) {
             '<div class="warhub-grid">',
                 '<div class="warhub-hero-card">',
                     '<div class="warhub-title">Login</div>',
-                    '<div class="warhub-sub">Use your Torn API key to connect to War and Chain.</div>',
+                    '<div class="warhub-sub">Use your Torn limited API key to connect to War and Chain.</div>',
                 '</div>',
                 '<div class="warhub-card warhub-col">',
-                    '<label class="warhub-label" for="warhub-api-key">Torn API Key</label>',
-                    '<input id="warhub-api-key" class="warhub-input" type="password" value="' + esc(getApiKey()) + '" placeholder="Enter API key" />',
+                    '<label class="warhub-label" for="warhub-api-key">Torn Limited API Key</label>',
+                    '<input id="warhub-api-key" class="warhub-input" type="password" value="' + esc(getApiKey()) + '" placeholder="Enter limited API key" />',
                     '<label class="warhub-label" for="warhub-owner-token">Owner/Admin Token (optional)</label>',
                     '<input id="warhub-owner-token" class="warhub-input" type="password" value="' + esc(getOwnerToken()) + '" placeholder="Owner/admin token" />',
                     '<label class="warhub-label" for="warhub-ff-key">FF Scouter Limited Key (optional)</label>',
@@ -2900,7 +2942,7 @@ function renderOverviewTab() {
             var secsLeft = Number.isFinite(leftAt) && leftAt > 0 ? Math.max(0, 30 - Math.floor((Date.now() - leftAt) / 1000)) : 0;
             suffix = secsLeft > 0 ? ' (Out ' + secsLeft + 's)' : '';
         }
-        return dibbedBy + ' → ' + dibEnemyName + suffix;
+        return dibbedBy + ' â†’ ' + dibEnemyName + suffix;
     }).join('\n') : '';
 
     return [
@@ -3057,7 +3099,7 @@ function renderEnemiesTab() {
         var isAvailable = !!chain.available;
         var isSitter = !!chain.sitter_enabled;
         var viewerIsUnavailable = !isAvailable;
-        var yourStatus = isAvailable ? (isSitter ? 'Available · Chain Sitter On' : 'Available') : (isSitter ? 'Unavailable · Chain Sitter On' : 'Unavailable');
+        var yourStatus = isAvailable ? (isSitter ? 'Available Â· Chain Sitter On' : 'Available') : (isSitter ? 'Unavailable Â· Chain Sitter On' : 'Unavailable');
         var bonusTiers = [10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 25000, 50000, 100000];
         var nextBonus = 0;
         var previousBonus = 0;
@@ -3079,7 +3121,7 @@ function renderEnemiesTab() {
         var progressValue = Math.max(0, current - previousBonus);
         var meterPct = Math.max(6, Math.min(100, Math.round((progressValue / progressBase) * 100)));
         var bonusCountdown = hitsToBonus <= 0 ? 'Bonus hit ready now' : (hitsToBonus === 1 ? '1 hit to next bonus' : (fmtNum(hitsToBonus) + ' hits to next bonus'));
-        var tierLabel = previousBonus > 0 ? (fmtNum(previousBonus) + ' → ' + fmtNum(nextBonus)) : ('0 → ' + fmtNum(nextBonus));
+        var tierLabel = previousBonus > 0 ? (fmtNum(previousBonus) + ' â†’ ' + fmtNum(nextBonus)) : ('0 â†’ ' + fmtNum(nextBonus));
         var chainColorClass = current >= nextBonus ? 'good' : (hitsToBonus <= 3 ? 'warn' : 'neutral');
 
         function chainBtnClass(activeClass, isActive) {
@@ -3113,9 +3155,9 @@ function renderEnemiesTab() {
                         '</div>',
                     '</div>',
                     '<div class="warhub-statline">',
-                        '<span title="Energy">⚡ ' + esc(energy == null ? '—' : String(energy)) + '</span>',
-                        '<span title="Booster Cooldown">🧪 ' + esc(booster) + '</span>',
-                        '<span title="Medical Cooldown">💊 ' + esc(med) + '</span>',
+                        '<span title="Energy">âš¡ ' + esc(energy == null ? 'â€”' : String(energy)) + '</span>',
+                        '<span title="Booster Cooldown">ðŸ§ª ' + esc(booster) + '</span>',
+                        '<span title="Medical Cooldown">ðŸ’Š ' + esc(med) + '</span>',
                     '</div>',
                 '</div>'
             ].join('');
@@ -3302,7 +3344,7 @@ function renderEnemiesTab() {
                         items.map(function (row) {
                             var userName = String(row.user_name || row.user_id || 'Member');
                             var enemyName = String(row.enemy_name || row.enemy_user_id || 'Enemy');
-                            return '<div class="warhub-spy-box">' + esc(userName + ' → ' + enemyName) + '</div>';
+                            return '<div class="warhub-spy-box">' + esc(userName + ' â†’ ' + enemyName) + '</div>';
                         }).join(''),
                     '</div>'
                 ].join('') : '<div class="warhub-card">No med deals posted yet.</div>',
@@ -3344,7 +3386,7 @@ function renderTermsTab() {
                 user_id: uid,
                 name: getMemberName(m),
                 role: String((m && (m.position || (m.member_access && m.member_access.position))) || 'Member'),
-                status: String((m && (m.status || m.online_state)) || '—'),
+                status: String((m && (m.status || m.online_state)) || 'â€”'),
                 profile_url: uid ? profileUrl(uid) : '',
                 enabled: !!(m && (m.enabled || (m.member_access && m.member_access.enabled))),
                 member_access: (m && m.member_access) || {},
@@ -3377,7 +3419,7 @@ function renderTermsTab() {
 
     function txt(v, fallback) {
         var s = String(v == null ? '' : v).trim();
-        return s || String(fallback || '—');
+        return s || String(fallback || 'â€”');
     }
 
     function pickList() {
@@ -3401,7 +3443,7 @@ function renderTermsTab() {
                                 var metric = item.metric_label || item.label || metricLabel || '';
                                 var value = item.metric_value != null ? item.metric_value : (
                                     item.value != null ? item.value : (
-                                        item.net_impact != null ? fmtNum(item.net_impact) : '—'
+                                        item.net_impact != null ? fmtNum(item.net_impact) : 'â€”'
                                     )
                                 );
 
@@ -3438,7 +3480,7 @@ function renderTermsTab() {
 
     function renderFlags(flags) {
         flags = arr(flags);
-        if (!flags.length) return '—';
+        if (!flags.length) return 'â€”';
 
         return [
             '<div class="warhub-flag-row">',
@@ -3465,10 +3507,10 @@ function renderTermsTab() {
             var net = num(r.net_impact, gained - lost);
             var taken = num(r.hits_taken);
             var efficiency = num(r.efficiency);
-            var lastAction = txt(r.last_action, '—');
-            var hospitalEta = txt(r.hospital_eta, '—');
+            var lastAction = txt(r.last_action, 'â€”');
+            var hospitalEta = txt(r.hospital_eta, 'â€”');
             var role = txt(r.role, 'Member');
-            var status = txt(r.status, '—');
+            var status = txt(r.status, 'â€”');
             var isEnabled = !!r.enabled;
             var hasLogin = !!r.has_stored_api_key;
             var onlineState = txt(r.online_state, '').toLowerCase();
@@ -3517,7 +3559,7 @@ function renderTermsTab() {
                             var taken = num(row.hits_taken);
                             var efficiency = num(row.efficiency);
                             var role = txt(row.role, 'Member');
-                            var status = txt(row.status, '—');
+                            var status = txt(row.status, 'â€”');
                             var isEnabled = !!row.enabled;
                             var hasLogin = !!row.has_stored_api_key;
                             var onlineState = txt(row.online_state, '').toLowerCase();
@@ -3567,7 +3609,7 @@ function renderTermsTab() {
                         return [
                             '<div class="warhub-stat-card ' + esc(String(c.cls || '')) + '">',
                                 '<div class="warhub-stat-label">' + esc(txt(c.label, 'Metric')) + '</div>',
-                                '<div class="warhub-stat-value">' + esc(String(c.value == null ? '—' : c.value)) + '</div>',
+                                '<div class="warhub-stat-value">' + esc(String(c.value == null ? 'â€”' : c.value)) + '</div>',
                                 c.sub ? '<div class="warhub-sub" style="margin-top:6px;">' + esc(String(c.sub)) + '</div>' : '',
                             '</div>'
                         ].join('');
@@ -3578,13 +3620,13 @@ function renderTermsTab() {
             '<div class="warhub-card warhub-col">',
                 '<h3>War Snapshot</h3>',
                 '<div class="warhub-kv"><div>Our Faction</div><div>' + esc(txt(war.our_faction_name || war.faction_name, 'Your Faction')) + '</div></div>',
-                '<div class="warhub-kv"><div>Enemy Faction</div><div>' + esc(txt(war.enemy_faction_name, '—')) + '</div></div>',
-                '<div class="warhub-kv"><div>Top Hitter</div><div>' + esc(txt(top.top_hitter, '—')) + '</div></div>',
-                '<div class="warhub-kv"><div>Most Respect Gained</div><div>' + esc(txt(top.top_respect_gain, '—')) + '</div></div>',
-                '<div class="warhub-kv"><div>Most Respect Lost</div><div>' + esc(txt(top.top_respect_lost || top.top_points_bleeder, '—')) + '</div></div>',
-                '<div class="warhub-kv"><div>Most Hits Taken</div><div>' + esc(txt(top.top_hits_taken, '—')) + '</div></div>',
-                '<div class="warhub-kv"><div>Best Efficiency</div><div>' + esc(txt(top.best_efficiency, '—')) + '</div></div>',
-                '<div class="warhub-kv"><div>Best Finisher</div><div>' + esc(txt(top.best_finisher, '—')) + '</div></div>',
+                '<div class="warhub-kv"><div>Enemy Faction</div><div>' + esc(txt(war.enemy_faction_name, 'â€”')) + '</div></div>',
+                '<div class="warhub-kv"><div>Top Hitter</div><div>' + esc(txt(top.top_hitter, 'â€”')) + '</div></div>',
+                '<div class="warhub-kv"><div>Most Respect Gained</div><div>' + esc(txt(top.top_respect_gain, 'â€”')) + '</div></div>',
+                '<div class="warhub-kv"><div>Most Respect Lost</div><div>' + esc(txt(top.top_respect_lost || top.top_points_bleeder, 'â€”')) + '</div></div>',
+                '<div class="warhub-kv"><div>Most Hits Taken</div><div>' + esc(txt(top.top_hits_taken, 'â€”')) + '</div></div>',
+                '<div class="warhub-kv"><div>Best Efficiency</div><div>' + esc(txt(top.best_efficiency, 'â€”')) + '</div></div>',
+                '<div class="warhub-kv"><div>Best Finisher</div><div>' + esc(txt(top.best_finisher, 'â€”')) + '</div></div>',
             '</div>',
 
             '<div class="warhub-overview-stats">',
@@ -3711,10 +3753,10 @@ function renderTermsTab() {
                     ) + '</div>' : '',
                 '</div>',
                 '<div class="warhub-statline">',
-                    '<span>⚡ ' + esc(energy == null ? '—' : String(energy)) + '</span>',
-                    '<span>✚ ' + esc(life) + '</span>',
-                    '<span>💊 <span data-medcd>' + esc(medText) + '</span></span>',
-                    '<span>#' + esc(id || '—') + '</span>',
+                    '<span>âš¡ ' + esc(energy == null ? 'â€”' : String(energy)) + '</span>',
+                    '<span>âœš ' + esc(life) + '</span>',
+                    '<span>ðŸ’Š <span data-medcd>' + esc(medText) + '</span></span>',
+                    '<span>#' + esc(id || 'â€”') + '</span>',
                 '</div>',
             '</div>'
         ].join('');
@@ -3731,7 +3773,7 @@ function renderTermsTab() {
                 '<div class="warhub-row" style="justify-content:space-between;align-items:flex-start;gap:8px;">',
                     '<div>',
                         '<div class="warhub-member-name">' + esc(factionName) + '</div>',
-                        '<div class="warhub-sub">Faction #' + esc(factionId || '—') + '</div>',
+                        '<div class="warhub-sub">Faction #' + esc(factionId || 'â€”') + '</div>',
                     '</div>',
                     '<div class="warhub-row" style="flex-wrap:wrap;justify-content:flex-end;">',
                         '<span class="warhub-pill good">Enabled ' + esc(String(enabledCount)) + '</span>',
@@ -3780,14 +3822,14 @@ function renderTermsTab() {
         '<div class="warhub-grid">',
             '<div class="warhub-hero-card">',
                 '<div class="warhub-title">Settings</div>',
-                '<div class="warhub-sub">Account and local script settings</div>',
+                '<div class="warhub-sub">Account, local script settings, and limited API key used</div>',
             '</div>',
             '<div class="warhub-card warhub-col">',
-                '<label class="warhub-label" for="warhub-api-key">Torn API Key</label>',
-                '<input id="warhub-api-key" class="warhub-input" type="password" value="" placeholder="' + esc(maskedKey ? 'Saved API key' : 'Enter API key') + '" />',
+                '<label class="warhub-label" for="warhub-api-key">Torn Limited API Key</label>',
+                '<input id="warhub-api-key" class="warhub-input" type="password" value="" placeholder="' + esc(maskedKey ? 'Saved limited API key' : 'Enter limited API key') + '" />',
                 '<label class="warhub-label" for="warhub-ff-key">FF Scouter Limited Key</label>',
                 '<input id="warhub-ff-key" class="warhub-input" type="password" value="' + esc(getFfScouterKey()) + '" placeholder="Optional FF Scouter key for fair-fight values" />',
-                '<div class="warhub-sub">FF Scouter key powers the fair-fight values in enemy rows and refreshes automatically while Enemies is open.</div>',
+                '<div class="warhub-sub">Limited API key used for War and Chain login/session data. FF Scouter key powers fair-fight values only.</div>',
                 '<div class="warhub-row">',
                     '<button type="button" class="warhub-btn" data-action="login">Re-login</button>',
                     '<button type="button" class="warhub-btn gray" data-action="logout">Logout</button>',
@@ -3796,7 +3838,7 @@ function renderTermsTab() {
 
             '<div class="warhub-card">',
                 '<div class="warhub-kv"><div>User</div><div>' + esc(String(viewer.name || 'Logged out')) + '</div></div>',
-                '<div class="warhub-kv"><div>User ID</div><div>' + esc(String(viewer.user_id || '—')) + '</div></div>',
+                '<div class="warhub-kv"><div>User ID</div><div>' + esc(String(viewer.user_id || 'â€”')) + '</div></div>',
                 '<div class="warhub-kv"><div>Faction active</div><div>' + (canUseFeatures() ? 'Yes' : 'No') + '</div></div>',
                 '<div class="warhub-kv"><div>Leader activated</div><div>' + (access.member_enabled ? 'Yes' : 'No') + '</div></div>',
             '</div>',
@@ -3825,7 +3867,7 @@ function renderTermsTab() {
             '<div class="warhub-card warhub-col">',
                 '<h3>Quick start</h3>',
                 '<div class="warhub-spy-box">',
-                    '<div><b>1.</b> Open <b>Settings</b> and paste your Torn API key.</div>',
+                    '<div><b>1.</b> Open <b>Settings</b> and paste your Torn limited API key.</div>',
                     '<div><b>2.</b> Press <b>Re-login</b> to create a backend session and load your faction-linked state.</div>',
                     '<div><b>3.</b> Open <b>Members</b>, <b>Enemies</b>, <b>Hospital</b>, and <b>Chain</b> to pull live faction war tools.</div>',
                     '<div><b>4.</b> Leaders and co-leaders can activate members and manage faction-only tools.</div>',
@@ -3860,22 +3902,22 @@ function renderTermsTab() {
             '<div class="warhub-card warhub-col">',
                 '<h3>War and Chain ToS snapshot</h3>',
                 '<div class="warhub-kv"><div>Data storage</div><div><span class="warhub-pill bad">Remote + local</span></div></div>',
-                '<div class="warhub-summary-meta">This build stores local preferences in userscript storage and also sends your API key to the backend for login, sessions, and faction-linked features.</div>',
+                '<div class="warhub-summary-meta">This build stores local preferences in userscript storage and uses your Torn limited API key for backend login, sessions, and faction-linked features.</div>',
                 '<div class="warhub-kv"><div>Data sharing</div><div><span class="warhub-pill online">Faction tools</span></div></div>',
                 '<div class="warhub-summary-meta">Faction-linked outputs such as shared member or war coordination views may be visible to other users in the same faction who are using the script.</div>',
                 '<div class="warhub-kv"><div>Purpose of use</div><div><span class="warhub-pill travel">War support</span></div></div>',
                 '<div class="warhub-summary-meta">Used for faction organization, war tracking, member access, chain coordination, enemy tracking, and related quality-of-life features.</div>',
                 '<div class="warhub-kv"><div>Key storage & use</div><div><span class="warhub-pill hospital">Automation</span></div></div>',
-                '<div class="warhub-summary-meta">Your key is used by the backend to authenticate you, build your session, and pull the live Torn data needed for enabled features.</div>',
+                '<div class="warhub-summary-meta">Your limited API key is used by the backend to authenticate you, build your session, and pull the live Torn data needed for enabled features.</div>',
                 '<div class="warhub-kv"><div>Recommended key access</div><div><span class="warhub-pill good">Lowest needed</span></div></div>',
-                '<div class="warhub-summary-meta">Use the lowest access or custom key that still supports the tabs you want to use.</div>',
+                '<div class="warhub-summary-meta">Use a limited/custom key with only the access needed for the tabs you want to use.</div>',
             '</div>',
 
             '<div class="warhub-card warhub-col">',
                 '<h3>API key storage and safety</h3>',
                 '<div class="warhub-spy-box">',
                     '<div><b>Local storage:</b> the userscript saves your session token, open tab, overlay state, FF key, and other convenience settings in userscript storage on your device/browser.</div>',
-                    '<div style="margin-top:6px;"><b>Backend use:</b> when you log in, your API key is sent to the War and Chain backend and used to authenticate your account and power faction-linked live features.</div>',
+                    '<div style="margin-top:6px;"><b>Backend use:</b> when you log in, your limited API key is used by the War and Chain backend to authenticate your account and power faction-linked live features.</div>',
                     '<div style="margin-top:6px;"><b>Best practice:</b> do not share your key, do not paste someone else\'s key, and do not use more access than the script actually needs.</div>',
                     '<div style="margin-top:6px;"><b>Important:</b> if you think your key has been misused, replace it in Torn and log in again with a fresh one.</div>',
                 '</div>',
@@ -3883,11 +3925,11 @@ function renderTermsTab() {
 
             '<div class="warhub-card warhub-col">',
                 '<h3>Using the script safely</h3>',
-                '<div>• Only use your own Torn API key.</div>',
-                '<div>• Never give your Torn password to any script or website.</div>',
-                '<div>• Leaders and co-leaders should only activate members who should have faction access.</div>',
-                '<div>• Data shown in the overlay depends on Torn API responses, backend state, and your current session.</div>',
-                '<div>• If something looks wrong, refresh the tab or re-login before assuming the data is final.</div>',
+                '<div>â€¢ Only use your own Torn limited API key.</div>',
+                '<div>â€¢ Never give your Torn password to any script or website.</div>',
+                '<div>â€¢ Leaders and co-leaders should only activate members who should have faction access.</div>',
+                '<div>â€¢ Data shown in the overlay depends on Torn API responses, backend state, and your current session.</div>',
+                '<div>â€¢ If something looks wrong, refresh the tab or re-login before assuming the data is final.</div>',
             '</div>',
 
             '<div class="warhub-card warhub-col">',
@@ -3913,7 +3955,7 @@ function renderTermsTab() {
 
     function txt(v, fallback) {
         var s = String(v == null ? '' : v).trim();
-        return s || String(fallback || '—');
+        return s || String(fallback || 'â€”');
     }
 
     function num(v, fallback) {
@@ -3957,7 +3999,7 @@ function renderTermsTab() {
                                     (isEnabled ? '<span class="warhub-pill good">Enabled</span>' : '<span class="warhub-pill bad">Off</span>'),
                                     (hasLogin ? '<span class="warhub-pill good">Logged In</span>' : '<span class="warhub-pill neutral">No Login</span>'),
                                 '</div>',
-                                '<div class="warhub-summary-meta">Hits ' + esc(fmtNum(hits)) + ' • Gain ' + esc(fmtNum(gain)) + ' • Lost ' + esc(fmtNum(lost)) + ' • Taken ' + esc(fmtNum(taken)) + ' • Net ' + esc(fmtNum(net)) + '</div>',
+                                '<div class="warhub-summary-meta">Hits ' + esc(fmtNum(hits)) + ' â€¢ Gain ' + esc(fmtNum(gain)) + ' â€¢ Lost ' + esc(fmtNum(lost)) + ' â€¢ Taken ' + esc(fmtNum(taken)) + ' â€¢ Net ' + esc(fmtNum(net)) + '</div>',
                             '</div>',
                         '</details>'
                     ].join('');
@@ -3993,6 +4035,11 @@ function _handleActionClick() {
         if (!action) return;
 
         try {
+            if (action === 'bounty-user') {
+                openTornPage(el.getAttribute('data-url') || '#');
+                return;
+            }
+
             if (action === 'login') {
                 yield doLogin();
                 return;
@@ -4059,7 +4106,7 @@ function _handleActionClick() {
                 state.med_deals = state.med_deals || {};
                 state.med_deals.items = arr(saveMedDealsRes.json && saveMedDealsRes.json.items);
                 state.med_deals.text = state.med_deals.items.map(function (row) {
-                    return String((row.user_name || row.user_id || '') + ' → ' + (row.enemy_name || row.enemy_user_id || '')).trim();
+                    return String((row.user_name || row.user_id || '') + ' â†’ ' + (row.enemy_name || row.enemy_user_id || '')).trim();
                 }).filter(Boolean).join('\n');
                 renderBody();
                 setStatus('Med deal saved.', false);
@@ -4080,7 +4127,7 @@ function _handleActionClick() {
                         return String((row && row.user_id) || '').trim() !== viewerIdForClear;
                     });
                     state.med_deals.text = state.med_deals.items.map(function (row) {
-                        return String((row.user_name || row.user_id || '') + ' → ' + (row.enemy_name || row.enemy_user_id || '')).trim();
+                        return String((row.user_name || row.user_id || '') + ' â†’ ' + (row.enemy_name || row.enemy_user_id || '')).trim();
                     }).filter(Boolean).join('\n');
                     renderBody();
                     setStatus('No med deal to clear.', false);
@@ -4101,7 +4148,7 @@ function _handleActionClick() {
                 state.med_deals = state.med_deals || {};
                 state.med_deals.items = arr(clearMedDealsRes.json && clearMedDealsRes.json.items);
                 state.med_deals.text = state.med_deals.items.map(function (row) {
-                    return String((row.user_name || row.user_id || '') + ' → ' + (row.enemy_name || row.enemy_user_id || '')).trim();
+                    return String((row.user_name || row.user_id || '') + ' â†’ ' + (row.enemy_name || row.enemy_user_id || '')).trim();
                 }).filter(Boolean).join('\n');
                 renderBody();
                 setStatus('Med deal cleared.', false);
