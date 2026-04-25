@@ -22,8 +22,11 @@
     'use strict';
 
 
-    if (window.__WAR_HUB_V291__ && document.getElementById('warhub-shield')) return;
-    window.__WAR_HUB_V291__ = true;
+    // Fresh guard for this fixed build. This prevents an older/stale loader flag
+    // from hiding the launcher after updates on PDA/Tampermonkey.
+    if (window.__WAR_HUB_OVERLAY_VISIBLE_FIX_V367__) return;
+    window.__WAR_HUB_OVERLAY_VISIBLE_FIX_V367__ = true;
+    try { window.__WAR_HUB_V291__ = false; } catch (_e_guard) {}
 
     // ============================================================
     // 01. CORE CONFIG / STORAGE KEYS
@@ -47,7 +50,7 @@
     var K_FF_SCOUTER_KEY = 'warhub_ff_scouter_key_v1';
     var K_FF_SCOUTER_CACHE = 'warhub_ff_scouter_cache_v1';
     var K_TARGETS_LOCAL = 'warhub_targets_local_v1';
-    var K_PENDING_BOUNTY = 'warhub_pending_bounty_v2';
+    var K_PENDING_BOUNTY = 'warhub_pending_bounty_v3';
 
     
     // ============================================================
@@ -848,9 +851,9 @@
 
     GM_addStyle(css);
     GM_addStyle([
-        '#warhub-shield { left: 10px !important; bottom: 44px !important; top: auto !important; right: auto !important; width: 118px !important; height: 28px !important; background: transparent !important; border: 0 !important; box-shadow: none !important; transform: none !important; }',
-        '#warhub-shield button { width: 118px !important; height: 28px !important; border-radius: 9px !important; border: 1px solid rgba(205,164,74,.5) !important; background: linear-gradient(180deg, rgba(90,12,18,.95), rgba(35,8,10,.98)) !important; color: #f5df9d !important; font-size: 10px !important; font-weight: 800 !important; letter-spacing: .1px !important; box-shadow: 0 8px 20px rgba(0,0,0,.35) !important; padding: 0 !important; margin: 0 !important; cursor: pointer !important; }',
-        '@media (max-width: 520px) { #warhub-shield { left: 10px !important; bottom: 44px !important; width: 118px !important; height: 28px !important; } #warhub-shield button { width: 118px !important; height: 28px !important; font-size: 10px !important; border-radius: 9px !important; } }'
+        '#warhub-shield { left: 10px !important; top: 42% !important; bottom: auto !important; right: auto !important; width: 128px !important; height: 30px !important; background: transparent !important; border: 0 !important; box-shadow: none !important; transform: none !important; opacity: 1 !important; visibility: visible !important; display: flex !important; pointer-events: auto !important; z-index: 2147483647 !important; }',
+        '#warhub-shield button { width: 128px !important; height: 30px !important; border-radius: 9px !important; border: 1px solid rgba(205,164,74,.5) !important; background: linear-gradient(180deg, rgba(90,12,18,.95), rgba(35,8,10,.98)) !important; color: #f5df9d !important; font-size: 10px !important; font-weight: 800 !important; letter-spacing: .1px !important; box-shadow: 0 8px 20px rgba(0,0,0,.35) !important; padding: 0 !important; margin: 0 !important; cursor: pointer !important; }',
+        '@media (max-width: 520px) { #warhub-shield { left: 10px !important; top: 42% !important; bottom: auto !important; width: 128px !important; height: 30px !important; } #warhub-shield button { width: 128px !important; height: 30px !important; font-size: 10px !important; border-radius: 9px !important; } }'
     ].join('\n'));
 
     // ============================================================
@@ -1321,21 +1324,16 @@ function applyShieldPos() {
     shield.classList.remove('warhub-header-mounted');
     if (document.body && shield.parentNode !== document.body) document.body.appendChild(shield);
 
-    var leftPx = 10;
-    var bottomPx = 44;
-    var sinner = document.getElementById('si-pda-launcher');
-    if (sinner && typeof sinner.getBoundingClientRect === 'function') {
-        var rect = sinner.getBoundingClientRect();
-        if (rect && isFinite(rect.top) && rect.top > 0) {
-            leftPx = Math.max(10, Math.round(rect.left || 10));
-            bottomPx = Math.max(44, Math.round(window.innerHeight - rect.top + 6));
-        }
-    }
-
-    shield.style.left = leftPx + 'px';
-    shield.style.bottom = bottomPx + 'px';
-    shield.style.top = 'auto';
+    shield.style.left = '10px';
+    shield.style.top = '42%';
+    shield.style.bottom = 'auto';
     shield.style.right = 'auto';
+    shield.style.width = '128px';
+    shield.style.height = '30px';
+    shield.style.display = 'flex';
+    shield.style.opacity = '1';
+    shield.style.visibility = 'visible';
+    shield.style.pointerEvents = 'auto';
     shield.style.transform = 'none';
     shield.style.zIndex = '2147483647';
 
@@ -2168,6 +2166,12 @@ function _handleTabClick() {
 
     function mount() {
         if (mounted) return;
+        if (!document.body) return;
+
+        ['warhub-shield', 'warhub-badge', 'warhub-overlay'].forEach(function (id) {
+            var old = document.getElementById(id);
+            if (old && old.parentNode) old.parentNode.removeChild(old);
+        });
 
         shield = document.createElement('div');
         shield.id = 'warhub-shield';
@@ -2220,13 +2224,13 @@ function _handleTabClick() {
             setOverlayOpen(false);
         });
 
-        function handleOverlayTapEvent(e) {
+        overlay.addEventListener('touchend', function (e) {
             var tabBtn = e.target.closest('[data-tab]');
             if (tabBtn) {
                 if (e.cancelable) e.preventDefault();
                 e.stopPropagation();
                 handleTabClick(tabBtn.getAttribute('data-tab'));
-                return true;
+                return;
             }
 
             var act = e.target.closest('[data-action]');
@@ -2234,7 +2238,7 @@ function _handleTabClick() {
                 if (e.cancelable) e.preventDefault();
                 e.stopPropagation();
                 handleActionClick(act);
-                return true;
+                return;
             }
 
             var groupHead = e.target.closest('[data-group-toggle]');
@@ -2243,17 +2247,8 @@ function _handleTabClick() {
                 e.stopPropagation();
                 var key = groupHead.getAttribute('data-group-toggle');
                 toggleGroup(key);
-                return true;
+                return;
             }
-            return false;
-        }
-
-        overlay.addEventListener('click', function (e) {
-            handleOverlayTapEvent(e);
-        }, false);
-
-        overlay.addEventListener('touchend', function (e) {
-            handleOverlayTapEvent(e);
         }, { passive: false });
 
         overlay.addEventListener('change', function (e) {
@@ -2557,132 +2552,93 @@ function _handleTabClick() {
         return id ? ('https://www.torn.com/loader.php?sid=attack&user2ID=' + encodeURIComponent(id)) : '#';
     }
 
-    var WARHUB_BOUNTY_AMOUNT = '250000';
-
     function bountyUrl(member) {
-        var id = String(getMemberId(member) || '').trim();
-        if (!id) return '#';
-        return 'https://www.torn.com/bounties.php?p=add&XID=' + encodeURIComponent(id);
+        var id = getMemberId(member);
+        return id ? ('https://www.torn.com/bounties.php?p=add&XID=' + encodeURIComponent(id) + '&reward=250000') : '#';
     }
 
-    function savePendingBounty(member) {
+    function rememberBountyTarget(member) {
         var id = String(getMemberId(member) || '').trim();
-        var name = String(getMemberName(member) || id).trim();
+        var name = String(getMemberName(member) || '').trim();
         if (!id) return;
         try {
-            GM_setValue(K_PENDING_BOUNTY, {
+            GM_setValue(K_PENDING_BOUNTY, JSON.stringify({
                 id: id,
-                name: name || id,
-                amount: WARHUB_BOUNTY_AMOUNT,
-                created_at: Date.now()
-            });
+                name: name,
+                reward: 250000,
+                saved_at: Date.now()
+            }));
         } catch (_e) {}
     }
 
-    function getPendingBounty() {
-        var pending = null;
-        try { pending = GM_getValue(K_PENDING_BOUNTY, null); } catch (_e) { pending = null; }
-        if (!pending || typeof pending !== 'object') return null;
-        if ((Date.now() - Number(pending.created_at || 0)) > 180000) {
-            try { GM_deleteValue(K_PENDING_BOUNTY); } catch (_e2) {}
+    function openBountyForMember(member) {
+        rememberBountyTarget(member);
+        var url = bountyUrl(member);
+        if (!url || url === '#') return;
+        try { window.open(url, '_blank', 'noopener,noreferrer'); }
+        catch (_e) { window.location.href = url; }
+    }
+
+    function getPendingBountyTarget() {
+        try {
+            var raw = GM_getValue(K_PENDING_BOUNTY, '');
+            var item = raw ? JSON.parse(raw) : null;
+            if (!item || !item.id) return null;
+            if (item.saved_at && (Date.now() - Number(item.saved_at)) > 10 * 60 * 1000) return null;
+            return item;
+        } catch (_e) {
             return null;
         }
-        pending.id = String(pending.id || '').trim();
-        pending.name = String(pending.name || pending.id || '').trim();
-        pending.amount = String(pending.amount || WARHUB_BOUNTY_AMOUNT).replace(/[^0-9]/g, '') || WARHUB_BOUNTY_AMOUNT;
-        return pending.id ? pending : null;
     }
 
-    function setWarhubInputValue(input, value) {
-        if (!input) return false;
+    function fillInputLikeHuman(input, value) {
+        if (!input || value == null) return false;
         try {
-            var proto = input.tagName === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
-            var desc = Object.getOwnPropertyDescriptor(proto, 'value');
-            if (desc && desc.set) desc.set.call(input, value);
-            else input.value = value;
+            input.focus();
+            input.value = String(value);
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+            input.dispatchEvent(new Event('change', { bubbles: true }));
+            return true;
         } catch (_e) {
-            input.value = value;
+            try { input.value = String(value); return true; } catch (_e2) { return false; }
         }
-        try { input.dispatchEvent(new Event('input', { bubbles: true })); } catch (_e1) {}
-        try { input.dispatchEvent(new Event('change', { bubbles: true })); } catch (_e2) {}
-        return true;
-    }
-
-    function visibleWarhubInputs() {
-        return Array.prototype.slice.call(document.querySelectorAll('input:not([type="hidden"]), textarea')).filter(function (input) {
-            if (!input || input.disabled || input.readOnly) return false;
-            var rect = input.getBoundingClientRect ? input.getBoundingClientRect() : null;
-            return !rect || (rect.width > 0 && rect.height > 0);
-        });
-    }
-
-    function bountyInputText(input) {
-        var out = [];
-        try {
-            var box = input.closest('li, div, section, form, fieldset');
-            if (box) out.push(box.textContent || '');
-        } catch (_e) {}
-        out.push(input.getAttribute('placeholder') || '');
-        out.push(input.getAttribute('name') || '');
-        out.push(input.getAttribute('aria-label') || '');
-        out.push(input.id || '');
-        out.push(input.className || '');
-        return out.join(' ').toLowerCase();
     }
 
     function findBountyTargetInput() {
-        var inputs = visibleWarhubInputs();
+        var inputs = Array.prototype.slice.call(document.querySelectorAll('input'));
         return inputs.find(function (input) {
-            var t = bountyInputText(input);
-            return /target|search|user|player|name/.test(t) && !/reward|amount|money|hospital|reason|anonymous/.test(t);
+            var txt = String((input.placeholder || '') + ' ' + (input.name || '') + ' ' + (input.id || '') + ' ' + (input.getAttribute('aria-label') || '')).toLowerCase();
+            return txt.indexOf('target') >= 0 || txt.indexOf('search') >= 0 || txt.indexOf('user') >= 0;
         }) || inputs[0] || null;
     }
 
     function findBountyRewardInput() {
-        var inputs = visibleWarhubInputs();
+        var inputs = Array.prototype.slice.call(document.querySelectorAll('input'));
         return inputs.find(function (input) {
-            var t = bountyInputText(input);
-            return /reward|amount|money|hospitalization|$/.test(t) && !/reason|target|search|user|player|name/.test(t);
-        }) || inputs.find(function (input, index) {
-            var type = String(input.getAttribute('type') || '').toLowerCase();
-            return index > 0 && (type === 'number' || type === 'tel' || type === 'text');
-        }) || null;
+            var txt = String((input.placeholder || '') + ' ' + (input.name || '') + ' ' + (input.id || '') + ' ' + (input.getAttribute('aria-label') || '')).toLowerCase();
+            return txt.indexOf('reward') >= 0 || txt.indexOf('amount') >= 0 || txt.indexOf('money') >= 0 || txt.indexOf('price') >= 0;
+        }) || inputs.find(function (input) {
+            return String(input.type || '').toLowerCase() === 'number' || input.inputMode === 'numeric';
+        }) || inputs[1] || null;
     }
 
     function autoFillBountyPageFromWarHub() {
-        if (String(location.pathname || '').toLowerCase().indexOf('/bounties.php') === -1) return;
-        if (String(location.search || '').indexOf('p=add') === -1) return;
+        if (!/\/bounties\.php/i.test(String(location.pathname || ''))) return;
+        var item = getPendingBountyTarget();
+        if (!item) return;
 
-        var pending = getPendingBounty();
-        if (!pending || !pending.id) return;
+        var targetValue = item.name ? (item.name + ' [' + item.id + ']') : String(item.id);
+        var rewardValue = String(item.reward || 250000);
 
-        var tries = 0;
-        var timer = setInterval(function () {
-            tries += 1;
-            var targetInput = findBountyTargetInput();
-            var rewardInput = findBountyRewardInput();
+        fillInputLikeHuman(findBountyTargetInput(), targetValue);
+        fillInputLikeHuman(findBountyRewardInput(), rewardValue);
 
-            if (targetInput && !String(targetInput.value || '').trim()) {
-                setWarhubInputValue(targetInput, pending.name + ' [' + pending.id + ']');
-            }
-            if (rewardInput && String(rewardInput.value || '').replace(/[^0-9]/g, '') !== pending.amount) {
-                setWarhubInputValue(rewardInput, pending.amount);
-            }
-
-            if ((targetInput && rewardInput) || tries >= 50) clearInterval(timer);
-        }, 200);
-    }
-
-    function openBountyForMember(member) {
-        savePendingBounty(member);
-        var url = bountyUrl(member);
-        if (!url || url === '#') return;
-        try {
-            var opened = window.open(url, '_blank', 'noopener,noreferrer');
-            if (!opened) window.location.href = url;
-        } catch (_e) {
-            window.location.href = url;
-        }
+        [800, 1600, 3000].forEach(function (ms) {
+            setTimeout(function () {
+                fillInputLikeHuman(findBountyTargetInput(), targetValue);
+                fillInputLikeHuman(findBountyRewardInput(), rewardValue);
+            }, ms);
+        });
     }
 
     function memberSearchText(member) {
@@ -2972,7 +2928,7 @@ function renderEnemyRow(member, opts) {
             '<div class="warhub-grid">',
                 '<div class="warhub-hero-card">',
                     '<div class="warhub-title">Login</div>',
-                    '<div class="warhub-sub">Use your Torn Limited API key to connect to War and Chain.</div>',
+                    '<div class="warhub-sub">Use your Torn Limited API key to connect to War and Chain. Limited API key used.</div>',
                 '</div>',
                 '<div class="warhub-card warhub-col">',
                     '<label class="warhub-label" for="warhub-api-key">Torn Limited API Key</label>',
@@ -3917,7 +3873,7 @@ function renderTermsTab() {
             '</div>',
             '<div class="warhub-card warhub-col">',
                 '<label class="warhub-label" for="warhub-api-key">Torn Limited API Key</label>',
-                '<input id="warhub-api-key" class="warhub-input" type="password" value="" placeholder="' + esc(maskedKey ? 'Limited API key used' : 'Enter Limited API key') + '" />',
+                '<input id="warhub-api-key" class="warhub-input" type="password" value="" placeholder="' + esc(maskedKey ? 'Saved Limited API key' : 'Enter Limited API key') + '" />',
                 '<label class="warhub-label" for="warhub-ff-key">FF Scouter Limited Key</label>',
                 '<input id="warhub-ff-key" class="warhub-input" type="password" value="' + esc(getFfScouterKey()) + '" placeholder="Optional FF Scouter key for fair-fight values" />',
                 '<div class="warhub-sub">FF Scouter key powers the fair-fight values in enemy rows and refreshes automatically while Enemies is open.</div>',
@@ -3946,11 +3902,11 @@ function renderTermsTab() {
 
             '<div class="warhub-hero-card">',
                 '<div class="warhub-title">Help & API Terms</div>',
-                '<div class="warhub-sub">Colorful quick guide for setup, faction use, and Torn Limited API key rules</div>',
+                '<div class="warhub-sub">Colorful quick guide for setup, faction use, and Torn API key rules</div>',
                 '<div class="warhub-row" style="margin-top:8px;gap:6px;">',
                     '<span class="warhub-pill good">Setup</span>',
                     '<span class="warhub-pill online">Faction Tools</span>',
-                    '<span class="warhub-pill travel">Limited API Key Safety</span>',
+                    '<span class="warhub-pill travel">API Key Safety</span>',
                     '<span class="warhub-pill hospital">ToS</span>',
                 '</div>',
             '</div>',
@@ -3999,13 +3955,13 @@ function renderTermsTab() {
                 '<div class="warhub-kv"><div>Purpose of use</div><div><span class="warhub-pill travel">War support</span></div></div>',
                 '<div class="warhub-summary-meta">Used for faction organization, war tracking, member access, chain coordination, enemy tracking, and related quality-of-life features.</div>',
                 '<div class="warhub-kv"><div>Key storage & use</div><div><span class="warhub-pill hospital">Automation</span></div></div>',
-                '<div class="warhub-summary-meta">Your Limited API key is used by the backend to authenticate you, build your session, and pull the live Torn data needed for enabled features.</div>',
+                '<div class="warhub-summary-meta">Your key is used by the backend to authenticate you, build your session, and pull the live Torn data needed for enabled features.</div>',
                 '<div class="warhub-kv"><div>Recommended key access</div><div><span class="warhub-pill good">Lowest needed</span></div></div>',
                 '<div class="warhub-summary-meta">Use the lowest access or custom key that still supports the tabs you want to use.</div>',
             '</div>',
 
             '<div class="warhub-card warhub-col">',
-                '<h3>Limited API key storage and safety</h3>',
+                '<h3>API key storage and safety</h3>',
                 '<div class="warhub-spy-box">',
                     '<div><b>Local storage:</b> the userscript saves your session token, open tab, overlay state, FF key, and other convenience settings in userscript storage on your device/browser.</div>',
                     '<div style="margin-top:6px;"><b>Backend use:</b> when you log in, your Limited API key is sent to the War and Chain backend and used to authenticate your account and power faction-linked live features.</div>',
@@ -4127,10 +4083,11 @@ function _handleActionClick() {
 
         try {
             if (action === 'bounty-user') {
-                openBountyForMember({
+                var member = {
                     user_id: el.getAttribute('data-user-id') || '',
                     name: el.getAttribute('data-user-name') || ''
-                });
+                };
+                openBountyForMember(member);
                 return;
             }
 
@@ -4641,7 +4598,10 @@ function _handleActionClick() {
     // ============================================================
 
     function ensureMounted() {
-        if (!document.body) return;
+        if (!document.body) {
+            setTimeout(ensureMounted, 250);
+            return;
+        }
 
         var hasShield = !!document.getElementById('warhub-shield');
         var hasOverlay = !!document.getElementById('warhub-overlay');
@@ -4683,10 +4643,15 @@ function _handleActionClick() {
     }
 
     function boot() {
+        if (!document.body) {
+            setTimeout(boot, 250);
+            return;
+        }
+
         ensureMounted();
         restartPolling();
         startRemountWatch();
-        try { setTimeout(autoFillBountyPageFromWarHub, 600); } catch (_e) {}
+        try { setTimeout(autoFillBountyPageFromWarHub, 500); } catch (_e_fill) {}
 
         if (isLoggedIn()) {
             loadState().then(function () {
@@ -4700,6 +4665,20 @@ function _handleActionClick() {
         }
     }
 
-    boot();
+    function startWarHubBoot() {
+        try { boot(); } catch (err) {
+            console.error('War and Chain boot error:', err);
+            setTimeout(function () { try { ensureMounted(); renderBody(); } catch (_e) {} }, 500);
+        }
+        setTimeout(function () { try { ensureMounted(); } catch (_e) {} }, 1000);
+        setTimeout(function () { try { ensureMounted(); } catch (_e) {} }, 2500);
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', startWarHubBoot, { once: true });
+        setTimeout(startWarHubBoot, 1000);
+    } else {
+        startWarHubBoot();
+    }
 
 })();
