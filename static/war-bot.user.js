@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         War and Chain ⚔️
 // @namespace    fries91-war-hub
-// @version      3.6.6
+// @version      3.6.7
 // @description  War and Chain by Fries91. Free-access rebuild with admin and leader/co-leader restrictions kept.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -520,6 +520,8 @@
 .warhub-btn.ghost { background: rgba(255,255,255,.08) !important; }\n\
 .warhub-btn.gray { background: rgba(255,255,255,.10) !important; }\n\
 .warhub-btn.green { background: linear-gradient(180deg, rgba(42,168,95,.98), rgba(21,120,64,.98)) !important; }\n\
+.warhub-btn.available { background: linear-gradient(180deg, rgba(42,168,95,.98), rgba(21,120,64,.98)) !important; }\n\
+.warhub-btn.unavailable { background: linear-gradient(180deg, rgba(190,36,36,.98), rgba(118,14,14,.98)) !important; }\n\
 .warhub-btn.warn { background: linear-gradient(180deg, rgba(226,154,27,.98), rgba(163,102,8,.98)) !important; }\n\.warhub-btn.bounty { background: linear-gradient(180deg, rgba(220,50,50,.98), rgba(145,18,18,.98)) !important; border-color: rgba(255,255,255,.14) !important; }\n\
 .warhub-pill {\n\
   display: inline-flex !important;\n\
@@ -1912,6 +1914,7 @@ function _loadEnemies() {
 
     function _refreshMembersLive() {
         _refreshMembersLive = _asyncToGenerator(function* () {
+            yield loadState();
             yield loadFactionMembers(true);
             membersLiveStamp = Date.now();
         });
@@ -2067,6 +2070,7 @@ function _handleTabClick() {
         loadInFlight = true;
         try {
             if (currentTab === 'members') {
+                yield loadState();
                 yield loadFactionMembers(true);
                 membersLiveStamp = Date.now();
             } else if (currentTab === 'chain') {
@@ -2557,6 +2561,31 @@ function _handleTabClick() {
         return id ? ('https://www.torn.com/bounties.php?p=add&XID=' + encodeURIComponent(id) + '&reward=250000') : '#';
     }
 
+    function chainAvailableIdMap() {
+        var out = {};
+        var chain = (state && state.chain) || {};
+        arr(chain.available_items || chain.available_members || []).forEach(function (item) {
+            var id = String(getMemberId(item) || (item && (item.user_id || item.id || item.player_id)) || '').trim();
+            if (id) out[id] = true;
+        });
+
+        var viewerId = viewerUserId();
+        if (viewerId && chain.available === true) out[String(viewerId)] = true;
+        return out;
+    }
+
+    function isMemberChainAvailable(member) {
+        var id = String(getMemberId(member) || '').trim();
+        if (!id) return false;
+        return !!chainAvailableIdMap()[id];
+    }
+
+    function isViewerMemberRow(member) {
+        var id = String(getMemberId(member) || '').trim();
+        var viewerId = String(viewerUserId() || '').trim();
+        return !!(id && viewerId && id === viewerId);
+    }
+
     function rememberBountyTarget(member) {
         var id = String(getMemberId(member) || '').trim();
         var name = String(getMemberName(member) || '').trim();
@@ -2719,6 +2748,10 @@ function _handleTabClick() {
         var life = lifeValue(member);
         var med = medCooldownValue(member);
         var position = String((member && (member.position || member.faction_position || member.role || '')) || '').trim();
+        var memberAvailable = isMemberChainAvailable(member);
+        var availabilityLabel = memberAvailable ? 'Available' : 'Unavailable';
+        var availabilityClass = memberAvailable ? 'available' : 'unavailable';
+        var canToggleAvailability = isViewerMemberRow(member);
 
         return [
             '<div class="warhub-member-row" ' +
@@ -2738,6 +2771,7 @@ function _handleTabClick() {
                     '</div>',
                     '<div class="warhub-row">',
                         '<button type="button" class="warhub-btn bounty" data-action="bounty-user" data-user-id="' + esc(id) + '" data-user-name="' + esc(name) + '">Bounty</button>',
+                        '<button type="button" class="warhub-btn ' + esc(availabilityClass) + '" data-action="member-availability-toggle" data-user-id="' + esc(id) + '" data-user-name="' + esc(name) + '" data-current="' + esc(memberAvailable ? '1' : '0') + '" title="' + esc(canToggleAvailability ? 'Tap to toggle your availability' : 'Shown for all members. Only that member can change it.') + '">' + esc(availabilityLabel) + '</button>',
                     '</div>',
                 '</div>',
                 '<div class="warhub-statline">',
@@ -4088,6 +4122,34 @@ function _handleActionClick() {
                     name: el.getAttribute('data-user-name') || ''
                 };
                 openBountyForMember(member);
+                return;
+            }
+
+            if (action === 'member-availability-toggle') {
+                var rowUserId = String(el.getAttribute('data-user-id') || '').trim();
+                var myUserId = String(viewerUserId() || '').trim();
+                if (!rowUserId || !myUserId || rowUserId !== myUserId) {
+                    setStatus('You can only change your own availability. Everyone can see the status.', true);
+                    return;
+                }
+
+                var currentlyAvailable = el.getAttribute('data-current') === '1';
+                var nextAvailable = !currentlyAvailable;
+                setStatus(nextAvailable ? 'Marking you available...' : 'Marking you unavailable...', false);
+
+                var memberAvailRes = yield authedReq('POST', '/api/chain', { available: nextAvailable });
+                if (!memberAvailRes.ok) {
+                    setStatus((memberAvailRes.json && memberAvailRes.json.error) || 'Failed to update availability.', true);
+                    return;
+                }
+
+                state = state || {};
+                state.chain = Object.assign({}, state.chain || {}, memberAvailRes.json || {}, { available: nextAvailable });
+                yield loadState();
+                yield loadFactionMembers(true);
+                membersLiveStamp = Date.now();
+                renderBody();
+                setStatus(nextAvailable ? 'Marked available.' : 'Marked unavailable.', false);
                 return;
             }
 
