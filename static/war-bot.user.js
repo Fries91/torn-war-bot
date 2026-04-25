@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name         War and Chain âš”ï¸
+// @name         War and Chain ⚔️
 // @namespace    fries91-war-hub
 // @version      3.6.6
 // @description  War and Chain by Fries91. Free-access rebuild with admin and leader/co-leader restrictions kept.
@@ -35,6 +35,538 @@
     var K_ADMIN_KEY = 'warhub_admin_key_v3';
     var K_OWNER_TOKEN = 'warhub_owner_token_v3';
     var K_SESSION = 'warhub_session_v3';
+    var K_OPEN = 'warhub_open_v3';
+    var K_TAB = 'warhub_tab_v3';
+    var K_SHIELD_POS = 'warhub_shield_pos_v6';
+    var K_OVERLAY_POS = 'warhub_overlay_pos_v3';
+    var K_REFRESH = 'warhub_refresh_ms_v3';
+    var K_LOCAL_NOTIFICATIONS = 'warhub_local_notifications_v3';
+    var K_ACCESS_CACHE = 'warhub_access_cache_v3';
+    var K_OVERVIEW_BOXES = 'warhub_overview_boxes_v3';
+    var K_OVERLAY_SCROLL = 'warhub_overlay_scroll_v3';
+    var K_FF_SCOUTER_KEY = 'warhub_ff_scouter_key_v1';
+    var K_FF_SCOUTER_CACHE = 'warhub_ff_scouter_cache_v1';
+    var K_TARGETS_LOCAL = 'warhub_targets_local_v1';
+
+    
+    // ============================================================
+    // 02. OWNER CONFIG
+    // ============================================================
+
+    var OWNER_NAME = 'Fries91';
+    var OWNER_USER_ID = '3679030';
+
+    // ============================================================
+    // 03. TAB ORDER
+    // ============================================================
+
+    var TAB_ROW_1 = [
+        ['overview', 'Overview'],
+        ['members', 'Members'],
+        ['enemies', 'Enemies'],
+        ['hospital', 'Hospital'],
+        ['chain', 'Chain']
+    ];
+
+    var TAB_ROW_2 = [
+        ['meddeals', 'Med Deals'],
+        ['terms', 'Terms'],
+        ['settings', 'Settings'],
+        ['instructions', 'Help'],
+        ['admin', 'Admin']
+    ];
+
+    // ============================================================
+    // 04. RUNTIME STATE / CACHES
+    // ============================================================
+
+    var state = null;
+    var analyticsCache = null;
+    var adminTopFiveCache = null;
+    var factionMembersCache = null;
+    var currentFactionMembers = [];
+    var liveSummaryCache = null;
+    var liveSummaryLoading = false;
+    var liveSummaryError = '';
+    var liveSummaryLastAt = 0;
+    var warEnemiesCache = [];
+    var warEnemiesFactionName = '';
+    var warEnemiesFactionId = '';
+    var warEnemiesLoadedAt = 0;
+    var warEnemyStatsCache = {};
+    var warEnemyStatsLoadedAt = 0;
+
+    var overlay = null;
+    var shield = null;
+    var badge = null;
+
+    var mounted = false;
+    var dragMoved = false;
+    var isOpen = !!GM_getValue(K_OPEN, false);
+    var currentTab = GM_getValue(K_TAB, 'settings');
+    if (currentTab === 'owner') currentTab = 'admin';
+    if (currentTab === 'summary' || currentTab === 'wartop5' || currentTab === 'faction') currentTab = 'overview';
+
+    var pollTimer = null;
+    var remountTimer = null;
+    var loadInFlight = false;
+    var factionHydratePending = false;
+
+    var membersCountdownTimer = null;
+    var membersLiveStamp = 0;
+
+    var lastStatusMsg = '';
+    var lastStatusErr = false;
+
+    var accessState = normalizeAccessCache(GM_getValue(K_ACCESS_CACHE, null));
+
+    var FF_SCOUTER_CACHE_MS = 30 * 1000; function getFfScouterKey() {
+        return String(GM_getValue(K_FF_SCOUTER_KEY, '') || '').trim();
+    }
+
+    function getFfScouterCacheMap() {
+        var raw = GM_getValue(K_FF_SCOUTER_CACHE, '{}');
+        try {
+            var parsed = JSON.parse(raw);
+            return parsed && typeof parsed === 'object' ? parsed : {};
+        } catch (_e) {
+            return {};
+        }
+    }
+
+    function setFfScouterCacheMap(map) {
+        try {
+            GM_setValue(K_FF_SCOUTER_CACHE, JSON.stringify(map || {}));
+        } catch (_e) {}
+    }
+
+    function getFfScouterData(member) {
+        var id = String(getMemberId(member) || '').trim();
+        if (!id) return null;
+        var direct = warEnemyStatsCache && warEnemyStatsCache[id];
+        if (direct && direct.ffscouter) return direct.ffscouter;
+        return null;
+    }
+
+    function getFfScouterCached(id) {
+        var map = getFfScouterCacheMap();
+        var item = map[String(id || '')];
+        if (!item || !item.fetched_at || !item.payload) return null;
+        if ((Date.now() - Number(item.fetched_at || 0)) > FF_SCOUTER_CACHE_MS) {
+            delete map[String(id || '')];
+            setFfScouterCacheMap(map);
+            return null;
+        }
+        return item.payload;
+    }
+
+    function setFfScouterCached(id, payload) {
+        if (!id || !payload) return;
+        var map = getFfScouterCacheMap();
+        map[String(id)] = { fetched_at: Date.now(), payload: payload };
+        setFfScouterCacheMap(map);
+    }
+
+    function ffDifficultyLabel(ff) {
+        ff = Number(ff || 0);
+        if (!Number.isFinite(ff) || ff <= 0) return '';
+        if (ff <= 1) return 'Extremely easy';
+        if (ff <= 2) return 'Easy';
+        if (ff <= 3.5) return 'Moderately difficult';
+        if (ff <= 4.5) return 'Difficult';
+        return 'May be impossible';
+    }
+
+    function normalizeFfScouterItem(raw) {
+        if (!raw || typeof raw !== 'object') return null;
+        var ff = Number(raw.fair_fight);
+        var bsEstimate = Number(raw.bs_estimate || 0);
+        var bsEstimateHuman = String(raw.bs_estimate_human || '').trim();
+        var updated = raw.last_updated || '';
+        var noData = raw.no_data === true || raw.fair_fight == null;
+        var estimateMillions = 0;
+        if (Number.isFinite(bsEstimate) && bsEstimate > 0) {
+            estimateMillions = bsEstimate / 1000000;
+        } else if (bsEstimateHuman) {
+            estimateMillions = parseBattleNumber(bsEstimateHuman);
+        }
+        return {
+            fair_fight: Number.isFinite(ff) ? ff : 0,
+            difficulty: ffDifficultyLabel(ff),
+            bs_estimate: Number.isFinite(bsEstimate) ? bsEstimate : 0,
+            bs_estimate_human: bsEstimateHuman,
+            estimate_m: Number.isFinite(estimateMillions) ? estimateMillions : 0,
+            last_updated: updated,
+            no_data: noData
+        };
+    }
+
+    function fetchFfScouterStatsBatch(ids) {
+        var key = getFfScouterKey();
+        ids = arr(ids).map(function (id) { return String(id || '').trim(); }).filter(Boolean);
+        if (!key || !ids.length) return Promise.resolve({});
+
+        var url = 'https://ffscouter.com/api/v1/get-stats?key=' + encodeURIComponent(key) + '&targets=' + encodeURIComponent(ids.join(','));
+
+        return new Promise(function (resolve) {
+            GM_xmlhttpRequest({
+                method: 'GET',
+                url: url,
+                onload: function (resp) {
+                    try {
+                        var data = JSON.parse((resp && resp.responseText) || '[]');
+                        var out = {};
+                        arr(data).forEach(function (item) {
+                            if (!item || !item.player_id) return;
+                            out[String(item.player_id)] = normalizeFfScouterItem(item);
+                            setFfScouterCached(String(item.player_id), item);
+                        });
+                        resolve(out);
+                    } catch (_e) {
+                        resolve({});
+                    }
+                },
+                onerror: function () { resolve({}); }
+            });
+        });
+    }
+
+    function queueEnemyFfPredictions(list) {
+        var members = arr(list);
+        if (!members.length) return;
+
+        warEnemyStatsCache = warEnemyStatsCache || {};
+        var idsToFetch = [];
+
+        members.forEach(function (member) {
+            var id = String(getMemberId(member) || '').trim();
+            if (!id) return;
+            if (!warEnemyStatsCache[id]) warEnemyStatsCache[id] = {};
+
+            var cached = getFfScouterCached(id);
+            if (cached) {
+                warEnemyStatsCache[id].ffscouter = normalizeFfScouterItem(cached);
+            } else if (!warEnemyStatsCache[id].ff_loading) {
+                warEnemyStatsCache[id].ff_loading = true;
+                idsToFetch.push(id);
+            }
+        });
+
+        if (!idsToFetch.length) return;
+
+        fetchFfScouterStatsBatch(idsToFetch).then(function (map) {
+            idsToFetch.forEach(function (id) {
+                if (!warEnemyStatsCache[id]) warEnemyStatsCache[id] = {};
+                warEnemyStatsCache[id].ff_loading = false;
+                if (map[id]) warEnemyStatsCache[id].ffscouter = map[id];
+            });
+            if (currentTab === 'enemies' && overlay && overlay.classList.contains('open')) {
+                renderBody();
+            }
+        }).catch(function () {
+            idsToFetch.forEach(function (id) {
+                if (!warEnemyStatsCache[id]) warEnemyStatsCache[id] = {};
+                warEnemyStatsCache[id].ff_loading = false;
+            });
+        });
+    }
+
+
+    // ============================================================
+    // 05. STYLES
+    // ============================================================
+
+    var css = "\n\
+#warhub-shield {\n\
+  position: fixed !important;\n\
+  z-index: 2147483647 !important;\n\
+  width: 36px !important;\n\
+  height: 36px !important;\n\
+  border-radius: 10px !important;\n\
+  display: flex !important;\n\
+  align-items: center !important;\n\
+  justify-content: center !important;\n\
+  font-size: 18px !important;\n\
+  line-height: 1 !important;\n\
+  cursor: pointer !important;\n\
+  user-select: none !important;\n\
+  -webkit-user-select: none !important;\n\
+  -webkit-touch-callout: none !important;\n\
+  -webkit-tap-highlight-color: transparent !important;\n\
+  touch-action: none !important;\n\
+  box-shadow: 0 8px 24px rgba(0,0,0,.45) !important;\n\
+  border: 1px solid rgba(255,255,255,.10) !important;\n\
+  background: radial-gradient(circle at 30% 20%, rgba(220,75,75,.98), rgba(110,12,12,.98) 55%, rgba(48,6,6,.98)) !important;\n\
+  color: #fff !important;\n\
+  left: auto !important;\n\
+  right: 14px !important;\n\
+  top: 50% !important;\n\
+  bottom: auto !important;\n\
+  transform: translateY(-50%) !important;\n\
+  opacity: 1 !important;\n\
+  visibility: visible !important;\n\
+  pointer-events: auto !important;\n\
+}\n\
+\n\
+#warhub-badge {\n\
+  position: fixed !important;\n\
+  z-index: 2147483647 !important;\n\
+  min-width: 16px !important;\n\
+  height: 16px !important;\n\
+  padding: 0 4px !important;\n\
+  border-radius: 999px !important;\n\
+  background: #ffd54a !important;\n\
+  color: #111 !important;\n\
+  font-size: 10px !important;\n\
+  line-height: 16px !important;\n\
+  text-align: center !important;\n\
+  font-weight: 800 !important;\n\
+  box-shadow: 0 3px 12px rgba(0,0,0,.45) !important;\n\
+  display: none !important;\n\
+  pointer-events: none !important;\n\
+}\n\
+#warhub-overlay {\n\
+  position: fixed !important;\n\
+  z-index: 2147483646 !important;\n\
+  left: 8px !important;\n\
+  right: 8px !important;\n\
+  top: 8px !important;\n\
+  bottom: 8px !important;\n\
+  width: auto !important;\n\
+  max-width: 520px !important;\n\
+  margin: 0 auto !important;\n\
+  border-radius: 14px !important;\n\
+  background: linear-gradient(180deg, #171717, #0c0c0c) !important;\n\
+  color: #f2f2f2 !important;\n\
+  border: 1px solid rgba(255,255,255,.08) !important;\n\
+  box-shadow: 0 16px 38px rgba(0,0,0,.54) !important;\n\
+  display: none !important;\n\
+  flex-direction: column !important;\n\
+  box-sizing: border-box !important;\n\
+  overflow: hidden !important;\n\
+  opacity: 1 !important;\n\
+  visibility: visible !important;\n\
+  overscroll-behavior: contain !important;\n\
+}\n\
+#warhub-overlay.open {\n\
+  display: flex !important;\n\
+}\n\
+#warhub-overlay *,\n\
+#warhub-overlay *::before,\n\
+#warhub-overlay *::after {\n\
+  box-sizing: border-box !important;\n\
+}\n\
+\n\
+.warhub-head {\n\
+  flex: 0 0 auto !important;\n\
+  padding: 12px 12px 10px !important;\n\
+  border-bottom: 1px solid rgba(255,255,255,.08) !important;\n\
+  background: rgba(255,255,255,.03) !important;\n\
+  touch-action: none !important;\n\
+}\n\
+\n\
+.warhub-toprow {\n\
+  display: flex !important;\n\
+  align-items: center !important;\n\
+  justify-content: space-between !important;\n\
+  gap: 10px !important;\n\
+  width: 100% !important;\n\
+}\n\
+\n\
+.warhub-title {\n\
+  font-weight: 800 !important;\n\
+  font-size: 16px !important;\n\
+  letter-spacing: .2px !important;\n\
+  color: #fff !important;\n\
+}\n\
+.warhub-sub {\n\
+  opacity: .72 !important;\n\
+  font-size: 11px !important;\n\
+  margin-top: 2px !important;\n\
+  color: #fff !important;\n\
+}\n\
+\n\
+.warhub-close {\n\
+  appearance: none !important;\n\
+  -webkit-appearance: none !important;\n\
+  border: 0 !important;\n\
+  border-radius: 10px !important;\n\
+  background: rgba(255,255,255,.08) !important;\n\
+  color: #fff !important;\n\
+  padding: 6px 10px !important;\n\
+  font-weight: 700 !important;\n\
+  cursor: pointer !important;\n\
+  font-size: 12px !important;\n\
+  flex: 0 0 auto !important;\n\
+  display: inline-flex !important;\n\
+  align-items: center !important;\n\
+  justify-content: center !important;\n\
+  min-height: 34px !important;\n\
+  min-width: 58px !important;\n\
+  -webkit-tap-highlight-color: transparent !important;\n\
+}\n\
+\n\
+.warhub-tabs {\n\
+  display: flex !important;\n\
+  gap: 4px !important;\n\
+  padding: 6px 8px !important;\n\
+  overflow-x: auto !important;\n\
+  overflow-y: hidden !important;\n\
+  -webkit-overflow-scrolling: touch !important;\n\
+  scrollbar-width: none !important;\n\
+  flex-wrap: nowrap !important;\n\
+}\n\
+.warhub-tabs::-webkit-scrollbar {\n\
+  display: none !important;\n\
+}\n\
+.warhub-tab {\n\
+  appearance: none !important;\n\
+  -webkit-appearance: none !important;\n\
+  border: 1px solid rgba(255,255,255,.10) !important;\n\
+  background: rgba(255,255,255,.06) !important;\n\
+  color: #fff !important;\n\
+  border-radius: 10px !important;\n\
+  padding: 7px 9px !important;\n\
+  min-height: 34px !important;\n\
+  min-width: 78px !important;\n\
+  font-size: 12px !important;\n\
+  font-weight: 700 !important;\n\
+  line-height: 1.1 !important;\n\
+  white-space: nowrap !important;\n\
+  flex: 0 0 auto !important;\n\
+}\n\
+.warhub-tab.active {\n\
+  background: linear-gradient(180deg, rgba(220,50,50,.95), rgba(145,18,18,.98)) !important;\n\
+  border-color: rgba(255,255,255,.16) !important;\n\
+}\n\
+.warhub-body {\n\
+  flex: 1 1 auto !important;\n\
+  min-height: 0 !important;\n\
+  overflow-y: auto !important;\n\
+  overflow-x: hidden !important;\n\
+  -webkit-overflow-scrolling: touch !important;\n\
+  padding: 12px !important;\n\
+}\n\
+\n\
+.warhub-status-wrap {\n\
+  margin: 0 0 10px !important;\n\
+}\n\
+\n\
+.warhub-grid { display: grid !important; gap: 10px !important; }\n\
+.warhub-card {\n\
+  background: rgba(255,255,255,.04) !important;\n\
+  border: 1px solid rgba(255,255,255,.08) !important;\n\
+  border-radius: 12px !important;\n\
+  padding: 10px !important;\n\
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.03) !important;\n\
+}\n\
+.warhub-card h3,\n\
+.warhub-card h4 {\n\
+  margin: 0 0 8px !important;\n\
+  color: #fff !important;\n\
+}\n\
+.warhub-muted { opacity: .72 !important; }\n\
+.warhub-row {\n\
+  display: flex !important;\n\
+  align-items: center !important;\n\
+  gap: 8px !important;\n\
+  flex-wrap: wrap !important;\n\
+}\n\
+.warhub-col {\n\
+  display: flex !important;\n\
+  flex-direction: column !important;\n\
+  gap: 8px !important;\n\
+}\n\
+.warhub-space { height: 8px !important; }\n\
+.warhub-label {\n\
+  font-size: 12px !important;\n\
+  font-weight: 700 !important;\n\
+  opacity: .85 !important;\n\
+}\n\
+.warhub-input,\n\
+.warhub-textarea,\n\
+.warhub-select {\n\
+  width: 100% !important;\n\
+  padding: 10px 11px !important;\n\
+  border-radius: 10px !important;\n\
+  border: 1px solid rgba(255,255,255,.12) !important;\n\
+  background: rgba(255,255,255,.07) !important;\n\
+  color: #fff !important;\n\
+  outline: none !important;\n\
+  font-size: 16px !important;\n\
+}\n\
+.warhub-textarea {\n\
+  min-height: 110px !important;\n\
+  resize: vertical !important;\n\
+}\n\
+.warhub-btn {\n\
+  appearance: none !important;\n\
+  -webkit-appearance: none !important;\n\
+  border: 1px solid rgba(255,255,255,.12) !important;\n\
+  background: linear-gradient(180deg, rgba(220,50,50,.95), rgba(145,18,18,.98)) !important;\n\
+  color: #fff !important;\n\
+  border-radius: 10px !important;\n\
+  padding: 9px 12px !important;\n\
+  min-height: 38px !important;\n\
+  font-size: 13px !important;\n\
+  font-weight: 800 !important;\n\
+  cursor: pointer !important;\n\
+  -webkit-tap-highlight-color: transparent !important;\n\
+}\n\
+.warhub-btn.ghost { background: rgba(255,255,255,.08) !important; }\n\
+.warhub-btn.gray { background: rgba(255,255,255,.10) !important; }\n\
+.warhub-btn.green { background: linear-gradient(180deg, rgba(42,168,95,.98), rgba(21,120,64,.98)) !important; }\n\
+.warhub-btn.warn { background: linear-gradient(180deg, rgba(226,154,27,.98), rgba(163,102,8,.98)) !important; }\n\.warhub-btn.bounty { background: linear-gradient(180deg, rgba(220,50,50,.98), rgba(145,18,18,.98)) !important; border-color: rgba(255,255,255,.14) !important; }\n\
+.warhub-pill {\n\
+  display: inline-flex !important;\n\
+  align-items: center !important;\n\
+  justify-content: center !important;\n\
+  min-height: 24px !important;\n\
+  padding: 4px 8px !important;\n\
+  border-radius: 999px !important;\n\
+  font-size: 12px !important;\n\
+  font-weight: 800 !important;\n\
+  line-height: 1 !important;\n\
+  border: 1px solid rgba(255,255,255,.10) !important;\n\
+  background: rgba(255,255,255,.08) !important;\n\
+  color: #fff !important;\n\
+}\n\
+.warhub-pill.good { background: rgba(36,140,82,.35) !important; }\n\
+.warhub-pill.bad { background: rgba(170,32,32,.35) !important; }\n\
+.warhub-pill.neutral { background: rgba(255,255,255,.08) !important; }\n\
+.warhub-pill.online { background: rgba(42,168,95,.35) !important; }\n\
+.warhub-pill.idle { background: rgba(197,142,32,.35) !important; }\n\
+.warhub-pill.travel { background: rgba(66,124,206,.35) !important; }\n\
+.warhub-pill.jail { background: rgba(120,85,160,.35) !important; }\n\
+.warhub-pill.hospital { background: rgba(199,70,70,.35) !important; }\n\
+.warhub-pill.offline { background: rgba(105,105,105,.35) !important; }\n\
+.warhub-kv {\n\
+  display: grid !important;\n\
+  grid-template-columns: 1fr auto !important;\n\
+  gap: 8px !important;\n\
+  align-items: center !important;\n\
+  padding: 8px 0 !important;\n\
+  border-bottom: 1px solid rgba(255,255,255,.05) !important;\n\
+}\n\
+.warhub-kv:last-child { border-bottom: 0 !important; }\n\
+.warhub-member-group {\n\
+  border: 1px solid rgba(255,255,255,.08) !important;\n\
+  border-radius: 12px !important;\n\
+  overflow: hidden !important;\n\
+  background: rgba(255,255,255,.03) !important;\n\
+}\n\
+.warhub-member-group-head {\n\
+  display: flex !important;\n\
+  align-items: center !important;\n\
+  justify-content: space-between !important;\n\
+  gap: 8px !important;\n\
+  padding: 10px !important;\n\
+  background: rgba(255,255,255,.05) !important;\n\
+  cursor: pointer !important;\n\
+  -webkit-tap-highlight-color: transparent !important;\n\
+}\n\
+.warhub-member-list {\n\
+  display:     var K_SESSION = 'warhub_session_v3';
     var K_OPEN = 'warhub_open_v3';
     var K_TAB = 'warhub_tab_v3';
     var K_SHIELD_POS = 'warhub_shield_pos_v6';
