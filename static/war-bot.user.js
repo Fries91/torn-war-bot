@@ -1689,10 +1689,24 @@ function _loadFactionMembers() {
 
         members = ensureViewerInMembersList(members);
 
-        factionMembersCache = members.slice();
-        currentFactionMembers = members.slice();
+        var existingMembers = mergeMemberLists(
+            arr(factionMembersCache),
+            arr(currentFactionMembers),
+            arr(state && state.faction && state.faction.members)
+        );
+
+        var mergedMembers = mergeMemberLists(existingMembers, members);
+
+        // If the API only gives the logged-in user on a limited key, keep the fuller list
+        // that was already loaded or learned from script/chain activity.
+        if (members.length <= 1 && existingMembers.length > members.length) {
+            mergedMembers = mergeMemberLists(existingMembers, members);
+        }
+
+        factionMembersCache = mergedMembers.slice();
+        currentFactionMembers = mergedMembers.slice();
         membersLiveStamp = Date.now();
-        state.faction.members = members.slice();
+        state.faction.members = mergedMembers.slice();
 
         return factionMembersCache.slice();
     });
@@ -2708,6 +2722,73 @@ function _handleTabClick() {
         return !!(id && viewerId && id === viewerId);
     }
 
+    function mergeMemberLists() {
+        var out = [];
+        var index = {};
+
+        function add(member) {
+            if (!member || typeof member !== 'object') return;
+            var id = String(getMemberId(member) || member.user_id || member.id || member.player_id || '').trim();
+            var name = getMemberName(member);
+            var key = id || String(name || '').toLowerCase();
+            if (!key || key === 'unknown') return;
+
+            var clean = Object.assign({}, member);
+            if (id) {
+                clean.user_id = id;
+                clean.id = clean.id || id;
+                clean.player_id = clean.player_id || id;
+            }
+            if (!clean.name || clean.name === 'Unknown') clean.name = name;
+
+            if (index[key] == null) {
+                index[key] = out.length;
+                out.push(clean);
+            } else {
+                out[index[key]] = Object.assign({}, out[index[key]], clean);
+            }
+        }
+
+        for (var i = 0; i < arguments.length; i += 1) {
+            arr(arguments[i]).forEach(add);
+        }
+
+        return out;
+    }
+
+    function getMembersFromScriptState() {
+        var chain = (state && state.chain) || {};
+        var faction = (state && state.faction) || {};
+        return mergeMemberLists(
+            arr(currentFactionMembers),
+            arr(factionMembersCache),
+            arr(faction.members),
+            arr(faction.items),
+            arr(faction.member_items),
+            arr(state && state.members),
+            arr(state && state.users),
+            arr(state && state.script_users),
+            arr(state && state.bot_users),
+            arr(state && state.active_users),
+            arr(chain.available_items),
+            arr(chain.available_members),
+            arr(chain.sitter_items),
+            arr(chain.sitter_members),
+            arr(chain.members),
+            arr(chain.users)
+        );
+    }
+
+    function getMembersForMembersTab() {
+        var members = getMembersFromScriptState();
+        members = ensureViewerInMembersList(members);
+        return mergeMemberLists(members).sort(function (a, b) {
+            if (isViewerMemberRow(a)) return -1;
+            if (isViewerMemberRow(b)) return 1;
+            return getMemberName(a).localeCompare(getMemberName(b));
+        });
+    }
+
     function ensureViewerInMembersList(members) {
         members = arr(members).slice();
         var viewer = (state && (state.viewer || state.me || state.user)) || {};
@@ -3218,7 +3299,7 @@ function renderOverviewTab() {
 }
 
 function renderMembersTab() {
-    var members = ensureViewerInMembersList(arr(currentFactionMembers || factionMembersCache || []));
+    var members = getMembersForMembersTab();
 
     var search = String(GM_getValue('warhub_members_search', '') || '').trim().toLowerCase();
 
@@ -3235,7 +3316,7 @@ function renderMembersTab() {
         '<div class="warhub-grid">',
             '<div class="warhub-hero-card">',
                 '<div class="warhub-title">Members</div>',
-                '<div class="warhub-sub">Faction members only. Your row is kept visible. Availability starts Unavailable, can be toggled beside Bounty, and everyone can see it.</div>',
+                '<div class="warhub-sub">Members using War and Chain plus faction roster when available. Availability starts Unavailable, can be toggled beside Bounty, and everyone can see it.</div>',
             '</div>',
 
             '<div class="warhub-card">',
