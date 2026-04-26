@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         War and Chain ⚔️
 // @namespace    fries91-war-hub
-// @version      3.6.8
+// @version      3.6.9
 // @description  War and Chain by Fries91. Free-access rebuild with admin and leader/co-leader restrictions kept.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -66,10 +66,10 @@
 
     var TAB_ROW_1 = [
         ['overview', 'Overview'],
+        ['chain', 'Chain'],
         ['members', 'Members'],
         ['enemies', 'Enemies'],
-        ['hospital', 'Hospital'],
-        ['chain', 'Chain']
+        ['hospital', 'Hospital']
     ];
 
     var TAB_ROW_2 = [
@@ -853,9 +853,9 @@
 
     GM_addStyle(css);
     GM_addStyle([
-        '#warhub-shield { left: 10px !important; top: auto !important; bottom: 74px !important; right: auto !important; width: 128px !important; height: 30px !important; background: transparent !important; border: 0 !important; box-shadow: none !important; transform: none !important; opacity: 1 !important; visibility: visible !important; display: flex !important; pointer-events: auto !important; z-index: 2147483647 !important; }',
+        '#warhub-shield { left: 10px !important; top: auto !important; bottom: 48px !important; right: auto !important; width: 128px !important; height: 30px !important; background: transparent !important; border: 0 !important; box-shadow: none !important; transform: none !important; opacity: 1 !important; visibility: visible !important; display: flex !important; pointer-events: auto !important; z-index: 2147483647 !important; }',
         '#warhub-shield button { width: 128px !important; height: 30px !important; border-radius: 9px !important; border: 1px solid rgba(205,164,74,.5) !important; background: linear-gradient(180deg, rgba(90,12,18,.95), rgba(35,8,10,.98)) !important; color: #f5df9d !important; font-size: 10px !important; font-weight: 800 !important; letter-spacing: .1px !important; box-shadow: 0 8px 20px rgba(0,0,0,.35) !important; padding: 0 !important; margin: 0 !important; cursor: pointer !important; }',
-        '@media (max-width: 520px) { #warhub-shield { left: 10px !important; top: auto !important; bottom: 74px !important; width: 128px !important; height: 30px !important; } #warhub-shield button { width: 128px !important; height: 30px !important; font-size: 10px !important; border-radius: 9px !important; } }'
+        '@media (max-width: 520px) { #warhub-shield { left: 10px !important; top: auto !important; bottom: 48px !important; width: 128px !important; height: 30px !important; } #warhub-shield button { width: 128px !important; height: 30px !important; font-size: 10px !important; border-radius: 9px !important; } }'
     ].join('\n'));
 
     // ============================================================
@@ -977,7 +977,17 @@
 
     function tickMembersCountdowns() {
         if (!overlay) return;
-        if (currentTab !== 'members' && currentTab !== 'hospital' && currentTab !== 'enemies') return;
+        if (currentTab !== 'overview' && currentTab !== 'members' && currentTab !== 'hospital' && currentTab !== 'enemies') return;
+
+        var chainTimers = overlay.querySelectorAll('[data-chain-hit-timer]');
+        chainTimers.forEach(function (timerEl) {
+            var base = Number(timerEl.getAttribute('data-chain-hit-base') || 0);
+            var renderedAt = Number(timerEl.getAttribute('data-chain-hit-rendered-at') || Date.now());
+            var elapsedTimer = Math.floor((Date.now() - renderedAt) / 1000);
+            var live = Math.max(0, base - elapsedTimer);
+            timerEl.textContent = 'Chain hit timer ' + (live > 0 ? formatCountdown(live) : 'Ready');
+        });
+
         if (!membersLiveStamp) return;
 
         var elapsed = Math.floor((Date.now() - membersLiveStamp) / 1000);
@@ -1022,7 +1032,7 @@
 
     function startMembersCountdownLoop() {
         stopMembersCountdownLoop();
-        if (currentTab !== 'members' && currentTab !== 'hospital' && currentTab !== 'enemies') return;
+        if (currentTab !== 'overview' && currentTab !== 'members' && currentTab !== 'hospital' && currentTab !== 'enemies') return;
 
         membersCountdownTimer = setInterval(function () {
             tickMembersCountdowns();
@@ -1328,7 +1338,7 @@ function applyShieldPos() {
 
     shield.style.left = '10px';
     shield.style.top = 'auto';
-    shield.style.bottom = '74px';
+    shield.style.bottom = '48px';
     shield.style.right = 'auto';
     shield.style.width = '128px';
     shield.style.height = '30px';
@@ -2456,6 +2466,92 @@ function _handleTabClick() {
         return item;
     }
 
+    function getChainSitterItems() {
+        var chain = (state && state.chain) || {};
+        return arr(chain.sitter_items).map(mergeChainMember).filter(function (item) {
+            return !!String((item && (item.user_id || item.id || item.player_id || item.name || item.user_name)) || '').trim();
+        });
+    }
+
+    function getActiveChainSitterItems() {
+        var chain = (state && state.chain) || {};
+        var out = [];
+        var seen = {};
+
+        function addItem(item) {
+            item = mergeChainMember(item || {});
+            var uid = String((item && (item.user_id || item.id || item.player_id)) || '').trim();
+            var nm = getMemberName(item);
+            var key = uid || nm.toLowerCase();
+            if (!key || seen[key]) return;
+            seen[key] = true;
+            out.push(Object.assign({}, item, { sitter_enabled: true }));
+        }
+
+        arr(chain.sitter_items).forEach(function (item) {
+            if (item && item.sitter_enabled === false) return;
+            addItem(item);
+        });
+
+        arr(chain.available_items).forEach(function (item) {
+            if (item && (item.sitter_enabled || item.chain_sitter || item.is_chain_sitter)) addItem(item);
+        });
+
+        if (chain.sitter_enabled) {
+            addItem({
+                user_id: viewerUserId(),
+                name: viewerName(),
+                user_name: viewerName(),
+                sitter_enabled: true
+            });
+        }
+
+        return out;
+    }
+
+    function getActiveChainSitterNames(limit) {
+        var names = getActiveChainSitterItems().map(function (item) { return getMemberName(item); }).filter(Boolean);
+        if (!names.length) return '';
+        limit = Number(limit || 5);
+        var shown = names.slice(0, limit);
+        if (names.length > shown.length) shown.push('+' + String(names.length - shown.length) + ' more');
+        return shown.join(', ');
+    }
+
+    function renderActiveChainSittersPill(limit) {
+        var activeNames = getActiveChainSitterNames(limit || 5);
+        var activeCount = getActiveChainSitterItems().length;
+        return '<span class="warhub-pill ' + (activeCount ? 'warn' : 'neutral') + '">Active Chain Sitters: ' + esc(activeNames || 'None') + '</span>';
+    }
+
+    function getChainSitterNames(limit) {
+        var names = getChainSitterItems().map(function (item) { return getMemberName(item); }).filter(Boolean);
+        if (!names.length) return '';
+        limit = Number(limit || 4);
+        var shown = names.slice(0, limit);
+        if (names.length > shown.length) shown.push('+' + String(names.length - shown.length) + ' more');
+        return shown.join(', ');
+    }
+
+    function getChainHitSeconds() {
+        var chain = (state && state.chain) || {};
+        var raw = Number(chain.cooldown || chain.chain_cooldown || chain.hit_timer || chain.hit_timer_seconds || chain.timeout || chain.timeout_seconds || 0);
+        if (Number.isFinite(raw) && raw > 0) return Math.floor(raw);
+
+        var until = Number(chain.cooldown_until_ts || chain.chain_timeout_ts || chain.timer_until_ts || 0);
+        if (Number.isFinite(until) && until > 0) {
+            return Math.max(0, Math.floor(until - (Date.now() / 1000)));
+        }
+        return 0;
+    }
+
+    function renderChainHitTimerPill() {
+        var seconds = getChainHitSeconds();
+        var renderedAt = Date.now();
+        var label = seconds > 0 ? formatCountdown(seconds) : 'Ready';
+        return '<span class="warhub-pill warn" data-chain-hit-timer="1" data-chain-hit-base="' + esc(String(seconds)) + '" data-chain-hit-rendered-at="' + esc(String(renderedAt)) + '">Chain hit timer ' + esc(label) + '</span>';
+    }
+
     function humanStateLabel(st) {
         st = String(st || '').toLowerCase();
         if (st === 'online') return 'Online';
@@ -3038,6 +3134,7 @@ function renderOverviewTab() {
     var scoreThem = Number(war.score_them || war.enemy_score || 0);
     var chainUs = Number(war.chain_us || 0);
     var chainThem = Number(war.chain_them || 0);
+    var chainSittersText = getActiveChainSitterNames(5);
 
     var termsText = String((state && state.terms_summary && state.terms_summary.text) || '');
     var medDealsText = String((state && state.med_deals && state.med_deals.text) || '');
@@ -3065,6 +3162,10 @@ function renderOverviewTab() {
             '<div class="warhub-hero-card warhub-overview-hero">',
                 '<div class="warhub-title">War Overview</div>',
                 '<div class="warhub-sub">Faction vs enemy war view with chain, score, med deals, terms, and dibs.</div>',
+                '<div class="warhub-row">',
+                    renderChainHitTimerPill(),
+                    renderActiveChainSittersPill(5),
+                '</div>',
                 '<div class="warhub-war-head">',
                     '<div class="warhub-war-side">',
                         '<div class="warhub-war-side-label">Your faction</div>',
@@ -4613,7 +4714,7 @@ function _handleActionClick() {
 
         renderStatus();
 
-        if (currentTab === 'members' || currentTab === 'enemies' || currentTab === 'hospital' || currentTab === 'faction') {
+        if (currentTab === 'overview' || currentTab === 'members' || currentTab === 'enemies' || currentTab === 'hospital' || currentTab === 'faction') {
             startMembersCountdownLoop();
         } else {
             stopMembersCountdownLoop();
@@ -4645,7 +4746,7 @@ function _handleActionClick() {
 
         renderStatus();
 
-        if (currentTab === 'members' || currentTab === 'enemies' || currentTab === 'hospital' || currentTab === 'faction') {
+        if (currentTab === 'overview' || currentTab === 'members' || currentTab === 'enemies' || currentTab === 'hospital' || currentTab === 'faction') {
             startMembersCountdownLoop();
         } else {
             stopMembersCountdownLoop();
