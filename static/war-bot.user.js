@@ -1,7 +1,10 @@
+War and Chain updated userscript
+Copy everything inside the code box and paste it over your userscript.
+
 // ==UserScript==
 // @name         War and Chain ⚔️
 // @namespace    fries91-war-hub
-// @version      3.6.9
+// @version      3.7.0
 // @description  War and Chain by Fries91. Free-access rebuild with admin and leader/co-leader restrictions kept.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -985,7 +988,7 @@
             var renderedAt = Number(timerEl.getAttribute('data-chain-hit-rendered-at') || Date.now());
             var elapsedTimer = Math.floor((Date.now() - renderedAt) / 1000);
             var live = Math.max(0, base - elapsedTimer);
-            timerEl.textContent = 'Chain hit timer ' + (live > 0 ? formatCountdown(live) : 'Ready');
+            timerEl.textContent = 'Hit Timer: ' + (live > 0 ? formatCountdown(live) : 'Ready');
         });
 
         if (!membersLiveStamp) return;
@@ -2535,10 +2538,34 @@ function _handleTabClick() {
 
     function getChainHitSeconds() {
         var chain = (state && state.chain) || {};
-        var raw = Number(chain.cooldown || chain.chain_cooldown || chain.hit_timer || chain.hit_timer_seconds || chain.timeout || chain.timeout_seconds || 0);
+        var raw = Number(
+            chain.cooldown ||
+            chain.chain_cooldown ||
+            chain.hit_timer ||
+            chain.hit_timer_seconds ||
+            chain.next_hit_timer ||
+            chain.next_hit_seconds ||
+            chain.chain_timer ||
+            chain.chain_timer_seconds ||
+            chain.timer ||
+            chain.timer_seconds ||
+            chain.time_left ||
+            chain.time_left_seconds ||
+            chain.timeout ||
+            chain.timeout_seconds ||
+            0
+        );
         if (Number.isFinite(raw) && raw > 0) return Math.floor(raw);
 
-        var until = Number(chain.cooldown_until_ts || chain.chain_timeout_ts || chain.timer_until_ts || 0);
+        var until = Number(
+            chain.cooldown_until_ts ||
+            chain.chain_timeout_ts ||
+            chain.timer_until_ts ||
+            chain.expires_at_ts ||
+            chain.chain_expires_at_ts ||
+            chain.next_hit_due_ts ||
+            0
+        );
         if (Number.isFinite(until) && until > 0) {
             return Math.max(0, Math.floor(until - (Date.now() / 1000)));
         }
@@ -2549,7 +2576,7 @@ function _handleTabClick() {
         var seconds = getChainHitSeconds();
         var renderedAt = Date.now();
         var label = seconds > 0 ? formatCountdown(seconds) : 'Ready';
-        return '<span class="warhub-pill warn" data-chain-hit-timer="1" data-chain-hit-base="' + esc(String(seconds)) + '" data-chain-hit-rendered-at="' + esc(String(renderedAt)) + '">Chain hit timer ' + esc(label) + '</span>';
+        return '<span class="warhub-pill warn" data-chain-hit-timer="1" data-chain-hit-base="' + esc(String(seconds)) + '" data-chain-hit-rendered-at="' + esc(String(renderedAt)) + '">Hit Timer: ' + esc(label) + '</span>';
     }
 
     function humanStateLabel(st) {
