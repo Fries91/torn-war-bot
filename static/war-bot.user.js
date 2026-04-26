@@ -853,7 +853,7 @@
 
     GM_addStyle(css);
     GM_addStyle([
-        '#warhub-header-slot { display: inline-flex !important; align-items: center !important; justify-content: center !important; flex: 0 0 auto !important; width: 34px !important; height: 34px !important; margin: 3px 6px 3px 8px !important; vertical-align: middle !important; position: relative !important; z-index: 50 !important; }',
+        '#warhub-header-slot { display: flex !important; align-items: center !important; justify-content: flex-start !important; width: 100% !important; height: 38px !important; min-height: 38px !important; max-height: 38px !important; margin: 0 !important; padding: 3px 0 3px 8px !important; background: transparent !important; box-sizing: border-box !important; position: relative !important; z-index: 50 !important; overflow: visible !important; }',
         '#warhub-shield.warhub-header-mounted { position: static !important; left: auto !important; right: auto !important; top: auto !important; bottom: auto !important; transform: none !important; width: 32px !important; height: 32px !important; min-width: 32px !important; min-height: 32px !important; max-width: 32px !important; max-height: 32px !important; border-radius: 8px !important; background: transparent !important; border: 0 !important; box-shadow: none !important; margin: 0 !important; padding: 0 !important; display: inline-flex !important; align-items: center !important; justify-content: center !important; opacity: 1 !important; visibility: visible !important; pointer-events: auto !important; z-index: 50 !important; }',
         '#warhub-shield.warhub-header-mounted button { width: 32px !important; height: 32px !important; min-width: 32px !important; min-height: 32px !important; border-radius: 8px !important; border: 1px solid rgba(205,164,74,.50) !important; background: linear-gradient(180deg, rgba(90,12,18,.96), rgba(35,8,10,.98)) !important; color: #f5df9d !important; font-size: 18px !important; line-height: 1 !important; font-weight: 900 !important; box-shadow: 0 2px 8px rgba(0,0,0,.35) !important; padding: 0 !important; margin: 0 !important; cursor: pointer !important; display: inline-flex !important; align-items: center !important; justify-content: center !important; }',
         '#warhub-shield:not(.warhub-header-mounted) { display: none !important; }',
@@ -1329,14 +1329,29 @@ function isVisibleHeaderElement(el) {
     if (el.id === 'warhub-header-slot' || el.id === 'warhub-shield' || el.id === 'warhub-overlay') return false;
     var rect = null;
     try { rect = el.getBoundingClientRect(); } catch (_e) { return false; }
-    if (!rect || rect.width < 220 || rect.height < 24 || rect.height > 90) return false;
-    if (rect.top < 55 || rect.top > Math.max(260, window.innerHeight * 0.42)) return false;
+    if (!rect || rect.width < 220 || rect.height < 22 || rect.height > 110) return false;
+
+    // Keep the sword in Torn's real top header area only.
+    // This blocks page-content headers like the Home title row.
+    var maxTop = Math.min(430, Math.max(260, window.innerHeight * 0.42));
+    if (rect.top < 55 || rect.top > maxTop) return false;
+
     var style = null;
     try { style = window.getComputedStyle(el); } catch (_e2) { return false; }
     if (!style || style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity || 1) === 0) return false;
     var txt = String(el.innerText || el.textContent || '');
     if (txt.indexOf('War and Chain') >= 0) return false;
     return true;
+}
+
+function navWordCount(txt) {
+    txt = String(txt || '').toLowerCase();
+    var words = ['messages', 'events', 'awards', 'home', 'items', 'city', 'wheel', 'stocks', 'forums', 'missions', 'news', 'traveling', 'travel', 'job'];
+    var count = 0;
+    words.forEach(function (w) {
+        if (txt.indexOf(w) >= 0) count += 1;
+    });
+    return count;
 }
 
 function isStatHeaderHost(el) {
@@ -1347,13 +1362,14 @@ function isStatHeaderHost(el) {
 
 function isLowerHeaderHost(el) {
     if (!isVisibleHeaderElement(el)) return false;
+    if (isStatHeaderHost(el)) return false;
+
     var rect = el.getBoundingClientRect();
     var txt = String(el.innerText || el.textContent || '');
+    var count = navWordCount(txt);
 
-    // Keep the sword in the lower Torn header strip, not beside chain stats.
-    if (isStatHeaderHost(el)) return false;
-    if (/messages|events|awards|home|items|city|stocks|forums|missions|news/i.test(txt) && rect.height <= 85) return true;
-    if (rect.height >= 28 && rect.height <= 72 && rect.top >= 80) return true;
+    // Must be the Torn icon nav strip, not a page title row that only says Home.
+    if (count >= 3 && rect.height <= 95) return true;
     return false;
 }
 
@@ -1361,24 +1377,16 @@ function scoreLowerHeaderHost(el) {
     var rect = el.getBoundingClientRect();
     var txt = String(el.innerText || el.textContent || '');
     var score = 0;
-    if (/messages|events|awards|home|items|city|stocks|forums|missions|news/i.test(txt)) score += 60;
-    if (rect.top >= 90) score += 25;
-    if (rect.top >= 120) score += 10;
-    if (rect.height <= 55) score += 15;
+    score += navWordCount(txt) * 35;
+    if (rect.top >= 90 && rect.top <= 360) score += 35;
+    if (rect.height <= 65) score += 20;
     if (rect.width > 300) score += 10;
     score -= Math.abs(rect.left) / 10;
-    score -= Math.max(0, el.querySelectorAll('*').length - 80) / 2;
+    score -= Math.max(0, el.querySelectorAll('*').length - 90) / 2;
     return score;
 }
 
 function findTornHeaderHost() {
-    var existing = document.getElementById('warhub-header-slot');
-    if (existing && existing.parentNode && document.body && document.body.contains(existing.parentNode)) {
-        var parentRect = null;
-        try { parentRect = existing.parentNode.getBoundingClientRect(); } catch (_e0) { parentRect = null; }
-        if (parentRect && parentRect.width > 0 && parentRect.height > 0 && isLowerHeaderHost(existing.parentNode)) return existing.parentNode;
-    }
-
     var selectors = [
         '[class*=areas]',
         '[class*=menu]',
@@ -1404,35 +1412,27 @@ function findTornHeaderHost() {
     });
 
     candidates.sort(function (a, b) { return scoreLowerHeaderHost(b) - scoreLowerHeaderHost(a); });
-    if (candidates[0]) return candidates[0];
-
-    var statFallbacks = Array.prototype.slice.call(document.querySelectorAll('div, ul, nav, section'))
-        .filter(isStatHeaderHost)
-        .sort(function (a, b) {
-            var ar = a.getBoundingClientRect();
-            var br = b.getBoundingClientRect();
-            return br.top - ar.top;
-        });
-
-    return statFallbacks[0] || null;
+    return candidates[0] || null;
 }
 
 function getOrCreateOwnHeaderSlot() {
     var host = findTornHeaderHost();
-    if (!host) return null;
+    if (!host || !host.parentNode) return null;
 
     var slot = document.getElementById('warhub-header-slot');
     if (!slot) {
-        slot = document.createElement('span');
+        slot = document.createElement('div');
         slot.id = 'warhub-header-slot';
         slot.setAttribute('aria-label', 'War and Chain launcher slot');
     }
 
-    if (slot.parentNode !== host) {
+    // Place the sword in its own locked strip directly above Torn's Messages/Events/Home row.
+    // This prevents it from jumping down into page content like the Home title section.
+    if (slot.parentNode !== host.parentNode || slot.nextSibling !== host) {
         try {
-            host.insertBefore(slot, host.firstChild || null);
+            host.parentNode.insertBefore(slot, host);
         } catch (_e) {
-            try { host.appendChild(slot); } catch (_e2) { return null; }
+            try { host.parentNode.appendChild(slot); } catch (_e2) { return null; }
         }
     }
 
