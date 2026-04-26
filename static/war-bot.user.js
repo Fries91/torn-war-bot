@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         War and Chain ⚔️
 // @namespace    fries91-war-hub
-// @version      3.6.7
+// @version      3.6.8
 // @description  War and Chain by Fries91. Free-access rebuild with admin and leader/co-leader restrictions kept.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -853,9 +853,9 @@
 
     GM_addStyle(css);
     GM_addStyle([
-        '#warhub-shield { left: 10px !important; top: 42% !important; bottom: auto !important; right: auto !important; width: 128px !important; height: 30px !important; background: transparent !important; border: 0 !important; box-shadow: none !important; transform: none !important; opacity: 1 !important; visibility: visible !important; display: flex !important; pointer-events: auto !important; z-index: 2147483647 !important; }',
+        '#warhub-shield { left: 10px !important; top: auto !important; bottom: 74px !important; right: auto !important; width: 128px !important; height: 30px !important; background: transparent !important; border: 0 !important; box-shadow: none !important; transform: none !important; opacity: 1 !important; visibility: visible !important; display: flex !important; pointer-events: auto !important; z-index: 2147483647 !important; }',
         '#warhub-shield button { width: 128px !important; height: 30px !important; border-radius: 9px !important; border: 1px solid rgba(205,164,74,.5) !important; background: linear-gradient(180deg, rgba(90,12,18,.95), rgba(35,8,10,.98)) !important; color: #f5df9d !important; font-size: 10px !important; font-weight: 800 !important; letter-spacing: .1px !important; box-shadow: 0 8px 20px rgba(0,0,0,.35) !important; padding: 0 !important; margin: 0 !important; cursor: pointer !important; }',
-        '@media (max-width: 520px) { #warhub-shield { left: 10px !important; top: 42% !important; bottom: auto !important; width: 128px !important; height: 30px !important; } #warhub-shield button { width: 128px !important; height: 30px !important; font-size: 10px !important; border-radius: 9px !important; } }'
+        '@media (max-width: 520px) { #warhub-shield { left: 10px !important; top: auto !important; bottom: 74px !important; width: 128px !important; height: 30px !important; } #warhub-shield button { width: 128px !important; height: 30px !important; font-size: 10px !important; border-radius: 9px !important; } }'
     ].join('\n'));
 
     // ============================================================
@@ -1327,8 +1327,8 @@ function applyShieldPos() {
     if (document.body && shield.parentNode !== document.body) document.body.appendChild(shield);
 
     shield.style.left = '10px';
-    shield.style.top = '42%';
-    shield.style.bottom = 'auto';
+    shield.style.top = 'auto';
+    shield.style.bottom = '74px';
     shield.style.right = 'auto';
     shield.style.width = '128px';
     shield.style.height = '30px';
