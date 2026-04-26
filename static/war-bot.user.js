@@ -1677,6 +1677,8 @@ function _loadFactionMembers() {
             name: payload.faction_name || ''
         });
 
+        members = ensureViewerInMembersList(members);
+
         factionMembersCache = members.slice();
         currentFactionMembers = members.slice();
         membersLiveStamp = Date.now();
@@ -2586,6 +2588,38 @@ function _handleTabClick() {
         return !!(id && viewerId && id === viewerId);
     }
 
+    function ensureViewerInMembersList(members) {
+        members = arr(members).slice();
+        var viewer = (state && (state.viewer || state.me || state.user)) || {};
+        var viewerId = String(
+            viewer.user_id ||
+            viewer.id ||
+            viewer.player_id ||
+            viewerUserId() ||
+            ''
+        ).trim();
+        if (!viewerId) return members;
+
+        var exists = members.some(function (member) {
+            return String(getMemberId(member) || '').trim() === viewerId;
+        });
+        if (exists) return members;
+
+        var viewerRow = Object.assign({}, viewer, {
+            user_id: viewerId,
+            id: viewerId,
+            name: String(viewer.name || viewerName() || 'You'),
+            online_state: 'online',
+            status: 'Online',
+            status_detail: '',
+            last_action: 'Online',
+            position: String(viewer.position || viewer.role || 'You')
+        });
+
+        members.unshift(viewerRow);
+        return members;
+    }
+
     function rememberBountyTarget(member) {
         var id = String(getMemberId(member) || '').trim();
         var name = String(getMemberName(member) || '').trim();
@@ -3059,12 +3093,13 @@ function renderOverviewTab() {
 }
 
 function renderMembersTab() {
-    var members = arr(currentFactionMembers || factionMembersCache || []);
+    var members = ensureViewerInMembersList(arr(currentFactionMembers || factionMembersCache || []));
 
     var search = String(GM_getValue('warhub_members_search', '') || '').trim().toLowerCase();
 
     var filtered = members.filter(function (m) {
         if (!search) return true;
+        if (isViewerMemberRow(m)) return true;
         return memberSearchText(m).indexOf(search) >= 0;
     });
 
@@ -3075,7 +3110,7 @@ function renderMembersTab() {
         '<div class="warhub-grid">',
             '<div class="warhub-hero-card">',
                 '<div class="warhub-title">Members</div>',
-                '<div class="warhub-sub">Faction members only. Live energy, life, and med cooldown stay here only.</div>',
+                '<div class="warhub-sub">Faction members only. Your row is kept visible. Availability starts Unavailable, can be toggled beside Bounty, and everyone can see it.</div>',
             '</div>',
 
             '<div class="warhub-card">',
