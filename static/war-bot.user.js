@@ -1,6 +1,3 @@
-War and Chain updated userscript
-Copy everything inside the code box and paste it over your userscript.
-
 // ==UserScript==
 // @name         War and Chain ⚔️
 // @namespace    fries91-war-hub
