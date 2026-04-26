@@ -24,8 +24,8 @@
 
     // Fresh guard for this fixed build. This prevents an older/stale loader flag
     // from hiding the launcher after updates on PDA/Tampermonkey.
-    if (window.__WAR_HUB_OVERLAY_VISIBLE_FIX_V367__) return;
-    window.__WAR_HUB_OVERLAY_VISIBLE_FIX_V367__ = true;
+    if (window.__WAR_HUB_HEADER_ICON_FIX_V371__) return;
+    window.__WAR_HUB_HEADER_ICON_FIX_V371__ = true;
     try { window.__WAR_HUB_V291__ = false; } catch (_e_guard) {}
 
     // ============================================================
@@ -853,9 +853,11 @@
 
     GM_addStyle(css);
     GM_addStyle([
-        '#warhub-shield { left: 10px !important; top: auto !important; bottom: 48px !important; right: auto !important; width: 128px !important; height: 30px !important; background: transparent !important; border: 0 !important; box-shadow: none !important; transform: none !important; opacity: 1 !important; visibility: visible !important; display: flex !important; pointer-events: auto !important; z-index: 2147483647 !important; }',
-        '#warhub-shield button { width: 128px !important; height: 30px !important; border-radius: 9px !important; border: 1px solid rgba(205,164,74,.5) !important; background: linear-gradient(180deg, rgba(90,12,18,.95), rgba(35,8,10,.98)) !important; color: #f5df9d !important; font-size: 10px !important; font-weight: 800 !important; letter-spacing: .1px !important; box-shadow: 0 8px 20px rgba(0,0,0,.35) !important; padding: 0 !important; margin: 0 !important; cursor: pointer !important; }',
-        '@media (max-width: 520px) { #warhub-shield { left: 10px !important; top: auto !important; bottom: 48px !important; width: 128px !important; height: 30px !important; } #warhub-shield button { width: 128px !important; height: 30px !important; font-size: 10px !important; border-radius: 9px !important; } }'
+        '#warhub-header-slot { display: inline-flex !important; align-items: center !important; justify-content: center !important; flex: 0 0 auto !important; width: 34px !important; height: 34px !important; margin: 0 3px !important; vertical-align: middle !important; position: relative !important; z-index: 50 !important; }',
+        '#warhub-shield.warhub-header-mounted { position: static !important; left: auto !important; right: auto !important; top: auto !important; bottom: auto !important; transform: none !important; width: 32px !important; height: 32px !important; min-width: 32px !important; min-height: 32px !important; max-width: 32px !important; max-height: 32px !important; border-radius: 8px !important; background: transparent !important; border: 0 !important; box-shadow: none !important; margin: 0 !important; padding: 0 !important; display: inline-flex !important; align-items: center !important; justify-content: center !important; opacity: 1 !important; visibility: visible !important; pointer-events: auto !important; z-index: 50 !important; }',
+        '#warhub-shield.warhub-header-mounted button { width: 32px !important; height: 32px !important; min-width: 32px !important; min-height: 32px !important; border-radius: 8px !important; border: 1px solid rgba(205,164,74,.50) !important; background: linear-gradient(180deg, rgba(90,12,18,.96), rgba(35,8,10,.98)) !important; color: #f5df9d !important; font-size: 18px !important; line-height: 1 !important; font-weight: 900 !important; box-shadow: 0 2px 8px rgba(0,0,0,.35) !important; padding: 0 !important; margin: 0 !important; cursor: pointer !important; display: inline-flex !important; align-items: center !important; justify-content: center !important; }',
+        '#warhub-shield:not(.warhub-header-mounted) { display: none !important; }',
+        '#warhub-badge.warhub-header-badge { position: absolute !important; right: -4px !important; top: -5px !important; left: auto !important; z-index: 60 !important; }'
     ].join('\n'));
 
     // ============================================================
@@ -1322,32 +1324,112 @@
     }
 
 
+function isUsableHeaderHost(el) {
+    if (!el || el === document.body || el === document.documentElement) return false;
+    if (el.id === 'warhub-header-slot' || el.id === 'warhub-shield' || el.id === 'warhub-overlay') return false;
+    var rect = null;
+    try { rect = el.getBoundingClientRect(); } catch (_e) { return false; }
+    if (!rect || rect.width < 180 || rect.height < 24 || rect.height > 95) return false;
+    if (rect.top < 0 || rect.top > Math.max(520, window.innerHeight * 0.72)) return false;
+    var style = null;
+    try { style = window.getComputedStyle(el); } catch (_e2) { return false; }
+    if (!style || style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity || 1) === 0) return false;
+    var txt = String(el.innerText || el.textContent || '');
+    if (txt.indexOf('War and Chain') >= 0) return false;
+    return /\$\s*[0-9]/.test(txt) || /[0-9]+\s*\/\s*[0-9]+/.test(txt) || /merit|money|point|happy|energy|nerve/i.test(txt);
+}
+
+function scoreHeaderHost(el) {
+    var rect = el.getBoundingClientRect();
+    var txt = String(el.innerText || el.textContent || '');
+    var score = 0;
+    if (/\$\s*[0-9]/.test(txt)) score += 50;
+    if (/[0-9]+\s*\/\s*[0-9]+/.test(txt)) score += 25;
+    if (/merit|money|point|happy|energy|nerve/i.test(txt)) score += 20;
+    if (rect.width > 250) score += 10;
+    if (rect.height <= 55) score += 12;
+    score += Math.max(0, 250 - rect.top) / 25;
+    score -= Math.max(0, el.querySelectorAll('*').length - 40);
+    return score;
+}
+
+function findTornHeaderHost() {
+    var directSelectors = [
+        '[class*=user][class*=status]',
+        '[class*=status][class*=icons]',
+        '[class*=status][class*=bar]',
+        '[class*=icons][class*=bar]',
+        '[class*=header] [class*=status]',
+        '[class*=header] [class*=icons]',
+        '#header-root',
+        '#topHeader'
+    ];
+
+    for (var i = 0; i < directSelectors.length; i++) {
+        var matches = document.querySelectorAll(directSelectors[i]);
+        for (var j = 0; j < matches.length; j++) {
+            if (isUsableHeaderHost(matches[j])) return matches[j];
+        }
+    }
+
+    var candidates = Array.prototype.slice.call(document.querySelectorAll('div, ul, nav, section'))
+        .filter(isUsableHeaderHost)
+        .sort(function (a, b) { return scoreHeaderHost(b) - scoreHeaderHost(a); });
+
+    return candidates[0] || null;
+}
+
 function getOrCreateOwnHeaderSlot() {
-    return null;
+    var host = findTornHeaderHost();
+    if (!host) return null;
+
+    var slot = document.getElementById('warhub-header-slot');
+    if (!slot) {
+        slot = document.createElement('span');
+        slot.id = 'warhub-header-slot';
+        slot.setAttribute('aria-label', 'War and Chain launcher slot');
+    }
+
+    if (slot.parentNode !== host) {
+        try {
+            host.appendChild(slot);
+        } catch (_e) {
+            return null;
+        }
+    }
+
+    return slot;
 }
 
 function mountShieldIntoHeader() {
-    return false;
+    if (!shield) return false;
+    var slot = getOrCreateOwnHeaderSlot();
+    if (!slot) return false;
+    if (shield.parentNode !== slot) slot.appendChild(shield);
+    shield.classList.add('warhub-header-mounted');
+    return true;
 }
 
 function applyShieldPos() {
     if (!shield) return;
 
-    shield.classList.remove('warhub-header-mounted');
-    if (document.body && shield.parentNode !== document.body) document.body.appendChild(shield);
-
-    shield.style.left = '10px';
-    shield.style.top = 'auto';
-    shield.style.bottom = '48px';
-    shield.style.right = 'auto';
-    shield.style.width = '128px';
-    shield.style.height = '30px';
-    shield.style.display = 'flex';
-    shield.style.opacity = '1';
-    shield.style.visibility = 'visible';
-    shield.style.pointerEvents = 'auto';
-    shield.style.transform = 'none';
-    shield.style.zIndex = '2147483647';
+    if (mountShieldIntoHeader()) {
+        shield.style.position = 'static';
+        shield.style.left = 'auto';
+        shield.style.top = 'auto';
+        shield.style.bottom = 'auto';
+        shield.style.right = 'auto';
+        shield.style.width = '32px';
+        shield.style.height = '32px';
+        shield.style.display = 'inline-flex';
+        shield.style.opacity = '1';
+        shield.style.visibility = 'visible';
+        shield.style.pointerEvents = 'auto';
+        shield.style.transform = 'none';
+        shield.style.zIndex = '50';
+    } else {
+        shield.classList.remove('warhub-header-mounted');
+    }
 
     positionBadge();
 }
@@ -1369,6 +1451,16 @@ function applyShieldPos() {
 
     function positionBadge() {
         if (!badge || !shield) return;
+
+        if (shield.classList && shield.classList.contains('warhub-header-mounted')) {
+            var slot = document.getElementById('warhub-header-slot');
+            if (slot && badge.parentNode !== slot) slot.appendChild(badge);
+            badge.classList.add('warhub-header-badge');
+            badge.style.left = 'auto';
+            badge.style.top = '-5px';
+            badge.style.right = '-4px';
+            return;
+        }
 
         var rect = shield.getBoundingClientRect();
         badge.classList.remove('warhub-header-badge');
@@ -2205,8 +2297,8 @@ function _handleTabClick() {
 
         shield = document.createElement('div');
         shield.id = 'warhub-shield';
-        shield.innerHTML = '<button type="button">⚔ War and Chain</button>'; 
-        shield.setAttribute('aria-label', 'Open War and Chain');
+        shield.innerHTML = '<button type="button" aria-label="Open War and Chain">⚔️</button>';
+shield.setAttribute('aria-label', 'Open War and Chain');
         shield.setAttribute('title', 'War and Chain');
 
         badge = document.createElement('div');
