@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         War and Chain ⚔️
 // @namespace    fries91-war-hub
-// @version      3.7.1
+// @version      3.7.2
 // @description  War and Chain by Fries91. Free-access rebuild with admin and leader/co-leader restrictions kept.
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -853,7 +853,7 @@
 
     GM_addStyle(css);
     GM_addStyle([
-        '#warhub-header-slot { display: inline-flex !important; align-items: center !important; justify-content: center !important; flex: 0 0 auto !important; width: 34px !important; height: 34px !important; margin: 0 3px !important; vertical-align: middle !important; position: relative !important; z-index: 50 !important; }',
+        '#warhub-header-slot { display: inline-flex !important; align-items: center !important; justify-content: center !important; flex: 0 0 auto !important; width: 34px !important; height: 34px !important; margin: 3px 6px 3px 8px !important; vertical-align: middle !important; position: relative !important; z-index: 50 !important; }',
         '#warhub-shield.warhub-header-mounted { position: static !important; left: auto !important; right: auto !important; top: auto !important; bottom: auto !important; transform: none !important; width: 32px !important; height: 32px !important; min-width: 32px !important; min-height: 32px !important; max-width: 32px !important; max-height: 32px !important; border-radius: 8px !important; background: transparent !important; border: 0 !important; box-shadow: none !important; margin: 0 !important; padding: 0 !important; display: inline-flex !important; align-items: center !important; justify-content: center !important; opacity: 1 !important; visibility: visible !important; pointer-events: auto !important; z-index: 50 !important; }',
         '#warhub-shield.warhub-header-mounted button { width: 32px !important; height: 32px !important; min-width: 32px !important; min-height: 32px !important; border-radius: 8px !important; border: 1px solid rgba(205,164,74,.50) !important; background: linear-gradient(180deg, rgba(90,12,18,.96), rgba(35,8,10,.98)) !important; color: #f5df9d !important; font-size: 18px !important; line-height: 1 !important; font-weight: 900 !important; box-shadow: 0 2px 8px rgba(0,0,0,.35) !important; padding: 0 !important; margin: 0 !important; cursor: pointer !important; display: inline-flex !important; align-items: center !important; justify-content: center !important; }',
         '#warhub-shield:not(.warhub-header-mounted) { display: none !important; }',
@@ -1324,59 +1324,97 @@
     }
 
 
-function isUsableHeaderHost(el) {
+function isVisibleHeaderElement(el) {
     if (!el || el === document.body || el === document.documentElement) return false;
     if (el.id === 'warhub-header-slot' || el.id === 'warhub-shield' || el.id === 'warhub-overlay') return false;
     var rect = null;
     try { rect = el.getBoundingClientRect(); } catch (_e) { return false; }
-    if (!rect || rect.width < 180 || rect.height < 24 || rect.height > 95) return false;
-    if (rect.top < 0 || rect.top > Math.max(520, window.innerHeight * 0.72)) return false;
+    if (!rect || rect.width < 220 || rect.height < 24 || rect.height > 90) return false;
+    if (rect.top < 55 || rect.top > Math.max(260, window.innerHeight * 0.42)) return false;
     var style = null;
     try { style = window.getComputedStyle(el); } catch (_e2) { return false; }
     if (!style || style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity || 1) === 0) return false;
     var txt = String(el.innerText || el.textContent || '');
     if (txt.indexOf('War and Chain') >= 0) return false;
+    return true;
+}
+
+function isStatHeaderHost(el) {
+    if (!isVisibleHeaderElement(el)) return false;
+    var txt = String(el.innerText || el.textContent || '');
     return /\$\s*[0-9]/.test(txt) || /[0-9]+\s*\/\s*[0-9]+/.test(txt) || /merit|money|point|happy|energy|nerve/i.test(txt);
 }
 
-function scoreHeaderHost(el) {
+function isLowerHeaderHost(el) {
+    if (!isVisibleHeaderElement(el)) return false;
+    var rect = el.getBoundingClientRect();
+    var txt = String(el.innerText || el.textContent || '');
+
+    // Keep the sword in the lower Torn header strip, not beside chain stats.
+    if (isStatHeaderHost(el)) return false;
+    if (/messages|events|awards|home|items|city|stocks|forums|missions|news/i.test(txt) && rect.height <= 85) return true;
+    if (rect.height >= 28 && rect.height <= 72 && rect.top >= 80) return true;
+    return false;
+}
+
+function scoreLowerHeaderHost(el) {
     var rect = el.getBoundingClientRect();
     var txt = String(el.innerText || el.textContent || '');
     var score = 0;
-    if (/\$\s*[0-9]/.test(txt)) score += 50;
-    if (/[0-9]+\s*\/\s*[0-9]+/.test(txt)) score += 25;
-    if (/merit|money|point|happy|energy|nerve/i.test(txt)) score += 20;
-    if (rect.width > 250) score += 10;
-    if (rect.height <= 55) score += 12;
-    score += Math.max(0, 250 - rect.top) / 25;
-    score -= Math.max(0, el.querySelectorAll('*').length - 40);
+    if (/messages|events|awards|home|items|city|stocks|forums|missions|news/i.test(txt)) score += 60;
+    if (rect.top >= 90) score += 25;
+    if (rect.top >= 120) score += 10;
+    if (rect.height <= 55) score += 15;
+    if (rect.width > 300) score += 10;
+    score -= Math.abs(rect.left) / 10;
+    score -= Math.max(0, el.querySelectorAll('*').length - 80) / 2;
     return score;
 }
 
 function findTornHeaderHost() {
-    var directSelectors = [
-        '[class*=user][class*=status]',
-        '[class*=status][class*=icons]',
-        '[class*=status][class*=bar]',
-        '[class*=icons][class*=bar]',
-        '[class*=header] [class*=status]',
-        '[class*=header] [class*=icons]',
-        '#header-root',
-        '#topHeader'
-    ];
-
-    for (var i = 0; i < directSelectors.length; i++) {
-        var matches = document.querySelectorAll(directSelectors[i]);
-        for (var j = 0; j < matches.length; j++) {
-            if (isUsableHeaderHost(matches[j])) return matches[j];
-        }
+    var existing = document.getElementById('warhub-header-slot');
+    if (existing && existing.parentNode && document.body && document.body.contains(existing.parentNode)) {
+        var parentRect = null;
+        try { parentRect = existing.parentNode.getBoundingClientRect(); } catch (_e0) { parentRect = null; }
+        if (parentRect && parentRect.width > 0 && parentRect.height > 0 && isLowerHeaderHost(existing.parentNode)) return existing.parentNode;
     }
 
-    var candidates = Array.prototype.slice.call(document.querySelectorAll('div, ul, nav, section'))
-        .filter(isUsableHeaderHost)
-        .sort(function (a, b) { return scoreHeaderHost(b) - scoreHeaderHost(a); });
+    var selectors = [
+        '[class*=areas]',
+        '[class*=menu]',
+        '[class*=nav]',
+        '[class*=links]',
+        '[class*=icons]',
+        '#header-root',
+        '#topHeader',
+        'nav',
+        'ul',
+        'section',
+        'div'
+    ];
 
-    return candidates[0] || null;
+    var seen = [];
+    var candidates = [];
+    selectors.forEach(function (sel) {
+        Array.prototype.slice.call(document.querySelectorAll(sel)).forEach(function (el) {
+            if (seen.indexOf(el) >= 0) return;
+            seen.push(el);
+            if (isLowerHeaderHost(el)) candidates.push(el);
+        });
+    });
+
+    candidates.sort(function (a, b) { return scoreLowerHeaderHost(b) - scoreLowerHeaderHost(a); });
+    if (candidates[0]) return candidates[0];
+
+    var statFallbacks = Array.prototype.slice.call(document.querySelectorAll('div, ul, nav, section'))
+        .filter(isStatHeaderHost)
+        .sort(function (a, b) {
+            var ar = a.getBoundingClientRect();
+            var br = b.getBoundingClientRect();
+            return br.top - ar.top;
+        });
+
+    return statFallbacks[0] || null;
 }
 
 function getOrCreateOwnHeaderSlot() {
@@ -1392,9 +1430,9 @@ function getOrCreateOwnHeaderSlot() {
 
     if (slot.parentNode !== host) {
         try {
-            host.appendChild(slot);
+            host.insertBefore(slot, host.firstChild || null);
         } catch (_e) {
-            return null;
+            try { host.appendChild(slot); } catch (_e2) { return null; }
         }
     }
 
